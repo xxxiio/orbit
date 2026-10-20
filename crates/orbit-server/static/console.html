@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Orbit — Personal Dashboard & Automation</title>
+<style>body{font:16px system-ui,sans-serif;margin:2rem auto;max-width:960px;padding:0 1rem;background:#101824;color:#e5ecf4}button,input,select{font:inherit;padding:.45rem;margin:.25rem}input,select{background:#243344;color:white;border:1px solid #52647a}button{background:#84b5ff;border:0;cursor:pointer}pre.report{white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto} .report{padding:.8rem;background:#182637;border-radius:6px} .report table{font-size:.9rem} section{margin:1.5rem 0;padding:1rem;border:1px solid #4b5b70;border-radius:8px}table{width:100%;border-collapse:collapse}th,td{padding:.5rem;border-bottom:1px solid #364456;text-align:left;word-break:break-word}small{opacity:.8}#error{color:#ffc7c7;white-space:pre-wrap}</style></head>
+<body><h1>Orbit · Personal dashboard</h1><p>Read-only snapshots from opted-in local reporting workers. Your local Orbit clients continue working independently without the server.</p>
+<section><label>Administrator token (kept only in this page's memory) <input id="token" type="password" autocomplete="off" size="42"></label><button id="refresh">Load</button><p id="error" role="alert"></p></section>
+<section aria-labelledby="canonical-title">
+<h2 id="canonical-title">Authoritative workspace</h2>
+<p>Direct server-authoritative data; no reporting worker or approval proposal is involved. Supply an enrolled <strong>device bearer token</strong>, distinct from the administrator token above. Connected writes require the currently displayed revision; a conflicting edit is rejected and must be reviewed.</p>
+<label>Device token (page memory only) <input id="authority-token" type="password" autocomplete="off" size="42"></label>
+<button id="authority-load" type="button">Load canonical workspace</button>
+<p id="authority-error" role="alert"></p><p id="authority-revision">No authoritative snapshot loaded</p>
+<div id="authority-workspace" class="report"></div>
+<form id="authority-project"><h3>Create project</h3><label>ID <input name="id" required maxlength="128"></label><label>Name <input name="name" required maxlength="250"></label><button>Create project</button></form>
+<form id="authority-task"><h3>Create task</h3><label>ID <input name="id" required maxlength="128"></label><label>Title <input name="title" required maxlength="250"></label><label>Project ID (optional) <input name="project" maxlength="128"></label><button>Create task</button></form>
+<form id="authority-habit"><h3>Create habit</h3><label>ID <input name="id" required maxlength="128"></label><label>Name <input name="name" required maxlength="250"></label><label>Cadence <select name="cadence"><option value="daily">Daily</option><option value="weekly:1">Weekly</option><option value="weekly:3">3/week</option></select></label><button>Create habit</button></form>
+<form id="authority-metric"><h3>Create metric target</h3><label>ID <input name="id" required maxlength="128"></label><label>Baseline <input name="baseline" type="number" required step="1"></label><label>Target <input name="target" type="number" required step="1"></label><label>Direction <select name="direction"><option value="increasing">Increasing</option><option value="decreasing">Decreasing</option></select></label><button>Create target</button></form>
+<form id="authority-status"><h3>Update task status</h3><label>Task ID <input name="id" required maxlength="128"></label><label>Status <select name="status"><option>inbox</option><option>planned</option><option>ready</option><option>in-progress</option><option>waiting</option><option>blocked</option><option>review</option><option>deferred</option><option>done</option><option>cancelled</option></select></label><button>Update status</button></form>
+<form id="authority-occurrence"><h3>Record habit completion</h3><label>Occurrence ID <input name="id" required maxlength="128"></label><label>Habit ID <input name="habit" required maxlength="128"></label><label>Timestamp in milliseconds <input name="time" type="number" min="0" step="1" required></label><button>Record completion</button></form>
+<form id="authority-observation"><h3>Record metric observation</h3><label>Metric ID <input name="metric" required maxlength="128"></label><label>Timestamp in milliseconds <input name="time" type="number" min="0" step="1" required></label><label>Value <input name="value" type="number" step="1" required></label><button>Record observation</button></form>
+</section>
+<section aria-labelledby="overview-title"><h2 id="overview-title">Latest Orbit snapshots</h2><p><small>These views are snapshots from authorized workers, not direct live database access. Use Run now to request fresh data; results appear once a worker finishes. Refresh to check status.</small></p>
+<div id="snapshots" role="status"></div>
+<h3>Today's focus</h3><pre id="today" class="report">No daily briefing report received yet.</pre>
+<h3>Projects</h3><div id="projects" class="report">No project report received yet.</div>
+<h3>Project health</h3><div id="health" class="report">No project health report received yet.</div>
+<h3>Habits</h3><div id="habits" class="report">No habit summary received yet.</div>
+</section>
+<section><h2>Schedules</h2><table><thead><tr><th>Job</th><th>Action</th><th>Interval</th><th>Enabled</th><th></th></tr></thead><tbody id="jobs"></tbody></table><h3>Add / update schedule</h3><form id="create"><label>ID <input name="id" required pattern="[a-zA-Z0-9_-]{1,128}" maxlength="128"></label><label>Action <select name="action"><option>daily-briefing</option><option>habit-summary</option><option>project-health-refresh</option></select></label><label>Interval (seconds) <input name="interval" type="number" min="60" max="31536000" value="86400" required></label><button>Save</button></form></section>
+<section><h2>Recent runs</h2><table><thead><tr><th>ID</th><th>Job</th><th>Status</th><th>Attempts</th><th>Result</th></tr></thead><tbody id="runs"></tbody></table><small>Reports may contain personal Orbit data. Only access through localhost, an authenticated private network, or a TLS deployment.</small></section>
+<section><h2>Propose an Orbit task status change</h2>
+<p>Submit a pending proposal for separate approval. An opt-in authorized agent worker must be running to apply approved changes to its local Orbit database. Browser changes are not direct edits.</p>
+<form id="task-propose"><label>Task ID <input name="target" required maxlength="256" autocomplete="off"></label>
+<label>New status <select name="status"><option>inbox</option><option>planned</option><option>ready</option><option>in-progress</option><option>waiting</option><option>blocked</option><option>review</option><option>deferred</option><option>done</option><option>cancelled</option></select></label>
+<button type="submit">Submit for approval</button></form></section>
+<section><h2>Propose a new project task</h2><p>Requires administrator approval before a worker creates the task. Each proposal has a stable task ID for retry reconciliation.</p>
+<form id="task-create-propose"><label>Project ID <input name="project" required maxlength="256" autocomplete="off"></label>
+<label>Task title <input name="title" required maxlength="250" autocomplete="off"></label>
+<button type="submit">Submit task proposal</button></form></section>
+<section><h2>Propose a habit completion</h2><p>Records a specific completion timestamp after separate administrator approval. Proposal identity prevents duplicate occurrences on reconciliation.</p>
+<form id="habit-record-propose"><label>Habit ID <input name="habit" required maxlength="256"></label><label>Completion timestamp (milliseconds since epoch) <input name="at_ms" type="number" min="1" required></label><button type="submit">Submit habit proposal</button></form></section>
+<section><h2>Propose a metric observation</h2><p>Requires a configured local metric target and administrator approval. Repeated timestamp/value pairs are idempotent; conflicting values fail closed.</p><form id="metric-observe-propose"><label>Metric ID <input name="metric" maxlength="256" required></label><label>Value <input name="value" type="number" required step="1"></label><label>Observation timestamp (ms) <input name="at_ms" type="number" min="1" required></label><button type="submit">Submit metric proposal</button></form></section>
+<section><h2>Agent proposals requiring approval</h2><p>Review intent, target and payload before authorizing. Approved task-status, project task-creation and habit-completion proposals can execute through an opt-in worker; habit and metric proposals execute through allowlisted workers.</p><table><thead><tr><th>ID / device</th><th>Intent / target</th><th>Payload</th><th>Decision</th></tr></thead><tbody id="proposals"></tbody></table></section>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+async function api(path, method='GET', body) {
+ const key=$('token').value.trim(); if(!key) throw Error('Enter administrator token');
+ const response=await fetch(path,{method,headers:{Authorization:'Bearer '+key,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'});
+ if(!response.ok) throw Error('Server returned '+response.status);return response.status===204?null:response.json();
+}
+function cell(tr,value) {const td=document.createElement('td');td.textContent=String(value??'');tr.append(td);return td;}
+function safeReport(run) {
+ if(!run || run.state!=='succeeded' || typeof run.result_json!=='string' || run.result_json.length>65536) return null;
+ try { const report=JSON.parse(run.result_json); return report && typeof report.output==='object' && report.output!==null ? report.output : null; }
+ catch { return null; }
+}
+function pretty(value) {const data=JSON.stringify(value,null,2);return data && data.length>16000 ? data.slice(0,16000)+'\n…' : (data||'No data');}
+function recentReport(runs, action) { for(const r of runs) {if(r.action===action){const v=safeReport(r);if(v)return {data:v,run:r};}}return null; }
+function tableOrJson(id,value) {
+ const node=$(id);node.replaceChildren();
+ const arr=Array.isArray(value)?value:(value && typeof value==='object' ? Object.values(value).find(v=>Array.isArray(v)):null);
+ if(!arr || !arr.length || arr.length>200 || !arr.every(v=>v && typeof v==='object' && !Array.isArray(v))) {node.textContent=pretty(value);return;}
+ const keys=[...new Set(arr.flatMap(v=>Object.keys(v)))].slice(0,8);
+ const table=document.createElement('table'),head=document.createElement('thead'),hr=document.createElement('tr');
+ for(const k of keys){const th=document.createElement('th');th.textContent=k;hr.append(th)}head.append(hr);table.append(head);
+ const body=document.createElement('tbody');for(const obj of arr){const tr=document.createElement('tr');for(const k of keys){let v=obj[k];cell(tr,typeof v==='object'?JSON.stringify(v):v)}body.append(tr)}table.append(body);node.append(table);
+}
+function dashboard(runs){
+ const briefing=recentReport(runs,'daily-briefing'), health=recentReport(runs,'project-health-refresh'), habits=recentReport(runs,'habit-summary');
+ const dates=[briefing,health,habits].filter(Boolean).map(v=>v.run.job_id+' (#'+v.run.id+', '+new Date(v.run.scheduled_at_ms).toLocaleString()+')');
+ $('snapshots').textContent=dates.length?'Available reports: '+dates.join(', '):'No successful reports available. Configure schedules and run the opt-in worker to populate this dashboard.';
+ $('today').textContent=briefing?pretty(briefing.data.today):'No daily briefing report received yet.';
+ if(briefing)tableOrJson('projects',briefing.data.projects);else if(health)tableOrJson('projects',health.data.project_health);else $('projects').textContent='No project report received yet.';
+ if(health)tableOrJson('health',health.data.project_health);else $('health').textContent='No project-health report received yet.';
+ if(habits)tableOrJson('habits',habits.data.habits);else $('habits').textContent='No habit-summary report received yet.';
+}
+async function refresh(){try{$('error').textContent='';const [jobs,runs,proposals]=await Promise.all([api('/v1/automations'),api('/v1/automation-runs'),api('/v1/agent-proposals')]);
+ dashboard(runs);$('jobs').replaceChildren();for(const j of jobs){const tr=document.createElement('tr');cell(tr,j.id);cell(tr,j.action);cell(tr,j.interval_seconds+'s');cell(tr,j.enabled);const td=cell(tr,'');if(j.enabled){const now=document.createElement('button');now.textContent='Run now';now.onclick=async()=>{try{const run=await api('/v1/automations/'+encodeURIComponent(j.id)+'/refresh','POST');$('snapshots').textContent='Refresh queued: '+run.job_id+' (#'+run.id+'). Run the reporting worker, then reload.';await refresh();}catch(e){$('error').textContent=e.message}};td.append(now);const b=document.createElement('button');b.textContent='Disable';b.onclick=async()=>{try{await api('/v1/automations/'+encodeURIComponent(j.id),'DELETE');await refresh()}catch(e){$('error').textContent=e.message}};td.append(b)}$('jobs').append(tr)}
+ $('proposals').replaceChildren();for(const p of proposals){const tr=document.createElement('tr');cell(tr,p.id+' / '+p.device_id);cell(tr,p.intent+' / '+p.target);const payload=JSON.stringify(p.payload);cell(tr,payload.length>400?payload.slice(0,400)+'…':payload);const td=cell(tr,p.state);if(p.state==='pending'){for(const [name,approve] of [['Approve',true],['Reject',false]]){const b=document.createElement('button');b.textContent=name;b.onclick=async()=>{if(!window.confirm(name+' proposal #'+p.id+'?'))return;try{await api('/v1/agent-proposals/'+p.id+'/decision','POST',{approve});await refresh()}catch(e){$('error').textContent=e.message}};td.append(b)}}$('proposals').append(tr)}
+ $('runs').replaceChildren();for(const r of runs){const tr=document.createElement('tr');cell(tr,r.id);cell(tr,r.job_id);cell(tr,r.state);cell(tr,r.attempt);const raw=r.result_json||'';cell(tr,raw.length>240?raw.slice(0,240)+'…':raw);$('runs').append(tr)}
+ }catch(e){$('error').textContent=e.message}}
+$('task-propose').onsubmit=async e=>{e.preventDefault();const data=new FormData(e.target);try{
+ const target=String(data.get('target')||'').trim(), status=String(data.get('status')||'');
+ if(!target || target.length>256) throw Error('Enter a valid task ID');
+ await api('/v1/admin/agent-proposals','POST',{intent:'task-update',target,payload:{status}});
+ e.target.reset();await refresh();
+ }catch(err){$('error').textContent=err.message}};
+$('metric-observe-propose').onsubmit=async e=>{e.preventDefault();const form=new FormData(e.target);try{
+ const target=String(form.get('metric')||'').trim(),value=Number(form.get('value')),at_ms=Number(form.get('at_ms'));
+ if(!target || target.length>256 || !Number.isSafeInteger(value) || !Number.isSafeInteger(at_ms) || at_ms<=0)throw Error('Enter valid metric, integer value and timestamp');
+ await api('/v1/admin/agent-proposals','POST',{intent:'metric-observe',target,payload:{value,at_ms}});
+ e.target.reset();await refresh();
+ }catch(err){$('error').textContent=err.message}};
+$('habit-record-propose').onsubmit=async e=>{e.preventDefault();const form=new FormData(e.target);try{
+ const target=String(form.get('habit')||'').trim(),raw=String(form.get('at_ms')||'');const at_ms=Number(raw);
+ if(!target || target.length>256 || !Number.isSafeInteger(at_ms) || at_ms<=0)throw Error('Enter valid habit and timestamp');
+ await api('/v1/admin/agent-proposals','POST',{intent:'habit-record',target,payload:{at_ms}});
+ e.target.reset();await refresh();
+ }catch(err){$('error').textContent=err.message}};
+$('task-create-propose').onsubmit=async e=>{e.preventDefault();const form=new FormData(e.target);try{
+ const project=String(form.get('project')||'').trim(),title=String(form.get('title')||'').trim();
+ if(!project||project.length>256||!title||title.length>250)throw Error('Project ID and task title required');
+ await api('/v1/admin/agent-proposals','POST',{intent:'task-create',target:project,payload:{title}});
+ e.target.reset();await refresh();
+ }catch(err){$('error').textContent=err.message}};
+
+// Connected-mode console. Intentionally independent of legacy local-worker reports.
+let acceptedAuthority=null;
+async function authorityApi(path,method='GET',body){
+ const token=$('authority-token').value.trim();
+ if(!token)throw Error('Enter an enrolled device token');
+ const response=await fetch(path,{method,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store',redirect:'error'});
+ if(!response.ok)throw Error('Authoritative server returned '+response.status+(response.status===409?' (revision conflict; reload and review)':''));
+ return response.json();
+}
+async function loadAuthority(){
+ try{
+  $('authority-error').textContent='';
+  const snapshot=await authorityApi('/v1/authoritative/snapshot');
+  if(!Number.isSafeInteger(snapshot.revision)||snapshot.revision<0 || !['projects','tasks','habits','habit_occurrences','metrics','metric_observations'].every(k=>Array.isArray(snapshot[k])))throw Error('Malformed authoritative snapshot');
+  acceptedAuthority=snapshot;
+  $('authority-revision').textContent='Server-accepted revision '+snapshot.revision;
+  const container=$('authority-workspace');container.replaceChildren();
+  for(const key of ['projects','tasks','habits','habit_occurrences','metrics','metric_observations']){
+   const heading=document.createElement('h3');heading.textContent=key.replaceAll('_',' ');container.append(heading);
+   const data=document.createElement('pre');data.textContent=pretty(snapshot[key]);data.className='report';container.append(data);
+  }
+ }catch(e){$('authority-error').textContent=e.message;}
+}
+async function sendAuthority(form,path,action){
+ const error=$('authority-error');
+ try{
+  error.textContent='';
+  if(!acceptedAuthority)throw Error('Load authoritative workspace before editing');
+  const payload={command_id:crypto.randomUUID(),expected_revision:acceptedAuthority.revision,...action};
+  const response=await authorityApi(path,'POST',payload);
+  // A successful receipt is canonical. Always fetch a fresh accepted snapshot.
+  form.reset();await loadAuthority();
+  if(!acceptedAuthority || acceptedAuthority.revision<response.revision)throw Error('Command accepted, but snapshot refresh has not caught up; reload');
+ }catch(e){error.textContent=e.message;}
+}
+$('authority-load').onclick=loadAuthority;
+$('authority-project').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);
+ sendAuthority(e.target,'/v1/authoritative/project-commands',{project_id:String(f.get('id')).trim(),name:String(f.get('name')).trim()});};
+$('authority-task').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const project=String(f.get('project')).trim();
+ sendAuthority(e.target,'/v1/authoritative/task-commands',{action:{type:'create',task_id:String(f.get('id')).trim(),title:String(f.get('title')).trim(),project_id:project||null}});};
+$('authority-habit').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);
+ sendAuthority(e.target,'/v1/authoritative/evidence-commands',{action:{type:'create_habit',habit_id:String(f.get('id')).trim(),name:String(f.get('name')).trim(),cadence:String(f.get('cadence'))}});};
+$('authority-metric').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const baseline=Number(f.get('baseline')),target=Number(f.get('target'));
+ if(!Number.isSafeInteger(baseline)||!Number.isSafeInteger(target)){$('authority-error').textContent='Baseline and target must be safe integers';return;}
+ sendAuthority(e.target,'/v1/authoritative/evidence-commands',{action:{type:'set_metric_target',metric_id:String(f.get('id')).trim(),baseline,target,direction:String(f.get('direction'))}});};
+
+$('authority-status').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);
+ sendAuthority(e.target,'/v1/authoritative/task-commands',{action:{type:'change_status',task_id:String(f.get('id')).trim(),status:String(f.get('status'))}});};
+$('authority-occurrence').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),time=Number(f.get('time'));
+ if(!Number.isSafeInteger(time)||time<0){$('authority-error').textContent='Invalid timestamp';return;}
+ sendAuthority(e.target,'/v1/authoritative/evidence-commands',{action:{type:'record_habit',occurrence_id:String(f.get('id')).trim(),habit_id:String(f.get('habit')).trim(),occurred_at_ms:time}});};
+$('authority-observation').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),time=Number(f.get('time')),value=Number(f.get('value'));
+ if(!Number.isSafeInteger(time)||time<0||!Number.isSafeInteger(value)){$('authority-error').textContent='Invalid timestamp or value';return;}
+ sendAuthority(e.target,'/v1/authoritative/evidence-commands',{action:{type:'record_metric',metric_id:String(f.get('metric')).trim(),observed_at_ms:time,value}});};
+$('refresh').onclick=refresh;
+$('create').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{await api('/v1/automations','POST',{id:f.get('id'),action:f.get('action'),interval_seconds:Number(f.get('interval')),enabled:true});await refresh()}catch(err){$('error').textContent=err.message}};
+</script></body></html>

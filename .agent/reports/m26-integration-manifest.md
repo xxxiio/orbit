@@ -1,0 +1,289 @@
+# M26 integration manifest
+
+Date: 2026-10-20  
+Backup: `/home/xliu/dev/orbit-backups/orbit-pre-m26-20261020-115828.tar.gz` (sha256 verified)  
+Comparison: SHA-256 by relative path, excluding `target/`, `.pytest_cache/`, `__pycache__/` and `.pyc`. The input archive is excluded from the file set and preserved under `/home/xliu/dev/orbit-backups/incoming/`.
+
+## Summary
+
+- Files before: 566
+- Files after: 664
+- Added: 158
+- Updated: 38
+- Removed/relocated: 60
+- Unchanged: 468
+- Net-new project files (excluding `.agent/` and `AGENTS.md`): 54 — 30 documentation, 9 scripts, 13 tests, `.gitignore`, `LICENSE`.
+- Relocated with content preserved: 60 — 54 historical scripts to `scripts/legacy-contracts/`, 6 corrected contract tests to `tests/contracts/`.
+- GetDone bootstrap and reconstructed records: 43 files under `.agent/` plus `AGENTS.md`.
+
+## Added files
+
+- `.agent/command-reference.md`
+- `.agent/current/acceptance.md`
+- `.agent/current/change-impact.md`
+- `.agent/current/evidence.md`
+- `.agent/current/next-step.md`
+- `.agent/current/task.md`
+- `.agent/decisions/ADR-TEMPLATE.md`
+- `.agent/evidence/final-clippy.log`
+- `.agent/evidence/final-fmt.log`
+- `.agent/evidence/final-test.log`
+- `.agent/evidence/herdr-live.log`
+- `.agent/evidence/m15-final-console.log`
+- `.agent/evidence/m15-final.zip`
+- `.agent/invariants.md`
+- `.agent/journal/2026-10-20-m26-integration.md`
+- `.agent/journal/ENTRY-TEMPLATE.md`
+- `.agent/journal/README.md`
+- `.agent/milestones/MILESTONE-0015.md`
+- `.agent/milestones/MILESTONE-0022.md`
+- `.agent/milestones/MILESTONE-0023.md`
+- `.agent/milestones/MILESTONE-0024.md`
+- `.agent/milestones/MILESTONE-0025.md`
+- `.agent/milestones/MILESTONE-0026.md`
+- `.agent/milestones/MILESTONE-TEMPLATE.md`
+- `.agent/plans/EXECUTION-PLAN-TEMPLATE.md`
+- `.agent/plans/PROJECT-PLAN-TEMPLATE.md`
+- `.agent/project-context.md`
+- `.agent/reports/handoff-template.md`
+- `.agent/reports/m26-integration-manifest.md`
+- `.agent/reports/milestone-progress-template.md`
+- `.agent/reports/task-completion-TASK-0001.md`
+- `.agent/reports/task-completion-template.md`
+- `.agent/roadmap.md`
+- `.agent/skills-reference.md`
+- `.agent/skills.lock.json`
+- `.agent/status/project-status.md`
+- `.agent/tasks/TASK-0001.md`
+- `.agent/tasks/TASK-TEMPLATE.md`
+- `.agent/tracking/blockers.md`
+- `.agent/tracking/dependencies.md`
+- `.agent/tracking/risks.md`
+- `.agent/tracking/todos.md`
+- `.agent/waivers/WAIVER-TEMPLATE.md`
+- `.gitignore`
+- `AGENTS.md`
+- `LICENSE`
+- `docs/README.md`
+- `docs/contributing/repository-layout.md`
+- `docs/contributing/testing.md`
+- `docs/developers/capability-provider-example.md`
+- `docs/developers/extensions-and-capabilities.md`
+- `docs/getting-started/connected-mode.md`
+- `docs/getting-started/first-project.md`
+- `docs/getting-started/installation.md`
+- `docs/getting-started/quickstart.md`
+- `docs/guides/agent-review-and-resumption.md`
+- `docs/guides/agent-workflow-tutorial.md`
+- `docs/guides/agent-workflow.md`
+- `docs/guides/blueprint-walkthrough.md`
+- `docs/guides/blueprints-vs-tasks.md`
+- `docs/guides/custom-blueprints.md`
+- `docs/guides/installation-components.md`
+- `docs/guides/mcp-integration.md`
+- `docs/guides/offline-operation.md`
+- `docs/guides/projects-and-planning.md`
+- `docs/guides/research-workflow.md`
+- `docs/guides/self-hosting.md`
+- `docs/guides/troubleshooting.md`
+- `docs/guides/worker-deployment.md`
+- `docs/reference/cli.md`
+- `docs/reference/mcp.md`
+- `docs/releasing/binary-distribution.md`
+- `docs/releasing/platforms-and-components.md`
+- `docs/releasing/release-checklist.md`
+- `docs/releasing/source-completion.md`
+- `docs/releasing/upgrades-and-recovery.md`
+- `scripts/install-worker.sh`
+- `scripts/install.sh`
+- `scripts/legacy-contracts/README.md`
+- `scripts/legacy-contracts/check_m20_187.py`
+- `scripts/legacy-contracts/check_m20_189.py`
+- `scripts/legacy-contracts/check_m20_190.py`
+- `scripts/legacy-contracts/check_m22_219.py`
+- `scripts/legacy-contracts/check_m22_225.py`
+- `scripts/legacy-contracts/check_m22_227.py`
+- `scripts/legacy-contracts/check_m22_229.py`
+- `scripts/legacy-contracts/iteration-149-validation.sh`
+- `scripts/legacy-contracts/m18-acceptance.sh`
+- `scripts/legacy-contracts/m18-progress.py`
+- `scripts/legacy-contracts/test-m18-all-local-writes-accepted.py`
+- `scripts/legacy-contracts/test-m18-application-queries.py`
+- `scripts/legacy-contracts/test-m18-application-services.py`
+- `scripts/legacy-contracts/test-m18-cli-host-consolidation.py`
+- `scripts/legacy-contracts/test-m18-cli-schedule-boundary.py`
+- `scripts/legacy-contracts/test-m18-cli-task-project-boundary.py`
+- `scripts/legacy-contracts/test-m18-command-engine.py`
+- `scripts/legacy-contracts/test-m18-e2e-workflows.py`
+- `scripts/legacy-contracts/test-m18-folder-contract.py`
+- `scripts/legacy-contracts/test-m18-host-composition.py`
+- `scripts/legacy-contracts/test-m18-markdown-cutover.py`
+- `scripts/legacy-contracts/test-m18-no-sql-knowledge.py`
+- `scripts/legacy-contracts/test-m18-plan-command-acceptance.py`
+- `scripts/legacy-contracts/test-m18-private-authority-store.py`
+- `scripts/legacy-contracts/test-m18-progress.py`
+- `scripts/legacy-contracts/test-m18-public-mutation-boundary.py`
+- `scripts/legacy-contracts/test-m18-query-unification.py`
+- `scripts/legacy-contracts/test-m18-retired-relay.py`
+- `scripts/legacy-contracts/test-m18-rich-mutation-cutover.py`
+- `scripts/legacy-contracts/test-m18-routine-host.py`
+- `scripts/legacy-contracts/test-m18-runtime-boundaries.py`
+- `scripts/legacy-contracts/test-m18-single-project-task-store.py`
+- `scripts/legacy-contracts/test-m18-single-sqlite-owner.py`
+- `scripts/legacy-contracts/test-m18-transaction-bridge.py`
+- `scripts/legacy-contracts/test-m18-unified-command-interface.py`
+- `scripts/legacy-contracts/test-m18-unified-entities.py`
+- `scripts/legacy-contracts/test-m19-application-boundary.py`
+- `scripts/legacy-contracts/test-m19-attachments-typed-links.py`
+- `scripts/legacy-contracts/test-m19-journal-preflight.py`
+- `scripts/legacy-contracts/test-m19-knowledge-discovery.py`
+- `scripts/legacy-contracts/test-m19-legacy-application-retirement.py`
+- `scripts/legacy-contracts/test-m19-metadata-boundary.py`
+- `scripts/legacy-contracts/test-m19-native-knowledge-cli.py`
+- `scripts/legacy-contracts/test-m19-recovery-assets.py`
+- `scripts/legacy-contracts/test-m19-sql-retirement.py`
+- `scripts/legacy-contracts/test-m20-accepted-query-filters.py`
+- `scripts/legacy-contracts/test-m20-accepted-snapshot-integrity.py`
+- `scripts/legacy-contracts/test-m20-authoritative-schedule-source.py`
+- `scripts/legacy-contracts/test-m20-idempotent-domain-outbox.py`
+- `scripts/legacy-contracts/test-m20-project-bootstrap.py`
+- `scripts/legacy-contracts/test-m20-task-planning-mutations.py`
+- `scripts/legacy-contracts/test-m20-typed-workflows.py`
+- `scripts/legacy-contracts/test-m20-unified-accepted-reads.py`
+- `scripts/legacy-contracts/test-m21-reviewed-batch-source.py`
+- `scripts/orbit-env.sh`
+- `scripts/package-release.sh`
+- `scripts/setup-server.sh`
+- `scripts/test-worker-install.sh`
+- `scripts/uninstall.sh`
+- `scripts/verify-release.sh`
+- `tests/acceptance/local_cli_workflows.py`
+- `tests/contracts/test_approved_plan_contract.py`
+- `tests/contracts/test_authority_entrypoints.py`
+- `tests/contracts/test_deployment_boundaries.py`
+- `tests/contracts/test_planning_handoff_contract.py`
+- `tests/contracts/test_planning_navigation_contract.py`
+- `tests/contracts/test_portfolio_planning_contract.py`
+- `tests/documentation/test_guides.py`
+- `tests/documentation/test_mcp_and_upgrades.py`
+- `tests/documentation/test_reference.py`
+- `tests/documentation/test_release_guidance.py`
+- `tests/packaging/test_install.sh`
+- `tests/packaging/test_install_release_archive.sh`
+- `tests/packaging/test_install_transaction.sh`
+- `tests/packaging/test_manifest_safety.sh`
+- `tests/packaging/test_orbit_env.sh`
+- `tests/packaging/test_real_release_archive.sh`
+- `tests/packaging/test_release_archive.sh`
+- `tests/packaging/test_server_setup.py`
+
+## Updated files and resolution
+
+- `README.md` — Merged M26 install/documentation links with verified local status
+- `crates/orbit-cli/src/blueprint_commands.rs` — Local M15 source preserved; corrected CLI validation path
+- `crates/orbit-cli/src/lib.rs` — Local M15 source preserved; corrected CLI validation path
+- `deploy/server/README-TLS.md` — Corrected connected-mode environment variable; local semantics preserved
+- `docs/history/development-readmes/README_M20_187.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/history/development-readmes/README_M20_190.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m15-automated-test-runner.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m15-runner-coverage.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-consolidation-worktree.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-development-141.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-development-143.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-development-144.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-development-146.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-development-147.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-development-152.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-development-154.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-development-155.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-direct-sqlite-consolidation.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-integrated-consolidation-status.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-integrated-folder-acceptance.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m18-progress-methodology.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m19-development-164.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m19-development-169.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m20-development-174.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m22-development-227.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m22-development-229.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m23-agent-jobs-roadmap.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m24-architecture-consolidation.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m25-blueprint-offline-ux.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m25-connected-blueprints.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m25-development-292.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m25-development-293.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m25-mcp-blueprint-management.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/m25-offline-blueprints.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/roadmap.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `docs/self-hosted-architecture.md` — Merged local M15 status with M26 documentation corrections; stale paths/claims updated
+- `scripts/check-m15-python-acceptance.sh` — Merged M26 checks/real-archive smoke while preserving local M15 checks
+- `scripts/collect-release-evidence.py` — Merged M26 checks/real-archive smoke while preserving local M15 checks
+
+## Removed or relocated files
+
+- `scripts/check_m20_187.py` -> `scripts/legacy-contracts/check_m20_187.py` (historical script, preserved)
+- `scripts/check_m20_189.py` -> `scripts/legacy-contracts/check_m20_189.py` (historical script, preserved)
+- `scripts/check_m20_190.py` -> `scripts/legacy-contracts/check_m20_190.py` (historical script, preserved)
+- `scripts/check_m22_219.py` -> `scripts/legacy-contracts/check_m22_219.py` (historical script, preserved)
+- `scripts/check_m22_225.py` -> `scripts/legacy-contracts/check_m22_225.py` (historical script, preserved)
+- `scripts/check_m22_227.py` -> `scripts/legacy-contracts/check_m22_227.py` (historical script, preserved)
+- `scripts/check_m22_229.py` -> `scripts/legacy-contracts/check_m22_229.py` (historical script, preserved)
+- `scripts/iteration-149-validation.sh` -> `scripts/legacy-contracts/iteration-149-validation.sh` (historical script, preserved)
+- `scripts/m18-acceptance.sh` -> `scripts/legacy-contracts/m18-acceptance.sh` (historical script, preserved)
+- `scripts/m18-progress.py` -> `scripts/legacy-contracts/m18-progress.py` (historical script, preserved)
+- `scripts/test-m18-all-local-writes-accepted.py` -> `scripts/legacy-contracts/test-m18-all-local-writes-accepted.py` (historical script, preserved)
+- `scripts/test-m18-application-queries.py` -> `scripts/legacy-contracts/test-m18-application-queries.py` (historical script, preserved)
+- `scripts/test-m18-application-services.py` -> `scripts/legacy-contracts/test-m18-application-services.py` (historical script, preserved)
+- `scripts/test-m18-cli-host-consolidation.py` -> `scripts/legacy-contracts/test-m18-cli-host-consolidation.py` (historical script, preserved)
+- `scripts/test-m18-cli-schedule-boundary.py` -> `scripts/legacy-contracts/test-m18-cli-schedule-boundary.py` (historical script, preserved)
+- `scripts/test-m18-cli-task-project-boundary.py` -> `scripts/legacy-contracts/test-m18-cli-task-project-boundary.py` (historical script, preserved)
+- `scripts/test-m18-command-engine.py` -> `scripts/legacy-contracts/test-m18-command-engine.py` (historical script, preserved)
+- `scripts/test-m18-e2e-workflows.py` -> `scripts/legacy-contracts/test-m18-e2e-workflows.py` (historical script, preserved)
+- `scripts/test-m18-folder-contract.py` -> `scripts/legacy-contracts/test-m18-folder-contract.py` (historical script, preserved)
+- `scripts/test-m18-host-composition.py` -> `scripts/legacy-contracts/test-m18-host-composition.py` (historical script, preserved)
+- `scripts/test-m18-markdown-cutover.py` -> `scripts/legacy-contracts/test-m18-markdown-cutover.py` (historical script, preserved)
+- `scripts/test-m18-no-sql-knowledge.py` -> `scripts/legacy-contracts/test-m18-no-sql-knowledge.py` (historical script, preserved)
+- `scripts/test-m18-plan-command-acceptance.py` -> `scripts/legacy-contracts/test-m18-plan-command-acceptance.py` (historical script, preserved)
+- `scripts/test-m18-private-authority-store.py` -> `scripts/legacy-contracts/test-m18-private-authority-store.py` (historical script, preserved)
+- `scripts/test-m18-progress.py` -> `scripts/legacy-contracts/test-m18-progress.py` (historical script, preserved)
+- `scripts/test-m18-public-mutation-boundary.py` -> `scripts/legacy-contracts/test-m18-public-mutation-boundary.py` (historical script, preserved)
+- `scripts/test-m18-query-unification.py` -> `scripts/legacy-contracts/test-m18-query-unification.py` (historical script, preserved)
+- `scripts/test-m18-retired-relay.py` -> `scripts/legacy-contracts/test-m18-retired-relay.py` (historical script, preserved)
+- `scripts/test-m18-rich-mutation-cutover.py` -> `scripts/legacy-contracts/test-m18-rich-mutation-cutover.py` (historical script, preserved)
+- `scripts/test-m18-routine-host.py` -> `scripts/legacy-contracts/test-m18-routine-host.py` (historical script, preserved)
+- `scripts/test-m18-runtime-boundaries.py` -> `scripts/legacy-contracts/test-m18-runtime-boundaries.py` (historical script, preserved)
+- `scripts/test-m18-single-project-task-store.py` -> `scripts/legacy-contracts/test-m18-single-project-task-store.py` (historical script, preserved)
+- `scripts/test-m18-single-sqlite-owner.py` -> `scripts/legacy-contracts/test-m18-single-sqlite-owner.py` (historical script, preserved)
+- `scripts/test-m18-transaction-bridge.py` -> `scripts/legacy-contracts/test-m18-transaction-bridge.py` (historical script, preserved)
+- `scripts/test-m18-unified-command-interface.py` -> `scripts/legacy-contracts/test-m18-unified-command-interface.py` (historical script, preserved)
+- `scripts/test-m18-unified-entities.py` -> `scripts/legacy-contracts/test-m18-unified-entities.py` (historical script, preserved)
+- `scripts/test-m19-application-boundary.py` -> `scripts/legacy-contracts/test-m19-application-boundary.py` (historical script, preserved)
+- `scripts/test-m19-attachments-typed-links.py` -> `scripts/legacy-contracts/test-m19-attachments-typed-links.py` (historical script, preserved)
+- `scripts/test-m19-journal-preflight.py` -> `scripts/legacy-contracts/test-m19-journal-preflight.py` (historical script, preserved)
+- `scripts/test-m19-knowledge-discovery.py` -> `scripts/legacy-contracts/test-m19-knowledge-discovery.py` (historical script, preserved)
+- `scripts/test-m19-legacy-application-retirement.py` -> `scripts/legacy-contracts/test-m19-legacy-application-retirement.py` (historical script, preserved)
+- `scripts/test-m19-metadata-boundary.py` -> `scripts/legacy-contracts/test-m19-metadata-boundary.py` (historical script, preserved)
+- `scripts/test-m19-native-knowledge-cli.py` -> `scripts/legacy-contracts/test-m19-native-knowledge-cli.py` (historical script, preserved)
+- `scripts/test-m19-recovery-assets.py` -> `scripts/legacy-contracts/test-m19-recovery-assets.py` (historical script, preserved)
+- `scripts/test-m19-sql-retirement.py` -> `scripts/legacy-contracts/test-m19-sql-retirement.py` (historical script, preserved)
+- `scripts/test-m20-accepted-query-filters.py` -> `scripts/legacy-contracts/test-m20-accepted-query-filters.py` (historical script, preserved)
+- `scripts/test-m20-accepted-snapshot-integrity.py` -> `scripts/legacy-contracts/test-m20-accepted-snapshot-integrity.py` (historical script, preserved)
+- `scripts/test-m20-authoritative-schedule-source.py` -> `scripts/legacy-contracts/test-m20-authoritative-schedule-source.py` (historical script, preserved)
+- `scripts/test-m20-idempotent-domain-outbox.py` -> `scripts/legacy-contracts/test-m20-idempotent-domain-outbox.py` (historical script, preserved)
+- `scripts/test-m20-project-bootstrap.py` -> `scripts/legacy-contracts/test-m20-project-bootstrap.py` (historical script, preserved)
+- `scripts/test-m20-task-planning-mutations.py` -> `scripts/legacy-contracts/test-m20-task-planning-mutations.py` (historical script, preserved)
+- `scripts/test-m20-typed-workflows.py` -> `scripts/legacy-contracts/test-m20-typed-workflows.py` (historical script, preserved)
+- `scripts/test-m20-unified-accepted-reads.py` -> `scripts/legacy-contracts/test-m20-unified-accepted-reads.py` (historical script, preserved)
+- `scripts/test-m21-reviewed-batch-source.py` -> `scripts/legacy-contracts/test-m21-reviewed-batch-source.py` (historical script, preserved)
+- `tests/test_authority_entrypoints.py` -> `tests/contracts/test_authority_entrypoints.py` (local corrected content preserved)
+- `tests/test_m20_deployment.py` -> `tests/contracts/test_deployment_boundaries.py` (local corrected content preserved)
+- `tests/test_m22_approved_plan_contract.py` -> `tests/contracts/test_approved_plan_contract.py` (local corrected content preserved)
+- `tests/test_m22_handoff_contract.py` -> `tests/contracts/test_planning_handoff_contract.py` (local corrected content preserved)
+- `tests/test_m22_navigation_contract.py` -> `tests/contracts/test_planning_navigation_contract.py` (local corrected content preserved)
+- `tests/test_m22_portfolio_contract.py` -> `tests/contracts/test_portfolio_planning_contract.py` (local corrected content preserved)
+
+## Excluded or preserved outside the comparison
+
+- `target/` build cache retained locally and excluded.
+- `.pytest_cache/`, `__pycache__/`, `*.pyc` removed as reproducible caches.
+- Incoming `orbit_m26_iteration_14.tar.gz` moved to `/home/xliu/dev/orbit-backups/incoming/` with a SHA-256 file.
+- Backup archive retained at `/home/xliu/dev/orbit-backups/orbit-pre-m26-20261020-115828.tar.gz` with a SHA-256 file.

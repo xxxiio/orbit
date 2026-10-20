@@ -1,0 +1,48 @@
+{
+  "files_changed": 6,
+  "added": 1008,
+  "deleted": 63,
+  "net": 945,
+  "production": {
+    "added": 68,
+    "deleted": 63
+  },
+  "files": [
+    {
+      "file": "crates/orbit-cli/src/lib.rs",
+      "added": 43,
+      "deleted": 63,
+      "net": -20
+    },
+    {
+      "file": "crates/orbit-runtime/src/application_services.rs",
+      "added": 25,
+      "deleted": 0,
+      "net": 25
+    },
+    {
+      "file": "docs/m18-development-152.md",
+      "added": 193,
+      "deleted": 0,
+      "net": 193
+    },
+    {
+      "file": "scripts/m18-acceptance.sh",
+      "added": 4,
+      "deleted": 0,
+      "net": 4
+    },
+    {
+      "file": "scripts/test-m18-e2e-workflows.py",
+      "added": 581,
+      "deleted": 0,
+      "net": 581
+    },
+    {
+      "file": "scripts/test-m18-runtime-boundaries.py",
+      "added": 162,
+      "deleted": 0,
+      "net": 162
+    }
+  ]
+}

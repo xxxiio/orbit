@@ -1,0 +1,99 @@
+{
+  "baseline": "153",
+  "iteration": "154",
+  "added": 637,
+  "deleted": 392,
+  "files_changed": 18,
+  "files": [
+    {
+      "path": "crates/orbit-client/src/embedded_authority.rs",
+      "added": 16,
+      "deleted": 16
+    },
+    {
+      "path": "crates/orbit-client/src/unified.rs",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/orbit-runtime/src/authority_evidence.rs",
+      "added": 18,
+      "deleted": 18
+    },
+    {
+      "path": "crates/orbit-runtime/src/canonical.rs",
+      "added": 16,
+      "deleted": 16
+    },
+    {
+      "path": "crates/orbit-runtime/src/command_engine.rs",
+      "added": 108,
+      "deleted": 38
+    },
+    {
+      "path": "crates/orbit-runtime/src/folder_commands.rs",
+      "added": 33,
+      "deleted": 33
+    },
+    {
+      "path": "crates/orbit-runtime/src/lib.rs",
+      "added": 41,
+      "deleted": 41
+    },
+    {
+      "path": "crates/orbit-runtime/src/markdown_commands.rs",
+      "added": 46,
+      "deleted": 46
+    },
+    {
+      "path": "crates/orbit-runtime/src/store.rs",
+      "added": 208,
+      "deleted": 160
+    },
+    {
+      "path": "crates/orbit-server/src/main.rs",
+      "added": 11,
+      "deleted": 11
+    },
+    {
+      "path": "crates/orbit-server/src/remote_mcp.rs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "docs/m18-development-154.md",
+      "added": 33,
+      "deleted": 0
+    },
+    {
+      "path": "docs/orbit154-diff.json",
+      "added": 94,
+      "deleted": 0
+    },
+    {
+      "path": "scripts/test-m18-command-engine.py",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "scripts/test-m18-host-composition.py",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "scripts/test-m18-retired-relay.py",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "scripts/test-m18-runtime-boundaries.py",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "scripts/test-m18-single-sqlite-owner.py",
+      "added": 2,
+      "deleted": 2
+    }
+  ]
+}

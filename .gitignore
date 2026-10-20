@@ -1,0 +1,17 @@
+/target/
+**/__pycache__/
+**/.pytest_cache/
+*.py[cod]
+*.egg-info/
+*.log
+/orbit-m15-evidence-*.zip
+/orbit.tar.gz
+.env
+.DS_Store
+# Local server secrets and M15 test evidence
+deploy/server/.env
+*.m15-evidence.zip
+
+# Local runtime data
+/orbit.db
+/orbit.knowledge/

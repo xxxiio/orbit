@@ -1,0 +1,33 @@
+{
+  "added": 239,
+  "deleted": 35,
+  "total_churn": 274,
+  "files": 5,
+  "details": [
+    {
+      "file": "scripts/test-m19-recovery-assets.py",
+      "added": 15,
+      "deleted": 0
+    },
+    {
+      "file": "scripts/test-m19-journal-preflight.py",
+      "added": 15,
+      "deleted": 0
+    },
+    {
+      "file": "docs/m19-development-165.md",
+      "added": 27,
+      "deleted": 0
+    },
+    {
+      "file": "crates/orbit-runtime/src/knowledge_operations.rs",
+      "added": 105,
+      "deleted": 10
+    },
+    {
+      "file": "crates/orbit-cli/src/markdown_assets.rs",
+      "added": 77,
+      "deleted": 25
+    }
+  ]
+}

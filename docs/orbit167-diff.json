@@ -1,0 +1,27 @@
+{
+  "base": "orbit_core_development_166.tar.gz",
+  "files": [
+    {
+      "path": "scripts/test-m19-attachments-typed-links.py",
+      "added": 2,
+      "deleted": 1
+    },
+    {
+      "path": "docs/m19-development-167.md",
+      "added": 20,
+      "deleted": 0
+    },
+    {
+      "path": "crates/orbit-cli/src/markdown_cli.rs",
+      "added": 105,
+      "deleted": 16
+    },
+    {
+      "path": "crates/orbit-cli/src/markdown_assets.rs",
+      "added": 16,
+      "deleted": 0
+    }
+  ],
+  "added": 143,
+  "deleted": 17
+}

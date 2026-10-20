@@ -1,0 +1,16 @@
+services:
+  orbit-server:
+    build:
+      context: ../..
+      dockerfile: deploy/server/Dockerfile
+    restart: unless-stopped
+    environment:
+      ORBIT_SERVER_ADMIN_KEY: ${ORBIT_SERVER_ADMIN_KEY:?Set a random admin key of at least 32 characters}
+      ORBIT_SERVER_DB: /data/orbit-server.db
+      ORBIT_SERVER_BIND: 0.0.0.0:8787
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - orbit-data:/data
+volumes:
+  orbit-data:

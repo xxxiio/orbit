@@ -1,0 +1,111 @@
+{
+  "id": "habits",
+  "version": 1,
+  "name": "Habits",
+  "description": "Optional tracking-oriented blueprint; recurrence and streak calculations require separate capabilities.",
+  "required_capabilities": [],
+  "work_items": [
+    {
+      "id": "practice",
+      "name": "Practice",
+      "initial_state": "planned",
+      "states": [
+        "planned",
+        "active",
+        "paused",
+        "completed"
+      ],
+      "fields": [
+        {
+          "id": "activity",
+          "kind": {
+            "type": "text"
+          },
+          "required": true
+        },
+        {
+          "id": "weekly_target",
+          "kind": {
+            "type": "integer"
+          },
+          "required": false,
+          "default": 3
+        },
+        {
+          "id": "check_in_required",
+          "kind": {
+            "type": "boolean"
+          },
+          "required": false,
+          "default": true
+        }
+      ],
+      "transitions": [
+        {
+          "from": "planned",
+          "to": "active"
+        },
+        {
+          "from": "active",
+          "to": "paused"
+        },
+        {
+          "from": "paused",
+          "to": "active"
+        },
+        {
+          "from": "active",
+          "to": "completed"
+        }
+      ]
+    },
+    {
+      "id": "check_in",
+      "name": "Check-in",
+      "initial_state": "due",
+      "states": [
+        "due",
+        "recorded"
+      ],
+      "fields": [
+        {
+          "id": "notes",
+          "kind": {
+            "type": "text"
+          },
+          "required": false,
+          "default": ""
+        },
+        {
+          "id": "performed",
+          "kind": {
+            "type": "boolean"
+          },
+          "required": false,
+          "default": false
+        }
+      ],
+      "transitions": [
+        {
+          "from": "due",
+          "to": "recorded"
+        }
+      ]
+    }
+  ],
+  "templates": [
+    {
+      "id": "starter",
+      "name": "Habit starter",
+      "items": [
+        {
+          "key": "habit",
+          "kind": "practice",
+          "properties": {
+            "activity": "Choose an activity"
+          }
+        }
+      ]
+    }
+  ]
+}

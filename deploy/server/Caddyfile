@@ -1,0 +1,13 @@
+{$ORBIT_DOMAIN} {
+    encode zstd gzip
+    # The authority server authenticates /v1 routes using device/admin bearer credentials.
+    # Do not treat the unauthenticated /health endpoint as a security check.
+    reverse_proxy orbit-server:8787 {
+        header_up X-Forwarded-Proto https
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+}

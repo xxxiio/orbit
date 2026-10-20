@@ -1,0 +1,27 @@
+{
+  "adapter_contract": {
+    "content_digest": "80e335f1261c206831957b75bdfdcea386c8dfa39161fd21f3aaf663d575f2a2",
+    "version": "1.4.0"
+  },
+  "composition_digest": "498a1f8689126c388095209e0f037414a65a5e9e191a7fab96e165548bb6471d",
+  "core": {
+    "content_digest": "6276632b5d673c342358194403016badc5c345d850eb97c8ad63f4f902f7194c",
+    "reuse_catalogue_version": "3.0.0",
+    "version": "1.1.2",
+    "workflow_registry_version": "3.0.0"
+  },
+  "generated_at": "2026-10-20",
+  "lock_version": "1.0.0",
+  "overlays": [],
+  "profile": {
+    "content_digest": "0ed9d152a2d6584f41607ea369344e6842aab21e39e7b44b6fc37a4023afc219",
+    "lineage": [
+      "minimal",
+      "standard"
+    ],
+    "name": "standard",
+    "version": "1.7.0"
+  },
+  "schema_version": 1,
+  "skills_reference": "/home/xliu/dev/getdone"
+}

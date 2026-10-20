@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "methodology": "Source evidence capped at 60%; blocked or unexecuted gates receive no full completion credit.",
+  "source_evidence_score": 33.0,
+  "out_of": 100,
+  "acceptance": "NOT_ESTABLISHED",
+  "m18_complete": false,
+  "rust_available": false,
+  "gates": [
+    {
+      "id": "host_owned_composition",
+      "description": "Native adapters open one host instead of their own application stores",
+      "weight": 5,
+      "source_checks": [
+        {
+          "file": "crates/orbit-runtime/src/lib.rs",
+          "needle": "pub fn application_store_mut",
+          "present": true
+        },
+        {
+          "file": "crates/orbit-client/src/lib.rs",
+          "needle": "runtime: orbit_runtime::AuthoritativeHost",
+          "present": true
+        },
+        {
+          "file": "crates/orbit-mcp/src/main.rs",
+          "needle": "authority: AuthoritativeHost",
+          "present": true
+        }
+      ],
+      "blocking_patterns": [
+        {
+          "file": "crates/orbit-client/src/lib.rs",
+          "needle": "store: SqliteStore",
+          "still_present": false
+        },
+        {
+          "file": "crates/orbit-mcp/src/main.rs",
+          "needle": "store: SqliteStore",
+          "still_present": false
+        }
+      ],
+      "source_credit": 3.0,
+      "acceptance": "not_verified",
+      "complete": false
+    },
+    {
+      "id": "single_authority",
+      "description": "Single authoritative persistence and application services",
+      "weight": 15,
+      "source_checks": [
+        {
+          "file": "crates/orbit-runtime/src/lib.rs",
+          "needle": "pub struct AuthoritativeHost",
+          "present": true
+        }
+      ],
+      "blocking_patterns": [
+        {
+          "file": "crates/orbit-runtime/src/lib.rs",
+          "needle": "application: SqliteStore",
+          "still_present": true
+        },
+        {
+          "file": "crates/orbit-client/src/lib.rs",
+          "needle": "store: SqliteStore",
+          "still_present": false
+        }
+      ],
+      "source_credit": 0,
+      "acceptance": "not_verified",
+      "complete": false
+    },
+    {
+      "id": "markdown_authority",
+      "description": "File-authoritative knowledge with durable acceptance",
+      "weight": 15,
+      "source_checks": [
+        {
+          "file": "crates/orbit-runtime/src/markdown_commands.rs",
+          "needle": "pub fn enqueue",
+          "present": true
+        },
+        {
+          "file": "crates/orbit-runtime/src/markdown_commands.rs",
+          "needle": "pub fn accept",
+          "present": true
+        },
+        {
+          "file": "crates/orbit-runtime/src/knowledge_service.rs",
+          "needle": "read_by_id",
+          "present": true
+        }
+      ],
+      "blocking_patterns": [],
+      "source_credit": 9.0,
+      "acceptance": "not_verified",
+      "complete": false
+    },
+    {
+      "id": "folder_domain",
+      "description": "Stable identity and durable folder organization",
+      "weight": 10,
+      "source_checks": [
+        {
+          "file": "crates/orbit-runtime/src/folder_commands.rs",
+          "needle": "pub fn enqueue",
+          "present": true
+        },
+        {
+          "file": "crates/orbit-runtime/src/folder_commands.rs",
+          "needle": "pub fn enqueue_create",
+          "present": true
+        },
+        {
+          "file": "crates/orbit-runtime/src/knowledge_service.rs",
+          "needle": "pub fn discover",
+          "present": true
+        }
+      ],
+      "blocking_patterns": [],
+      "source_credit": 6.0,
+      "acceptance": "not_verified",
+      "complete": false
+    },
+    {
+      "id": "client_parity",
+      "description": "Embedded, HTTP and MCP share canonical host",
+      "weight": 15,
+      "source_checks": [
+        {
+          "file": "crates/orbit-client/src/unified.rs",
+          "needle": "pub enum AuthorityConnection",
+          "present": true
+        },
+        {
+          "file": "crates/orbit-mcp/src/main.rs",
+          "needle": "knowledge.command",
+          "present": true
+        },
+        {
+          "file": "crates/orbit-runtime/src/lib.rs",
+          "needle": "execute_markdown_command",
+          "present": true
+        }
+      ],
+      "blocking_patterns": [],
+      "source_credit": 9.0,
+      "acceptance": "not_verified",
+      "complete": false
+    },
+    {
+      "id": "offline",
+      "description": "Durable remote outbox and conflict handling",
+      "weight": 10,
+      "source_checks": [
+        {
+          "file": "crates/orbit-client/src/unified.rs",
+          "needle": "flush_markdown",
+          "present": true
+        },
+        {
+          "file": "crates/orbit-client/src/unified.rs",
+          "needle": "queue_markdown_command",
+          "present": true
+        }
+      ],
+      "blocking_patterns": [],
+      "source_credit": 6.0,
+      "acceptance": "not_verified",
+      "complete": false
+    },
+    {
+      "id": "local_feature_parity",
+      "description": "Local planning, projects, habits and metrics use the canonical service",
+      "weight": 15,
+      "source_checks": [
+        {
+          "file": "crates/orbit-runtime/src/lib.rs",
+          "needle": "pub fn list_projects",
+          "present": false
+        }
+      ],
+      "blocking_patterns": [
+        {
+          "file": "crates/orbit-client/src/lib.rs",
+          "needle": "store: SqliteStore",
+          "still_present": false
+        }
+      ],
+      "source_credit": 0.0,
+      "acceptance": "not_verified",
+      "complete": false
+    },
+    {
+      "id": "executable_acceptance",
+      "description": "Workspace compilation, executable smoke and recovery validation",
+      "weight": 10,
+      "source_checks": [
+        {
+          "file": "scripts/m18-acceptance.sh",
+          "needle": "cargo test --workspace",
+          "present": true
+        }
+      ],
+      "blocking_patterns": [],
+      "source_credit": 0,
+      "acceptance": "not_verified",
+      "complete": false
+    },
+    {
+      "id": "internal_testing",
+      "description": "Runnable packaged build and no known blocking data-loss issue",
+      "weight": 5,
+      "source_checks": [
+        {
+          "file": "scripts/m18-acceptance.sh",
+          "needle": "cargo check --workspace",
+          "present": true
+        }
+      ],
+      "blocking_patterns": [],
+      "source_credit": 0,
+      "acceptance": "not_verified",
+      "complete": false
+    }
+  ]
+}

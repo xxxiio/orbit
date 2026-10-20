@@ -1,0 +1,33 @@
+{
+  "baseline": "165",
+  "iteration": "166",
+  "files": [
+    {
+      "file": "scripts/test-m19-recovery-assets.py",
+      "added": 3,
+      "deleted": 2
+    },
+    {
+      "file": "scripts/test-m19-attachments-typed-links.py",
+      "added": 3,
+      "deleted": 1
+    },
+    {
+      "file": "docs/m19-development-166.md",
+      "added": 19,
+      "deleted": 0
+    },
+    {
+      "file": "crates/orbit-cli/src/markdown_assets.rs",
+      "added": 89,
+      "deleted": 18
+    },
+    {
+      "file": "crates/orbit-cli/src/markdown_cli.rs",
+      "added": 32,
+      "deleted": 2
+    }
+  ],
+  "added": 146,
+  "deleted": 23
+}

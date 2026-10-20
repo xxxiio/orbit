@@ -1,0 +1,33 @@
+{
+  "vs": "163",
+  "files": {
+    "scripts/test-m19-knowledge-discovery.py": {
+      "added": 16,
+      "deleted": 0
+    },
+    "docs/m19-development-164.md": {
+      "added": 21,
+      "deleted": 0
+    },
+    "crates/orbit-cli/src/lib.rs": {
+      "added": 1,
+      "deleted": 0
+    },
+    "crates/orbit-cli/src/markdown_cli.rs": {
+      "added": 9,
+      "deleted": 0
+    },
+    "crates/orbit-cli/src/markdown_metadata.rs": {
+      "added": 1,
+      "deleted": 1
+    },
+    "crates/orbit-cli/src/markdown_discovery.rs": {
+      "added": 103,
+      "deleted": 0
+    },
+    "crates/orbit-cli/src/markdown_assets.rs": {
+      "added": 9,
+      "deleted": 4
+    }
+  }
+}

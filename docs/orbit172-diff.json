@@ -1,0 +1,35 @@
+{
+  "baseline": "orbit_core_development_171.tar.gz",
+  "files": [
+    {
+      "file": "scripts/test-m20-idempotent-domain-outbox.py",
+      "added": 15,
+      "deleted": 0
+    },
+    {
+      "file": "crates/orbit-client/src/connected.rs",
+      "added": 3,
+      "deleted": 0
+    },
+    {
+      "file": "crates/orbit-client/src/unified.rs",
+      "added": 58,
+      "deleted": 5
+    },
+    {
+      "file": "crates/orbit-client/src/authority.rs",
+      "added": 118,
+      "deleted": 3
+    },
+    {
+      "file": "docs/m20-development-172.md",
+      "added": 22,
+      "deleted": 0
+    },
+    {
+      "file": "README.md",
+      "added": 6,
+      "deleted": 0
+    }
+  ]
+}

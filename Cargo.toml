@@ -1,0 +1,26 @@
+[workspace]
+members = [
+  "crates/orbit-domain",
+  "crates/orbit-blueprint",
+  "crates/orbit-application",
+  "crates/orbit-storage",
+  "crates/orbit-planner",
+  "crates/orbit-progress",
+  "crates/orbit-sync",
+  "crates/orbit-ai",
+  "crates/orbit-cli",
+  "crates/orbit-tui",
+  "crates/orbit-mcp",
+  "crates/orbit-runtime",
+  "crates/orbit-client",
+  "crates/orbit-server",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

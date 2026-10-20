@@ -1,0 +1,98 @@
+{
+  "from": "154",
+  "to": "155",
+  "files": [
+    {
+      "file": "README.md",
+      "added": 8,
+      "deleted": 0,
+      "category": "docs"
+    },
+    {
+      "file": "crates/orbit-cli/src/lib.rs",
+      "added": 25,
+      "deleted": 7,
+      "category": "production"
+    },
+    {
+      "file": "crates/orbit-runtime/src/accepted_application.rs",
+      "added": 525,
+      "deleted": 0,
+      "category": "production"
+    },
+    {
+      "file": "crates/orbit-runtime/src/application_services.rs",
+      "added": 122,
+      "deleted": 0,
+      "category": "production"
+    },
+    {
+      "file": "crates/orbit-runtime/src/command_engine.rs",
+      "added": 3,
+      "deleted": 3,
+      "category": "production"
+    },
+    {
+      "file": "crates/orbit-runtime/src/lib.rs",
+      "added": 98,
+      "deleted": 1,
+      "category": "production"
+    },
+    {
+      "file": "crates/orbit-runtime/src/store.rs",
+      "added": 1,
+      "deleted": 1,
+      "category": "production"
+    },
+    {
+      "file": "crates/orbit-storage/src/lib.rs",
+      "added": 111,
+      "deleted": 9,
+      "category": "production"
+    },
+    {
+      "file": "docs/m18-development-155.md",
+      "added": 79,
+      "deleted": 0,
+      "category": "docs"
+    },
+    {
+      "file": "scripts/m18-acceptance.sh",
+      "added": 1,
+      "deleted": 0,
+      "category": "test"
+    },
+    {
+      "file": "scripts/test-m18-cli-task-project-boundary.py",
+      "added": 1,
+      "deleted": 1,
+      "category": "test"
+    },
+    {
+      "file": "scripts/test-m18-command-engine.py",
+      "added": 1,
+      "deleted": 1,
+      "category": "test"
+    },
+    {
+      "file": "scripts/test-m18-routine-host.py",
+      "added": 1,
+      "deleted": 1,
+      "category": "test"
+    },
+    {
+      "file": "scripts/test-m18-transaction-bridge.py",
+      "added": 88,
+      "deleted": 0,
+      "category": "test"
+    }
+  ],
+  "totals": {
+    "added": 1064,
+    "deleted": 24
+  },
+  "rust_production": {
+    "added": 885,
+    "deleted": 21
+  }
+}

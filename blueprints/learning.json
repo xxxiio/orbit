@@ -1,0 +1,149 @@
+{
+  "id": "learning",
+  "version": 1,
+  "name": "Learning",
+  "description": "Optional curriculum, practice and assessment workflows with no mandatory integrations.",
+  "required_capabilities": [],
+  "work_items": [
+    {
+      "id": "lesson",
+      "name": "Lesson",
+      "initial_state": "planned",
+      "states": [
+        "planned",
+        "studying",
+        "practicing",
+        "assessment",
+        "mastered"
+      ],
+      "fields": [
+        {
+          "id": "topic",
+          "kind": {
+            "type": "text"
+          },
+          "required": true
+        },
+        {
+          "id": "minutes",
+          "kind": {
+            "type": "integer"
+          },
+          "required": false,
+          "default": 30
+        },
+        {
+          "id": "difficulty",
+          "kind": {
+            "type": "choice",
+            "options": [
+              "beginner",
+              "intermediate",
+              "advanced"
+            ]
+          },
+          "required": false,
+          "default": "intermediate"
+        }
+      ],
+      "transitions": [
+        {
+          "from": "planned",
+          "to": "studying"
+        },
+        {
+          "from": "studying",
+          "to": "practicing"
+        },
+        {
+          "from": "practicing",
+          "to": "assessment"
+        },
+        {
+          "from": "assessment",
+          "to": "practicing"
+        },
+        {
+          "from": "assessment",
+          "to": "mastered"
+        }
+      ]
+    },
+    {
+      "id": "assessment",
+      "name": "Assessment",
+      "initial_state": "planned",
+      "states": [
+        "planned",
+        "ready",
+        "evaluated"
+      ],
+      "fields": [
+        {
+          "id": "subject",
+          "kind": {
+            "type": "text"
+          },
+          "required": true
+        },
+        {
+          "id": "passed",
+          "kind": {
+            "type": "boolean"
+          },
+          "required": false,
+          "default": false
+        }
+      ],
+      "transitions": [
+        {
+          "from": "planned",
+          "to": "ready"
+        },
+        {
+          "from": "ready",
+          "to": "evaluated"
+        },
+        {
+          "from": "evaluated",
+          "to": "ready"
+        }
+      ]
+    }
+  ],
+  "templates": [
+    {
+      "id": "first_course",
+      "name": "Start a course",
+      "items": [
+        {
+          "key": "lesson_1",
+          "kind": "lesson",
+          "properties": {
+            "topic": "Introduction"
+          }
+        },
+        {
+          "key": "lesson_2",
+          "kind": "lesson",
+          "properties": {
+            "topic": "Practice"
+          },
+          "prerequisites": [
+            "lesson_1"
+          ]
+        },
+        {
+          "key": "assessment",
+          "kind": "assessment",
+          "properties": {
+            "subject": "Course assessment"
+          },
+          "prerequisites": [
+            "lesson_2"
+          ]
+        }
+      ]
+    }
+  ]
+}

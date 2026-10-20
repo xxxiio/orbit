@@ -1,0 +1,54 @@
+{
+  "baseline": "orbit_core_development_152.tar.gz",
+  "iteration": "153",
+  "files": [
+    {
+      "file": "scripts/m18-acceptance.sh",
+      "added": 1,
+      "deleted": 0,
+      "type": "config"
+    },
+    {
+      "file": "scripts/test-m18-command-engine.py",
+      "added": 68,
+      "deleted": 0,
+      "type": "test"
+    },
+    {
+      "file": "docs/m18-development-153.md",
+      "added": 31,
+      "deleted": 0,
+      "type": "docs"
+    },
+    {
+      "file": "crates/orbit-runtime/src/lib.rs",
+      "added": 1,
+      "deleted": 0,
+      "type": "production"
+    },
+    {
+      "file": "crates/orbit-runtime/src/authority_evidence.rs",
+      "added": 19,
+      "deleted": 33,
+      "type": "production"
+    },
+    {
+      "file": "crates/orbit-runtime/src/command_engine.rs",
+      "added": 227,
+      "deleted": 0,
+      "type": "production"
+    },
+    {
+      "file": "crates/orbit-runtime/src/store.rs",
+      "added": 36,
+      "deleted": 70,
+      "type": "production"
+    }
+  ],
+  "totals": {
+    "added": 383,
+    "deleted": 103,
+    "churn": 486
+  },
+  "rust_compiled": false
+}

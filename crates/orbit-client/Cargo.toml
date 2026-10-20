@@ -1,0 +1,25 @@
+[package]
+name = "orbit-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+orbit-progress = { path = "../orbit-progress" }
+orbit-ai = { path = "../orbit-ai" }
+orbit-domain = { path = "../orbit-domain" }
+orbit-application = { path = "../orbit-application" }
+orbit-storage = { path = "../orbit-storage" }
+orbit-runtime = { path = "../orbit-runtime" }
+orbit-planner = { path = "../orbit-planner" }
+
+# Native connected-mode transport and durable offline SQLite cache.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"

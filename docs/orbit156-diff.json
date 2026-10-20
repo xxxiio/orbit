@@ -1,0 +1,133 @@
+{
+  "base": "orbit_core_development_155.tar.gz",
+  "iteration": 156,
+  "files": [
+    {
+      "file": "README.md",
+      "added": 5,
+      "deleted": 0,
+      "category": "documentation"
+    },
+    {
+      "file": "crates/orbit-cli/src/lib.rs",
+      "added": 85,
+      "deleted": 22,
+      "category": "production"
+    },
+    {
+      "file": "crates/orbit-client/src/lib.rs",
+      "added": 159,
+      "deleted": 27,
+      "category": "production"
+    },
+    {
+      "file": "crates/orbit-mcp/src/main.rs",
+      "added": 164,
+      "deleted": 36,
+      "category": "production"
+    },
+    {
+      "file": "crates/orbit-runtime/src/accepted_application.rs",
+      "added": 285,
+      "deleted": 0,
+      "category": "production"
+    },
+    {
+      "file": "crates/orbit-runtime/src/application_services.rs",
+      "added": 21,
+      "deleted": 0,
+      "category": "production"
+    },
+    {
+      "file": "docs/m18-development-156.md",
+      "added": 39,
+      "deleted": 0,
+      "category": "documentation"
+    },
+    {
+      "file": "scripts/m18-acceptance.sh",
+      "added": 2,
+      "deleted": 0,
+      "category": "tests"
+    },
+    {
+      "file": "scripts/test-m18-all-local-writes-accepted.py",
+      "added": 47,
+      "deleted": 0,
+      "category": "tests"
+    },
+    {
+      "file": "scripts/test-m18-application-services.py",
+      "added": 1,
+      "deleted": 1,
+      "category": "tests"
+    },
+    {
+      "file": "scripts/test-m18-cli-host-consolidation.py",
+      "added": 6,
+      "deleted": 6,
+      "category": "tests"
+    },
+    {
+      "file": "scripts/test-m18-cli-schedule-boundary.py",
+      "added": 1,
+      "deleted": 1,
+      "category": "tests"
+    },
+    {
+      "file": "scripts/test-m18-cli-task-project-boundary.py",
+      "added": 1,
+      "deleted": 1,
+      "category": "tests"
+    },
+    {
+      "file": "scripts/test-m18-host-composition.py",
+      "added": 1,
+      "deleted": 1,
+      "category": "tests"
+    },
+    {
+      "file": "scripts/test-m18-rich-mutation-cutover.py",
+      "added": 44,
+      "deleted": 0,
+      "category": "tests"
+    },
+    {
+      "file": "scripts/test-m18-routine-host.py",
+      "added": 1,
+      "deleted": 1,
+      "category": "tests"
+    },
+    {
+      "file": "scripts/test-m18-runtime-boundaries.py",
+      "added": 3,
+      "deleted": 3,
+      "category": "tests"
+    },
+    {
+      "file": "scripts/test-m18-transaction-bridge.py",
+      "added": 1,
+      "deleted": 1,
+      "category": "tests"
+    }
+  ],
+  "totals": {
+    "added": 866,
+    "deleted": 100,
+    "changed_files": 18
+  },
+  "by_category": {
+    "production": {
+      "added": 714,
+      "deleted": 85
+    },
+    "tests": {
+      "added": 108,
+      "deleted": 15
+    },
+    "documentation": {
+      "added": 44,
+      "deleted": 0
+    }
+  }
+}

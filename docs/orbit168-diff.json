@@ -1,0 +1,58 @@
+{
+  "production_added": 158,
+  "production_deleted": 556,
+  "changed_files": 10,
+  "files": [
+    {
+      "path": "README.md",
+      "added": 8,
+      "deleted": 0
+    },
+    {
+      "path": "crates/orbit-application/src/sync_materialization.rs",
+      "added": 10,
+      "deleted": 270
+    },
+    {
+      "path": "crates/orbit-runtime/src/application_services.rs",
+      "added": 5,
+      "deleted": 9
+    },
+    {
+      "path": "crates/orbit-runtime/src/lib.rs",
+      "added": 28,
+      "deleted": 0
+    },
+    {
+      "path": "crates/orbit-storage/src/lib.rs",
+      "added": 81,
+      "deleted": 130
+    },
+    {
+      "path": "crates/orbit-storage/src/repositories/entities.rs",
+      "added": 16,
+      "deleted": 76
+    },
+    {
+      "path": "crates/orbit-storage/src/repositories/resources.rs",
+      "added": 17,
+      "deleted": 70
+    },
+    {
+      "path": "crates/orbit-tui/src/main.rs",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "scripts/test-m18-public-mutation-boundary.py",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "scripts/test-m19-sql-retirement.py",
+      "added": 19,
+      "deleted": 0
+    }
+  ],
+  "note": "excludes generated diff JSON and M19 development document"
+}

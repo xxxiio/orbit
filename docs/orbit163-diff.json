@@ -1,0 +1,41 @@
+{
+  "base": "162",
+  "version": "163",
+  "files": [
+    {
+      "file": "scripts/test-m18-public-mutation-boundary.py",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "file": "scripts/test-m18-private-authority-store.py",
+      "added": 2,
+      "deleted": 3
+    },
+    {
+      "file": "scripts/test-m19-native-knowledge-cli.py",
+      "added": 5,
+      "deleted": 3
+    },
+    {
+      "file": "docs/m19-development-163.md",
+      "added": 19,
+      "deleted": 0
+    },
+    {
+      "file": "crates/orbit-runtime/src/lib.rs",
+      "added": 0,
+      "deleted": 8
+    },
+    {
+      "file": "crates/orbit-cli/src/commands.rs",
+      "added": 0,
+      "deleted": 232
+    },
+    {
+      "file": "crates/orbit-cli/src/lib.rs",
+      "added": 1,
+      "deleted": 425
+    }
+  ]
+}

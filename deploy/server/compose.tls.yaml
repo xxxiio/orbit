@@ -1,0 +1,28 @@
+# Use with compose.yaml: docker compose -f compose.yaml -f compose.tls.yaml up -d --build
+# Requires ORBIT_DOMAIN with public DNS pointing to this host and reachable 80/443.
+# Keep the existing loopback-only 8787 binding; public access enters through Caddy.
+services:
+  orbit-server:
+    networks:
+      - orbit-private
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - orbit-server
+    environment:
+      ORBIT_DOMAIN: ${ORBIT_DOMAIN:?Set a DNS name you control}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - orbit-caddy-data:/data
+      - orbit-caddy-config:/config
+    networks:
+      - orbit-private
+networks:
+  orbit-private:
+volumes:
+  orbit-caddy-data:
+  orbit-caddy-config:

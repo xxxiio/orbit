@@ -1,0 +1,15 @@
+[package]
+name = "orbit-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+orbit-domain = { path = "../orbit-domain" }
+orbit-application = { path = "../orbit-application" }
+orbit-storage = { path = "../orbit-storage" }
+orbit-runtime = { path = "../orbit-runtime" }
+orbit-client = { path = "../orbit-client" }
+orbit-progress = { path = "../orbit-progress" }
+orbit-blueprint = { path = "../orbit-blueprint" }
+serde_json = "1"

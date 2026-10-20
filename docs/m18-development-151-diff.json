@@ -1,0 +1,64 @@
+{
+  "baseline": "orbit_core_development_150.tar.gz",
+  "files_changed": 11,
+  "added": 169,
+  "deleted": 328,
+  "net": -159,
+  "changes": [
+    {
+      "file": "README.md",
+      "added": 2,
+      "deleted": 0
+    },
+    {
+      "file": "crates/orbit-cli/src/lib.rs",
+      "added": 42,
+      "deleted": 284
+    },
+    {
+      "file": "crates/orbit-client/src/lib.rs",
+      "added": 17,
+      "deleted": 23
+    },
+    {
+      "file": "crates/orbit-mcp/src/main.rs",
+      "added": 7,
+      "deleted": 13
+    },
+    {
+      "file": "crates/orbit-runtime/Cargo.toml",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "file": "crates/orbit-runtime/src/application_services.rs",
+      "added": 36,
+      "deleted": 2
+    },
+    {
+      "file": "crates/orbit-runtime/src/lib.rs",
+      "added": 5,
+      "deleted": 0
+    },
+    {
+      "file": "crates/orbit-tui/src/main.rs",
+      "added": 2,
+      "deleted": 6
+    },
+    {
+      "file": "docs/m18-development-151.md",
+      "added": 31,
+      "deleted": 0
+    },
+    {
+      "file": "scripts/m18-acceptance.sh",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "file": "scripts/test-m18-query-unification.py",
+      "added": 25,
+      "deleted": 0
+    }
+  ]
+}

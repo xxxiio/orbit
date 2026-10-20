@@ -1,0 +1,46 @@
+{
+  "base": "159",
+  "target": "160",
+  "files": [
+    {
+      "file": "README.md",
+      "added": 17,
+      "deleted": 0,
+      "category": "docs"
+    },
+    {
+      "file": "crates/orbit-cli/src/commands.rs",
+      "added": 4,
+      "deleted": 0,
+      "category": "production_rust"
+    },
+    {
+      "file": "crates/orbit-cli/src/lib.rs",
+      "added": 8,
+      "deleted": 1,
+      "category": "production_rust"
+    },
+    {
+      "file": "crates/orbit-cli/src/markdown_cli.rs",
+      "added": 363,
+      "deleted": 0,
+      "category": "production_rust"
+    },
+    {
+      "file": "docs/m19-development-160.md",
+      "added": 54,
+      "deleted": 0,
+      "category": "docs"
+    },
+    {
+      "file": "scripts/test-m19-native-knowledge-cli.py",
+      "added": 45,
+      "deleted": 0,
+      "category": "tests"
+    }
+  ],
+  "totals": {
+    "added": 491,
+    "deleted": 1
+  }
+}

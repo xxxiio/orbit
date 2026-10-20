@@ -1,0 +1,107 @@
+{
+  "baseline": "169",
+  "iteration": "170",
+  "files": [
+    {
+      "file": ".pytest_cache/README.md",
+      "added": 0,
+      "deleted": 8,
+      "changed": 8
+    },
+    {
+      "file": "README.md",
+      "added": 7,
+      "deleted": 0,
+      "changed": 7
+    },
+    {
+      "file": "crates/orbit-application/src/knowledge_commands.rs",
+      "added": 0,
+      "deleted": 393,
+      "changed": 393
+    },
+    {
+      "file": "crates/orbit-application/src/knowledge_queries.rs",
+      "added": 0,
+      "deleted": 20,
+      "changed": 20
+    },
+    {
+      "file": "crates/orbit-application/src/knowledge_resource_commands.rs",
+      "added": 0,
+      "deleted": 113,
+      "changed": 113
+    },
+    {
+      "file": "crates/orbit-application/src/knowledge_resource_queries.rs",
+      "added": 0,
+      "deleted": 43,
+      "changed": 43
+    },
+    {
+      "file": "crates/orbit-application/src/knowledge_retrieval.rs",
+      "added": 0,
+      "deleted": 595,
+      "changed": 595
+    },
+    {
+      "file": "crates/orbit-application/src/lib.rs",
+      "added": 2,
+      "deleted": 35,
+      "changed": 37
+    },
+    {
+      "file": "crates/orbit-application/src/ports.rs",
+      "added": 1,
+      "deleted": 62,
+      "changed": 63
+    },
+    {
+      "file": "crates/orbit-application/src/semantic_retrieval.rs",
+      "added": 0,
+      "deleted": 304,
+      "changed": 304
+    },
+    {
+      "file": "crates/orbit-application/src/sync_materialization.rs",
+      "added": 0,
+      "deleted": 4,
+      "changed": 4
+    },
+    {
+      "file": "crates/orbit-application/src/sync_outbox.rs",
+      "added": 0,
+      "deleted": 6,
+      "changed": 6
+    },
+    {
+      "file": "crates/orbit-cli/src/lib.rs",
+      "added": 10,
+      "deleted": 526,
+      "changed": 536
+    },
+    {
+      "file": "crates/orbit-client/src/lib.rs",
+      "added": 7,
+      "deleted": 11,
+      "changed": 18
+    },
+    {
+      "file": "scripts/test-m19-application-boundary.py",
+      "added": 8,
+      "deleted": 8,
+      "changed": 16
+    },
+    {
+      "file": "scripts/test-m19-legacy-application-retirement.py",
+      "added": 26,
+      "deleted": 0,
+      "changed": 26
+    }
+  ],
+  "total": {
+    "added": 61,
+    "deleted": 2128,
+    "changed": 2189
+  }
+}

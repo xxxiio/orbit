@@ -1,0 +1,47 @@
+[
+  {
+    "file": "crates/orbit-application/src/knowledge_commands.rs",
+    "added": 9,
+    "deleted": 9
+  },
+  {
+    "file": "crates/orbit-application/src/knowledge_resource_commands.rs",
+    "added": 2,
+    "deleted": 2
+  },
+  {
+    "file": "crates/orbit-application/src/lib.rs",
+    "added": 1,
+    "deleted": 0
+  },
+  {
+    "file": "crates/orbit-application/src/ports.rs",
+    "added": 16,
+    "deleted": 3
+  },
+  {
+    "file": "crates/orbit-storage/src/lib.rs",
+    "added": 1,
+    "deleted": 575
+  },
+  {
+    "file": "crates/orbit-storage/src/repositories/entities.rs",
+    "added": 0,
+    "deleted": 23
+  },
+  {
+    "file": "crates/orbit-storage/src/repositories/resources.rs",
+    "added": 1,
+    "deleted": 27
+  },
+  {
+    "file": "scripts/test-m19-application-boundary.py",
+    "added": 22,
+    "deleted": 0
+  },
+  {
+    "file": "scripts/test-m19-sql-retirement.py",
+    "added": 3,
+    "deleted": 2
+  }
+]

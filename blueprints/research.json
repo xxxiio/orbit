@@ -1,0 +1,132 @@
+{
+  "id": "research",
+  "version": 1,
+  "name": "Research",
+  "description": "Optional structured hypothesis and experiment tracking.",
+  "required_capabilities": [],
+  "work_items": [
+    {
+      "id": "hypothesis",
+      "name": "Hypothesis",
+      "initial_state": "proposed",
+      "states": [
+        "proposed",
+        "investigating",
+        "supported",
+        "rejected"
+      ],
+      "fields": [
+        {
+          "id": "question",
+          "kind": {
+            "type": "text"
+          },
+          "required": true
+        },
+        {
+          "id": "confidence",
+          "kind": {
+            "type": "choice",
+            "options": [
+              "unknown",
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "required": false,
+          "default": "unknown"
+        }
+      ],
+      "transitions": [
+        {
+          "from": "proposed",
+          "to": "investigating"
+        },
+        {
+          "from": "investigating",
+          "to": "supported"
+        },
+        {
+          "from": "investigating",
+          "to": "rejected"
+        },
+        {
+          "from": "supported",
+          "to": "investigating"
+        }
+      ]
+    },
+    {
+      "id": "experiment",
+      "name": "Experiment",
+      "initial_state": "designed",
+      "states": [
+        "designed",
+        "running",
+        "analysis",
+        "reported"
+      ],
+      "fields": [
+        {
+          "id": "method",
+          "kind": {
+            "type": "text"
+          },
+          "required": true
+        },
+        {
+          "id": "reproducible",
+          "kind": {
+            "type": "boolean"
+          },
+          "required": false,
+          "default": false
+        }
+      ],
+      "transitions": [
+        {
+          "from": "designed",
+          "to": "running"
+        },
+        {
+          "from": "running",
+          "to": "analysis"
+        },
+        {
+          "from": "analysis",
+          "to": "reported"
+        },
+        {
+          "from": "analysis",
+          "to": "running"
+        }
+      ]
+    }
+  ],
+  "templates": [
+    {
+      "id": "investigation",
+      "name": "Investigation",
+      "items": [
+        {
+          "key": "hypothesis",
+          "kind": "hypothesis",
+          "properties": {
+            "question": "Define research question"
+          }
+        },
+        {
+          "key": "experiment",
+          "kind": "experiment",
+          "properties": {
+            "method": "Define methodology"
+          },
+          "prerequisites": [
+            "hypothesis"
+          ]
+        }
+      ]
+    }
+  ]
+}

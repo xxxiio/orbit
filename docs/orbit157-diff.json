@@ -1,0 +1,76 @@
+{
+  "production_rust": {
+    "added": 94,
+    "deleted": 22
+  },
+  "tests_scripts": {
+    "added": 56,
+    "deleted": 6
+  },
+  "docs": {
+    "added": 23,
+    "deleted": 0
+  },
+  "files": [
+    {
+      "path": "crates/orbit-client/src/lib.rs",
+      "added": 28,
+      "deleted": 8,
+      "category": "production_rust"
+    },
+    {
+      "path": "crates/orbit-runtime/src/accepted_application.rs",
+      "added": 63,
+      "deleted": 0,
+      "category": "production_rust"
+    },
+    {
+      "path": "crates/orbit-runtime/src/application_services.rs",
+      "added": 2,
+      "deleted": 14,
+      "category": "production_rust"
+    },
+    {
+      "path": "crates/orbit-sync/src/lib.rs",
+      "added": 1,
+      "deleted": 0,
+      "category": "production_rust"
+    },
+    {
+      "path": "docs/m18-development-157.md",
+      "added": 23,
+      "deleted": 0,
+      "category": "docs"
+    },
+    {
+      "path": "scripts/m18-acceptance.sh",
+      "added": 1,
+      "deleted": 0,
+      "category": "tests_scripts"
+    },
+    {
+      "path": "scripts/test-m18-all-local-writes-accepted.py",
+      "added": 5,
+      "deleted": 3,
+      "category": "tests_scripts"
+    },
+    {
+      "path": "scripts/test-m18-application-services.py",
+      "added": 2,
+      "deleted": 2,
+      "category": "tests_scripts"
+    },
+    {
+      "path": "scripts/test-m18-plan-command-acceptance.py",
+      "added": 45,
+      "deleted": 0,
+      "category": "tests_scripts"
+    },
+    {
+      "path": "scripts/test-m18-runtime-boundaries.py",
+      "added": 3,
+      "deleted": 1,
+      "category": "tests_scripts"
+    }
+  ]
+}

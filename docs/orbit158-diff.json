@@ -1,0 +1,62 @@
+{
+  "crates/orbit-cli/src/lib.rs": {
+    "added": 1,
+    "deleted": 1
+  },
+  "crates/orbit-client/src/lib.rs": {
+    "added": 1,
+    "deleted": 1
+  },
+  "crates/orbit-runtime/src/application_services.rs": {
+    "added": 33,
+    "deleted": 27
+  },
+  "crates/orbit-runtime/src/lib.rs": {
+    "added": 10,
+    "deleted": 8
+  },
+  "crates/orbit-tui/src/main.rs": {
+    "added": 1,
+    "deleted": 1
+  },
+  "docs/m18-development-158.md": {
+    "added": 21,
+    "deleted": 0
+  },
+  "scripts/test-m18-application-services.py": {
+    "added": 2,
+    "deleted": 2
+  },
+  "scripts/test-m18-cli-schedule-boundary.py": {
+    "added": 1,
+    "deleted": 1
+  },
+  "scripts/test-m18-cli-task-project-boundary.py": {
+    "added": 1,
+    "deleted": 1
+  },
+  "scripts/test-m18-host-composition.py": {
+    "added": 2,
+    "deleted": 2
+  },
+  "scripts/test-m18-public-mutation-boundary.py": {
+    "added": 25,
+    "deleted": 0
+  },
+  "scripts/test-m18-routine-host.py": {
+    "added": 1,
+    "deleted": 1
+  },
+  "scripts/test-m18-runtime-boundaries.py": {
+    "added": 1,
+    "deleted": 1
+  },
+  "scripts/test-m18-single-sqlite-owner.py": {
+    "added": 1,
+    "deleted": 1
+  },
+  "scripts/test-m18-transaction-bridge.py": {
+    "added": 1,
+    "deleted": 1
+  }
+}

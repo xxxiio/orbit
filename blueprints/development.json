@@ -1,0 +1,21 @@
+{
+  "id": "development",
+  "version": 1,
+  "name": "Development",
+  "description": "Baseline development project blueprint. Workflow execution is delivered in M25-I2.",
+  "required_capabilities": [],
+  "work_items": [{
+    "id": "feature",
+    "name": "Feature",
+    "initial_state": "backlog",
+    "states": ["backlog", "ready", "implementing", "review", "done"],
+    "fields": [{"id": "priority", "kind": {"type":"choice", "options":["low", "medium", "high"]}, "required": true, "default": "medium"}],
+    "transitions": [
+      {"from":"backlog","to":"ready"},
+      {"from":"ready","to":"implementing"},
+      {"from":"implementing","to":"review"},
+      {"from":"review","to":"implementing"},
+      {"from":"review","to":"done"}
+    ]
+  }]
+}
