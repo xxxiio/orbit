@@ -19,6 +19,15 @@ archive="$(find "$tmp/dist" -maxdepth 1 -name 'orbit-*-*.tar.gz' -print -quit)"
 
 "$tmp/prefix/bin/orbit" --version >/dev/null
 
+# The installed binary must establish the documented first-run layout and pass
+# read-only diagnostics without Rust or Python on the target machine.
+mkdir -p "$tmp/home"
+env -u ORBIT_DB -u ORBIT_CONFIG HOME="$tmp/home" "$tmp/prefix/bin/orbit" --json init >/dev/null
+[[ -f "$tmp/home/.orbit/config.toml" && -f "$tmp/home/.orbit/orbit.db" ]] || {
+  echo 'installed CLI did not initialize the documented layout' >&2; exit 1;
+}
+env -u ORBIT_DB -u ORBIT_CONFIG HOME="$tmp/home" "$tmp/prefix/bin/orbit" --json doctor >/dev/null
+
 # The installed binary must perform a real local write against a disposable DB.
 ORBIT_DB="$tmp/orbit.db" "$tmp/prefix/bin/orbit" --json project add 'Packaged CLI smoke' >/dev/null
 ORBIT_DB="$tmp/orbit.db" "$tmp/prefix/bin/orbit" --json project list >/dev/null

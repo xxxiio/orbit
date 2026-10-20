@@ -2,6 +2,27 @@
 # Orbit installer: source build or install prebuilt binaries, no sudo and no network fetches.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Portable SHA-256 helpers: GNU coreutils and BSD/macOS provide different tools.
+sha256_tool() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$@"
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$@"
+  else
+    echo 'sha256sum or shasum is required' >&2
+    return 127
+  fi
+}
+sha256_check() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum -c -- "$1"
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 -c -- "$1"
+  else
+    echo 'sha256sum or shasum is required' >&2
+    return 127
+  fi
+}
 PREFIX="${HOME}/.local"; SOURCE_DIR=""; COMPONENTS="cli"; PROFILE="release"; DRY_RUN=0; CHECK=0; ARCHIVE=""; COMPONENTS_SET=0; EXTRACT_DIR=""
 usage() { cat <<'EOF'
 Usage: scripts/install.sh [--prefix DIR] [--components cli,mcp,tui,server] [--from-dir DIR | --from-archive FILE.tar.gz] [--debug] [--dry-run] [--check]
@@ -96,11 +117,21 @@ done
 manifest="$prefix_abs/share/orbit/installed-binaries.txt"
 if [[ -L "$manifest" ]]; then echo "refusing symlinked installation manifest: $manifest" >&2; exit 1; fi
 if [[ -f "$manifest" ]]; then
-  declare -A installed_seen=()
+  manifest_seen=""
+  manifest_has() {
+    case "
+$manifest_seen" in *"
+$1
+"*) return 0 ;; *) return 1 ;; esac
+  }
   while IFS= read -r previous || [[ -n "$previous" ]]; do
     case "$previous" in orbit|orbit-mcp|orbit-tui|orbit-server) ;; *) echo "invalid installation manifest entry: $previous" >&2; exit 1;; esac
-    [[ ! -v installed_seen[$previous] ]] || { echo "duplicate installation manifest entry: $previous" >&2; exit 1; }
-    installed_seen[$previous]=1
+    if manifest_has "$previous"; then
+      echo "duplicate installation manifest entry: $previous" >&2
+      exit 1
+    fi
+    manifest_seen="${manifest_seen}${previous}
+"
   done < "$manifest"
 fi
 if (( CHECK )); then

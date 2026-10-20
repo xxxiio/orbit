@@ -1,26 +1,77 @@
 # Orbit TUI contract
 
-`orbit-tui` is a thin Rust/Ratatui client. It must not duplicate Orbit business rules or mutate canonical domain tables directly. Sync transport orchestration may use the application-layer sync repository contract, while canonical entity materialization remains in application services.
+`orbit-tui` is a project-centric Ratatui client. It must not duplicate Orbit
+business rules, open a second authoritative store, or mutate canonical domain
+tables directly. Reads and mutations go through `orbit-client` and the shared
+application services.
 
-## Current workflow surface
+## Composition
 
-- Today: active work and active habits.
-- Habits + Plan: check off active habits, preview deterministic task plans, and apply only after Orbit revalidation.
-- Inbox: task capture and Inbox triage to Ready, Planned, or Cancelled.
-- Projects: project lifecycle plus deterministic task-derived completion/blocked counts.
-- Knowledge: local title/body/kind filtering and quick note capture.
-- Sync + Agent: pending semantic/resolution outbox counts, unresolved field-level conflicts, explicit local/incoming resolution, and effective MCP composition environment.
+- **Global navigation** — Home/Today, Inbox, Projects and Agents.
+- **Project navigation** — the selected project list and blueprint-defined
+  views.
+- **Workspace** — typed resolved components (text, list, table, metric, detail,
+  kanban, task list, timeline, habit tracker, metric history, knowledge
+  references, agent jobs, milestone progress).
+- **Details** — selected-item properties, dependencies and contextual actions.
+- **Overlays** — prompts, confirmations, action menus, command palette, search,
+  help, details and messages.
 
-Quick capture and triage call `orbit-client`; reads are refreshed from canonical Orbit state.
+The connected command surface exposes read-only project views (`V`) resolved from
+the accepted replica snapshot through the same `orbit-ui` contracts. Pending
+outbox commands are never merged into that view. Full interactive connected
+parity remains future work.
 
-## Remaining M13 work
+The shared presentation model lives in `orbit-ui`; blueprint declarations live
+in `orbit-blueprint`. The TUI owns terminal layout, focus, input, scrolling,
+modals and theming only.
 
-The high-frequency source workflows are implemented. Formal milestone closure still requires Rust compile/fmt/clippy/tests and a terminal smoke run; richer keyboard help and deeper project/habit visualization can continue as follow-up UX polish rather than blocking the semantic workflow exit criteria.
+## Authority and safety
 
-## Semantic sync conflict workflow
+- Every mutation is a typed `OrbitClient` call; the renderer has no SQL and
+  spawns no commands.
+- Blueprint view/action declarations are presentation metadata, not grants.
+- Contextual actions are derived from the selected item and validated again by
+  the authority.
+- Repeated identical submissions are suppressed until refresh. A pending
+  command is never displayed as accepted state.
+- Agent job completion is execution state; it does not complete an Orbit task.
+- Missing components or failed refresh retain the rest of the view and show an
+  explicit unavailable/stale state.
 
-The Sync + Agent tab is an interactive semantic-conflict surface, not a line-diff UI. It lists unresolved entity/field conflicts with the currently materialized local value and incoming value. The selected conflict can be resolved with `l` to keep the local value or `v` to accept the incoming value.
+## Responsive behaviour
 
-Resolution is durable before canonical refresh: the TUI reserves the local sync sequence in SQLite, exports an immutable conflict-resolution artifact, replays the semantic replica, and materializes only conflict-free fields back into canonical repositories. Pending resolution-outbox entries are retried idempotently before a new resolution is reserved.
+| Width | Layout |
+|---|---|
+| ≥ 104 columns | Sidebar, workspace, details |
+| 76–103 columns | Sidebar and workspace; details are a modal |
+| < 76 columns | One primary pane selected by focus |
 
-`ORBIT_SYNC_ROOT` may override the sync workspace; otherwise the TUI uses the same `sync` sibling of the Orbit database as the CLI.
+Multi-component views collapse to one focused component on very narrow or short
+terminals. Long text wraps or scrolls; details open as an overlay rather than
+being silently truncated.
+
+## Keyboard and feedback
+
+`j`/`k`, arrows, `h`/`l`, `Tab`/`Shift+Tab`, `Enter`, `Esc`, `a`/`s`, `c`, `C`,
+`n`, `Space`, `p`/`P`, `A`, `G`, `[`/`]`, `g h/i/p/a`, `:`, `/`, `r`, `D`,
+`V` (connected views), `?`, `q` are
+documented in the [terminal workspace guide](guides/tui-workspace.md). Color is
+never the only state signal: glyphs, borders and markers remain in monochrome
+terminals.
+
+## Testing
+
+Focused tests cover schema validation, duplicate IDs, unsupported components,
+bindings, legacy defaults, metrics/lists/tables/kanban rendering, wide and
+narrow buffers, focus, scrolling, missing components, stale/error states,
+project switching, palette cancellation, duplicate submission suppression and
+the no-SQL/no-process architecture boundary. Broad executable acceptance
+remains part of the M15 profile.
+
+## Related
+
+- [Terminal workspace guide](guides/tui-workspace.md)
+- [Blueprint-defined views](guides/blueprint-views.md)
+- [UI view reference](reference/ui-views.md)
+- [UI component development](developers/ui-components.md)

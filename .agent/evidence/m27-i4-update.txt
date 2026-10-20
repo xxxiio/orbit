@@ -1,0 +1,36 @@
+M27 I4 safe update acceptance
+2026-10-20T07:16:35Z
+
+fmt: PASS
+
+test tests::json_error_contract_has_stable_type_and_code ... ok
+test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test readonly_inspection_tests::missing_database_is_an_error ... ok
+test readonly_inspection_tests::unreadable_database_is_an_error ... ok
+test result: ok. 86 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.45s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+clippy: PASS
+
+test_channel_and_explicit_version_selection (__main__.UpdateAcceptance.test_channel_and_explicit_version_selection) ... ok
+test_check_reports_available_without_mutation (__main__.UpdateAcceptance.test_check_reports_available_without_mutation) ... ok
+test_checksum_mismatch_preserves_old_binary (__main__.UpdateAcceptance.test_checksum_mismatch_preserves_old_binary) ... ok
+test_downgrade_requires_allow_downgrade (__main__.UpdateAcceptance.test_downgrade_requires_allow_downgrade) ... ok
+test_force_reinstalls_the_same_version (__main__.UpdateAcceptance.test_force_reinstalls_the_same_version) ... ok
+test_global_db_override_is_the_database_that_gets_backed_up (__main__.UpdateAcceptance.test_global_db_override_is_the_database_that_gets_backed_up) ... ok
+test_help_documents_contract (__main__.UpdateAcceptance.test_help_documents_contract) ... ok
+test_invalid_configuration_fails_before_mutation (__main__.UpdateAcceptance.test_invalid_configuration_fails_before_mutation) ... ok
+test_output_never_contains_credentials (__main__.UpdateAcceptance.test_output_never_contains_credentials) ... ok
+test_successful_update_backs_up_database_and_preserves_manifest (__main__.UpdateAcceptance.test_successful_update_backs_up_database_and_preserves_manifest) ... ok
+test_truncated_archive_preserves_old_binary (__main__.UpdateAcceptance.test_truncated_archive_preserves_old_binary) ... ok
+test_unmanaged_prefix_is_refused (__main__.UpdateAcceptance.test_unmanaged_prefix_is_refused) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 2.566s
+
+OK
+
+update help: PASS

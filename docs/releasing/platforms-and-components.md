@@ -1,38 +1,57 @@
-# Supported build targets and component requirements
+# Supported targets and component requirements
 
-This page describes **packaging interfaces**, not a claim that every target has passed M15 runtime acceptance. A target label supplied to `package-release.sh --from-dir` is not independently checked against the executable architecture. Only ship artifacts built and tested on the stated target.
+This page describes packaging and support interfaces, not a claim that every
+target passed runtime acceptance. A target label supplied to
+`package-release.sh --from-dir` is not independently checked against executable
+architecture.
 
-## Component selection
+## Components
 
 | Component | Installed command | Built package | External requirements |
 | --- | --- | --- | --- |
-| `cli` (default) | `orbit` | `orbit-cli` | No server, Python, or Herdr for local SQLite mode |
-| `mcp` | `orbit-mcp` | `orbit-mcp` | MCP host/client configuration; server only for connected mode |
+| `cli` (default) | `orbit` | `orbit-cli` | No server, Python or Herdr for local SQLite mode |
+| `mcp` | `orbit-mcp` | `orbit-mcp` | An MCP host/client; server only for connected mode |
 | `tui` | `orbit-tui` | `orbit-tui` | Interactive terminal |
-| `server` | `orbit-server` | `orbit-server` | Persistent server SQLite storage and server configuration |
+| `server` | `orbit-server` | `orbit-server` | Persistent server SQLite and deployment configuration |
 
-The optional Python machine worker is **not** included in these Rust binary archives. Install it separately through `scripts/install-worker.sh`; its Python and Herdr dependencies are only needed for that execution mode. Docker is optional for self-hosted deployment and unnecessary for local-only use.
+The optional Python machine worker is **not** in these Rust archives. Install it
+separately with `scripts/install-worker.sh`; Python and Herdr are required only
+for that execution mode. Docker is optional for self-hosting and unnecessary
+for local-only use.
 
-## Target and acceptance policy
+## Targets
 
-`package-release.sh --build` uses the local Rust host target unless given `--target`. Cross-compilation requires the correct Rust target, linker, native libraries and deployment testing; the packaging script does not set these up. The bundle name contains the target triple, but its contents are not architecture-probed. The `--from-dir` packaging mode trusts the supplier's asserted target.
+`package-release.sh --build` uses the local Rust host target unless given
+`--target`. Cross-compilation requires the correct target, linker, native
+libraries and deployment testing; the packaging script does not set these up.
+The bundle name contains the target triple, but its contents are **not architecture-probed**. The `--from-dir` mode trusts the supplier's asserted
+target.
 
-| Environment | Packaging workflow | Release readiness |
+| Environment | Packaging workflow | Runtime status |
 | --- | --- | --- |
-| Linux x86_64 (native Rust target) | Source build or prebuilt archive | Only target with current M15 executable evidence: full profile 37/37, 1235 Rust tests, real archive build/verify/install smoke |
-| macOS (native Rust target) | Source build or prebuilt archive | Unverified — no current M15 executable evidence |
-| Windows | Cargo workspace build may be evaluated separately | Unverified; POSIX `*.sh` release/install utilities are **not** a native Windows installer |
-| Cross-compiled target | Prebuilt archive with explicit target | Unverified — requires independent build provenance and target-machine smoke tests |
+| Linux x86_64 (native Rust target) | Source build or prebuilt archive | Only runtime-verified target: local, loopback connected and local-Herdr workflows |
+| Linux aarch64 (native or cross) | Prebuilt archive with explicit target | Declared but not runtime-verified here |
+| macOS x86_64 / arm64 | Native Rust target | **Unverified** — macOS is not runtime-verified |
+| Windows | Not a supported release target | Unsupported; the POSIX `*.sh` utilities are **not a native Windows installer** |
+| Cross-compiled target | Prebuilt archive with explicit target | Unverified; requires independent build provenance and target-machine smoke tests |
 
-Only Linux x86_64 has current M15 executable evidence. macOS and Windows are
-unverified for M15 acceptance. No platform is considered certified based only on
-passing fixture-based shell packaging tests. Use `rustc -vV` to inspect the build
-host and check the actual deployed executable against target requirements. Do
+Declared archive triples are `x86_64-unknown-linux-gnu`,
+`aarch64-unknown-linux-gnu`, `x86_64-apple-darwin` and
+`aarch64-apple-darwin`. Only Linux x86_64 has current runtime evidence in this
+repository. macOS and Windows are not runtime-verified.
+
+M15 executable acceptance is scoped to Linux x86_64. Passing fixture-based
+packaging tests does not certify a platform. Use `rustc -vV` to inspect the
+build host and verify the deployed executable against target requirements. Do
 not relabel binaries from one target as another.
 
 ## Distribution and trust
 
-Each archive ships with its adjacent `.sha256` file and internal `SHA256SUMS`. The verifier rejects unknown paths, symlinks and checksum mismatches. Checksums protect against accidental corruption **only when the checksum is acquired through a trusted channel**. Signing and authenticated distribution are separate release concerns.
+Each archive ships with an adjacent `.sha256` file and an internal `SHA256SUMS`.
+The verifier rejects unknown paths, symlinks and checksum mismatches. Checksums
+protect against accidental corruption **only when acquired through a trusted
+channel**; they are not publisher authenticity. The GitHub workflow also attests
+provenance, but authorization to publish remains a human decision.
 
 Recommended offline flow:
 
@@ -42,4 +61,31 @@ Recommended offline flow:
 ./scripts/orbit-env.sh --check
 ```
 
-Replace the example version and target with the actual release. Installed binary inspection is not a substitute for application smoke tests. See [installation](../getting-started/installation.md), [upgrade recovery](upgrades-and-recovery.md), and [release distribution](binary-distribution.md).
+The public one-command install uses the same assets:
+
+```sh
+curl -fsSL https://github.com/xxxiio/orbit/releases/latest/download/install.sh | sh
+```
+
+Replace example versions and targets with the actual release. Installed binary
+inspection is not a substitute for application smoke tests.
+
+## Update and support policy
+
+```sh
+orbit update --check
+orbit update
+```
+
+`orbit update` targets a managed CLI installation, verifies checksums, backs up
+the database and refuses unsupported downgrades. Do not infer that an update
+makes an unverified platform supported. macOS users must validate the artifact
+independently; Windows is unsupported.
+
+## Related
+
+- [Binary distribution](binary-distribution.md)
+- [Release assets reference](../reference/release-assets.md)
+- [Release checklist](release-checklist.md)
+- [Installation](../getting-started/installation.md)
+- [Upgrades and recovery](upgrades-and-recovery.md)

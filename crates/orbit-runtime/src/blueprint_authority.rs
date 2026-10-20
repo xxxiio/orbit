@@ -93,6 +93,15 @@ impl AuthoritativeHost {
         self.authority.conn.blueprint_work_item(id)
     }
 
+    pub fn project_work_items(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<orbit_blueprint::BlueprintWorkItem>, RepositoryError> {
+        self.authority
+            .conn
+            .blueprint_work_items_for_project(project_id)
+    }
+
     /// Only trusted application composition may supply capability grants.
     pub fn transition_project_work_item(
         &mut self,

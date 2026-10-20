@@ -1,8 +1,8 @@
 {
   "id": "research",
-  "version": 1,
+  "version": 2,
   "name": "Research",
-  "description": "Optional structured hypothesis and experiment tracking.",
+  "description": "Research project with hypotheses, evidence, workflow and references.",
   "required_capabilities": [],
   "work_items": [
     {
@@ -125,6 +125,135 @@
           "prerequisites": [
             "hypothesis"
           ]
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "overview",
+      "title": "Research overview",
+      "description": "Questions, experiments and evidence.",
+      "layout": {
+        "type": "grid",
+        "columns": 2
+      },
+      "components": [
+        {
+          "id": "hypotheses",
+          "type": "metric",
+          "source": "work_items",
+          "aggregate": "count",
+          "filter": {
+            "kind": "hypothesis"
+          },
+          "title": "Hypotheses"
+        },
+        {
+          "id": "experiments",
+          "type": "metric",
+          "source": "work_items",
+          "aggregate": "count",
+          "filter": {
+            "kind": "experiment"
+          },
+          "title": "Experiments"
+        },
+        {
+          "id": "questions",
+          "type": "list",
+          "source": "work_items",
+          "limit": 10,
+          "title": "Research items"
+        },
+        {
+          "id": "project",
+          "type": "detail",
+          "source": "project",
+          "title": "Project"
+        },
+        {
+          "id": "knowledge",
+          "type": "knowledge_refs",
+          "source": "knowledge",
+          "limit": 10,
+          "title": "Knowledge"
+        }
+      ]
+    },
+    {
+      "id": "evidence",
+      "title": "Evidence",
+      "description": "Knowledge is global in Orbit; project views reference accepted notes.",
+      "layout": {
+        "type": "vertical"
+      },
+      "components": [
+        {
+          "id": "notes",
+          "type": "table",
+          "source": "knowledge",
+          "columns": [
+            "title",
+            "kind",
+            "status"
+          ],
+          "limit": 50,
+          "title": "Evidence notes"
+        },
+        {
+          "id": "references",
+          "type": "knowledge_refs",
+          "source": "knowledge",
+          "limit": 50,
+          "title": "References"
+        }
+      ]
+    },
+    {
+      "id": "workflow",
+      "title": "Workflow",
+      "description": "Typed research work items and guarded transitions.",
+      "layout": {
+        "type": "vertical"
+      },
+      "components": [
+        {
+          "id": "board",
+          "type": "kanban",
+          "source": "work_items",
+          "group_by": "state",
+          "limit": 100,
+          "title": "Research workflow"
+        },
+        {
+          "id": "items",
+          "type": "table",
+          "source": "work_items",
+          "columns": [
+            "title",
+            "kind",
+            "state"
+          ],
+          "limit": 100,
+          "title": "Work items"
+        }
+      ]
+    },
+    {
+      "id": "references",
+      "title": "References",
+      "description": "Global knowledge references available to this project view.",
+      "layout": {
+        "type": "vertical"
+      },
+      "components": [
+        {
+          "id": "notes",
+          "type": "list",
+          "source": "knowledge",
+          "limit": 100,
+          "title": "Knowledge references"
         }
       ]
     }

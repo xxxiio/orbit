@@ -2,6 +2,17 @@
 # Create an offline, checksum-verifiable archive of Orbit binaries.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Portable SHA-256 helper for creating and checking manifests.
+sha256_tool() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$@"
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$@"
+  else
+    echo 'sha256sum or shasum is required' >&2
+    return 127
+  fi
+}
 FROM_DIR=""; OUTPUT="$ROOT/dist"; COMPONENTS="cli"; TARGET=""; VERSION=""; BUILD=0
 usage() { cat <<'HELP'
 Usage: scripts/package-release.sh --from-dir BIN_DIR [--output DIR] [--components cli,mcp,tui,server] [--target RUST_TARGET] [--version VERSION]
@@ -27,11 +38,18 @@ fi
 [[ "$TARGET" =~ ^[A-Za-z0-9_]+(-[A-Za-z0-9_]+)+$ ]] || { echo 'invalid target triple' >&2; exit 2; }
 IFS=, read -ra selected <<< "$COMPONENTS"
 ((${#selected[@]})) || exit 2
-packages=(); sources=(); names=(); declare -A seen=()
+packages=(); sources=(); names=(); seen=""
+seen_has() {
+  case "
+$seen" in *"
+$1
+"*) return 0 ;; *) return 1 ;; esac
+}
 for comp in "${selected[@]}"; do
  case "$comp" in cli) src=orbit; dst=orbit;; mcp|tui|server) src="orbit-$comp"; dst="$src";; *) echo "unknown component: $comp" >&2; exit 2;; esac
- [[ ! -v seen[$comp] ]] || { echo "duplicate component: $comp" >&2; exit 2; }
- seen[$comp]=1; sources+=("$src"); names+=("$dst"); packages+=(-p "orbit-$comp")
+ if seen_has "$comp"; then echo "duplicate component: $comp" >&2; exit 2; fi
+ seen="${seen}${comp}
+"; sources+=("$src"); names+=("$dst"); packages+=(-p "orbit-$comp")
 done
 if (( BUILD )); then
  command -v cargo >/dev/null || { echo 'Cargo unavailable' >&2; exit 2; }
@@ -43,17 +61,17 @@ fi
 for src in "${sources[@]}"; do
  [[ -f "$FROM_DIR/$src" && -x "$FROM_DIR/$src" && ! -L "$FROM_DIR/$src" ]] || { echo "missing or unsafe executable: $FROM_DIR/$src" >&2; exit 2; }
 done
-command -v sha256sum >/dev/null || { echo 'sha256sum is required' >&2; exit 2; }
+command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || { echo 'sha256sum or shasum is required' >&2; exit 2; }
 mkdir -p "$OUTPUT"; OUTPUT="$(cd "$OUTPUT" && pwd -P)"
 name="orbit-$VERSION-$TARGET"
 tmp="$(mktemp -d)"; trap 'rm -rf -- "$tmp"' EXIT
 mkdir -p "$tmp/$name/bin"
 for i in "${!names[@]}"; do install -m 0755 "$FROM_DIR/${sources[$i]}" "$tmp/$name/bin/${names[$i]}"; done
 printf 'Orbit %s\nTarget: %s\nComponents: %s\n' "$VERSION" "$TARGET" "$COMPONENTS" > "$tmp/$name/RELEASE.txt"
-(cd "$tmp/$name" && sha256sum bin/* RELEASE.txt > SHA256SUMS)
+(cd "$tmp/$name" && sha256_tool bin/* RELEASE.txt > SHA256SUMS)
 archive="$OUTPUT/$name.tar.gz"
 tar -C "$tmp" -czf "$tmp/$name.tar.gz" "$name"
-(cd "$tmp" && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+(cd "$tmp" && sha256_tool "$name.tar.gz" > "$name.tar.gz.sha256")
 # Move files only after successful archive creation and checksum generation.
 mv -f -- "$tmp/$name.tar.gz" "$archive"
 mv -f -- "$tmp/$name.tar.gz.sha256" "$archive.sha256"

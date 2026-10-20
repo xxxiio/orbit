@@ -1,0 +1,25 @@
+M28 focused validation
+Date: 2026-10-20
+
+$ cargo test -p orbit-blueprint -p orbit-ui -p orbit-client -p orbit-tui --offline
+orbit-blueprint: 20 passed, 0 failed
+orbit-ui: 13 passed, 0 failed (snapshot adapter included)
+orbit-client: 305 passed, 0 failed (view_data tests included)
+orbit-tui: 82 passed, 0 failed (including Today/Next planning action test)
+Doc-tests: 0
+
+$ cargo test --workspace --offline
+sum of reported suites: 1,306 passed, 0 failed. See workspace log in this file's
+companion evidence and .agent/evidence/m28-workspace-tests.txt.
+
+$ cargo clippy -p orbit-blueprint -p orbit-ui -p orbit-client -p orbit-tui -p orbit-storage -p orbit-runtime --all-targets --offline -- -D warnings
+Finished: clean.
+
+$ cargo fmt --all -- --check
+Clean.
+
+$ python3 -m unittest discover -s tests/documentation
+29 tests passed.
+
+$ ./scripts/m15-full-automated.sh --profile full
+42 passed, 0 failed, 0 not_run. Evidence: .agent/evidence/m28-m15-final.zip.

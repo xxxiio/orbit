@@ -1,8 +1,8 @@
 {
   "id": "habits",
-  "version": 1,
+  "version": 2,
   "name": "Habits",
-  "description": "Optional tracking-oriented blueprint; recurrence and streak calculations require separate capabilities.",
+  "description": "Habit and fitness project with tracker, metrics and goals.",
   "required_capabilities": [],
   "work_items": [
     {
@@ -104,6 +104,127 @@
           "properties": {
             "activity": "Choose an activity"
           }
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "overview",
+      "title": "Habit overview",
+      "description": "Recurring practice, observations and goals.",
+      "layout": {
+        "type": "grid",
+        "columns": 2
+      },
+      "components": [
+        {
+          "id": "habits",
+          "type": "habit_tracker",
+          "source": "habits",
+          "title": "Habits"
+        },
+        {
+          "id": "metrics",
+          "type": "metric_history",
+          "source": "metrics",
+          "title": "Metrics"
+        },
+        {
+          "id": "project",
+          "type": "detail",
+          "source": "project",
+          "title": "Project"
+        },
+        {
+          "id": "goals",
+          "type": "milestone_progress",
+          "source": "milestones",
+          "title": "Goals"
+        }
+      ]
+    },
+    {
+      "id": "tracker",
+      "title": "Tracker",
+      "description": "Record an occurrence through the authorized habit command.",
+      "layout": {
+        "type": "vertical"
+      },
+      "components": [
+        {
+          "id": "habits",
+          "type": "habit_tracker",
+          "source": "habits",
+          "title": "Habit tracker"
+        },
+        {
+          "id": "notes",
+          "type": "text",
+          "title": "Recording occurrences",
+          "text": "Select a habit and press Space to record an occurrence. Values are queued for authoritative acceptance; a pending record is not proof of completion."
+        }
+      ]
+    },
+    {
+      "id": "metrics",
+      "title": "Metrics",
+      "description": "Metric targets and observations.",
+      "layout": {
+        "type": "vertical"
+      },
+      "components": [
+        {
+          "id": "history",
+          "type": "metric_history",
+          "source": "metrics",
+          "title": "Metric history"
+        },
+        {
+          "id": "table",
+          "type": "table",
+          "source": "metrics",
+          "columns": [
+            "id",
+            "latest",
+            "target"
+          ],
+          "limit": 50,
+          "title": "Metrics"
+        }
+      ]
+    },
+    {
+      "id": "goals",
+      "title": "Goals",
+      "description": "Goal progress and supporting tasks.",
+      "layout": {
+        "type": "grid",
+        "columns": 2
+      },
+      "components": [
+        {
+          "id": "milestones",
+          "type": "milestone_progress",
+          "source": "milestones",
+          "title": "Goals"
+        },
+        {
+          "id": "done",
+          "type": "metric",
+          "source": "tasks",
+          "aggregate": "count",
+          "filter": {
+            "status": "done"
+          },
+          "title": "Completed tasks"
+        },
+        {
+          "id": "tasks",
+          "type": "task_list",
+          "source": "tasks",
+          "limit": 10,
+          "title": "Tasks"
         }
       ]
     }

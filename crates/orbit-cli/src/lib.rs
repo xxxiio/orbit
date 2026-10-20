@@ -3,7 +3,9 @@ mod authority_http;
 mod blueprint_commands;
 mod connected_agent;
 mod connected_blueprint;
+mod doctor_command;
 mod habit_routine_commands;
+mod init_command;
 mod project_commands;
 mod schedule_commands;
 mod task_commands;
@@ -15,9 +17,10 @@ mod markdown_cli;
 mod markdown_discovery;
 mod markdown_metadata;
 mod replica_workflow;
+mod update_command;
 use markdown_cli::{FolderCommand, NoteCommand, run_folder_host, run_note_host};
 use std::{
-    env, fs,
+    fs,
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -57,9 +60,65 @@ mod commands;
 pub use commands::*;
 
 pub fn run(cli: Cli) -> Result<String, CliError> {
-    let db_path = cli.db.unwrap_or_else(default_db_path);
     let json = cli.json;
-    let command = cli.command;
+    let db_override = cli.db.clone();
+    let config_override = cli.config.clone();
+    let command = match cli.command {
+        // Operational setup and diagnostics must work before a deployment or
+        // workspace is opened; neither command opens a database for writes.
+        Command::Init(args) => {
+            return init_command::run(
+                args,
+                db_override.as_deref(),
+                config_override.as_deref(),
+                json,
+            );
+        }
+        Command::Doctor(args) => {
+            return doctor_command::run(
+                args,
+                db_override.as_deref(),
+                config_override.as_deref(),
+                json,
+            );
+        }
+        // Updates must not open (or migrate) the workspace database. The
+        // command inspects and backs it up read-only before replacing binaries.
+        Command::Update(args) => {
+            return update_command::run(
+                args,
+                db_override.as_deref(),
+                config_override.as_deref(),
+                json,
+            );
+        }
+        command => command,
+    };
+
+    let resolved =
+        match orbit_client::config::resolve(db_override.as_deref(), config_override.as_deref()) {
+            Ok(resolved) => Some(resolved),
+            // A process without a home directory keeps the historical relative
+            // fallback for ordinary commands. Init and doctor fail earlier.
+            Err(orbit_client::config::ConfigError::NoHome) => None,
+            Err(error) => return Err(CliError::Usage(error.to_string())),
+        };
+    let deployment = match &resolved {
+        Some(resolved) => resolved.deployment.clone(),
+        None => orbit_client::deployment::resolve_deployment(
+            db_override.as_deref(),
+            config_override.as_deref(),
+        )
+        .map_err(|error| CliError::Usage(error.to_string()))?,
+    };
+    let db_path = match &deployment {
+        orbit_client::deployment::Deployment::Local { database } => database.clone(),
+        orbit_client::deployment::Deployment::Connected { replica, .. } => replica.clone(),
+    };
+    let default_agent_provider = resolved
+        .as_ref()
+        .and_then(|resolved| resolved.config.agent.as_ref())
+        .and_then(|agent| agent.default_provider.clone());
     if let Command::Blueprint(BlueprintCommand {
         offline: false,
         require_online: false,
@@ -91,9 +150,7 @@ pub fn run(cli: Cli) -> Result<String, CliError> {
             // The local CLI is never a fallback for an explicitly connected
             // deployment. Use `sync replica` to queue remote intentions.
             // Prevent accidental writes to a second authority database.
-            match orbit_client::deployment::from_env()
-                .map_err(|error| CliError::Usage(error.to_string()))?
-            {
+            match deployment {
                 orbit_client::deployment::Deployment::Connected { server, .. } => {
                     if let Command::Blueprint(blueprint) = command {
                         let response = connected_blueprint::run(
@@ -111,7 +168,12 @@ pub fn run(cli: Cli) -> Result<String, CliError> {
                         };
                     }
                     if let Command::Agent(agent) = command {
-                        let response = connected_agent::run(&server, &db_path, agent.command)?;
+                        let response = connected_agent::run(
+                            &server,
+                            &db_path,
+                            agent.command,
+                            default_agent_provider.as_deref(),
+                        )?;
                         return if json {
                             serde_json::to_string_pretty(&response)
                                 .map_err(|e| CliError::Serialization(e.to_string()))
@@ -145,7 +207,11 @@ pub fn run(cli: Cli) -> Result<String, CliError> {
                     blueprint_commands::run_blueprint(&mut host, blueprint.command)?
                 }
             } else if let Command::Agent(agent) = command {
-                agent_commands::run_agent(&mut host, agent.command)?
+                agent_commands::run_agent(
+                    &mut host,
+                    agent.command,
+                    default_agent_provider.as_deref(),
+                )?
             } else if let Command::Task(task) = command {
                 task_commands::run_task(&mut host, task.command)?
             } else if let Command::Project(project) = command {
@@ -1091,6 +1157,9 @@ pub enum CliError {
     Repository(String),
     Sync(String),
     Serialization(String),
+    /// An already-rendered diagnostic report that must exit non-zero without
+    /// being wrapped in the usual `orbit:` error prefix.
+    Diagnostics(String),
 }
 
 impl CliError {
@@ -1141,6 +1210,7 @@ impl CliError {
             Self::Repository(_) => "repository_error",
             Self::Sync(_) => "sync_error",
             Self::Serialization(_) => "serialization_error",
+            Self::Diagnostics(_) => "diagnostics_failed",
         }
     }
 
@@ -1151,6 +1221,7 @@ impl CliError {
             Self::Io(_) | Self::Repository(_) => 4,
             Self::Sync(_) => 5,
             Self::Serialization(_) => 70,
+            Self::Diagnostics(_) => 1,
         }
     }
 
@@ -1177,7 +1248,8 @@ impl std::fmt::Display for CliError {
             | Self::Application(message)
             | Self::Repository(message)
             | Self::Sync(message)
-            | Self::Serialization(message) => formatter.write_str(message),
+            | Self::Serialization(message)
+            | Self::Diagnostics(message) => formatter.write_str(message),
         }
     }
 }
@@ -1195,16 +1267,6 @@ fn now_ms() -> i64 {
         .unwrap_or_default()
         .as_millis()
         .min(i64::MAX as u128) as i64
-}
-
-fn default_db_path() -> PathBuf {
-    if let Ok(path) = env::var("ORBIT_DB") {
-        return PathBuf::from(path);
-    }
-    if let Some(home) = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE")) {
-        return PathBuf::from(home).join(".orbit").join("orbit.db");
-    }
-    PathBuf::from("orbit.db")
 }
 
 fn ensure_parent(path: &Path) -> Result<(), CliError> {

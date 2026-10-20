@@ -1,716 +1,28 @@
-//! Thin Rust terminal client for Orbit.
-//! Business rules remain in orbit-client/application/domain.
-
+//! Orbit terminal client. The shell is project-centric; feature surfaces are
+//! blueprint-defined views resolved through shared `orbit-ui` contracts.
+mod app;
 mod connected;
 mod connected_actions;
 mod planning_ui;
+mod render;
+mod theme;
 
-use std::{
-    env, io,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-
+use app::{App, Modal, Screen, StatusKind};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use orbit_client::{
-    CreateKnowledgeRequest, CreateTaskRequest, OrbitClient, PlanningPolicyDto,
-    RecordHabitOccurrenceRequest, SetTaskStatusRequest, TaskPlanProposalDto,
-};
-use ratatui::{
-    Terminal,
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Tabs, Wrap},
-};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Tab {
-    Today,
-    Inbox,
-    Projects,
-    Knowledge,
-    HabitsPlan,
-    Agent,
-}
-impl Tab {
-    fn index(self) -> usize {
-        match self {
-            Self::Today => 0,
-            Self::Inbox => 1,
-            Self::Projects => 2,
-            Self::Knowledge => 3,
-            Self::HabitsPlan => 4,
-            Self::Agent => 5,
-        }
-    }
-    fn next(self) -> Self {
-        match self {
-            Self::Today => Self::Inbox,
-            Self::Inbox => Self::Projects,
-            Self::Projects => Self::Knowledge,
-            Self::Knowledge => Self::HabitsPlan,
-            Self::HabitsPlan => Self::Agent,
-            Self::Agent => Self::Today,
-        }
-    }
-    fn prev(self) -> Self {
-        match self {
-            Self::Today => Self::Agent,
-            Self::Inbox => Self::Today,
-            Self::Projects => Self::Inbox,
-            Self::Knowledge => Self::Projects,
-            Self::HabitsPlan => Self::Knowledge,
-            Self::Agent => Self::HabitsPlan,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum PromptKind {
-    Task,
-    Knowledge,
-    Search,
-    Term,
-    EvidenceBind,
-    EvidenceUnbind,
-    MetricTarget,
-    MetricObserve,
-}
-struct Prompt {
-    kind: PromptKind,
-    value: String,
-}
-
-struct App {
-    client: OrbitClient,
-    tab: Tab,
-    selected: usize,
-    prompt: Option<Prompt>,
-    knowledge_query: String,
-    knowledge_refs: Vec<orbit_application::KnowledgeTermOccurrence>,
-    knowledge_detail: Option<(String, usize)>,
-    message: String,
-    pending_plan: Option<TaskPlanProposalDto>,
-    today: Option<planning_ui::PlanningDocument>,
-    today_scroll: usize,
-    today_details: Option<Vec<String>>,
-    today_action_menu: Option<(
-        orbit_runtime::planning_brief::WorkBrief,
-        orbit_runtime::planning_actions::PlanningActionMenu,
-    )>,
-    today_error: Option<String>,
-    today_hours: i64,
-    today_project: Option<String>,
-}
-
-impl App {
-    fn open(path: String) -> Result<Self, String> {
-        let mut app = Self {
-            client: OrbitClient::open(&path).map_err(|e| format!("{e:?}"))?,
-            tab: Tab::Today,
-            selected: 0,
-            prompt: None,
-            knowledge_query: String::new(),
-            knowledge_refs: Vec::new(),
-            knowledge_detail: None,
-            message: "q quit • ←/→ tabs • c task • n note • / search".into(),
-            pending_plan: None,
-            today: None,
-            today_scroll: 0,
-            today_details: None,
-            today_action_menu: None,
-            today_error: None,
-            today_hours: 12,
-            today_project: None,
-        };
-        app.refresh_today();
-        Ok(app)
-    }
-    fn refresh_today(&mut self) {
-        self.today_details = None;
-        self.today_action_menu = None;
-        match planning_ui::request(now_ms(), self.today_hours, 100, self.today_project.clone())
-            .and_then(|request| {
-                self.client
-                    .work_brief(&request)
-                    .map_err(|error| error.message)
-            }) {
-            Ok(brief) => {
-                let document = planning_ui::PlanningDocument::from_brief(&brief);
-                self.today_scroll = self
-                    .today_scroll
-                    .min(document.lines.len().saturating_sub(1));
-                self.today = Some(document);
-                self.today_error = None;
-                self.message = format!(
-                    "Today / Next rev {} • {}h • project {} • [/] horizon • J/K task • d impact • r refresh",
-                    brief.revision,
-                    self.today_hours,
-                    self.today_project.as_deref().unwrap_or("all")
-                );
-            }
-            Err(error) => {
-                // Keep previously accepted content visible, clearly labelled stale.
-                self.today_error = Some(error.clone());
-                self.message = format!("Today refresh failed (previous view retained): {error}");
-            }
-        }
-    }
-
-    fn adjust_today_horizon(&mut self, longer: bool) {
-        self.today_hours = if longer {
-            self.today_hours.saturating_mul(2).min(168)
-        } else {
-            (self.today_hours / 2).max(1)
-        };
-        self.today_scroll = 0;
-        self.refresh_today();
-    }
-
-    fn filter_today_to_selected_project(&mut self) {
-        let Some(project_id) = self.selected_project_id() else {
-            self.message = "Select a project first to filter Today".into();
-            return;
-        };
-        self.today_project = Some(project_id);
-        self.today_scroll = 0;
-        self.tab = Tab::Today;
-        self.refresh_today();
-    }
-
-    fn jump_today(&mut self, forward: bool) {
-        if let Some(doc) = &self.today {
-            self.today_scroll = if forward {
-                doc.next_task(self.today_scroll)
-            } else {
-                doc.previous_task(self.today_scroll)
-            };
-        }
-    }
-
-    fn today_impact(&mut self) {
-        let Some(task_id) = self
-            .today
-            .as_ref()
-            .and_then(|doc| doc.selected_task(self.today_scroll))
-            .map(str::to_owned)
-        else {
-            self.message = "No accepted task selected in Today / Next".into();
-            return;
-        };
-        let request = orbit_runtime::task_impact::CompletionImpactRequest {
-            task_id,
-            now_ms: now_ms(),
-            next_limit: 20,
-        };
-        match self.client.completion_impact(&request) {
-            Ok(impact) => {
-                self.today_details = Some(planning_ui::render_impact(&impact));
-                self.message = "Read-only completion impact • Esc to return to Today".into();
-            }
-            Err(error) => self.message = format!("Impact preview unavailable: {}", error.message),
-        }
-    }
-
-    fn today_focus(&mut self) {
-        let Some(task_id) = self
-            .today
-            .as_ref()
-            .and_then(|doc| doc.selected_task(self.today_scroll))
-            .map(str::to_owned)
-        else {
-            self.message = "No accepted Today task selected".into();
-            return;
-        };
-        let result = (|| -> Result<Vec<String>, String> {
-            let request =
-                planning_ui::request(now_ms(), self.today_hours, 100, self.today_project.clone())?;
-            let brief = self.client.work_brief(&request).map_err(|e| e.message)?;
-            let focus = self
-                .client
-                .planning_focus(
-                    &brief,
-                    &orbit_runtime::planning_focus::FocusRequest {
-                        task_id,
-                        max_neighbors: 12,
-                    },
-                )
-                .map_err(|error| error.message)?;
-            let menu = self
-                .client
-                .planning_task_actions(
-                    &brief,
-                    &orbit_runtime::planning_actions::TaskActionRequest {
-                        task_id: focus.task.id.clone(),
-                        authority_available: false,
-                    },
-                )
-                .map_err(|error| error.message)?;
-            let mut lines = planning_ui::render_focus(&focus);
-            lines.push(String::new());
-            lines.extend(planning_ui::render_action_menu(&menu));
-            Ok(lines)
-        })();
-        match result {
-            Ok(lines) => {
-                self.today_details = Some(lines);
-                self.message = "Accepted task navigation • Esc returns to Today".into();
-            }
-            Err(error) => self.message = format!("Task navigation unavailable: {error}"),
-        }
-    }
-
-    fn today_actions(&mut self) {
-        let Some(task_id) = self
-            .today
-            .as_ref()
-            .and_then(|doc| doc.selected_task(self.today_scroll))
-            .map(str::to_owned)
-        else {
-            self.message = "No accepted Today task selected".into();
-            return;
-        };
-        let result = (|| -> Result<_, String> {
-            let request =
-                planning_ui::request(now_ms(), self.today_hours, 100, self.today_project.clone())?;
-            let brief = self.client.work_brief(&request).map_err(|e| e.message)?;
-            let menu = self
-                .client
-                .planning_task_actions(
-                    &brief,
-                    &orbit_runtime::planning_actions::TaskActionRequest {
-                        task_id,
-                        authority_available: true,
-                    },
-                )
-                .map_err(|e| e.message)?;
-            Ok((brief, menu))
-        })();
-        match result {
-            Ok((brief, menu)) => {
-                self.today_details = Some(planning_ui::render_action_menu(&menu));
-                self.today_action_menu = Some((brief, menu));
-                self.message = "Press 1-9 to inspect a reviewed action • Esc to return".into();
-            }
-            Err(error) => self.message = format!("Action menu unavailable: {error}"),
-        }
-    }
-
-    fn today_select_action(&mut self, index: usize) {
-        let Some((brief, menu)) = self.today_action_menu.clone() else {
-            self.message = "Open an accepted action menu with 'a' first".into();
-            return;
-        };
-        let result = (|| -> Result<Vec<String>, String> {
-            let selection = orbit_runtime::planning_handoff::select_from_menu(&menu, index)
-                .map_err(str::to_owned)?;
-            // The accepted revision may have changed since the menu was drawn.
-            let latest = self
-                .client
-                .work_brief(&planning_ui::request(
-                    brief.evaluated_at_ms,
-                    (brief.ends_at_ms - brief.evaluated_at_ms) / 3_600_000,
-                    100,
-                    self.today_project.clone(),
-                )?)
-                .map_err(|e| e.message)?;
-            if latest.revision != brief.revision {
-                return Err("Accepted state changed: reopen action menu".into());
-            }
-            let request = orbit_runtime::planning_actions::TaskActionRequest {
-                task_id: menu
-                    .selected_task_id
-                    .clone()
-                    .ok_or("Action menu missing task target")?,
-                authority_available: true,
-            };
-            let handoff = self
-                .client
-                .planning_task_handoff(&latest, &request, &selection)
-                .map_err(|e| e.message)?;
-            if let orbit_runtime::planning_handoff::HandoffView::Preview(preview) = &handoff.view
-                && preview.operation
-                    == orbit_runtime::planning_handoff::PreviewOperation::CompletionImpact
-            {
-                let report = self
-                    .client
-                    .completion_impact(&orbit_runtime::task_impact::CompletionImpactRequest {
-                        task_id: preview.task_id.clone(),
-                        now_ms: preview.evaluated_at_ms,
-                        next_limit: 20,
-                    })
-                    .map_err(|e| e.message)?;
-                if report.revision != handoff.revision {
-                    return Err("Impact preview revision changed".into());
-                }
-                let mut lines = planning_ui::render_handoff(&handoff);
-                lines.push(String::new());
-                lines.extend(planning_ui::render_impact(&report));
-                return Ok(lines);
-            }
-            if let Some(request) = planning_ui::dependency_request_from_handoff(&handoff)? {
-                let report = self
-                    .client
-                    .preview_task_dependency(&request)
-                    .map_err(|e| e.message)?;
-                if report.accepted_revision != handoff.revision {
-                    return Err("Dependency preview revision changed".into());
-                }
-                let mut lines = planning_ui::render_handoff(&handoff);
-                lines.push(String::new());
-                lines.extend(planning_ui::render_dependency_preview(&report));
-                return Ok(lines);
-            }
-            if let Some(request) = planning_ui::calendar_request_from_handoff(&handoff)? {
-                let plan = self.client.schedule_plan(&request).map_err(|e| e.message)?;
-                let mut lines = planning_ui::render_handoff(&handoff);
-                lines.push(String::new());
-                lines.extend(planning_ui::render_task_calendar_preview(&handoff, &plan)?);
-                return Ok(lines);
-            }
-            Ok(planning_ui::render_handoff(&handoff))
-        })();
-        match result {
-            Ok(lines) => {
-                self.today_details = Some(lines);
-                self.today_action_menu = None;
-                self.message = "Read-only action destination • Esc returns to Today".into();
-            }
-            Err(error) => {
-                self.today_action_menu = None;
-                self.message = format!("Action rejected: {error}");
-            }
-        }
-    }
-
-    fn today_project_focus(&mut self) {
-        let selected = self
-            .today
-            .as_ref()
-            .and_then(|doc| doc.selected_task(self.today_scroll))
-            .map(str::to_owned);
-        let result = (|| -> Result<Vec<String>, String> {
-            // The task's project must come from the accepted planning read
-            // model, not from an unrelated legacy application task table.
-            let full_request = planning_ui::request(now_ms(), self.today_hours, 100, None)?;
-            let full_brief = self
-                .client
-                .work_brief(&full_request)
-                .map_err(|e| e.message)?;
-            let project_id = selected
-                .as_ref()
-                .and_then(|id| full_brief.items.iter().find(|row| &row.id == id))
-                .and_then(|row| row.project_id.clone())
-                .or_else(|| self.today_project.clone())
-                .ok_or("Select a task assigned to a project, or filter Today by project")?;
-            let request =
-                planning_ui::request(now_ms(), self.today_hours, 100, Some(project_id.clone()))?;
-            let brief = self.client.work_brief(&request).map_err(|e| e.message)?;
-            let group = self
-                .client
-                .planning_group(
-                    &brief,
-                    &orbit_runtime::planning_focus::GroupFocusRequest {
-                        project_id,
-                        milestone_id: None,
-                        max_tasks: 12,
-                    },
-                )
-                .map_err(|error| error.message)?;
-            Ok(planning_ui::render_group_focus(&group))
-        })();
-        match result {
-            Ok(lines) => {
-                self.today_details = Some(lines);
-                self.message = "Accepted project context • Esc returns to Today".into();
-            }
-            Err(error) => self.message = format!("Project context unavailable: {error}"),
-        }
-    }
-
-    fn tasks(&self) -> Vec<orbit_client::TaskDto> {
-        self.client.list_tasks().unwrap_or_default()
-    }
-    fn projects(&self) -> Vec<orbit_client::ProjectDto> {
-        self.client.list_projects().unwrap_or_default()
-    }
-    fn knowledge(&self) -> Vec<orbit_client::KnowledgeItemDto> {
-        let q = self.knowledge_query.to_lowercase();
-        self.client
-            .list_knowledge()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|i| {
-                q.is_empty()
-                    || i.title.to_lowercase().contains(&q)
-                    || i.body_markdown.to_lowercase().contains(&q)
-                    || i.kind.contains(&q)
-            })
-            .collect()
-    }
-    fn start_prompt(&mut self, kind: PromptKind) {
-        if matches!(
-            kind,
-            PromptKind::EvidenceBind
-                | PromptKind::EvidenceUnbind
-                | PromptKind::MetricTarget
-                | PromptKind::MetricObserve
-        ) && self.tab != Tab::Projects
-        {
-            self.message = "Select the Projects tab first".into();
-            return;
-        }
-        self.prompt = Some(Prompt {
-            kind,
-            value: String::new(),
-        })
-    }
-    fn selected_project_id(&self) -> Option<String> {
-        self.projects().get(self.selected).map(|p| p.id.clone())
-    }
-    fn submit_prompt(&mut self) {
-        let Some(prompt) = self.prompt.take() else {
-            return;
-        };
-        let v = prompt.value.trim().to_owned();
-        if v.is_empty() {
-            self.message = "Cancelled empty input".into();
-            return;
-        }
-        match prompt.kind {
-            PromptKind::Task => match self.client.create_task(CreateTaskRequest {
-                id: None,
-                title: v,
-                project_id: None,
-                milestone_id: None,
-            }) {
-                Ok(t) => self.message = format!("Captured task {}", t.id),
-                Err(e) => self.message = format!("Capture failed: {}", e.message),
-            },
-            PromptKind::Knowledge => match self.client.create_knowledge(CreateKnowledgeRequest {
-                id: None,
-                kind: "note".into(),
-                title: v,
-                body_markdown: String::new(),
-            }) {
-                Ok(k) => self.message = format!("Captured note {}", k.id),
-                Err(e) => self.message = format!("Capture failed: {}", e.message),
-            },
-            PromptKind::Term => match self.client.markdown_term_references(&v, 25) {
-                Ok(hits) => {
-                    self.tab = Tab::Knowledge;
-                    self.knowledge_refs = hits.clone();
-                    self.knowledge_detail = None;
-                    self.selected = 0;
-                    self.message = if hits.is_empty() {
-                        format!("No references: {v}")
-                    } else {
-                        let first = &hits[0];
-                        format!(
-                            "{} references to '{}'; first: {} {}:{}:{} — {}",
-                            hits.len(),
-                            v,
-                            first.item_id.as_str(),
-                            first.field,
-                            first.line,
-                            first.column,
-                            first.preview
-                        )
-                    };
-                }
-                Err(err) => self.message = format!("Reference lookup failed: {}", err.message),
-            },
-            PromptKind::Search => {
-                self.knowledge_detail = None;
-                self.knowledge_refs.clear();
-                self.knowledge_query = v;
-                self.tab = Tab::Knowledge;
-                self.selected = 0;
-                self.message = format!("Knowledge filter: {}", self.knowledge_query)
-            }
-            PromptKind::EvidenceBind | PromptKind::EvidenceUnbind => {
-                let Some(project_id) = self.selected_project_id() else {
-                    self.message = "No project selected".into();
-                    return;
-                };
-                let Some((kind, evidence_id)) = v.split_once(':') else {
-                    self.message = "Expected habit:<id> or metric:<id>".into();
-                    return;
-                };
-                let bind = matches!(prompt.kind, PromptKind::EvidenceBind);
-                match self.client.change_project_evidence(
-                    project_id,
-                    kind.into(),
-                    evidence_id.into(),
-                    bind,
-                ) {
-                    Ok(()) => {
-                        self.message = if bind {
-                            "Evidence bound (queued for sync)".into()
-                        } else {
-                            "Evidence unbound (queued for sync)".into()
-                        }
-                    }
-                    Err(e) => self.message = format!("Evidence change rejected: {}", e.message),
-                }
-            }
-            PromptKind::MetricTarget => {
-                let parts: Vec<_> = v.split_whitespace().collect();
-                if parts.len() != 4 {
-                    self.message = "Expected: metric-id baseline target at_least|at_most".into();
-                    return;
-                }
-                let (Ok(baseline), Ok(target)) = (parts[1].parse::<i64>(), parts[2].parse::<i64>())
-                else {
-                    self.message = "Baseline and target must be integers".into();
-                    return;
-                };
-                let dto = orbit_client::MetricTargetDto {
-                    metric_id: parts[0].into(),
-                    baseline,
-                    target,
-                    direction: parts[3].into(),
-                };
-                match self.client.set_metric_target(dto) {
-                    Ok(()) => self.message = "Metric target queued for sync".into(),
-                    Err(e) => self.message = format!("Metric target rejected: {}", e.message),
-                }
-            }
-            PromptKind::MetricObserve => {
-                let parts: Vec<_> = v.split_whitespace().collect();
-                if parts.len() != 2 {
-                    self.message = "Expected: metric-id value".into();
-                    return;
-                }
-                let Ok(value) = parts[1].parse::<i64>() else {
-                    self.message = "Observation value must be an integer".into();
-                    return;
-                };
-                match self
-                    .client
-                    .record_metric_observation(parts[0].into(), now_ms(), value)
-                {
-                    Ok(()) => self.message = "Metric observation queued for sync".into(),
-                    Err(e) => self.message = format!("Metric observation rejected: {}", e.message),
-                }
-            }
-        }
-    }
-    fn open_selected_reference(&mut self) {
-        if self.tab != Tab::Knowledge {
-            return;
-        }
-        let Some(reference) = self.knowledge_refs.get(self.selected).cloned() else {
-            return;
-        };
-        self.knowledge_detail = Some((reference.item_id.as_str().to_owned(), reference.line));
-        self.message = format!(
-            "Opened {} at {}:{}:{} (Esc to return)",
-            reference.item_id.as_str(),
-            reference.field,
-            reference.line,
-            reference.column
-        );
-    }
-    fn triage_selected(&mut self, status: &str) {
-        if self.tab != Tab::Inbox {
-            return;
-        }
-        let inbox: Vec<_> = self
-            .tasks()
-            .into_iter()
-            .filter(|t| t.status == "inbox")
-            .collect();
-        if let Some(t) = inbox.get(self.selected.min(inbox.len().saturating_sub(1))) {
-            match self.client.set_task_status(SetTaskStatusRequest {
-                id: t.id.clone(),
-                status: status.into(),
-            }) {
-                Ok(x) => self.message = format!("{} → {}", x.title, x.status),
-                Err(e) => self.message = format!("Triage failed: {}", e.message),
-            }
-        }
-    }
-
-    fn complete_selected_habit(&mut self) {
-        if self.tab != Tab::HabitsPlan {
-            return;
-        }
-        let habits = self
-            .client
-            .list_habits()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|h| h.active)
-            .collect::<Vec<_>>();
-        if let Some(h) = habits.get(self.selected.min(habits.len().saturating_sub(1))) {
-            match self
-                .client
-                .record_habit_occurrence(RecordHabitOccurrenceRequest {
-                    id: None,
-                    habit_id: h.id.clone(),
-                    occurred_at_ms: Some(now_ms()),
-                    duration_minutes: None,
-                }) {
-                Ok(_) => self.message = format!("Checked habit: {}", h.name),
-                Err(e) => self.message = format!("Habit check failed: {}", e.message),
-            }
-        }
-    }
-    fn preview_plan(&mut self) {
-        if self.tab != Tab::HabitsPlan {
-            return;
-        }
-        let start = now_ms();
-        let end = start + 8 * 60 * 60 * 1000;
-        let policy = PlanningPolicyDto {
-            protected_minutes: 60,
-            max_new_work_minutes: Some(240),
-            fixed_buffer_before_minutes: 5,
-            fixed_buffer_after_minutes: 5,
-        };
-        match self.client.preview_task_plan(start, end, policy) {
-            Ok(plan) => {
-                let n = plan.scheduled.len();
-                let u = plan.unscheduled.len();
-                self.pending_plan = Some(plan);
-                self.message =
-                    format!("Plan preview: {n} scheduled, {u} unscheduled • Shift+P apply")
-            }
-            Err(e) => self.message = format!("Plan preview failed: {}", e.message),
-        }
-    }
-    fn apply_plan(&mut self) {
-        if self.tab != Tab::HabitsPlan {
-            return;
-        }
-        let Some(plan) = self.pending_plan.clone() else {
-            self.message = "No pending plan; press p first".into();
-            return;
-        };
-        match self.client.apply_task_plan(plan) {
-            Ok(blocks) => {
-                self.pending_plan = None;
-                self.message = format!(
-                    "Applied {} schedule blocks after revalidation",
-                    blocks.len()
-                )
-            }
-            Err(e) => self.message = format!("Plan apply rejected: {}", e.message),
-        }
-    }
-}
+use ratatui::{Terminal, backend::CrosstermBackend};
+use std::io;
+use std::time::Duration;
 
 fn main() {
-    if let Err(e) = run() {
-        eprintln!("orbit-tui: {e}")
+    if let Err(error) = run() {
+        eprintln!("orbit-tui: {error}");
     }
 }
+
 fn run() -> Result<(), String> {
     let path = match orbit_client::deployment::from_env().map_err(|error| error.to_string())? {
         orbit_client::deployment::Deployment::Connected { replica, server } => {
@@ -736,8 +48,10 @@ fn event_loop(
     app: &mut App,
 ) -> Result<(), String> {
     loop {
-        terminal.draw(|f| draw(f, app)).map_err(err)?;
-        if !event::poll(Duration::from_millis(250)).map_err(err)? {
+        terminal
+            .draw(|frame| render::draw(frame, app))
+            .map_err(err)?;
+        if !event::poll(Duration::from_millis(200)).map_err(err)? {
             continue;
         }
         let Event::Key(key) = event::read().map_err(err)? else {
@@ -746,486 +60,927 @@ fn event_loop(
         if key.kind != KeyEventKind::Press {
             continue;
         }
-        if app.prompt.is_some() {
-            match key.code {
-                KeyCode::Esc => {
-                    app.prompt = None;
-                    app.message = "Prompt cancelled".into()
-                }
-                KeyCode::Enter => app.submit_prompt(),
-                KeyCode::Backspace => {
-                    if let Some(prompt) = app.prompt.as_mut() {
-                        prompt.value.pop();
-                    }
-                }
-                KeyCode::Char(c) => {
-                    if let Some(prompt) = app.prompt.as_mut() {
-                        prompt.value.push(c);
-                    }
-                }
-                _ => {}
-            }
-            continue;
+        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
+            break;
         }
-        match key.code {
-            KeyCode::Char('q') => break,
-            KeyCode::Esc => {
-                app.today_details = None;
-                app.today_action_menu = None;
-                app.knowledge_detail = None;
-            }
-            KeyCode::Enter => app.open_selected_reference(),
-            KeyCode::Right | KeyCode::Tab => {
-                app.tab = app.tab.next();
-                app.selected = 0
-            }
-            KeyCode::Left => {
-                app.tab = app.tab.prev();
-                app.selected = 0
-            }
-            KeyCode::Down | KeyCode::Char('j') if app.tab == Tab::Today => {
-                app.today_scroll = app.today_scroll.saturating_add(1)
-            }
-            KeyCode::Down | KeyCode::Char('j') => app.selected = app.selected.saturating_add(1),
-            KeyCode::Up | KeyCode::Char('k') if app.tab == Tab::Today => {
-                app.today_scroll = app.today_scroll.saturating_sub(1)
-            }
-            KeyCode::Up | KeyCode::Char('k') => app.selected = app.selected.saturating_sub(1),
-            KeyCode::Char('c') => app.start_prompt(PromptKind::Task),
-            KeyCode::Char('n') => app.start_prompt(PromptKind::Knowledge),
-            KeyCode::Char('/') => app.start_prompt(PromptKind::Search),
-            KeyCode::Char('f') => app.start_prompt(PromptKind::Term),
-            KeyCode::Char('a') if app.tab != Tab::Today => app.triage_selected("ready"),
-            KeyCode::Char('i') => app.triage_selected("planned"),
-            KeyCode::Char('x') => app.triage_selected("cancelled"),
-            KeyCode::Char('r') if app.tab == Tab::Today => app.refresh_today(),
-            KeyCode::Char('r') => app.message = "Refreshed from canonical Orbit state".into(),
-            KeyCode::Char('J') if app.tab == Tab::Today => app.jump_today(true),
-            KeyCode::Char('K') if app.tab == Tab::Today => app.jump_today(false),
-            KeyCode::Char('d') if app.tab == Tab::Today => app.today_impact(),
-            KeyCode::Char('v') if app.tab == Tab::Today => app.today_focus(),
-            KeyCode::Char('a') if app.tab == Tab::Today => app.today_actions(),
-            KeyCode::Char(digit)
-                if app.tab == Tab::Today
-                    && app.today_action_menu.is_some()
-                    && ('1'..='9').contains(&digit) =>
-            {
-                app.today_select_action((digit as u8 - b'1') as usize)
-            }
-            KeyCode::Char('g') if app.tab == Tab::Today => app.today_project_focus(),
-            KeyCode::Char('[') if app.tab == Tab::Today => app.adjust_today_horizon(false),
-            KeyCode::Char(']') if app.tab == Tab::Today => app.adjust_today_horizon(true),
-            KeyCode::Char('F') if app.tab == Tab::Projects => {
-                app.filter_today_to_selected_project()
-            }
-            KeyCode::Char('F') if app.tab == Tab::Today => {
-                app.today_project = None;
-                app.today_scroll = 0;
-                app.refresh_today();
-            }
-            KeyCode::Char('b') => app.start_prompt(PromptKind::EvidenceBind),
-            KeyCode::Char('U') => app.start_prompt(PromptKind::EvidenceUnbind),
-            KeyCode::Char('t') => app.start_prompt(PromptKind::MetricTarget),
-            KeyCode::Char('o') => app.start_prompt(PromptKind::MetricObserve),
-            KeyCode::Char(' ') => app.complete_selected_habit(),
-            KeyCode::Char('p') => app.preview_plan(),
-            KeyCode::Char('P') => app.apply_plan(),
-            KeyCode::Char('1') => app.tab = Tab::Today,
-            KeyCode::Char('2') => app.tab = Tab::Inbox,
-            KeyCode::Char('3') => app.tab = Tab::Projects,
-            KeyCode::Char('4') => app.tab = Tab::Knowledge,
-            KeyCode::Char('5') => app.tab = Tab::HabitsPlan,
-            KeyCode::Char('6') => app.tab = Tab::Agent,
-            _ => {}
+        if handle_key(app, key.code, key.modifiers)? {
+            break;
         }
     }
     Ok(())
 }
 
-fn draw(f: &mut ratatui::Frame, app: &App) {
-    let areas = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(5),
-            Constraint::Length(3),
-        ])
-        .split(f.area());
-    let titles: Vec<Line> = [
-        "Today",
-        "Inbox",
-        "Projects",
-        "Knowledge",
-        "Habits + Plan",
-        "Agent",
-    ]
-    .into_iter()
-    .map(Line::from)
-    .collect();
-    let tabs = Tabs::new(titles)
-        .select(app.tab.index())
-        .block(Block::default().borders(Borders::ALL).title("Orbit"))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-    f.render_widget(tabs, areas[0]);
-    match app.tab {
-        Tab::Today => draw_today(f, areas[1], app),
-        Tab::Inbox => draw_inbox(f, areas[1], app),
-        Tab::Projects => draw_projects(f, areas[1], app),
-        Tab::Knowledge => draw_knowledge(f, areas[1], app),
-        Tab::HabitsPlan => draw_habits_plan(f, areas[1], app),
-        Tab::Agent => draw_agent(f, areas[1], app),
-    };
-    let footer = if let Some(p) = &app.prompt {
-        format!("> {}_", p.value)
-    } else {
-        app.message.clone()
-    };
-    f.render_widget(
-        Paragraph::new(footer).block(Block::default().borders(Borders::ALL)),
-        areas[2],
-    );
-}
-
-fn draw_today(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(73), Constraint::Percentage(27)])
-        .split(area);
-    let (lines, title) = if let Some(details) = &app.today_details {
-        (details.clone(), "Completion impact (Esc to return)")
-    } else if let Some(document) = &app.today {
-        (
-            document.lines.clone(),
-            "Today / Next • j/k scroll • J/K task • [/] hours • F all • d impact",
-        )
-    } else {
-        (
-            vec!["Planning unavailable • press r to retry".into()],
-            "Today / Next",
-        )
-    };
-    let mut visible = lines;
-    if let Some(error) = &app.today_error {
-        visible.insert(0, format!("STALE ACCEPTED VIEW • refresh failed: {error}"));
+fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool, String> {
+    if app.modal.is_some() {
+        return handle_modal(app, code, modifiers);
     }
-    let scroll = app.today_scroll.min(visible.len().saturating_sub(1));
-    f.render_widget(
-        Paragraph::new(visible.join("\n"))
-            .block(Block::default().borders(Borders::ALL).title(title))
-            .scroll((scroll.min(u16::MAX as usize) as u16, 0))
-            .wrap(Wrap { trim: false }),
-        chunks[0],
-    );
-    let habits = app
-        .client
-        .list_habits()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|habit| habit.active)
-        .map(|habit| ListItem::new(format!("{} ({})", habit.name, habit.cadence)))
-        .collect::<Vec<_>>();
-    f.render_widget(
-        List::new(habits).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Active habits"),
-        ),
-        chunks[1],
-    );
-}
-
-fn draw_inbox(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &App) {
-    let inbox: Vec<_> = app
-        .tasks()
-        .into_iter()
-        .filter(|t| t.status == "inbox")
-        .collect();
-    let items = inbox
-        .iter()
-        .enumerate()
-        .map(|(i, t)| {
-            ListItem::new(Line::from(vec![
-                if i == app.selected {
-                    Span::styled("> ", Style::default().add_modifier(Modifier::BOLD))
-                } else {
-                    Span::raw("  ")
-                },
-                Span::raw(&t.title),
-            ]))
-        })
-        .collect::<Vec<_>>();
-    let title = "Inbox  a=Ready  i=Planned  x=Cancel  c=Capture";
-    f.render_widget(
-        List::new(items).block(Block::default().borders(Borders::ALL).title(title)),
-        area,
-    );
-}
-
-fn draw_projects(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &App) {
-    let projects = app.projects();
-    let rows = projects
-        .iter()
-        .map(|p| {
-            let summary = app
-                .client
-                .project_evidence_summary(&p.id, now_ms())
-                .unwrap_or_else(|_| "health/evidence unavailable".into());
-            ListItem::new(format!(
-                "{} [{}|{}] {} criteria:{}/{}{}",
-                p.name,
-                p.status,
-                p.mode,
-                summary,
-                p.success_criteria
-                    .iter()
-                    .filter(|c| c.status == "satisfied" || c.status == "waived")
-                    .count(),
-                p.success_criteria.len(),
-                if p.completion_ready {
-                    " ready-to-complete"
-                } else {
-                    ""
+    if let Some(prefix) = app.prefix.take() {
+        if prefix == 'g' {
+            match code {
+                KeyCode::Char('h') => {
+                    app.go_screen(Screen::Home);
+                    return Ok(false);
                 }
-            ))
-        })
-        .collect::<Vec<_>>();
-    f.render_widget(
-        List::new(rows).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Projects • 7d evidence | b bind • U unbind • t target • o observe"),
-        ),
-        area,
-    );
-}
-
-fn draw_knowledge(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &App) {
-    if let Some((id, line)) = &app.knowledge_detail
-        && let Some(note) = app
-            .client
-            .list_knowledge()
-            .unwrap_or_default()
-            .into_iter()
-            .find(|n| &n.id == id)
-    {
-        let context = note
-            .body_markdown
-            .lines()
-            .enumerate()
-            .filter(|(i, _)| (*i as isize + 1 - *line as isize).abs() <= 8)
-            .map(|(i, text)| {
-                format!(
-                    "{:>5} {}{}",
-                    i + 1,
-                    if i + 1 == *line { "> " } else { "  " },
-                    text
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        f.render_widget(
-            Paragraph::new(context).wrap(Wrap { trim: false }).block(
-                Block::default().borders(Borders::ALL).title(format!(
-                    "{} • line {} • Esc to references",
-                    note.title, line
-                )),
-            ),
-            area,
-        );
-        return;
+                KeyCode::Char('i') => {
+                    app.go_screen(Screen::Inbox);
+                    return Ok(false);
+                }
+                KeyCode::Char('p') => {
+                    app.go_screen(Screen::Projects);
+                    return Ok(false);
+                }
+                KeyCode::Char('a') => {
+                    app.go_screen(Screen::Agents);
+                    return Ok(false);
+                }
+                _ => {}
+            }
+        }
+        app.notify("Prefix cancelled", StatusKind::Info);
+        return Ok(false);
     }
-    let items = if app.knowledge_refs.is_empty() {
-        app.knowledge()
-            .into_iter()
-            .enumerate()
-            .map(|(i, k)| {
-                ListItem::new(format!(
-                    "{} [{}:{}] {}",
-                    if i == app.selected { ">" } else { " " },
-                    k.kind,
-                    k.status,
-                    k.title
-                ))
-            })
-            .collect::<Vec<_>>()
-    } else {
-        app.knowledge_refs
-            .iter()
-            .enumerate()
-            .map(|(i, r)| {
-                ListItem::new(format!(
-                    "{} {} {}:{}:{}  {}",
-                    if i == app.selected { ">" } else { " " },
-                    r.item_id.as_str(),
-                    r.field,
-                    r.line,
-                    r.column,
-                    r.preview
-                ))
-            })
-            .collect::<Vec<_>>()
-    };
-    let title = if !app.knowledge_refs.is_empty() {
-        "References  Enter=Open  /=Search  f=Find references".into()
-    } else if app.knowledge_query.is_empty() {
-        "Knowledge  /=Search  f=Find references  n=Capture".into()
-    } else {
-        format!("Knowledge filter: {}", app.knowledge_query)
-    };
-    f.render_widget(
-        List::new(items).block(Block::default().borders(Borders::ALL).title(title)),
-        area,
-    );
+    if modifiers.contains(KeyModifiers::CONTROL) && matches!(code, KeyCode::Char('p')) {
+        app.open_palette();
+        return Ok(false);
+    }
+    match code {
+        KeyCode::Char('g') => {
+            app.prefix = Some('g');
+            app.notify(
+                "g… h Home · i Inbox · p Projects · a Agents",
+                StatusKind::Info,
+            );
+        }
+        KeyCode::Char('q') => {
+            if app.screen == Screen::Home {
+                return Ok(true);
+            }
+            app.go_screen(Screen::Home);
+        }
+        KeyCode::Esc => {
+            if app.screen != Screen::Home {
+                app.go_screen(Screen::Home);
+            } else {
+                app.notify("Already Home", StatusKind::Info);
+            }
+        }
+        KeyCode::Char('?') => app.modal = Some(Modal::Help),
+        KeyCode::Char(':') => app.open_palette(),
+        KeyCode::Char('/') => app.open_search(),
+        KeyCode::Char('r') => app.refresh_current(),
+        KeyCode::Char('D') => {
+            if app.viewport_width < theme::WIDE_BREAKPOINT {
+                app.open_detail();
+            } else {
+                app.show_detail = !app.show_detail;
+            }
+        }
+        KeyCode::Tab => app.focus_next(false),
+        KeyCode::BackTab => app.focus_next(true),
+        KeyCode::Down | KeyCode::Char('j') => app.move_selection(1),
+        KeyCode::Up | KeyCode::Char('k') => app.move_selection(-1),
+        KeyCode::Right | KeyCode::Char('l') => app.move_component(1),
+        KeyCode::Left | KeyCode::Char('h') => app.move_component(-1),
+        KeyCode::Enter => match app.screen {
+            Screen::Projects => app.activate_project_selection(),
+            _ if app.focus == app::FocusPane::Sidebar => app.activate_sidebar(),
+            _ => app.open_detail(),
+        },
+        KeyCode::Char('[') => match app.screen {
+            Screen::Home => app.adjust_planning_horizon(false),
+            Screen::Project => app.switch_view(-1),
+            _ => app.move_component(-1),
+        },
+        KeyCode::Char(']') => match app.screen {
+            Screen::Home => app.adjust_planning_horizon(true),
+            Screen::Project => app.switch_view(1),
+            _ => app.move_component(1),
+        },
+        KeyCode::Char('a') | KeyCode::Char('s') => app.open_action_menu(),
+        KeyCode::Char('c') => {
+            if app.screen == Screen::Projects {
+                app.start_prompt(app::PromptKind::NewProject);
+            } else {
+                app.start_prompt(app::PromptKind::NewTask {
+                    project_id: app
+                        .project
+                        .as_ref()
+                        .filter(|_| app.screen == Screen::Project)
+                        .map(|project| project.id.clone()),
+                });
+            }
+        }
+        KeyCode::Char('C') => {
+            if let Some(project) = &app.project {
+                app.start_prompt(app::PromptKind::NewWorkItem {
+                    project_id: project.id.clone(),
+                });
+            } else {
+                app.notify(
+                    "Open a project before creating a work item",
+                    StatusKind::Warning,
+                );
+            }
+        }
+        KeyCode::Char('n') => app.start_prompt(app::PromptKind::NewKnowledge),
+        KeyCode::Char('p') if app.screen == Screen::Project => app.preview_plan(),
+        KeyCode::Char('P') if app.screen == Screen::Project => {
+            if app.pending_plan.is_some() {
+                app.modal = Some(Modal::Confirm {
+                    title: "Apply plan".into(),
+                    body: "Apply the previewed schedule after authoritative revalidation?".into(),
+                    pending: app::PendingAction::ApplyPlan,
+                });
+            } else {
+                app.notify("No pending plan; press p first", StatusKind::Warning);
+            }
+        }
+        KeyCode::Char('d') if matches!(app.screen, Screen::Home | Screen::Inbox) => {
+            app.completion_impact()
+        }
+        KeyCode::Char('v') if matches!(app.screen, Screen::Home | Screen::Inbox) => {
+            app.today_focus()
+        }
+        KeyCode::Char('A') if matches!(app.screen, Screen::Home | Screen::Inbox) => {
+            app.today_actions()
+        }
+        KeyCode::Char('G') if matches!(app.screen, Screen::Home | Screen::Inbox) => {
+            app.today_project_focus()
+        }
+        KeyCode::Char('b') => {
+            if let Some(project) = &app.project {
+                app.start_prompt(app::PromptKind::BindEvidence {
+                    project_id: project.id.clone(),
+                    unbind: false,
+                });
+            } else {
+                app.notify("Open a project first", StatusKind::Warning);
+            }
+        }
+        KeyCode::Char('o') => {
+            let metric_id = app.selected_item().map(|item| item.id.clone());
+            app.start_prompt(app::PromptKind::MetricObservation { metric_id });
+        }
+        KeyCode::Char('t') => {
+            let metric_id = app.selected_item().map(|item| item.id.clone());
+            app.start_prompt(app::PromptKind::MetricTarget { metric_id });
+        }
+        KeyCode::Char(' ') => {
+            if let Some(item) = app.selected_item()
+                && item.kind == orbit_ui::ItemKind::Habit
+            {
+                let habit_id = item.id.clone();
+                app.execute_pending(app::PendingAction::RecordHabit { habit_id });
+            } else {
+                app.notify(
+                    "Select a habit to record an occurrence",
+                    StatusKind::Warning,
+                );
+            }
+        }
+        KeyCode::Char(digit) if ('1'..='9').contains(&digit) && app.screen == Screen::Project => {
+            app.switch_view_by_index((digit as u8 - b'1') as usize);
+        }
+        _ => {}
+    }
+    Ok(false)
 }
 
-fn draw_habits_plan(f: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-        .split(area);
-    let habits = app
-        .client
-        .list_habits()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|h| h.active)
-        .collect::<Vec<_>>();
-    let rows = habits
-        .iter()
-        .enumerate()
-        .map(|(i, h)| {
-            ListItem::new(format!(
-                "{}{}  ({})",
-                if i == app.selected { "> " } else { "  " },
-                h.name,
-                h.cadence
-            ))
-        })
-        .collect::<Vec<_>>();
-    f.render_widget(
-        List::new(rows).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Habits • Space = check off"),
-        ),
-        chunks[0],
-    );
-    let text = if let Some(plan) = &app.pending_plan {
-        let scheduled = plan
-            .scheduled
-            .iter()
-            .map(|b| format!("{}: {} → {}", b.task_id, b.start_ms, b.end_ms))
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!(
-            "Deterministic task plan preview\n\n{}\n\nUnscheduled: {}\n\np = regenerate • Shift+P = apply/revalidate",
-            scheduled,
-            plan.unscheduled.len()
-        )
-    } else {
-        "No pending plan.\n\np = preview next 8h\nPolicy: 60m protected, max 240m new work, 5m fixed buffers".into()
+fn handle_modal(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Result<bool, String> {
+    let Some(mut modal) = app.modal.take() else {
+        return Ok(false);
     };
-    f.render_widget(
-        Paragraph::new(text)
-            .wrap(Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL).title("Planner")),
-        chunks[1],
-    );
+    let mut keep = true;
+    match &mut modal {
+        Modal::Prompt(prompt) => match code {
+            KeyCode::Esc => {
+                keep = false;
+                app.notify("Prompt cancelled", StatusKind::Info);
+            }
+            KeyCode::Enter => {
+                let prompt = prompt.clone();
+                keep = false;
+                app.submit_prompt(prompt);
+            }
+            KeyCode::Backspace => {
+                prompt.value.pop();
+            }
+            KeyCode::Char(character) => prompt.value.push(character),
+            _ => {}
+        },
+        Modal::Confirm {
+            title,
+            body,
+            pending,
+        } => match code {
+            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                let pending = pending.clone();
+                let title = title.clone();
+                keep = false;
+                app.notify(format!("Submitting {title}"), StatusKind::Pending);
+                app.execute_pending(pending);
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                keep = false;
+                app.notify("Cancelled; no change was submitted", StatusKind::Info);
+            }
+            _ => {
+                let _ = body;
+            }
+        },
+        Modal::ActionMenu {
+            actions, selected, ..
+        } => match code {
+            KeyCode::Esc => {
+                keep = false;
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                *selected = (*selected + 1).min(actions.len().saturating_sub(1));
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                *selected = selected.saturating_sub(1);
+            }
+            KeyCode::Enter => {
+                let action = actions.get(*selected).cloned();
+                keep = false;
+                if let Some(action) = action {
+                    app.execute_action(action);
+                }
+            }
+            _ => {}
+        },
+        Modal::Palette {
+            query,
+            entries,
+            selected,
+        } => match code {
+            KeyCode::Esc => keep = false,
+            KeyCode::Down => *selected = (*selected + 1).min(entries.len().saturating_sub(1)),
+            KeyCode::Up => *selected = selected.saturating_sub(1),
+            KeyCode::Backspace => {
+                query.pop();
+                *entries = app.palette_entries(query);
+                *selected = 0;
+            }
+            KeyCode::Char(character) => {
+                query.push(character);
+                *entries = app.palette_entries(query);
+                *selected = 0;
+            }
+            KeyCode::Enter => {
+                let action = entries.get(*selected).map(|entry| entry.action.clone());
+                keep = false;
+                if let Some(action) = action
+                    && app.execute_palette_action(action)
+                {
+                    return Ok(true);
+                }
+            }
+            _ => {}
+        },
+        Modal::Help => {
+            if matches!(code, KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q')) {
+                keep = false;
+            }
+        }
+        Modal::Detail(_) => {
+            if matches!(code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
+                keep = false;
+            }
+        }
+        Modal::TodayActions { menu, selected } => match code {
+            KeyCode::Esc => keep = false,
+            KeyCode::Down | KeyCode::Char('j') => {
+                *selected = (*selected + 1).min(menu.actions.len().saturating_sub(1));
+            }
+            KeyCode::Up | KeyCode::Char('k') => *selected = selected.saturating_sub(1),
+            KeyCode::Enter => {
+                let index = *selected;
+                keep = false;
+                app.today_select_action(index);
+            }
+            _ => {}
+        },
+        Modal::Search {
+            query,
+            hits,
+            selected,
+        } => match code {
+            KeyCode::Esc => keep = false,
+            KeyCode::Down => *selected = (*selected + 1).min(hits.len().saturating_sub(1)),
+            KeyCode::Up => *selected = selected.saturating_sub(1),
+            KeyCode::Backspace => {
+                query.pop();
+                *hits = app.search_hits(query);
+                *selected = 0;
+            }
+            KeyCode::Char(character) => {
+                query.push(character);
+                *hits = app.search_hits(query);
+                *selected = 0;
+            }
+            KeyCode::Enter => {
+                let hit = hits.get(*selected).cloned();
+                keep = false;
+                if let Some(hit) = hit {
+                    app.execute_palette_action(hit.action);
+                }
+            }
+            _ => {}
+        },
+        Modal::Message { .. } => {
+            if matches!(code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
+                keep = false;
+            }
+        }
+    }
+    if keep {
+        app.modal = Some(modal);
+    }
+    Ok(false)
 }
 
-fn draw_agent(f: &mut ratatui::Frame, area: ratatui::layout::Rect, _app: &App) {
-    let agent = env::var("ORBIT_MCP_AGENT_ID").unwrap_or_else(|_| "not configured".into());
-    let session = env::var("ORBIT_MCP_SESSION_ID").unwrap_or_else(|_| "default".into());
-    let mode = env::var("ORBIT_MCP_MODE").unwrap_or_else(|_| "read_only".into());
-    let projects =
-        env::var("ORBIT_MCP_PROJECTS").unwrap_or_else(|_| "all project-scoped data".into());
-    let text = format!(
-        "Local agent configuration\n\nagent: {agent}\nsession: {session}\nmode: {mode}\nproject allowlist: {projects}\n\nConnected-mode synchronization uses the native authoritative replica, not Git."
-    );
-    f.render_widget(
-        Paragraph::new(text).wrap(Wrap { trim: false }).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Agent inspection"),
-        ),
-        area,
-    );
-}
-
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or_default()
-}
-fn err<E: std::fmt::Debug>(e: E) -> String {
-    format!("{e:?}")
+fn err<E: std::fmt::Debug>(error: E) -> String {
+    format!("{error:?}")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use app::{FocusPane, Modal, PaletteAction, PendingAction, PromptKind};
+    use ratatui::{Terminal, backend::TestBackend};
+
     fn app() -> App {
         let filename = std::env::temp_dir().join(format!(
-            "orbit-tui-planning-{}-{}.sqlite",
+            "orbit-tui-m28-{}-{}.sqlite",
             std::process::id(),
             std::time::SystemTime::now()
-                .duration_since(UNIX_EPOCH)
+                .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
         ));
+        let _ = std::fs::remove_file(&filename);
         App::open(filename.to_string_lossy().into_owned()).unwrap()
     }
+
+    fn submit(app: &mut App, kind: PromptKind, value: &str) {
+        app.start_prompt(kind);
+        let Some(Modal::Prompt(mut prompt)) = app.modal.take() else {
+            panic!("expected prompt");
+        };
+        prompt.value = value.into();
+        app.submit_prompt(prompt);
+    }
+
+    fn buffer_text(app: &mut App, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render::draw(frame, app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     #[test]
-    fn today_starts_with_an_accepted_read_only_brief() {
-        let app = app();
+    fn fresh_workspace_renders_home_without_querying_storage_in_renderer() {
+        let mut app = app();
+        assert_eq!(app.screen, Screen::Home);
+        assert!(!app.home.components.is_empty());
+        let text = buffer_text(&mut app, 120, 30);
+        assert!(text.contains("ORBIT"), "{text}");
+        assert!(text.contains("Today / Next"), "{text}");
+        assert!(text.contains("Details"), "{text}");
+    }
+
+    #[test]
+    fn project_creation_opens_generated_legacy_views() {
+        let mut app = app();
+        submit(&mut app, PromptKind::NewProject, "Apollo");
+        assert_eq!(app.screen, Screen::Project);
+        let project = app.project.as_ref().unwrap();
+        assert_eq!(project.name, "Apollo");
+        assert!(project.generated);
+        assert!(project.views.iter().any(|view| view.id == "overview"));
+        let text = buffer_text(&mut app, 120, 30);
+        assert!(text.contains("generated default"), "{text}");
+    }
+
+    #[test]
+    fn research_blueprint_work_item_offers_authorized_transition() {
+        let mut app = app();
+        submit(&mut app, PromptKind::NewProject, "Research");
+        let project_id = app.project.as_ref().unwrap().id.clone();
+        app.client.install_bundled_blueprint("research").unwrap();
+        app.client
+            .bind_project_blueprint(&project_id, "research", 2)
+            .unwrap();
+        app.refresh_project();
+        let item = app
+            .client
+            .create_blueprint_work_item(
+                &project_id,
+                "hypothesis",
+                std::collections::BTreeMap::from([(
+                    "question".into(),
+                    serde_json::json!("Does M28 resolve?"),
+                )]),
+            )
+            .unwrap();
+        app.refresh_project();
+        let board = app
+            .project
+            .as_ref()
+            .unwrap()
+            .views
+            .iter()
+            .position(|view| view.id == "workflow")
+            .unwrap();
+        app.switch_view_by_index(board);
+        let component = app.project.as_ref().unwrap().views[board]
+            .components
+            .iter()
+            .position(|component| component.id == "board")
+            .unwrap();
+        app.active_component = component;
+        app.selected = app
+            .current_component()
+            .unwrap()
+            .selection
+            .iter()
+            .position(|row| row.id == item.id)
+            .unwrap();
+        let action = app
+            .available_actions()
+            .into_iter()
+            .find(|action| {
+                action.id == "blueprint_transition"
+                    && action.payload.as_deref() == Some("investigating")
+            })
+            .expect("transition offer");
+        app.execute_action(action);
+        let updated = app.client.list_blueprint_work_items(&project_id).unwrap();
+        assert_eq!(updated[0].state, "investigating");
+    }
+
+    #[test]
+    fn narrow_terminals_render_a_single_readable_pane() {
+        let mut app = app();
+        app.focus = FocusPane::Workspace;
+        let text = buffer_text(&mut app, 60, 18);
         assert!(
-            app.today.is_some(),
-            "fresh local authority should build an empty accepted brief"
+            text.contains("Today / Next") || text.contains("Home"),
+            "{text}"
         );
         assert!(
-            app.today
-                .as_ref()
-                .unwrap()
-                .lines
+            !text.contains("Details"),
+            "narrow layout should not reserve a detail pane: {text}"
+        );
+    }
+
+    #[test]
+    fn missing_component_keeps_the_rest_of_the_view() {
+        let mut app = app();
+        app.home.components.insert(
+            0,
+            orbit_ui::ResolvedComponent {
+                id: "unavailable".into(),
+                title: "Unavailable".into(),
+                component_type: "unknown_extension".into(),
+                status: orbit_ui::LoadStatus::Missing("not installed".into()),
+                body: orbit_ui::ComponentBody::Missing {
+                    component_type: "unknown_extension".into(),
+                    reason: "Install the extension that provides it.".into(),
+                },
+                selection: Vec::new(),
+            },
+        );
+        let text = buffer_text(&mut app, 100, 26);
+        assert!(text.contains("Missing component"), "{text}");
+        assert!(text.contains("Today / Next"), "{text}");
+    }
+
+    #[test]
+    fn palette_and_search_filter_without_losing_modal_cancel() {
+        let mut app = app();
+        app.open_palette();
+        assert!(matches!(app.modal, Some(Modal::Palette { .. })));
+        handle_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).unwrap();
+        assert!(app.modal.is_none());
+        app.open_search();
+        handle_key(&mut app, KeyCode::Char('i'), KeyModifiers::NONE).unwrap();
+        assert!(matches!(app.modal, Some(Modal::Search { .. })));
+    }
+
+    #[test]
+    fn project_selection_enter_opens_project() {
+        let mut app = app();
+        submit(&mut app, PromptKind::NewProject, "Apollo");
+        handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap();
+        handle_key(&mut app, KeyCode::Char('g'), KeyModifiers::NONE).unwrap();
+        handle_key(&mut app, KeyCode::Char('p'), KeyModifiers::NONE).unwrap();
+        assert_eq!(app.screen, Screen::Projects);
+        app.focus = FocusPane::Workspace;
+        app.projects_selection = 0;
+        handle_key(&mut app, KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        assert_eq!(app.screen, Screen::Project);
+        assert_eq!(app.project.as_ref().unwrap().name, "Apollo");
+    }
+
+    #[test]
+    fn duplicate_record_submission_is_ignored_until_refresh() {
+        let mut app = app();
+        submit(&mut app, PromptKind::NewProject, "Habits");
+        let project_id = app.project.as_ref().unwrap().id.clone();
+        let habit = app
+            .client
+            .create_habit(orbit_client::CreateHabitRequest {
+                id: None,
+                name: "Stretch".into(),
+                cadence: "daily".into(),
+            })
+            .unwrap();
+        app.refresh_project();
+        let pending = PendingAction::RecordHabit {
+            habit_id: habit.id.clone(),
+        };
+        app.execute_pending(pending.clone());
+        app.execute_pending(pending);
+        let occurrences = app.client.habit_history(habit.id.clone()).unwrap();
+        assert_eq!(occurrences.len(), 1);
+        assert!(app.status.text.contains("Duplicate"), "{}", app.status.text);
+        let _ = project_id;
+    }
+
+    #[test]
+    fn focus_cycles_between_three_panes_on_wide_terminals() {
+        let mut app = app();
+        app.set_viewport(120);
+        app.focus = FocusPane::Workspace;
+        app.focus_next(false);
+        assert_eq!(app.focus, FocusPane::Detail);
+        app.focus_next(false);
+        assert_eq!(app.focus, FocusPane::Sidebar);
+    }
+
+    #[test]
+    fn quit_returns_home_before_leaving() {
+        let mut app = app();
+        submit(&mut app, PromptKind::NewProject, "Apollo");
+        assert!(!handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
+        assert_eq!(app.screen, Screen::Home);
+        assert!(handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
+    }
+
+    #[test]
+    fn palette_actions_share_the_contextual_catalogue() {
+        let mut app = app();
+        submit(&mut app, PromptKind::NewProject, "Apollo");
+        app.open_palette();
+        let Some(Modal::Palette { entries, .. }) = &app.modal else {
+            panic!("palette");
+        };
+        assert!(entries.iter().any(|entry| entry.label.contains("New task")));
+        assert!(
+            entries
                 .iter()
-                .any(|line| line.contains("TODAY / NEXT"))
+                .any(|entry| matches!(entry.action, PaletteAction::Go(Screen::Home)))
         );
-        assert!(app.today_details.is_none());
     }
+}
+
+#[cfg(test)]
+mod m28_render_tests {
+    use super::*;
+    use app::FocusPane;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn app() -> App {
+        let filename = std::env::temp_dir().join(format!(
+            "orbit-tui-m28-render-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&filename);
+        App::open(filename.to_string_lossy().into_owned()).unwrap()
+    }
+
+    fn text(app: &mut App, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render::draw(frame, app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn project_with_development(app: &mut App) -> String {
+        let project = app
+            .client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: "Apollo".into(),
+            })
+            .unwrap();
+        app.client.install_bundled_blueprint("development").unwrap();
+        app.client
+            .bind_project_blueprint(&project.id, "development", 2)
+            .unwrap();
+        app.refresh_workspace();
+        app.open_project(&project.id);
+        project.id
+    }
+
     #[test]
-    fn horizon_controls_remain_bounded_and_recompute_the_brief() {
+    fn overview_renders_live_metric_cards_and_task_rows() {
         let mut app = app();
-        for _ in 0..20 {
-            app.adjust_today_horizon(true);
+        let project_id = project_with_development(&mut app);
+        app.client
+            .create_task(orbit_client::CreateTaskRequest {
+                id: None,
+                title: "Ship the shell".into(),
+                project_id: Some(project_id.clone()),
+                milestone_id: None,
+            })
+            .unwrap();
+        let task = app
+            .client
+            .create_task(orbit_client::CreateTaskRequest {
+                id: None,
+                title: "Ready work".into(),
+                project_id: Some(project_id),
+                milestone_id: None,
+            })
+            .unwrap();
+        app.client
+            .set_task_status(orbit_client::SetTaskStatusRequest {
+                id: task.id,
+                status: "ready".into(),
+            })
+            .unwrap();
+        app.refresh_project();
+        let rendered = text(&mut app, 140, 40);
+        assert!(rendered.contains("Ready tasks"), "{rendered}");
+        assert!(rendered.contains("Ready work"), "{rendered}");
+        assert!(rendered.contains("Ship the shell"), "{rendered}");
+    }
+
+    #[test]
+    fn board_renders_workflow_columns_and_selection() {
+        let mut app = app();
+        project_with_development(&mut app);
+        let board = app
+            .project
+            .as_ref()
+            .unwrap()
+            .views
+            .iter()
+            .position(|view| view.id == "board")
+            .unwrap();
+        app.switch_view_by_index(board);
+        let rendered = text(&mut app, 140, 40);
+        for column in ["Inbox", "Ready", "Review", "Done"] {
+            assert!(rendered.contains(column), "missing {column}: {rendered}");
         }
-        assert_eq!(app.today_hours, 168);
-        assert!(app.today.is_some());
-        for _ in 0..20 {
-            app.adjust_today_horizon(false);
+    }
+
+    #[test]
+    fn stale_and_error_states_are_visible() {
+        let mut app = app();
+        let project_id = project_with_development(&mut app);
+        app.project.as_mut().unwrap().stale_error = Some("server unavailable".into());
+        let rendered = text(&mut app, 120, 30);
+        assert!(rendered.contains("[stale]"), "{rendered}");
+        app.home.components.insert(
+            0,
+            orbit_ui::ResolvedComponent {
+                id: "broken".into(),
+                title: "Broken".into(),
+                component_type: "list".into(),
+                status: orbit_ui::LoadStatus::Error("bad binding".into()),
+                body: orbit_ui::ComponentBody::Text {
+                    heading: "Broken".into(),
+                    lines: vec!["Invalid configuration".into()],
+                },
+                selection: Vec::new(),
+            },
+        );
+        app.go_screen(Screen::Home);
+        let rendered = text(&mut app, 120, 30);
+        assert!(rendered.contains("error: bad binding"), "{rendered}");
+        let _ = project_id;
+    }
+
+    #[test]
+    fn loading_component_keeps_context_and_never_looks_authoritative() {
+        let mut app = app();
+        app.home.components.insert(
+            0,
+            orbit_ui::ResolvedComponent {
+                id: "loading".into(),
+                title: "Loading".into(),
+                component_type: "list".into(),
+                status: orbit_ui::LoadStatus::Loading,
+                body: orbit_ui::ComponentBody::Text {
+                    heading: "Loading".into(),
+                    lines: Vec::new(),
+                },
+                selection: Vec::new(),
+            },
+        );
+        let rendered = text(&mut app, 120, 30);
+        assert!(rendered.contains("Loading accepted data"), "{rendered}");
+        assert!(
+            rendered.contains("previous view remains visible"),
+            "{rendered}"
+        );
+    }
+
+    #[test]
+    fn table_renderer_handles_narrow_and_wide_terminals() {
+        let mut app = app();
+        app.home.components = vec![orbit_ui::ResolvedComponent {
+            id: "table".into(),
+            title: "Table".into(),
+            component_type: "table".into(),
+            status: orbit_ui::LoadStatus::Ready,
+            body: orbit_ui::ComponentBody::Table {
+                columns: vec!["title".into(), "status".into()],
+                rows: vec![orbit_ui::model::TableRowModel {
+                    id: "t1".into(),
+                    kind: orbit_ui::ItemKind::Task,
+                    status: "ready".into(),
+                    cells: vec![
+                        "A long task title that should be truncated".into(),
+                        "ready".into(),
+                    ],
+                }],
+            },
+            selection: Vec::new(),
+        }];
+        app.focus = FocusPane::Workspace;
+        let wide = text(&mut app, 120, 24);
+        assert!(wide.contains("TITLE"), "{wide}");
+        assert!(wide.contains("A long task title"), "{wide}");
+        let narrow = text(&mut app, 60, 16);
+        assert!(narrow.contains("TITLE"), "{narrow}");
+    }
+
+    #[test]
+    fn tab_focus_and_key_prefix_do_not_collide() {
+        let mut app = app();
+        app.set_viewport(120);
+        app.focus = FocusPane::Workspace;
+        handle_key(&mut app, KeyCode::Char('g'), KeyModifiers::NONE).unwrap();
+        assert_eq!(app.prefix, Some('g'));
+        handle_key(&mut app, KeyCode::Char('a'), KeyModifiers::NONE).unwrap();
+        assert_eq!(app.screen, Screen::Agents);
+        assert!(app.prefix.is_none());
+        handle_key(&mut app, KeyCode::Tab, KeyModifiers::NONE).unwrap();
+        assert_eq!(app.focus, FocusPane::Detail);
+        handle_key(&mut app, KeyCode::Tab, KeyModifiers::NONE).unwrap();
+        assert_eq!(app.focus, FocusPane::Sidebar);
+        handle_key(&mut app, KeyCode::BackTab, KeyModifiers::NONE).unwrap();
+        assert_eq!(app.focus, FocusPane::Detail);
+    }
+
+    #[test]
+    fn project_switch_reloads_views_without_reusing_previous_project_data() {
+        let mut app = app();
+        let first = app
+            .client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: "First".into(),
+            })
+            .unwrap();
+        let second = app
+            .client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: "Second".into(),
+            })
+            .unwrap();
+        app.refresh_workspace();
+        app.go_screen(Screen::Projects);
+        app.projects_selection = app
+            .projects
+            .iter()
+            .position(|project| project.id == first.id)
+            .unwrap();
+        handle_key(&mut app, KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        assert_eq!(app.project.as_ref().unwrap().id, first.id);
+        handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap();
+        app.go_screen(Screen::Projects);
+        app.projects_selection = app
+            .projects
+            .iter()
+            .position(|project| project.id == second.id)
+            .unwrap();
+        handle_key(&mut app, KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        assert_eq!(app.project.as_ref().unwrap().id, second.id);
+    }
+
+    #[test]
+    fn tui_sources_do_not_open_storage_or_spawn_commands() {
+        for source in [
+            include_str!("app.rs"),
+            include_str!("render.rs"),
+            include_str!("theme.rs"),
+        ] {
+            assert!(!source.contains("rusqlite"));
+            assert!(!source.contains("Command::new"));
+            assert!(!source.contains("std::process::Command"));
+            assert!(!source.contains("SELECT "));
+            assert!(!source.contains("INSERT INTO"));
         }
-        assert_eq!(app.today_hours, 1);
-        assert!(app.today.is_some());
     }
+}
+
+#[cfg(test)]
+mod m28_planning_tests {
+    use super::*;
+    use app::{Modal, Screen};
+
+    fn app() -> App {
+        let filename = std::env::temp_dir().join(format!(
+            "orbit-tui-m28-planning-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&filename);
+        App::open(filename.to_string_lossy().into_owned()).unwrap()
+    }
+
     #[test]
-    fn impact_of_empty_brief_never_mutates_state() {
+    fn today_tasks_are_selectable_and_offer_revision_checked_destinations() {
         let mut app = app();
-        let before = app.client.list_tasks().unwrap();
-        app.today_impact();
-        assert!(app.message.contains("No accepted task selected"));
-        assert_eq!(app.client.list_tasks().unwrap().len(), before.len());
-    }
-    #[test]
-    fn today_navigation_handles_zero_tasks() {
-        let mut app = app();
-        app.jump_today(true);
-        app.jump_today(false);
-        assert!(app.today_details.is_none());
-    }
-    #[test]
-    fn tabs_wrap_without_business_logic() {
-        assert_eq!(Tab::Agent.next(), Tab::Today);
-        assert_eq!(Tab::Today.prev(), Tab::Agent);
-        assert_eq!(Tab::Knowledge.next(), Tab::HabitsPlan);
+        let project = app
+            .client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: "Planning".into(),
+            })
+            .unwrap();
+        let task = app
+            .client
+            .create_task(orbit_client::CreateTaskRequest {
+                id: None,
+                title: "Accepted task".into(),
+                project_id: Some(project.id),
+                milestone_id: None,
+            })
+            .unwrap();
+        app.client
+            .set_task_status(orbit_client::SetTaskStatusRequest {
+                id: task.id.clone(),
+                status: "ready".into(),
+            })
+            .unwrap();
+        app.refresh_planning();
+        app.refresh_workspace();
+        assert_eq!(app.screen, Screen::Home);
+        let component = app
+            .home
+            .components
+            .iter()
+            .position(|component| component.id == "today_tasks")
+            .expect("today task component");
+        app.active_component = component;
+        app.selected = app
+            .current_component()
+            .unwrap()
+            .selection
+            .iter()
+            .position(|row| row.id == task.id)
+            .expect("planning task selection");
+        app.today_actions();
+        assert!(
+            matches!(app.modal, Some(Modal::TodayActions { .. })),
+            "expected accepted planning action menu"
+        );
+        app.today_select_action(0);
+        assert!(
+            matches!(app.modal, Some(Modal::Message { .. })),
+            "expected read-only destination"
+        );
+        let _ = task;
     }
 }

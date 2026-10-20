@@ -120,6 +120,42 @@ impl SqliteStore {
             }).optional().map_err(repo_error)
     }
 
+    /// Read-only project-scoped work-item projection for presentation clients.
+    /// Ordering is stable and never infers authority from the caller.
+    pub fn blueprint_work_items_for_project(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<BlueprintWorkItem>, RepositoryError> {
+        let mut statement = self
+            .prepare(
+                "SELECT id,project_id,kind,state,properties_json,revision \
+                 FROM orbit_blueprint_work_items WHERE project_id=?1 ORDER BY kind,id",
+            )
+            .map_err(repo_error)?;
+        let rows = statement
+            .query_map([project_id], |row| {
+                let serialized: String = row.get(4)?;
+                let properties: BTreeMap<String, Value> = serde_json::from_str(&serialized)
+                    .map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })?;
+                Ok(BlueprintWorkItem {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    state: row.get(3)?,
+                    properties,
+                    revision: row.get(5)?,
+                })
+            })
+            .map_err(repo_error)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(repo_error)
+    }
+
     pub fn transition_blueprint_work_item(
         &mut self,
         id: &str,

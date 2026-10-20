@@ -21,7 +21,7 @@ def test_shared_dispatcher_and_revision_checks():
         assert compact(term) in src, term
 
 def test_tui_modes_offer_selectable_index_and_revision_checks():
-    local=compact(read('crates/orbit-tui/src/main.rs'))
+    local=compact(read('crates/orbit-tui/src/main.rs') + read('crates/orbit-tui/src/app.rs'))
     remote=compact(read('crates/orbit-tui/src/connected.rs'))
     for src in (local,remote):
         assert 'select_from_menu' in src

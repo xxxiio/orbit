@@ -2,6 +2,7 @@
 members = [
   "crates/orbit-domain",
   "crates/orbit-blueprint",
+  "crates/orbit-ui",
   "crates/orbit-application",
   "crates/orbit-storage",
   "crates/orbit-planner",

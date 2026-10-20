@@ -30,6 +30,17 @@ The published blueprint supplies default property values and validates custom fi
 
 Templates let you create related work items with prerequisites: use `orbit blueprint apply-template --help` to inspect the invocation. Applied templates are committed atomically by the authority rather than one item at a time.
 
+## 3a. Add project views
+
+A blueprint may also declare terminal/UI views. Add a `views` list with layouts,
+components, sources, filters, sorting and limits; the renderer only accepts
+registered component IDs and read-only data sources. See
+[Blueprint-defined project views](blueprint-views.md) for a complete example and
+the [UI view reference](../reference/ui-views.md) for every field.
+
+Views are optional. Existing manifests without `views` remain valid and open
+through generated defaults.
+
 ## 4. Understand action security
 
 A blueprint can offer an action such as `agent.launch`, but the manifest cannot grant itself permission. The domain model and executor primitives for explicit request/authorization exist, but **no CLI, MCP or HTTP surface currently exposes an action request or execution command**, so a user cannot yet request one of these actions from Orbit. When such a surface exists, execution must be explicitly requested and authorized before Orbit persists the action intent for an executor to claim. If delivery is uncertain, do not launch again merely because no success acknowledgment arrived.

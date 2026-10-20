@@ -5,6 +5,7 @@ use super::*;
 pub(super) fn run_agent(
     host: &mut orbit_runtime::AuthoritativeHost,
     command: AgentSubcommand,
+    default_agent_provider: Option<&str>,
 ) -> Result<Response, CliError> {
     use orbit_runtime::agent_dispatch::DispatchResult;
     use orbit_runtime::herdr_runtime::HerdrRuntime;
@@ -16,6 +17,9 @@ pub(super) fn run_agent(
             repository,
             worktree,
         } => {
+            let agent = agent
+                .or_else(|| default_agent_provider.map(ToOwned::to_owned))
+                .unwrap_or_else(|| "codex".to_owned());
             let id = generate_id("agent-job");
             let mut runtime = HerdrRuntime::default();
             host.start_local_agent_job(

@@ -1,124 +1,152 @@
 # Orbit
 
-Orbit is a local-first Rust engine for projects, tasks, habits, schedules,
-structured knowledge, and opt-in agent-assisted execution. A self-hosted
-server is optional; Herdr and AI providers are not required for ordinary use.
+Orbit is a local-first Rust CLI for projects, tasks, habits, routines,
+schedules, Markdown notes and optional agent-assisted execution. The default
+workspace is a local SQLite database that works offline. A self-hosted server,
+Herdr, MCP clients and AI providers are optional.
 
-## Install and learn
-
-- [Install the local CLI or optional binaries](docs/getting-started/installation.md)
-- [Build and verify offline binary distributions](docs/releasing/binary-distribution.md)
-- [Platform requirements and optional components](docs/releasing/platforms-and-components.md)
-- [Release candidate checklist](docs/releasing/release-checklist.md)
-- [First project and blueprint](docs/getting-started/first-project.md)
-- [Agent execution and handoffs](docs/guides/agent-workflow.md)
-- [End-to-end agent workflow tutorial](docs/guides/agent-workflow-tutorial.md)
-- [Offline behavior](docs/guides/offline-operation.md)
-- [Self-hosted operation](docs/guides/self-hosting.md)
-- [CLI command groups](docs/reference/cli.md)
-- [Create custom project workflows](docs/guides/custom-blueprints.md)
-- [Optional worker deployment](docs/guides/worker-deployment.md)
-- [Troubleshooting](docs/guides/troubleshooting.md)
-
-The [documentation index](docs/README.md) organizes the remaining task-oriented
-guides. Optional trusted worker: `./scripts/install-worker.sh` (separate; Python
-required only there). Local installation: `./scripts/install.sh` (requires
-Cargo), optional server setup: `./scripts/setup-server.sh --init`; uninstall:
-`./scripts/uninstall.sh`. The local CLI does not require Python or Herdr.
-
-## Current architecture
-
-| Mode | Canonical authority | Offline behavior |
-| --- | --- | --- |
-| Local-only | Local `AuthoritativeHost` + SQLite | Operations are immediately authoritative locally; no server required. |
-| Connected | Self-hosted server `AuthoritativeHost` + server SQLite | Client SQLite contains accepted snapshots and a durable pending-command outbox. Commands are only accepted after server acknowledgment. |
-
-The server never runs arbitrary agent shell commands. Enrolled machine-side
-workers use the optional Herdr adapter to execute authorized jobs; Orbit keeps
-job intentions, session observations, handoffs, and reviews. Agent job/session
-completion **does not** automatically complete an Orbit task.
-
-Use **`orbit`** as the public CLI (`orbit agent ...` for agent commands). The
-machine worker scripts under `deploy/server/` are internal operational tools,
-not alternative public command-line interfaces. The Flutter application is
-outside this Rust repository and is not a release-acceptance prerequisite.
-
-## Configuration
-
-Local-only mode:
+## Install
 
 ```sh
-export ORBIT_DB=orbit.db
+curl -fsSL https://github.com/xxxiio/orbit/releases/latest/download/install.sh | sh
 ```
 
-Connected mode (requires both settings; incomplete configuration fails closed):
+The installer is attached to each release together with its transactional core
+and verifier, so the public URL stays on `github.com` and does not use raw source
+hosting. It downloads a release archive for the detected target, verifies its
+SHA-256 checksum, and installs the `orbit` CLI into `~/.local/bin` without
+`sudo`. It does not edit shell startup files. Add the prefix to `PATH`:
 
 ```sh
-export ORBIT_AUTHORITY_DB=replica.db
-export ORBIT_AUTHORITY_SERVER=http://localhost:8787
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-`ORBIT_AUTHORITY_URL` is an alternate endpoint variable. Production endpoints
-must use TLS; loopback cleartext is permitted for development. Pending agent
-intentions join the canonical SQLite outbox and retain global command order;
-external machine-worker launch journals are separate, because they fence
-irreversible process side effects.
+If no public release is available yet, install from a checkout with
+`./scripts/install.sh --prefix "$HOME/.local"` (requires Rust), or build a
+local archive with `./scripts/package-release.sh --build --components cli`.
+See the [installation guide](docs/getting-started/installation.md#install-from-this-checkout-before-a-release).
+The GitHub workflow creates a draft release, and publishing requires manual
+authorization; this repository does not assume a public release exists today.
 
-## Source layout and documentation
+Pin a version with `--version`, choose a prefix with `--prefix`, or save the
+script first:
 
-| Location | Responsibility |
+```sh
+curl -fsSL https://github.com/xxxiio/orbit/releases/latest/download/install.sh | sh -s -- --version v0.1.0
+curl -fsSL https://github.com/xxxiio/orbit/releases/latest/download/install.sh -o install.sh
+sh ./install.sh --version v0.1.0 --prefix "$HOME/.local"
+```
+
+Checksums downloaded next to the archive protect against corruption in transit;
+they are not publisher authenticity. See
+[binary distribution](docs/releasing/binary-distribution.md) and
+[platforms and components](docs/releasing/platforms-and-components.md).
+
+## Initialize and check
+
+```sh
+orbit init
+orbit doctor
+```
+
+`orbit init` creates `~/.orbit/config.toml`, the SQLite database, the Markdown
+vault, and `logs/`, `state/` and `backups/` directories. It is idempotent and
+does not overwrite an existing configuration without `--force`. `orbit doctor`
+is read-only and reports the executable, PATH resolution, configuration,
+database integrity, authority mode and optional tools.
+
+## First project
+
+```sh
+orbit project add "Prototype API"
+orbit project list
+orbit task add "Design the API" --project PROJECT_ID
+orbit task add "Implement the API" --project PROJECT_ID
+orbit task depends-on IMPLEMENT_TASK_ID DESIGN_TASK_ID
+orbit task ready --now-ms 1792480200000 --all
+orbit task start DESIGN_TASK_ID
+orbit task complete DESIGN_TASK_ID
+```
+
+Replace `PROJECT_ID`, `DESIGN_TASK_ID` and `IMPLEMENT_TASK_ID` with the IDs
+printed by the commands. `--now-ms` is Unix milliseconds, not seconds.
+
+## Terminal workspace
+
+`orbit-tui` is a project-centric terminal client over the same authority:
+
+```sh
+orbit-tui
+```
+
+The sidebar exposes Home/Today, Inbox, Projects and Agents; project screens show
+the views declared by the pinned blueprint, with generated defaults for older
+blueprints. Press `?` for the keyboard map, `:` for the command palette and `/`
+to search. Mutations use the same authorized client commands as the CLI, while
+job completion never silently completes a task.
+
+See the [terminal workspace guide](docs/guides/tui-workspace.md) and
+[blueprint view authoring](docs/guides/blueprint-views.md).
+
+## Documentation
+
+The [documentation index](docs/README.md) is organized by task: installation,
+first project, everyday workflows, blueprints, agent work, connected mode, MCP,
+reference and release maintenance. Start with the
+[local quickstart](docs/getting-started/quickstart.md) or
+[installation guide](docs/getting-started/installation.md).
+
+## Status and limits
+
+- Local mode, loopback connected mode and local-Herdr agent workflows are
+  runtime-verified on **Linux x86_64** only.
+- Declared release targets are `x86_64-unknown-linux-gnu`,
+  `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin` and
+  `aarch64-apple-darwin`. macOS is **not runtime-verified**; Windows is
+  unsupported and there is no native Windows installer.
+- The GitHub workflow creates a **draft** release on a tag push and requires
+  explicit manual authorization to publish. This repository does not claim that
+  a real public GitHub Release has been published.
+- Agent session completion does not complete an Orbit task. Run
+  `orbit task complete` after reviewing evidence.
+- Core task priority, standalone milestone CRUD and a dedicated backup
+  subcommand are not implemented in this build. Use deadlines, readiness and
+  impact for planning; use `task add --milestone` only as a reference to an
+  existing milestone; use the documented SQLite backup procedure.
+- Capability actions declared by blueprints are partially implemented and are
+  not exposed as executable commands.
+
+See [platforms and components](docs/releasing/platforms-and-components.md),
+[the release checklist](docs/releasing/release-checklist.md), and
+[upgrades and recovery](docs/releasing/upgrades-and-recovery.md).
+
+## Architecture
+
+| Layer | Responsibility |
 | --- | --- |
-| `crates/orbit-domain` | Domain identities and invariants |
-| `crates/orbit-application` | Application use cases, ports, authority rules |
-| `crates/orbit-storage` | SQLite repositories, schemas and migrations |
-| `crates/orbit-runtime` | Composition and optional agent runtime adapters |
-| `crates/orbit-client`, `crates/orbit-sync` | Connected replicas, pending commands and sync |
-| `crates/orbit-server` | Authenticated server transport |
-| `crates/orbit-cli`, `crates/orbit-tui`, `crates/orbit-mcp` | User-facing adapters |
-| `deploy/server` | Optional machine, proposal, and automation workers |
+| `crates/orbit-domain` | Identities, lifecycle rules and domain invariants |
+| `crates/orbit-application` | Use cases, ports and command validation |
+| `crates/orbit-storage` | SQLite repositories, schema and migrations |
+| `crates/orbit-runtime` | Composition root and optional runtime adapters |
+| `crates/orbit-client`, `crates/orbit-sync` | Configuration, deployment resolution, replicas and outboxes |
+| `crates/orbit-server` | Optional authenticated connected authority |
+| `crates/orbit-cli`, `crates/orbit-mcp`, `crates/orbit-tui` | User-facing adapters |
+| `deploy/server` | Optional machine, proposal and automation workers |
 
-- [Current roadmap, verified milestone status and readiness](docs/roadmap.md)
-- [Current architecture and authority boundaries](docs/architecture.md)
-- [Current server deployment contracts](docs/server-api.md)
-- [M24 consolidation roadmap and iteration ledger](docs/m24-architecture-consolidation.md)
-- [M24 worker ownership](docs/m24-worker-architecture.md)
-- [M24 authority module ownership](docs/m24-final-module-ownership.md)
-- [Historical development notes](docs/history/development-readmes/README.md)
-
-## Milestone status (verified 2026-10-20)
-
-| Milestone | Verified current status |
-| --- | --- |
-| M22 — Planning | Source complete and compiled; executable coverage partial (planning metadata/schedules, contract tests) |
-| M23 — Agent integration | Source complete; local opencode + Herdr 0.9.5 path live-verified; remote machine-worker unverified |
-| M24 — Framework consolidation | Source complete; builds, 1,235 tests, fmt/clippy clean |
-| M25 — Project Blueprints | **Partial**: I1/I2 complete; capability actions, MCP parity, upgrade path and domain extraction remain |
-| M26 — Packaging, installation and documentation | Executable-verified for unsigned Linux x86_64 archives; signing/cross-platform remain |
-| M15 — Executable/release acceptance | Linux local/loopback/local-Herdr scope verified: 37/37 full profile (38/38 with live Herdr), 1,235 Rust tests, real archive install smoke |
-
-**Source implementation is not runtime acceptance.** The current M15 profile
-passes 37/37 checks (38/38 with opt-in live Herdr) with 0 failed and 0 not-run; `cargo test --workspace --locked`
-reports 1,235 passing tests. A live Herdr launch/monitor/evidence/handoff/review
-cycle passed in a disposable workspace, and a real release archive was built,
-verified, installed into a disposable prefix, exercised, and uninstalled. These
-results establish readiness for **Linux local internal testing**, and for
-loopback-connected and local-agent internal testing with the qualifications in
-`docs/roadmap.md`.
-
-Not verified: TLS/Caddy ingress and browser deployment (Docker is unavailable in
-this environment), remote-machine agent execution, macOS/Windows/cross-compiled
-targets, distribution signing, and real installed-version database upgrades. The
-M25 capability-action and upgrade gaps also remain. These are separate release
-gates, not blockers for local internal testing.
+Local SQLite is authoritative in local mode. In connected mode the server's
+SQLite is authoritative; client SQLite is an accepted-state replica plus a
+durable pending-command outbox. Pending work is not accepted state.
 
 ## Testing and tracking
 
-Maintained tests live under `tests/contracts/` (source-boundary checks),
-`tests/acceptance/` (compiled CLI workflows), `tests/packaging/` (installers and
-release archives), `tests/documentation/`, and `deploy/server/test_*.py` (optional
-workers). Run `./scripts/m15-full-automated.sh --profile full` for the canonical
-gate. Historical M18–M22 source-shape scripts are preserved under
-`scripts/legacy-contracts/`; they are unmaintained and excluded from the gate.
+Documentation checks run with:
 
-GetDone records under `.agent/` own milestone status, acceptance evidence, and
-the next deterministic step.
+```sh
+python3 -m unittest discover -s tests/documentation -v
+python3 -m pytest -q tests/documentation
+```
+
+Compiled CLI acceptance lives under `tests/acceptance/`, packaging checks under
+`tests/packaging/`, and the optional workers under `deploy/server/test_*.py`.
+GetDone records under `.agent/` own milestone status and release evidence; the
+user documentation intentionally does not duplicate that ledger.

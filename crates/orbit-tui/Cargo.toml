@@ -7,6 +7,8 @@ license.workspace = true
 [dependencies]
 orbit-runtime = { path = "../orbit-runtime" }
 orbit-client = { path = "../orbit-client" }
+orbit-blueprint = { path = "../orbit-blueprint" }
+orbit-ui = { path = "../orbit-ui" }
 orbit-application = { path = "../orbit-application" }
 orbit-domain = { path = "../orbit-domain" }
 orbit-progress = { path = "../orbit-progress" }

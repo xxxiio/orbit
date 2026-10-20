@@ -36,23 +36,29 @@ A single `orbit` CLI fronts shared application and runtime services. In local mo
 
 ## Supported platforms and environments
 
-- Linux x86_64 with Rust 1.99 and Python 3.12 is the currently verified development and acceptance platform.
-- macOS and Windows are source-buildable in principle but have no current executable acceptance evidence.
+- Linux x86_64 is the only runtime-verified target: local, loopback connected, local-Herdr and the M27 installer/init/update fixture workflows.
+- Declared release targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin` and `aarch64-apple-darwin`; macOS is not runtime-verified and Windows is unsupported.
+- Installing a prebuilt CLI requires no Rust, Python, Herdr, Docker or server. Rust is required only for source builds; Python only for optional workers/tests.
 - Connected deployment uses loopback HTTP for tests; TLS ingress is a separate unverified release gate.
-- No mandatory cloud service, hosted registry or account is required for local use.
+- No mandatory cloud service, hosted registry or account is required for local use. A real GitHub Release has not been published; release publication is draft/manual and externally authorized.
 
 ## Canonical commands
 
 - `orbit`
+- `orbit init`
+- `orbit doctor`
+- `orbit update`
 - `orbit project`
 - `orbit task`
 - `orbit blueprint`
 - `orbit agent`
 - `orbit sync`
-- `./scripts/m15-full-automated.sh`
+- `./scripts/m15-full-automated.sh --profile full`
+- `./install.sh` (GitHub-hosted installer)
 - `./scripts/install.sh`
 - `./scripts/package-release.sh`
 - `./scripts/verify-release.sh`
+- `python3 -m unittest discover -s tests/documentation -v`
 
 ## Non-negotiable constraints
 
@@ -65,16 +71,17 @@ A single `orbit` CLI fronts shared application and runtime services. In local mo
 
 ## Current priorities
 
-1. Make M25-I3 trusted capability action installation/request/execute reachable and prove it with a deterministic acceptance test.
-2. Close M25-I5 parity gaps: connected MCP outbox/receipts, lost-ack replay and blueprint upgrade.
-3. Complete M25-I4 habit recurrence extraction.
-4. Maintain the M15 Linux acceptance baseline and archive evidence.
-5. Defer TLS ingress, remote-machine execution, signing and cross-platform claims until separately verified.
+1. Obtain explicit maintainer authorization and write access to run the M27 release workflow and verify the real GitHub installer/update path.
+2. Maintain the 42/42 M15 Linux acceptance baseline and archive evidence after further changes.
+3. Defer M25 EC-003 through EC-006 until distribution/first-run work is accepted.
+4. Defer TLS ingress, remote-machine execution, signing, macOS runtime and installed-version upgrade claims until separately verified.
 
 ## Known risks
 
-- M25 capability execution is partially implemented but unreachable; publishing a capability-requiring blueprint currently fails closed.
+- No real GitHub Release exists; fixture acceptance does not prove the public distribution channel or native arm/macOS runners.
+- macOS installer/update behavior is statically portable but not executed on macOS or bash 3.2.
+- M25 capability actions remain unreachable; publishing a capability-requiring blueprint fails closed.
 - Connected MCP blueprint writes bypass the canonical outbox and receipts.
-- Public release lacks signing, TLS ingress evidence, cross-platform evidence and an installed-version upgrade test.
+- Public release lacks signing, TLS ingress evidence, cross-platform evidence and a real installed-version upgrade test.
 - The connected server is single-user trust; any enrolled device can call mutation routes.
 - Historical scripts under `scripts/legacy-contracts/` are unmaintained and expected to fail.

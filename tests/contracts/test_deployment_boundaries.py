@@ -21,7 +21,12 @@ def compact(text):
 
 
 def test_shared_deployment_selection_is_used_by_client_adapters():
-    for adapter in ["orbit-cli/src/lib.rs", "orbit-tui/src/main.rs", "orbit-mcp/src/main.rs"]:
+    # The CLI resolves the same deployment through the shared orbit-client
+    # configuration resolver; TUI and MCP still call the shared from_env helper.
+    cli = source("crates/orbit-cli/src/lib.rs")
+    assert "config::resolve(" in cli
+    assert "deployment::resolve_deployment(" in cli
+    for adapter in ["orbit-tui/src/main.rs", "orbit-mcp/src/main.rs"]:
         content = source(f"crates/{adapter}")
         assert "deployment::from_env()" in content, adapter
 

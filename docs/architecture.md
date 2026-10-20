@@ -76,6 +76,7 @@ migration/import pathway is required by this greenfield architecture.
 - `orbit-storage`: SQLite implementations of authority repository ports.
 - `orbit-runtime`: application composition and dispatch coordination.
 - `orbit-client` / `orbit-sync`: connected protocol, replicas and pending state.
+- `orbit-ui`: renderer-neutral view data, trusted component registry, resolution and action catalogue; no storage or terminal dependency.
 - `orbit-server`: authentication, serialization and server transport; delegates
   canonical decisions to the host.
 - `orbit-cli`, `orbit-tui`, `orbit-mcp`: public adapters, not duplicated authority.

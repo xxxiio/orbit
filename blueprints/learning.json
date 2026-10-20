@@ -1,8 +1,8 @@
 {
   "id": "learning",
-  "version": 1,
+  "version": 2,
   "name": "Learning",
-  "description": "Optional curriculum, practice and assessment workflows with no mandatory integrations.",
+  "description": "Learning project with lessons, practice, progress and assessments.",
   "required_capabilities": [],
   "work_items": [
     {
@@ -142,6 +142,131 @@
           "prerequisites": [
             "lesson_2"
           ]
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "overview",
+      "title": "Learning overview",
+      "description": "Lessons, practice tasks and assessment state.",
+      "layout": {
+        "type": "grid",
+        "columns": 2
+      },
+      "components": [
+        {
+          "id": "lessons",
+          "type": "metric",
+          "source": "work_items",
+          "aggregate": "count",
+          "filter": {
+            "kind": "lesson"
+          },
+          "title": "Lessons"
+        },
+        {
+          "id": "assessments",
+          "type": "metric",
+          "source": "work_items",
+          "aggregate": "count",
+          "filter": {
+            "kind": "assessment"
+          },
+          "title": "Assessments"
+        },
+        {
+          "id": "tasks",
+          "type": "task_list",
+          "source": "tasks",
+          "limit": 10,
+          "title": "Study tasks"
+        },
+        {
+          "id": "project",
+          "type": "detail",
+          "source": "project",
+          "title": "Project"
+        }
+      ]
+    },
+    {
+      "id": "lessons",
+      "title": "Lessons",
+      "description": "Lesson and assessment workflow.",
+      "layout": {
+        "type": "vertical"
+      },
+      "components": [
+        {
+          "id": "board",
+          "type": "kanban",
+          "source": "work_items",
+          "group_by": "state",
+          "limit": 100,
+          "title": "Lesson workflow"
+        },
+        {
+          "id": "table",
+          "type": "table",
+          "source": "work_items",
+          "columns": [
+            "title",
+            "kind",
+            "state"
+          ],
+          "limit": 100,
+          "title": "Lessons"
+        }
+      ]
+    },
+    {
+      "id": "tasks",
+      "title": "Tasks",
+      "description": "Project study tasks with readiness and dependencies.",
+      "layout": {
+        "type": "vertical"
+      },
+      "components": [
+        {
+          "id": "list",
+          "type": "task_list",
+          "source": "tasks",
+          "title": "Study tasks"
+        }
+      ]
+    },
+    {
+      "id": "progress",
+      "title": "Progress",
+      "description": "Progress signals derived from accepted tasks and milestones.",
+      "layout": {
+        "type": "grid",
+        "columns": 2
+      },
+      "components": [
+        {
+          "id": "done",
+          "type": "metric",
+          "source": "tasks",
+          "aggregate": "count",
+          "filter": {
+            "status": "done"
+          },
+          "title": "Completed tasks"
+        },
+        {
+          "id": "milestones",
+          "type": "milestone_progress",
+          "source": "milestones",
+          "title": "Milestones"
+        },
+        {
+          "id": "schedule",
+          "type": "timeline",
+          "source": "schedule",
+          "title": "Practice schedule"
         }
       ]
     }

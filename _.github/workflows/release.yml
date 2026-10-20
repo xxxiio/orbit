@@ -1,0 +1,223 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to build (vX.Y.Z or vX.Y.Z-suffix)'
+        required: true
+        type: string
+      publish:
+        description: 'Publish a non-draft release after every gate passes'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
+
+jobs:
+  gate:
+    name: Gate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.0
+          components: rustfmt, clippy
+      - name: Validate release version
+        run: scripts/release/validate-release-version.sh "$TAG"
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --workspace --locked
+      - name: Documentation contracts
+        run: python3 -m unittest discover -s tests/documentation -v
+      - name: Packaging and installer contracts
+        run: |
+          set -euo pipefail
+          bash tests/packaging/test_install.sh
+          bash tests/packaging/test_install_transaction.sh
+          bash tests/packaging/test_install_release_archive.sh
+          bash tests/packaging/test_manifest_safety.sh
+          bash tests/packaging/test_release_archive.sh
+          python3 tests/packaging/test_github_installer.py -v
+          python3 tests/packaging/test_release_workflow.py -v
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: gate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+          - target: aarch64-apple-darwin
+            runner: macos-14
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.0
+      - name: Validate release version
+        run: scripts/release/validate-release-version.sh "$TAG"
+      - name: Resolve build settings
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          ARCHIVE="dist/orbit-$VERSION-${{ matrix.target }}.tar.gz"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+      - name: Provide sha256sum on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shim_dir="$RUNNER_TEMP/release-bin"
+          mkdir -p "$shim_dir"
+          cat > "$shim_dir/sha256sum" <<'SHIM'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [[ "${1:-}" == "-c" ]]; then
+            shift
+            if [[ "${1:-}" == "--" ]]; then shift; fi
+            exec shasum -a 256 -c "$@"
+          fi
+          exec shasum -a 256 "$@"
+          SHIM
+          chmod +x "$shim_dir/sha256sum"
+          echo "$shim_dir" >> "$GITHUB_PATH"
+      - name: Build release archive
+        run: scripts/package-release.sh --build --target "${{ matrix.target }}" --version "$VERSION" --components cli,mcp,tui,server
+      - name: Verify release archive
+        run: scripts/verify-release.sh "$ARCHIVE"
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ env.ARCHIVE }}
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-${{ matrix.target }}
+          path: |
+            ${{ env.ARCHIVE }}
+            ${{ env.ARCHIVE }}.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Create GitHub release
+    needs: [gate, build]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+      - name: Validate release version
+        run: scripts/release/validate-release-version.sh "$TAG"
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: orbit-*
+          merge-multiple: true
+      - name: Re-verify downloaded archives
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin; do
+            archive="dist/orbit-$VERSION-$target.tar.gz"
+            [[ -f "$archive" && -f "$archive.sha256" ]] || { echo "missing release asset: $archive" >&2; exit 1; }
+            scripts/verify-release.sh "$archive"
+          done
+          shopt -s nullglob
+          archives=(dist/orbit-"$VERSION"-*.tar.gz)
+          ((${#archives[@]} == 4)) || { echo "expected 4 release archives, found ${#archives[@]}" >&2; exit 1; }
+      - name: Stage installer assets
+        run: |
+          set -euo pipefail
+          install -m 0755 install.sh dist/install.sh
+          install -m 0755 scripts/install.sh dist/orbit-install-core.sh
+          install -m 0755 scripts/verify-release.sh dist/orbit-verify-release.sh
+          for asset in dist/install.sh dist/orbit-install-core.sh dist/orbit-verify-release.sh; do
+            [[ -s "$asset" ]] || { echo "missing installer asset: $asset" >&2; exit 1; }
+          done
+      - name: Decide release mode
+        env:
+          PUBLISH_INPUT: ${{ github.event.inputs.publish || 'false' }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          DRAFT=1
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$PUBLISH_INPUT" == "true" ]]; then
+            DRAFT=0
+          fi
+          PRERELEASE=0
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+- ]]; then
+            PRERELEASE=1
+          fi
+          echo "DRAFT=$DRAFT" >> "$GITHUB_ENV"
+          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_ENV"
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dist/orbit-"$VERSION"-*.tar.gz dist/orbit-"$VERSION"-*.tar.gz.sha256 \
+                 dist/install.sh dist/orbit-install-core.sh dist/orbit-verify-release.sh)
+          ((${#files[@]} == 11)) || { echo "expected 11 release files, found ${#files[@]}" >&2; exit 1; }
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            args=(--title "Orbit $VERSION")
+            if (( DRAFT == 1 )); then args+=(--draft); else args+=(--draft=false); fi
+            if (( PRERELEASE == 1 )); then args+=(--prerelease); else args+=(--prerelease=false); fi
+            gh release edit "$TAG" "${args[@]}"
+            gh release upload "$TAG" "${files[@]}" --clobber
+          else
+            args=(--title "Orbit $VERSION" --verify-tag --generate-notes)
+            if (( DRAFT == 1 )); then args+=(--draft); fi
+            if (( PRERELEASE == 1 )); then args+=(--prerelease); fi
+            gh release create "$TAG" "${files[@]}" "${args[@]}"
+          fi

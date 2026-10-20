@@ -53,6 +53,13 @@ pub enum CommandDisposition {
     Pending,
 }
 
+fn now_ms_value() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or_default()
+}
+
 fn encode_query(input: &str) -> String {
     let mut encoded = String::new();
     for byte in input.bytes() {
@@ -215,6 +222,52 @@ impl AuthorityConnection {
 
     /// Identical accepted project projection in embedded and remote modes.
     /// Remote returns last refreshed accepted state, never pending writes.
+    /// Renderer-neutral workspace projection over accepted snapshot data. A
+    /// remote client without an accepted snapshot returns an empty workspace,
+    /// never a pending-command approximation.
+    pub fn workspace_view_data(&self) -> Result<orbit_ui::WorkspaceData, orbit_ui::ViewDataError> {
+        let snapshot = self
+            .accepted_snapshot()
+            .map_err(|error| orbit_ui::ViewDataError::unavailable(format!("{error:?}")))?;
+        let mut workspace = orbit_ui::workspace_from_snapshot(snapshot.as_ref(), now_ms_value())?;
+        for task in &mut workspace.tasks {
+            task.allowed_statuses = crate::view_data::allowed_task_statuses(&task.status);
+        }
+        for task in &mut workspace.inbox {
+            task.allowed_statuses = crate::view_data::allowed_task_statuses(&task.status);
+        }
+        Ok(workspace)
+    }
+
+    /// Renderer-neutral project projection over the same accepted snapshot.
+    pub fn project_view_data(
+        &self,
+        project_id: &str,
+    ) -> Result<orbit_ui::ProjectData, orbit_ui::ViewDataError> {
+        let snapshot = self
+            .accepted_snapshot()
+            .map_err(|error| orbit_ui::ViewDataError::unavailable(format!("{error:?}")))?;
+        let mut data =
+            orbit_ui::project_from_snapshot(snapshot.as_ref(), project_id, now_ms_value())?;
+        for task in &mut data.tasks {
+            task.allowed_statuses = crate::view_data::allowed_task_statuses(&task.status);
+        }
+        Ok(data)
+    }
+
+    /// Resolve generated views for connected clients. Blueprint work items are
+    /// not present in the accepted snapshot yet; the adapter never invents them.
+    pub fn resolve_connected_project_views(
+        &self,
+        project_id: &str,
+        registry: &orbit_ui::ComponentRegistry,
+    ) -> Result<(orbit_ui::ProjectData, Vec<orbit_ui::ResolvedView>, bool), orbit_ui::ViewDataError>
+    {
+        let data = self.project_view_data(project_id)?;
+        let (views, generated) = orbit_ui::resolve_blueprint_views(None, &data, registry);
+        Ok((data, views, generated))
+    }
+
     pub fn projects(&self) -> Result<Vec<Value>, ClientConnectionError> {
         self.accepted_collection("projects")
     }
@@ -3167,5 +3220,74 @@ mod m22_dependency_preview_client_contracts {
         let before = client.workspace().unwrap();
         assert!(preview(&client, "a", "b", ProposedDependencyEdit::Add).is_err());
         assert_eq!(client.workspace().unwrap(), before);
+    }
+}
+
+#[cfg(test)]
+mod renderer_contract_tests {
+    use super::*;
+    use orbit_runtime::domain_commands::{ProjectCommand, TaskAction, TaskCommand};
+
+    #[test]
+    fn embedded_and_connected_clients_expose_the_shared_view_contract() {
+        let mut client = AuthorityConnection::embedded(":memory:", "owner").unwrap();
+        assert_eq!(
+            client
+                .create_project(ProjectCommand {
+                    command_id: "project-view".into(),
+                    expected_revision: 0,
+                    project_id: "p1".into(),
+                    name: "Connected project".into(),
+                })
+                .unwrap(),
+            CommandDisposition::Accepted {
+                revision: 1,
+                duplicate: false,
+            }
+        );
+        assert_eq!(
+            client
+                .task_command(TaskCommand {
+                    command_id: "task-view".into(),
+                    expected_revision: 1,
+                    action: TaskAction::Create {
+                        task_id: "t1".into(),
+                        title: "View task".into(),
+                        project_id: Some("p1".into()),
+                    },
+                })
+                .unwrap(),
+            CommandDisposition::Accepted {
+                revision: 2,
+                duplicate: false,
+            }
+        );
+        client
+            .task_command(TaskCommand {
+                command_id: "task-ready".into(),
+                expected_revision: 2,
+                action: TaskAction::ChangeStatus {
+                    task_id: "t1".into(),
+                    status: "ready".into(),
+                },
+            })
+            .unwrap();
+        let workspace = client.workspace_view_data().unwrap();
+        assert_eq!(workspace.projects.len(), 1);
+        assert!(workspace.tasks.iter().any(|task| task.id == "t1"));
+        let (data, views, generated) = client
+            .resolve_connected_project_views("p1", &orbit_ui::ComponentRegistry::builtin())
+            .unwrap();
+        assert_eq!(data.project.name, "Connected project");
+        assert!(generated);
+        assert!(views.iter().any(|view| view.id == "overview"));
+        assert!(workspace.inbox.iter().all(|task| task.status == "inbox"));
+    }
+
+    #[test]
+    fn remote_view_contract_reports_no_accepted_snapshot() {
+        let client = AuthorityConnection::remote(":memory:", "https://example.org", None).unwrap();
+        assert!(client.workspace_view_data().unwrap().projects.is_empty());
+        assert!(client.project_view_data("p1").is_err());
     }
 }

@@ -59,6 +59,10 @@ def main(argv=None):
         env['CARGO_NET_OFFLINE'] = 'true'
     with tempfile.TemporaryDirectory(prefix='orbit-m15-') as temp:
         evidence = Path(temp)
+        # Never let a developer's ~/.orbit/config.toml change the deployment
+        # used by isolated acceptance commands. Tests that exercise the config
+        # file set their own ORBIT_CONFIG explicitly.
+        env['ORBIT_CONFIG'] = str(evidence / 'isolated-no-config.toml')
         results = []
 
         def check(name, command, *, needs=(), after=(), timeout=None):
@@ -96,6 +100,8 @@ def main(argv=None):
 
         check('python-version', [sys.executable, '--version'])
         check('user-documentation-contract', [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests/documentation', '-v'])
+        check('release-workflow-contract', [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests/packaging', '-p', 'test_release_workflow.py', '-v'])
+        check('github-installer-contract', [sys.executable, 'tests/packaging/test_github_installer.py', '-v'], needs=('bash', 'curl', 'tar', 'sha256sum'))
         check('installer-contract', ['bash', 'tests/packaging/test_install.sh'], needs=('bash',))
         check('installer-transaction-contract', ['bash', 'tests/packaging/test_install_transaction.sh'], needs=('bash',))
         check('installation-environment-contract', ['bash', 'tests/packaging/test_orbit_env.sh'], needs=('bash',))
@@ -121,6 +127,15 @@ def main(argv=None):
             check('local-cli-persistence-smoke', [sys.executable, 'tests/acceptance/local_cli_workflows.py', '--binary', 'target/debug/orbit'], after=('cargo-build',))
             check('real-release-archive-smoke', ['bash', 'tests/packaging/test_real_release_archive.sh'], needs=('cargo', 'bash', 'tar', 'sha256sum'), after=('cargo-build',))
             check('m25-blueprint-cli-help', ['target/debug/orbit', 'blueprint', '--help'], after=('cargo-build',))
+            check('m27-init-doctor-acceptance',
+                  [sys.executable, 'tests/acceptance/m27_init_doctor.py', '--binary', 'target/debug/orbit'],
+                  after=('cargo-build',))
+            check('m27-docs-cli-help',
+                  [sys.executable, '-m', 'unittest', 'tests/documentation/test_m27_cli_help.py', '-v'],
+                  after=('cargo-build',))
+            check('m27-update-acceptance',
+                  [sys.executable, 'tests/acceptance/m27_update.py', '--binary', 'target/debug/orbit'],
+                  after=('cargo-build',))
             for builtin in ('development', 'learning', 'habits', 'research'):
                 check('m25-validate-' + builtin,
                       ['target/debug/orbit', 'blueprint', 'validate', f'blueprints/{builtin}.json'],

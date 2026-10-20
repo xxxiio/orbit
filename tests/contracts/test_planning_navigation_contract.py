@@ -71,7 +71,7 @@ def test_mcp_registry_and_both_adapters_are_consistent():
 
 def test_terminal_paths_share_the_same_read_model():
     ui = source("crates/orbit-tui/src/planning_ui.rs")
-    local = source("crates/orbit-tui/src/main.rs")
+    local = source("crates/orbit-tui/src/main.rs") + source("crates/orbit-tui/src/app.rs")
     connected = source("crates/orbit-tui/src/connected.rs")
     assert "render_focus" in ui
     assert "render_group_focus" in ui

@@ -1,0 +1,51 @@
+M27 I2 GitHub-hosted installer acceptance
+2026-10-20T06:55:05Z
+
+sh -n install.sh: PASS
+dash -n install.sh: PASS
+bash -n scripts/install.sh: PASS
+bash -n scripts/verify-release.sh: PASS
+
+=== test_install.sh
+installation contract passed
+=== test_install_transaction.sh
+install transaction contract: PASS
+=== test_install_release_archive.sh
+verified release archive installation contract passed
+=== test_manifest_safety.sh
+PASS: installer/uninstaller reject untrusted manifest entries and symlinked executables
+=== test_release_archive.sh
+release packaging contract passed
+
+=== test_github_installer.py
+test_checksum_mismatch_preserves_existing_install (__main__.GithubInstallerTest.test_checksum_mismatch_preserves_existing_install) ... ok
+test_dry_run_prints_resolution_without_downloading (__main__.GithubInstallerTest.test_dry_run_prints_resolution_without_downloading) ... ok
+test_explicit_prerelease_warns (__main__.GithubInstallerTest.test_explicit_prerelease_warns) ... ok
+test_explicit_version_install (__main__.GithubInstallerTest.test_explicit_version_install) ... ok
+test_help (__main__.GithubInstallerTest.test_help) ... ok
+test_latest_stable_install_piped (__main__.GithubInstallerTest.test_latest_stable_install_piped) ... ok
+test_partial_download_preserves_existing_install (__main__.GithubInstallerTest.test_partial_download_preserves_existing_install) ... ok
+test_prerelease_as_latest_rejected (__main__.GithubInstallerTest.test_prerelease_as_latest_rejected) ... ok
+test_truncated_archive_preserves_existing_install (__main__.GithubInstallerTest.test_truncated_archive_preserves_existing_install) ... ok
+test_unsupported_target_rejected (__main__.GithubInstallerTest.test_unsupported_target_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 5.364s
+
+OK
+M27 installed-binary first-run smoke
+2026-10-20T07:21:27Z
+
+    Finished `release` profile [optimized] target(s) in 0.06s
+real release build/package/install smoke passed
+
+M27 installer entry-point update 2026-10-20T09:04:30Z
+Public URL: https://github.com/xxxiio/orbit/releases/latest/download/install.sh
+Helper assets: orbit-install-core.sh, orbit-verify-release.sh
+sh/dash syntax: PASS
+Ran 10 tests in 5.389s
+
+OK
+Ran 20 tests in 0.047s
+
+OK

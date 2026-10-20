@@ -12,17 +12,38 @@ status: current
 
 ## Environment prerequisites
 
-- Linux x86_64 (current verified platform).
-- Rust 1.99 with `cargo`, `rustfmt` and `clippy`.
+- Linux x86_64 (current verified runtime platform).
+- Installing a prebuilt CLI: `sh`, `curl`, `tar`, `mktemp` and `sha256sum` or `shasum`; no Rust or Python.
+- Source builds/tests: Rust 1.99 with `cargo`, `rustfmt` and `clippy`.
 - Python 3.12 with `pytest` for maintained Python tests.
-- Bash, `tar`, `sha256sum` and `openssl` for packaging/installation checks.
 - `git` for disposable live Herdr acceptance repositories; not required for ordinary local use.
 - Docker for TLS/self-hosted ingress checks; currently unavailable.
 
 ## Install
 
 ```bash
+curl -fsSL https://github.com/xxxiio/orbit/releases/latest/download/install.sh | sh
+# explicit version/prefix:
+curl -fsSL https://github.com/xxxiio/orbit/releases/latest/download/install.sh | sh -s -- --version v0.1.0 --prefix "$HOME/.local"
+```
+
+No public release currently exists; the command is implemented and fixture-tested, but real GitHub installation requires an authorized release.
+
+### First run
+
+```bash
+orbit init
+orbit doctor
+orbit update --check
+```
+
+### Source-tree install
+
+```bash
 ./scripts/install.sh --prefix "$HOME/.local"
+./scripts/install.sh --from-archive dist/orbit-0.1.0-<target>.tar.gz --prefix /tmp/orbit-install
+./scripts/install.sh --prefix /tmp/orbit-install --check
+./scripts/uninstall.sh --prefix /tmp/orbit-install
 ```
 
 ## Development build
@@ -61,7 +82,11 @@ python3 -m unittest discover -s deploy/server -p 'test_*.py' -v
 
 ```bash
 ./scripts/m15-full-automated.sh --profile full
-./scripts/m15-full-automated.sh --profile full --live-herdr
+python3 tests/acceptance/m27_init_doctor.py --binary target/debug/orbit
+python3 tests/acceptance/m27_update.py --binary target/debug/orbit
+python3 tests/packaging/test_github_installer.py -v
+python3 tests/packaging/test_release_workflow.py -v
+python3 -m unittest discover -s tests/documentation -v
 bash tests/packaging/test_real_release_archive.sh
 ```
 
@@ -71,14 +96,14 @@ bash tests/packaging/test_real_release_archive.sh
 ./scripts/m15-full-automated.sh --profile full
 ```
 
+Current result: 42 passed, 0 failed, 0 not_run (`.agent/evidence/m27-m15-final.zip`).
+
 ## Package and release
 
 ```bash
 ./scripts/package-release.sh --build --components cli,mcp,tui,server --output ./dist
 ./scripts/verify-release.sh dist/orbit-0.1.0-<target>.tar.gz
-./scripts/install.sh --from-archive dist/orbit-0.1.0-<target>.tar.gz --prefix /tmp/orbit-install
-./scripts/install.sh --prefix /tmp/orbit-install --check
-./scripts/uninstall.sh --prefix /tmp/orbit-install
+scripts/release/validate-release-version.sh v0.1.0
 ```
 
 ## Security and performance checks
@@ -90,8 +115,9 @@ cargo test --workspace --locked
 
 ## Unavailable checks
 
+- Real GitHub Actions run and real-release installer/update verification: requires maintainer authorization and write access.
+- macOS/aarch64 runtime acceptance: requires those platforms or native runners.
 - TLS/Caddy ingress: Docker is not installed.
 - Remote-machine Herdr: requires a second enrolled machine.
-- macOS/Windows acceptance: requires those platforms or cross-compilation.
 - Distribution signing: no signing key or release channel is configured.
-- Installed-version database upgrade: no older release fixture is available.
+- Installed-version database downgrade: intentionally unsupported.

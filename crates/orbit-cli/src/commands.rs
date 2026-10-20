@@ -13,6 +13,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub db: Option<PathBuf>,
 
+    /// Path to the Orbit configuration file (default: ~/.orbit/config.toml).
+    #[arg(long, global = true, env = "ORBIT_CONFIG")]
+    pub config: Option<PathBuf>,
+
     /// Emit a stable JSON response instead of human-readable text.
     #[arg(long, global = true)]
     pub json: bool,
@@ -23,6 +27,10 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Create the Orbit home layout, configuration and local database.
+    Init(InitArgs),
+    /// Diagnose executable, configuration, database and optional dependencies.
+    Doctor(DoctorArgs),
     /// Discover deterministic planning capabilities and argument contracts.
     Capabilities(CapabilityArgs),
     Task(TaskCommand),
@@ -43,8 +51,85 @@ pub enum Command {
     Search(SearchArgs),
     /// Show workspace/storage diagnostics and local entity counts.
     Status,
-    /// Show the current actionable queue. Planner-backed scheduling arrives in M4.
+    /// Show the current actionable queue across planned, ready and in-progress work.
     Today,
+    /// Check for or install a verified Orbit GitHub release update.
+    Update(UpdateArgs),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum UpdateChannel {
+    Stable,
+    Prerelease,
+}
+
+impl UpdateChannel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stable => "stable",
+            Self::Prerelease => "prerelease",
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+pub struct UpdateArgs {
+    /// Report the selected release without downloading or changing anything.
+    #[arg(long, default_value_t = false)]
+    pub check: bool,
+    /// Install an exact release version (accepts v0.2.0 or 0.2.0).
+    #[arg(long)]
+    pub version: Option<String>,
+    /// Release channel used when --version is omitted.
+    #[arg(long, value_enum, default_value_t = UpdateChannel::Stable)]
+    pub channel: UpdateChannel,
+    /// Installation prefix (default: parent of the directory containing this executable).
+    #[arg(long)]
+    pub prefix: Option<PathBuf>,
+    /// Allow installing a release older than the running version.
+    #[arg(long, default_value_t = false)]
+    pub allow_downgrade: bool,
+    /// Reinstall the selected release even when it matches the running version.
+    #[arg(long, default_value_t = false)]
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum AuthorityArg {
+    Local,
+    Connected,
+}
+
+#[derive(Debug, Args)]
+pub struct InitArgs {
+    /// Local database path to record in the configuration.
+    #[arg(long)]
+    pub database: Option<PathBuf>,
+    /// Overwrite an existing configuration file atomically.
+    #[arg(long, default_value_t = false)]
+    pub force: bool,
+    /// Deployment authority to configure.
+    #[arg(long, value_enum)]
+    pub authority: Option<AuthorityArg>,
+    /// Connected authority server URL (required with --authority connected).
+    #[arg(long)]
+    pub server: Option<String>,
+    /// Connected replica database path (defaults under ~/.orbit).
+    #[arg(long)]
+    pub replica_database: Option<PathBuf>,
+    /// Default agent provider identifier recorded in the configuration.
+    #[arg(long)]
+    pub agent_provider: Option<String>,
+    /// Accepted for scripting; init never prompts.
+    #[arg(long, default_value_t = false)]
+    pub non_interactive: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+    /// Exit non-zero when the report contains errors.
+    #[arg(long, default_value_t = false)]
+    pub strict: bool,
 }
 
 #[derive(Debug, Args)]
@@ -1173,8 +1258,9 @@ pub enum AgentSubcommand {
     /// Reserve, prepare and start an agent from an Orbit task (local mode).
     Start {
         task_id: String,
-        #[arg(long, default_value = "codex")]
-        agent: String,
+        /// Agent provider identifier; defaults to configuration or `codex`.
+        #[arg(long)]
+        agent: Option<String>,
         #[arg(long, default_value = "local")]
         machine: String,
         #[arg(long)]
@@ -1209,8 +1295,9 @@ pub enum AgentSubcommand {
     /// Queue a connected agent launch for explicit replay when online (no Herdr dispatch yet).
     QueueStart {
         task_id: String,
-        #[arg(long, default_value = "codex")]
-        agent: String,
+        /// Agent provider identifier; defaults to configuration or `codex`.
+        #[arg(long)]
+        agent: Option<String>,
         #[arg(long, default_value = "local")]
         machine: String,
         #[arg(long)]

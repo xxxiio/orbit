@@ -9,6 +9,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use orbit_client::authority::{AuthorityHttp, AuthorityReplica, FlushOutcome};
+use orbit_ui::{ComponentBody, ComponentRegistry};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -25,6 +26,13 @@ use std::{
 fn describe(e: impl std::fmt::Debug) -> String {
     format!("{e:?}")
 }
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or_default()
+}
+
 fn uid() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -44,6 +52,7 @@ enum Editor {
     Help,
     Details,
     Planning,
+    Views,
 }
 struct Connected {
     replica: AuthorityReplica,
@@ -64,6 +73,7 @@ struct Connected {
         orbit_runtime::planning_actions::PlanningActionMenu,
     )>,
     pending_scenario: Option<orbit_runtime::scenario_execution::ScenarioExecutionReview>,
+    view_lines: Vec<String>,
 }
 impl Connected {
     fn snapshot(&self) -> Value {
@@ -1165,6 +1175,72 @@ impl Connected {
             self.scroll = self.selection.saturating_add(1).saturating_sub(viewport);
         }
     }
+    /// Read-only project view over the accepted replica snapshot. This uses the
+    /// same `orbit-ui` contracts as the local renderer; pending outbox entries
+    /// are deliberately excluded. Full interactive rendering remains local.
+    fn open_views(&mut self) {
+        let snapshot = self.snapshot();
+        if snapshot.is_null() {
+            self.message = "No accepted snapshot; connect and refresh before viewing".into();
+            return;
+        }
+        let project_id = if self.section == Section::Projects {
+            self.selected()
+                .and_then(|row| row.get("id").and_then(Value::as_str).map(str::to_owned))
+        } else {
+            None
+        }
+        .or_else(|| {
+            snapshot
+                .get("projects")
+                .and_then(Value::as_array)
+                .and_then(|projects| projects.first())
+                .and_then(|project| project.get("id"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+        let Some(project_id) = project_id else {
+            self.message = "No accepted project is visible".into();
+            return;
+        };
+        let result = (|| -> Result<Vec<String>, String> {
+            let data = orbit_ui::project_from_snapshot(Some(&snapshot), &project_id, now_ms())
+                .map_err(|error| error.to_string())?;
+            let (views, generated) =
+                orbit_ui::resolve_blueprint_views(None, &data, &ComponentRegistry::builtin());
+            let mut lines = vec![
+                format!("Project: {} ({})", data.project.name, data.project.status),
+                if generated {
+                    "Generated views from the accepted snapshot; the pinned blueprint view surface is not synchronized in connected mode.".into()
+                } else {
+                    "Pinned blueprint views".to_owned()
+                },
+                String::new(),
+            ];
+            for view in views {
+                lines.push(format!("[{}]", view.title));
+                for component in view.components {
+                    lines.push(format!(
+                        "  - {}: {}",
+                        component.title,
+                        summarize_body(&component.body)
+                    ));
+                }
+                lines.push(String::new());
+            }
+            Ok(lines)
+        })();
+        match result {
+            Ok(lines) => {
+                self.view_lines = lines;
+                self.planning_scroll = 0;
+                self.editor = Editor::Views;
+                self.message = "Read-only connected project views (accepted only)".into();
+            }
+            Err(error) => self.message = format!("Connected views unavailable: {error}"),
+        }
+    }
+
     fn footer(&self) -> String {
         match &self.editor {
             Editor::Closed => self.message.clone(),
@@ -1185,6 +1261,7 @@ impl Connected {
             Editor::Help => "Help • Esc/?: close • Tab: next section".into(),
             Editor::Details => "Record details • Esc/Enter: close".into(),
             Editor::Planning => self.message.clone(),
+            Editor::Views => "Connected project views • j/k: scroll • Esc: close".into(),
         }
     }
     fn modal_lines(&self) -> Vec<String> {
@@ -1203,7 +1280,8 @@ impl Connected {
                     "plan.impact <task-id> • read-only dependency preview".into(),
                     "plan.portfolio [--limit N] [--project ID] • cross-project task ranking".into(),
                     "plan.compare [--minutes N] [--pin ID] [--exclude ID] [--alt-minutes N] • read-only what-if".into(),
-                    "Enter: inspect record      ?: help      q: quit".into(),
+                    "Enter: inspect record      V: read-only accepted project views".into(),
+                    "?: help      q: quit      pending commands are never shown as accepted".into(),
                     "'-' means unset for optional IDs or values.".into(),
                     "All writes are durable intents until accepted by the server.".into(),
                     "".into(),
@@ -1221,6 +1299,7 @@ impl Connected {
                 .clone()
                 .or_else(|| self.planning.as_ref().map(|doc| doc.lines.clone()))
                 .unwrap_or_else(|| vec!["No accepted planning snapshot".into()]),
+            Editor::Views => self.view_lines.clone(),
             Editor::BatchConfirm(intents) => connected_actions::batch_preview(intents),
             Editor::Replace { old_id, intent } => {
                 vec![
@@ -1352,6 +1431,18 @@ impl Connected {
                 }
                 _ => {}
             },
+            Editor::Views => match key {
+                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => self.editor = Editor::Closed,
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.planning_scroll = self.planning_scroll.saturating_add(1)
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.planning_scroll = self.planning_scroll.saturating_sub(1)
+                }
+                KeyCode::PageDown => self.planning_scroll = self.planning_scroll.saturating_add(12),
+                KeyCode::PageUp => self.planning_scroll = self.planning_scroll.saturating_sub(12),
+                _ => {}
+            },
             Editor::Help | Editor::Details => match key {
                 KeyCode::Esc | KeyCode::Enter | KeyCode::Char('?') => self.editor = Editor::Closed,
                 _ => {}
@@ -1380,6 +1471,7 @@ impl Connected {
                         }
                     }
                 }
+                KeyCode::Char('V') => self.open_views(),
                 KeyCode::Char('r') => self.refresh(),
                 KeyCode::Char('f') => self.flush(),
                 KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
@@ -1396,6 +1488,26 @@ impl Connected {
             },
         }
         false
+    }
+}
+
+fn summarize_body(body: &ComponentBody) -> String {
+    match body {
+        ComponentBody::Text { lines, .. } => lines.first().cloned().unwrap_or_default(),
+        ComponentBody::List { items } => format!("{} item(s)", items.len()),
+        ComponentBody::Table { rows, .. } => format!("{} row(s)", rows.len()),
+        ComponentBody::Metric { value, label, .. } => format!("{label}: {value}"),
+        ComponentBody::Detail { properties, .. } => format!("{} property(ies)", properties.len()),
+        ComponentBody::Kanban { columns } => format!("{} column(s)", columns.len()),
+        ComponentBody::Timeline { events } => format!("{} event(s)", events.len()),
+        ComponentBody::HabitTracker { habits } => format!("{} habit(s)", habits.len()),
+        ComponentBody::MetricHistory { metrics } => format!("{} metric(s)", metrics.len()),
+        ComponentBody::KnowledgeRefs { items } => format!("{} note(s)", items.len()),
+        ComponentBody::AgentJobs { jobs } => format!("{} job(s)", jobs.len()),
+        ComponentBody::MilestoneProgress { milestones } => {
+            format!("{} milestone(s)", milestones.len())
+        }
+        ComponentBody::Missing { reason, .. } => reason.clone(),
     }
 }
 
@@ -1435,6 +1547,7 @@ pub fn run(db: String, server: String) -> Result<(), String> {
         impact: None,
         planning_action_menu: None,
         pending_scenario: None,
+        view_lines: Vec::new(),
     };
     enable_raw_mode().map_err(describe)?;
     let mut stdout = io::stdout();
@@ -1471,12 +1584,12 @@ pub fn run(db: String, server: String) -> Result<(), String> {
             if modal.is_empty(){
                 f.render_widget(List::new(lines).block(Block::default().borders(Borders::ALL).title(format!("{} ({count}) • accepted records",section.title()))),parts[2]);
             }else{
-                let offset=if matches!(app.editor,Editor::Planning) && app.impact.is_none() {
+                let offset=if matches!(app.editor,Editor::Planning | Editor::Views) && app.impact.is_none() {
                     app.planning_scroll.min(u16::MAX as usize) as u16
                 } else {0};
                 f.render_widget(Paragraph::new(modal.join("\n"))
                     .scroll((offset,0)).wrap(Wrap{trim:false})
-                    .block(Block::default().borders(Borders::ALL).title(if matches!(app.editor,Editor::Planning){"Today / Next • accepted only"}else{"Orbit • review / help"})),parts[2]);
+                    .block(Block::default().borders(Borders::ALL).title(if matches!(app.editor,Editor::Planning){"Today / Next • accepted only"}else if matches!(app.editor,Editor::Views){"Project views • connected accepted snapshot"}else{"Orbit • review / help"})),parts[2]);
             }
             f.render_widget(Paragraph::new(footer).wrap(Wrap{trim:true}).block(Block::default().borders(Borders::ALL).title("Action")),parts[3]);
         }){break Err(describe(e));}
@@ -1523,6 +1636,7 @@ mod tests {
             impact: None,
             planning_action_menu: None,
             pending_scenario: None,
+            view_lines: Vec::new(),
         }
     }
     #[test]
@@ -1692,6 +1806,7 @@ mod scenario_approval_tui_tests {
             impact: None,
             planning_action_menu: None,
             pending_scenario: None,
+            view_lines: Vec::new(),
         }
     }
     #[test]
@@ -1715,5 +1830,78 @@ mod scenario_approval_tui_tests {
         assert!(app.message.contains("Offline"));
         assert!(app.pending_scenario.is_none());
         assert_eq!(app.replica.pending_count().unwrap(), 0);
+    }
+}
+
+#[cfg(test)]
+mod m28_connected_view_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn offline() -> Connected {
+        Connected {
+            replica: AuthorityReplica::open(":memory:").unwrap(),
+            http: None,
+            message: String::new(),
+            section: Section::Projects,
+            selection: 0,
+            editor: Editor::Closed,
+            filter: String::new(),
+            scroll: 0,
+            dirty: false,
+            notes: Vec::new(),
+            planning: None,
+            planning_scroll: 0,
+            impact: None,
+            planning_action_menu: None,
+            pending_scenario: None,
+            view_lines: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn connected_project_views_use_accepted_snapshot_not_pending_commands() {
+        let mut app = offline();
+        app.replica
+            .accept_snapshot(&json!({
+                "revision": 3,
+                "history_fingerprint": "a".repeat(64),
+                "projects": [{"id":"p1","name":"Connected view","status":"active"}],
+                "tasks": [{"id":"t1","title":"Accepted task","status":"ready","project_id":"p1"}],
+                "task_dependencies": [],
+                "habits": [],
+                "habit_occurrences": [],
+                "metrics": [],
+                "metric_observations": [],
+                "schedule": [],
+                "routines": [],
+                "milestones": [],
+                "strategies": []
+            }))
+            .unwrap();
+        app.open_views();
+        assert!(matches!(app.editor, Editor::Views));
+        assert!(
+            app.view_lines
+                .iter()
+                .any(|line| line.contains("Connected view")),
+            "{:?}",
+            app.view_lines
+        );
+        assert!(
+            app.view_lines.iter().any(|line| line.contains("Overview")),
+            "{:?}",
+            app.view_lines
+        );
+        assert_eq!(app.replica.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn connected_views_without_an_accepted_snapshot_do_not_invent_state() {
+        let mut app = offline();
+        app.open_views();
+        assert!(matches!(app.editor, Editor::Closed));
+        assert!(app.message.contains("No accepted snapshot"));
+        assert!(app.view_lines.is_empty());
     }
 }

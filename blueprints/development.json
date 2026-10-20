@@ -1,21 +1,205 @@
 {
   "id": "development",
-  "version": 1,
+  "version": 2,
   "name": "Development",
-  "description": "Baseline development project blueprint. Workflow execution is delivered in M25-I2.",
+  "description": "Development project with overview, workflow board, milestones and agent monitoring.",
   "required_capabilities": [],
-  "work_items": [{
-    "id": "feature",
-    "name": "Feature",
-    "initial_state": "backlog",
-    "states": ["backlog", "ready", "implementing", "review", "done"],
-    "fields": [{"id": "priority", "kind": {"type":"choice", "options":["low", "medium", "high"]}, "required": true, "default": "medium"}],
-    "transitions": [
-      {"from":"backlog","to":"ready"},
-      {"from":"ready","to":"implementing"},
-      {"from":"implementing","to":"review"},
-      {"from":"review","to":"implementing"},
-      {"from":"review","to":"done"}
-    ]
-  }]
+  "work_items": [
+    {
+      "id": "feature",
+      "name": "Feature",
+      "initial_state": "backlog",
+      "states": [
+        "backlog",
+        "ready",
+        "implementing",
+        "review",
+        "done"
+      ],
+      "fields": [
+        {
+          "id": "priority",
+          "kind": {
+            "type": "choice",
+            "options": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "required": true,
+          "default": "medium"
+        }
+      ],
+      "transitions": [
+        {
+          "from": "backlog",
+          "to": "ready"
+        },
+        {
+          "from": "ready",
+          "to": "implementing"
+        },
+        {
+          "from": "implementing",
+          "to": "review"
+        },
+        {
+          "from": "review",
+          "to": "implementing"
+        },
+        {
+          "from": "review",
+          "to": "done"
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "description": "Project status, active work and execution health.",
+      "layout": {
+        "type": "grid",
+        "columns": 2
+      },
+      "components": [
+        {
+          "id": "ready",
+          "type": "metric",
+          "source": "tasks",
+          "aggregate": "count",
+          "filter": {
+            "status": "ready"
+          },
+          "title": "Ready tasks"
+        },
+        {
+          "id": "in_progress",
+          "type": "metric",
+          "source": "tasks",
+          "aggregate": "count",
+          "filter": {
+            "status": "in_progress"
+          },
+          "title": "In progress"
+        },
+        {
+          "id": "milestones",
+          "type": "metric",
+          "source": "milestones",
+          "aggregate": "count",
+          "title": "Milestones"
+        },
+        {
+          "id": "jobs",
+          "type": "metric",
+          "source": "agent_jobs",
+          "aggregate": "count",
+          "title": "Agent jobs"
+        },
+        {
+          "id": "project",
+          "type": "detail",
+          "source": "project",
+          "title": "Project"
+        },
+        {
+          "id": "tasks",
+          "type": "task_list",
+          "source": "tasks",
+          "limit": 8,
+          "title": "Tasks"
+        },
+        {
+          "id": "milestone_progress",
+          "type": "milestone_progress",
+          "source": "milestones",
+          "limit": 6,
+          "title": "Milestone progress"
+        }
+      ]
+    },
+    {
+      "id": "board",
+      "title": "Board",
+      "description": "Authorized task and blueprint workflow transitions.",
+      "layout": {
+        "type": "vertical"
+      },
+      "components": [
+        {
+          "id": "task_board",
+          "type": "kanban",
+          "source": "tasks",
+          "group_by": "status",
+          "limit": 100,
+          "title": "Task board"
+        },
+        {
+          "id": "work_board",
+          "type": "kanban",
+          "source": "work_items",
+          "group_by": "state",
+          "limit": 100,
+          "title": "Blueprint work"
+        }
+      ]
+    },
+    {
+      "id": "milestones",
+      "title": "Milestones",
+      "description": "Milestones and scheduled work.",
+      "layout": {
+        "type": "grid",
+        "columns": 2
+      },
+      "components": [
+        {
+          "id": "timeline",
+          "type": "timeline",
+          "source": "milestones",
+          "title": "Milestones"
+        },
+        {
+          "id": "progress",
+          "type": "milestone_progress",
+          "source": "milestones",
+          "title": "Progress"
+        },
+        {
+          "id": "schedule",
+          "type": "timeline",
+          "source": "schedule",
+          "title": "Schedule"
+        }
+      ]
+    },
+    {
+      "id": "agents",
+      "title": "Agent jobs",
+      "description": "Agent execution remains explicit and authority-owned.",
+      "layout": {
+        "type": "grid",
+        "columns": 2
+      },
+      "components": [
+        {
+          "id": "jobs",
+          "type": "agent_jobs",
+          "source": "agent_jobs",
+          "limit": 20,
+          "title": "Jobs"
+        },
+        {
+          "id": "attention",
+          "type": "list",
+          "source": "agent_jobs",
+          "limit": 20,
+          "title": "All jobs"
+        }
+      ]
+    }
+  ]
 }

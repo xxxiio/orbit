@@ -110,10 +110,12 @@ def main():
         # Local authoring, guards, templates and restart durability.
         assert 'development' in local('blueprint', 'bundled')['result']
         installed = local('blueprint', 'install', 'development')['result']
-        assert (installed['id'], installed['version']) == ('development', 1)
+        development_version = installed['version']
+        assert installed['id'] == 'development' and development_version >= 1
         versions = local('blueprint', 'list')['result']
-        assert ['development', 1] in versions
-        local('blueprint', 'install', 'learning')
+        assert ['development', development_version] in versions
+        learning_installed = local('blueprint', 'install', 'learning')['result']
+        learning_version = learning_installed['version']
         published = local('blueprint', 'import', str(custom))['result']
         assert published['id'] == 'acceptance'
 
@@ -173,7 +175,7 @@ def main():
               '--properties', str(bad), fail=True)
 
         learning_project = local('project', 'add', 'Template acceptance')['project']['id']
-        local('blueprint', 'bind', learning_project, 'learning', '1')
+        local('blueprint', 'bind', learning_project, 'learning', str(learning_version))
         template = local('blueprint', 'apply-template', learning_project,
                          'first_course', 'course')['result']
         assert len(template['items']) == 3
@@ -260,10 +262,13 @@ def main():
 
             installed = connected('install', 'development')
             assert installed['accepted'] is True, installed
-            assert ['development', 1] in connected('list')
-            binding = connected('bind', 'connected-project', 'development', '1')
+            versions = connected('list')
+            development_version = next(
+                version for name, version in versions if name == 'development')
+            assert ['development', development_version] in versions
+            binding = connected('bind', 'connected-project', 'development', str(development_version))
             assert binding['accepted'] is True, binding
-            assert connected('binding', 'connected-project')['version'] == 1
+            assert connected('binding', 'connected-project')['version'] == development_version
             item = connected('create-item', 'connected-project', 'connected-item', 'feature')
             assert item['accepted'] is True, item
             item = connected('item', 'connected-item')
@@ -282,7 +287,7 @@ def main():
             start()
             flushed = connected('flush')
             assert flushed['status'] == 'flushed' and flushed['accepted_count'] == 1
-            assert ['learning', 1] in connected('list')
+            assert ['learning', learning_version] in connected('list')
             # Idempotent replay: no new command is sent and history is stable.
             assert connected('flush')['status'] == 'empty'
 
@@ -299,8 +304,8 @@ def main():
 
             stop()
             start()
-            assert ['learning', 1] in connected('list')
-            assert connected('binding', 'connected-project')['version'] == 1
+            assert ['learning', learning_version] in connected('list')
+            assert connected('binding', 'connected-project')['version'] == development_version
             assert connected('item', 'connected-item')['state'] == 'backlog'
 
             print('PASS blueprints: bundled install, immutable versions, JSON/YAML, '

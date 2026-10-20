@@ -17,3 +17,5 @@ status: current
 | DEP-0003 | TLS/self-hosted acceptance | Docker daemon plus disposable certificates | external | operators | Deferred M15 gates | `docker version` and an ingress smoke | blocked |
 | DEP-0004 | Remote-machine agent acceptance | Second enrolled machine with Herdr | external | operators | Deferred M15 gates | Real launch/reconnect/review smoke | blocked |
 | DEP-0005 | Public release | Signing key/channel and target-platform builders | external | release owners | Deferred M26 gates | Signed archive verification and target install | pending |
+| DEP-0006 | Real M27 installer/update verification | Explicit maintainer authorization to tag and publish a draft/test GitHub Release | external | release owners | TODO-0007 | Real `install.sh` and `orbit update --check` run | blocked |
+| DEP-0007 | M27 macOS support claim | GitHub macOS runner execution and BSD tar/bash 3.2 compatibility | external | maintainers | TODO-0008 | Workflow success plus installed-binary smoke on macOS | pending |

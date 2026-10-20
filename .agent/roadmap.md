@@ -6,7 +6,7 @@ project_owned: true
 record_contract: roadmap
 record_schema_version: 1
 status: current
-current_milestone: MILESTONE-0025
+current_milestone: MILESTONE-0028
 ---
 
 # Project Roadmap
@@ -140,7 +140,7 @@ MILESTONE-0025
 
 ### MILESTONE-0025 — M25 Project Blueprint Framework
 
-- **Status:** active
+- **Status:** deferred
 - **Outcome:** Users can define, install, pin and operate versioned project blueprints with typed work items, guarded transitions, templates and explicitly authorized capabilities in local and connected modes.
 - **Why now:** Blueprints are Orbit's extension model without per-project Rust code, and I3 capability actions are the largest unreachable block of already-written code.
 - **Depends on:** MILESTONE-0024
@@ -178,6 +178,8 @@ MILESTONE-0025
 - EC-005: Unmet; binding is first-binding-wins and no upgrade operation exists.
 - EC-006: Unmet; habit recurrence remains core.
 - EC-007: `.agent/evidence/m15-final.zip` contains `blueprint-workflow-smoke`.
+
+M25 I1/I2 and normal command receipts are implemented and verified. The remaining criteria are deferred because M27 distribution and first-run usability block ordinary users more than further blueprint depth. Previous "source complete" reports covered the I1/I2 source shape only; they did not satisfy EC-003 through EC-006. Reconsider M25 after M27 when a public release and first-run path exist.
 
 #### Next milestone
 
@@ -271,7 +273,110 @@ MILESTONE-0015
 
 #### Next milestone
 
-none
+MILESTONE-0027
+
+### MILESTONE-0027 — M27 GitHub Distribution, First-Run Experience and User Documentation
+
+- **Status:** blocked
+- **Outcome:** A new user can install a verified Orbit binary from a GitHub Release without Rust or Python, initialize and diagnose a local workspace, update safely, and follow accurate task-oriented documentation through real workflows.
+- **Why now:** The executable product exists, but it is only installable from source or a local archive and has no first-run, diagnostic, update or complete user documentation path. Internal testers cannot follow the package as a product.
+- **Depends on:** MILESTONE-0015, MILESTONE-0023, MILESTONE-0026
+
+#### Scope
+
+- Gated GitHub release workflow for supported Linux and macOS targets, canonical asset names, checksums, build metadata and provenance attestations.
+- Root GitHub-hosted POSIX installer that resolves a stable release, verifies it, and reuses the M26 transactional archive installer.
+- Versioned unified configuration, `orbit init`, `orbit doctor` and safe `orbit update`/`--check`.
+- End-user documentation entry point, installation, first-project, everyday-workflow, agent, connected-mode, MCP and reference guides.
+- Automated release, installer, initialization, diagnostics, update and documentation-drift checks.
+
+#### Non-goals
+
+- Publishing an official stable GitHub Release without explicit maintainer authorization.
+- Windows support, cross-compilation, Homebrew/Nix/mise, signing-key infrastructure, a hosted documentation service or a plugin marketplace.
+- Completing deferred M25 capability, connected-MCP parity, blueprint-upgrade or habit-extraction work.
+- TLS ingress certification, remote-machine Herdr execution or real installed-version downgrade support.
+
+#### Exit criteria
+
+- [ ] EC-001: A tag-triggered release workflow validates version consistency, builds and verifies canonical archives for the declared Linux/macOS matrix, records source revision and target metadata, attests provenance, and creates only a gated draft release unless explicitly authorized.
+- [x] EC-002: Root `install.sh` works when piped to `sh`, detects supported platforms, resolves the latest stable or an explicit version, verifies checksums before installation, reuses the transactional archive installer, and preserves an existing installation on failure.
+- [x] EC-003: `orbit init` creates the documented `~/.orbit` layout, a versioned validated configuration and a local SQLite workspace; it is idempotent, preserves existing configuration and data, and honors CLI > environment > config-file > default precedence including `ORBIT_DB`.
+- [x] EC-004: `orbit doctor` reports executable, configuration validity, effective database, authority mode, connected settings and optional dependencies without modifying data or printing secrets.
+- [x] EC-005: `orbit update` and `orbit update --check` resolve stable/prerelease channels, verify artifacts, refuse unmanaged installations, back up the database before replacement, and leave the previous binary and data intact on failure.
+- [x] EC-006: `docs/README.md`, root README, getting-started, everyday guides and references describe only implemented commands and cover installation, init, first project, projects/tasks/blueprints, notes/habits/routines/schedules/search, agent workflows, connected mode, MCP, backup/recovery and troubleshooting.
+- [x] EC-007: Automated checks cover release gating, installer safety, init/doctor/update behavior, documentation links and command/config examples; the existing M15 acceptance suite still passes after integration.
+- [x] EC-008: GetDone and the roadmap record actual implementation and separate local fixture acceptance from a real published GitHub Release installation.
+
+#### Evidence
+
+- EC-001: Workflow, installer-asset and version-validation tests pass, but no live GitHub Actions run or published release exists; a maintainer with write access must authorize and run it.
+- EC-002: Release-asset installer fixture tests (10) and real local archive install/init/doctor smoke pass; real GitHub asset installation is not verified.
+- EC-003: 14 init/doctor acceptance tests and config precedence unit tests pass; `.agent/evidence/m27-i3-init-doctor.txt`.
+- EC-004: Doctor read-only, strict, secret-redaction and schema/authority tests pass; `.agent/evidence/m27-i3-init-doctor.txt`.
+- EC-005: 12 update acceptance tests (channels, checksums, rollback, backup, unmanaged refusal) pass; `.agent/evidence/m27-i4-update.txt`.
+- EC-006: Documentation suite 29 tests passes; `.agent/evidence/m27-m15-final.zip`.
+- EC-007: `./scripts/m15-full-automated.sh --profile full` reports 42 passed, 0 failed, 0 not_run; `.agent/evidence/m27-m15-final.zip`.
+- EC-008: This roadmap, milestone, task, status, evidence and journal records distinguish fixture acceptance from a real published release.
+
+#### Next milestone
+
+MILESTONE-0028
+
+### MILESTONE-0028 — M28 Project-Centric TUI and Blueprint UI Composition
+
+- **Status:** active
+- **Outcome:** Users navigate Orbit by project, project blueprints declare reusable views, and a trusted registry renders real application data with authorized actions in a responsive terminal workspace.
+- **Why now:** M27's remaining gap is an external publication gate. M28 is the highest-priority unfinished product work that can be completed locally and replaces six hardcoded tabs with the blueprint-driven workspace the product vision requires.
+- **Depends on:** MILESTONE-0015, MILESTONE-0022, MILESTONE-0023, MILESTONE-0024
+
+#### Scope
+
+- Framework-neutral blueprint view schema and validation.
+- Shared `orbit-ui` data contracts, registry, resolution, detail/action models.
+- Application-facing project/workspace view data in `orbit-client`.
+- Project-centric TUI shell, responsive layouts, theme, focus, palette and search.
+- Built-in components and bundled v2 development/research/learning/habits views.
+- Focused tests and user/developer documentation.
+
+#### Non-goals
+
+- Flutter implementation, dynamic plugin loading or a marketplace.
+- A second persistence model or TUI business logic.
+- Rewriting the connected command surface in this milestone.
+- Broad M15 release acceptance, signing or cross-platform certification.
+
+#### Exit criteria
+
+- [x] EC-001: A Ratatui-free view schema validates views, layouts, components, sources, bindings and action hints; legacy manifests remain valid.
+- [x] EC-002: The local fixed-tab shell is replaced by Home, Inbox, Projects, Agents and project navigation with sidebar/workspace/details regions and responsive layouts.
+- [x] EC-003: Project/workspace data resolves projects, tasks, readiness, work items, milestones, knowledge, habits, metrics, schedules and agent jobs through existing services.
+- [x] EC-004: A trusted registry provides 13 typed components with empty/loading/error/stale/missing states.
+- [x] EC-005: Blueprints declare multiple named views, legacy projects receive generated defaults, and bundled v2 manifests demonstrate differentiated project types.
+- [x] EC-006: Contextual actions, forms and the command palette share one catalogue, use authorized client calls and suppress duplicate submissions.
+- [x] EC-007: Focused schema, rendering, interaction and architecture tests pass with 1,306 workspace tests.
+- [x] EC-008: User/developer documentation and GetDone records state actual progress and remaining limitations.
+
+#### Evidence
+
+- EC-001: `cargo test -p orbit-blueprint` 20 tests; `presentation.rs` validation and bundled round-trip.
+- EC-002: `crates/orbit-tui/src/{main,app,render,theme}.rs`; wide/narrow TestBackend tests.
+- EC-003: `crates/orbit-client/src/view_data.rs`; workspace 1,306 tests including view data.
+- EC-004: `crates/orbit-ui` 13 tests; `orbit-tui` 82 tests for metrics, boards, tables and states.
+- EC-005: bundled v2 JSON views; generated fallback and work-item transition tests.
+- EC-006: action authority/declaration tests; duplicate-submission and palette/search tests.
+- EC-007: `cargo test --workspace --offline` 1,306 passed; full M15 profile 42/42; clippy and fmt clean.
+- EC-008: TUI/blueprint/UI docs and GetDone records.
+
+##### Remaining work
+
+- Full interactive connected-shell parity (read-only views exist).
+- Local agent review remains inspect-only.
+- Synchronous local loading and unclaimed screenshots.
+
+#### Next milestone
+
+MILESTONE-0028
 
 ## Deferred work
 
@@ -280,4 +385,5 @@ none
 - Distribution signing and authenticated publishing — requires a signing key and release channel; reconsider before any public binary release.
 - macOS/Windows/cross-compiled packaging — requires those toolchains and target machines; reconsider before advertising cross-platform support.
 - Real installed-version database upgrade and rollback — requires an older release fixture; reconsider before the first supported upgrade.
-- M25 capability installation/action execution, connected MCP outbox parity, blueprint upgrade path and habit recurrence extraction — active M25 scope, not deferred features.
+- M25 capability installation/action execution, connected MCP outbox parity, blueprint upgrade path and habit recurrence extraction — M25 is deferred after M27; I1/I2 are complete, EC-003 through EC-006 remain unmet.
+- Official stable GitHub Release publication and real-release installation verification — deferred until a maintainer explicitly authorizes publishing; M27 can implement and fixture-test the pipeline without claiming a published release.

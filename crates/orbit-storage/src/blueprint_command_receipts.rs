@@ -173,7 +173,15 @@ mod tests {
                 )
                 .is_err()
         );
-        assert!(store.load_blueprint("development", 1).unwrap().is_some());
+        let version = orbit_blueprint::bundled::bundled_blueprint("development")
+            .unwrap()
+            .version;
+        assert!(
+            store
+                .load_blueprint("development", version)
+                .unwrap()
+                .is_some()
+        );
     }
     #[test]
     fn invalid_mutation_leaves_no_receipt_or_partial_blueprint() {

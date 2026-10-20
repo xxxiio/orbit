@@ -20,7 +20,12 @@ fn safe_server(server: &str) -> Result<String, CliError> {
     Ok(server.trim_end_matches('/').to_owned())
 }
 
-pub fn run(server: &str, db: &Path, command: AgentSubcommand) -> Result<Value, CliError> {
+pub fn run(
+    server: &str,
+    db: &Path,
+    command: AgentSubcommand,
+    default_agent_provider: Option<&str>,
+) -> Result<Value, CliError> {
     let base = safe_server(server)?;
     // Explicit offline operations never need a network token. Commands are
     // bound to this authority/device and retain stable IDs for replay.
@@ -35,7 +40,7 @@ pub fn run(server: &str, db: &Path, command: AgentSubcommand) -> Result<Value, C
             | AgentSubcommand::Flush
     );
     if offline {
-        return run_outbox(&base, db, command);
+        return run_outbox(&base, db, command, default_agent_provider);
     }
     let token = std::env::var("ORBIT_SYNC_HTTP_TOKEN")
         .map_err(|_| CliError::Usage("ORBIT_SYNC_HTTP_TOKEN is required".into()))?;
@@ -53,6 +58,9 @@ pub fn run(server: &str, db: &Path, command: AgentSubcommand) -> Result<Value, C
         .map_err(|e| CliError::Usage(e.to_string()))?;
     let (path,id,post)=match command {
         AgentSubcommand::Start{task_id,agent,machine,repository,worktree} => {
+            let agent = agent
+                .or_else(|| default_agent_provider.map(ToOwned::to_owned))
+                .unwrap_or_else(|| "codex".to_owned());
             ("agent-jobs/start",None,Some(json!({"job_id":generate_id("agent-job"),
                 "task_id":task_id,"agent_kind":agent,
                 "machine_ref":machine,"repository_ref":repository.to_string_lossy(),
@@ -106,7 +114,12 @@ pub fn run(server: &str, db: &Path, command: AgentSubcommand) -> Result<Value, C
         .map_err(|e| CliError::Serialization(e.to_string()))
 }
 
-fn run_outbox(base: &str, db: &Path, command: AgentSubcommand) -> Result<Value, CliError> {
+fn run_outbox(
+    base: &str,
+    db: &Path,
+    command: AgentSubcommand,
+    default_agent_provider: Option<&str>,
+) -> Result<Value, CliError> {
     let device = std::env::var("ORBIT_AUTHORITY_DEVICE")
         .map_err(|_| CliError::Usage("ORBIT_AUTHORITY_DEVICE required for agent outbox".into()))?;
     let mut outbox = AuthorityReplica::open(db).map_err(|e| CliError::Usage(format!("{e:?}")))?;
@@ -121,6 +134,9 @@ fn run_outbox(base: &str, db: &Path, command: AgentSubcommand) -> Result<Value, 
             repository,
             worktree,
         } => {
+            let agent = agent
+                .or_else(|| default_agent_provider.map(ToOwned::to_owned))
+                .unwrap_or_else(|| "codex".to_owned());
             let id = generate_id("agent-job");
             (
                 "agent-jobs/start",

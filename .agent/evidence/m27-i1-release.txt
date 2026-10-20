@@ -1,0 +1,36 @@
+M27 I1 release automation acceptance
+2026-10-20T06:49:36Z
+
+bash -n validate-release-version.sh: PASS
+test_attestation_step_present_in_every_build (test_release_workflow.ReleaseWorkflowTests.test_attestation_step_present_in_every_build) ... ok
+test_build_matrix_uses_native_runners (test_release_workflow.ReleaseWorkflowTests.test_build_matrix_uses_native_runners) ... ok
+test_canonical_asset_naming_and_packaging_command (test_release_workflow.ReleaseWorkflowTests.test_canonical_asset_naming_and_packaging_command) ... ok
+test_gate_runs_on_ubuntu_with_rust_199_and_all_checks (test_release_workflow.ReleaseWorkflowTests.test_gate_runs_on_ubuntu_with_rust_199_and_all_checks) ... ok
+test_no_unconditional_stable_publish (test_release_workflow.ReleaseWorkflowTests.test_no_unconditional_stable_publish) ... ok
+test_permissions_are_least_privilege (test_release_workflow.ReleaseWorkflowTests.test_permissions_are_least_privilege) ... ok
+test_prerelease_tags_are_never_marked_stable (test_release_workflow.ReleaseWorkflowTests.test_prerelease_tags_are_never_marked_stable) ... ok
+test_release_needs_gate_and_all_builds (test_release_workflow.ReleaseWorkflowTests.test_release_needs_gate_and_all_builds) ... ok
+test_tag_push_is_always_a_draft (test_release_workflow.ReleaseWorkflowTests.test_tag_push_is_always_a_draft) ... ok
+test_triggers (test_release_workflow.ReleaseWorkflowTests.test_triggers) ... ok
+test_workflow_dispatch_publish_requires_explicit_true (test_release_workflow.ReleaseWorkflowTests.test_workflow_dispatch_publish_requires_explicit_true) ... ok
+test_accepts_prerelease_tag (test_release_workflow.ValidateReleaseVersionTests.test_accepts_prerelease_tag) ... ok
+test_accepts_stable_tag (test_release_workflow.ValidateReleaseVersionTests.test_accepts_stable_tag) ... ok
+test_missing_cargo_toml_is_an_error (test_release_workflow.ValidateReleaseVersionTests.test_missing_cargo_toml_is_an_error) ... ok
+test_print_version (test_release_workflow.ValidateReleaseVersionTests.test_print_version) ... ok
+test_rejects_incomplete_tag (test_release_workflow.ValidateReleaseVersionTests.test_rejects_incomplete_tag) ... ok
+test_rejects_missing_tag (test_release_workflow.ValidateReleaseVersionTests.test_rejects_missing_tag) ... ok
+test_rejects_tag_without_leading_v (test_release_workflow.ValidateReleaseVersionTests.test_rejects_tag_without_leading_v) ... ok
+test_rejects_version_mismatch (test_release_workflow.ValidateReleaseVersionTests.test_rejects_version_mismatch) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 0.047s
+
+OK
+
+PyYAML parse: PASS
+release version 0.1.0 matches tag v0.1.0
+
+M27 I1 update 2026-10-20T09:04:50Z: installer release-asset entry point
+Ran 20 tests in 0.046s
+
+OK

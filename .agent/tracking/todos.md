@@ -34,6 +34,28 @@ status: current
 - **Acceptance:** A bound project can preview and atomically upgrade to a newer immutable blueprint version without silent remapping.
 - **Source:** NEXT-0001
 
+### TODO-0007 — Publish an authorized test release and verify the real installer/update path
+- **Status:** blocked
+- **Priority:** P1
+- **Milestone:** MILESTONE-0027
+- **Reason:** M27 fixture tests cannot prove the GitHub-hosted installer or update command works against a real release.
+- **Depends on:** explicit maintainer authorization to create a tag/release
+- **Blocks:** public installation readiness and EC-002/EC-005 real-release confidence
+- **Unblock condition:** A maintainer authorizes publishing a draft or test release from this repository
+- **Acceptance:** The workflow publishes the canonical assets, and `install.sh` plus `orbit update --check` succeed against the real release on Linux x86_64.
+- **Source:** RISK-0010
+
+### TODO-0008 — Execute the installer and update portability checks on macOS
+- **Status:** blocked
+- **Priority:** P2
+- **Milestone:** MILESTONE-0027
+- **Reason:** The repository environment is Linux x86_64; shell portability is statically checked but not executed on macOS bash 3.2/BSD tar.
+- **Depends on:** macOS runner or machine
+- **Blocks:** macOS installation support claim
+- **Unblock condition:** A macOS runner is available
+- **Acceptance:** Root installer and update install/upgrade a release on macOS x86_64 or arm64.
+- **Source:** RISK-0007
+
 ### TODO-0003 — Extract habit recurrence/streak behavior into an opt-in capability package
 - **Status:** ready
 - **Priority:** P2
@@ -79,6 +101,28 @@ status: current
 - **Unblock condition:** Signing key/channel and target platforms/fixtures exist
 - **Acceptance:** Signed archives install and upgrade with rollback evidence on each supported target.
 - **Source:** RISK-0003
+
+### TODO-0007 — Adopt the shared Orbit UI renderer in connected mode
+- **Status:** open
+- **Priority:** P1
+- **Milestone:** MILESTONE-0028
+- **Reason:** Read-only connected project views are implemented over the accepted snapshot; the full connected interactive shell and mutation surface remain command-centric.
+- **Depends on:** connected snapshot-to-view-data adapter
+- **Blocks:** full local/connected presentation parity
+- **Unblock condition:** connected replica data can be mapped to `WorkspaceData`/`ProjectData` without bypassing acceptance rules
+- **Acceptance:** Connected mode renders project views through `orbit-ui` and preserves pending/accepted distinctions.
+- **Source:** NEXT-0005
+
+### TODO-0008 — Local agent handoff review surface
+- **Status:** open
+- **Priority:** P2
+- **Milestone:** MILESTONE-0028
+- **Reason:** Local client exposes job inspection but no accepted review command surface; the TUI action explains this.
+- **Depends on:** accepted local review API
+- **Blocks:** complete local agent review workflow
+- **Unblock condition:** review decisions are exposed through a typed authorized client call
+- **Acceptance:** Review decision is explicit, durable and does not auto-complete the task.
+- **Source:** M28 EC-004/EC-006
 
 ## Completed
 

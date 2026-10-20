@@ -5,6 +5,7 @@
 //! bindings should wrap this facade instead of exposing repository/domain
 //! internals directly.
 
+pub mod config;
 #[cfg(test)]
 mod convergence_tests;
 pub mod deployment;
@@ -66,6 +67,7 @@ pub mod connected;
 pub mod embedded_authority;
 mod file_knowledge_bridge;
 pub mod unified;
+pub mod view_data;
 pub use embedded_authority::EmbeddedAuthorityClient;
 
 mod contract;

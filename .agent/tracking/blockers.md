@@ -13,3 +13,4 @@ status: current
 | ID | Blocked work | Cause | Owner | Unblock condition | Next check | Status |
 |---|---|---|---|---|---|---|
 | BLOCKER-0001 | Remote/TLS release acceptance | No Docker daemon and no second enrolled machine in this environment | maintainers | Provision Docker and a disposable second machine | Re-run the deferred M15 gates | waiting |
+| BLOCKER-0002 | Real GitHub Release installation and update verification (M27 EC-001/EC-002) | No release exists; the authenticated local account has read-only permission and publication needs explicit authorization | release owners | A write-capable maintainer authorizes a draft/test release | NEXT-0004: run the workflow and curl installer | blocked |

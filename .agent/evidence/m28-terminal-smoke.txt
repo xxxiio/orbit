@@ -1,0 +1,23 @@
+M28 interactive terminal smoke
+Date: 2026-10-20
+Binary: target/debug/orbit-tui (debug build)
+Workspace: /tmp/orbit-m28/smoke/demo.db (isolated)
+Method: Python pty with fixed winsize, scripted keys, ANSI output stripped for assertions.
+
+Wide 140x40, project bound to development@2:
+- Home/Today rendered accepted planning text and project metrics.
+- `g p` opened Projects; Enter opened "M28 Smoke".
+- Project tabs included Overview, Board, Milestones and Agent jobs; header
+  showed `development@2`.
+- `]` switched view; `?` opened the keyboard help; Esc closed it.
+- `q` returned Home and the next `q` exited cleanly.
+
+Narrow 60x18, same workspace:
+- Single-pane layout used a focused component counter (`component n/m · h/l move`).
+- Task board rendered workflow columns at 60 columns without a details pane.
+- Project tabs and keyboard help remained readable; `q`/Esc behavior matched.
+- No crash, panic or silent storage error.
+
+Legacy fallback (before binding):
+- The same project opened as `generated default` with Overview/Work views.
+- No migration or Rust change was required.

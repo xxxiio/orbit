@@ -14,25 +14,25 @@ pub struct BundledBlueprintDescriptor {
 pub const BUNDLED_BLUEPRINTS: &[BundledBlueprintDescriptor] = &[
     BundledBlueprintDescriptor {
         id: "development",
-        version: 1,
+        version: 2,
         name: "Development",
         description: "Software-development work items",
     },
     BundledBlueprintDescriptor {
         id: "learning",
-        version: 1,
+        version: 2,
         name: "Learning",
         description: "Lessons and assessments",
     },
     BundledBlueprintDescriptor {
         id: "habits",
-        version: 1,
+        version: 2,
         name: "Habits",
         description: "Optional activity and check-in workflows",
     },
     BundledBlueprintDescriptor {
         id: "research",
-        version: 1,
+        version: 2,
         name: "Research",
         description: "Hypotheses and experiments",
     },

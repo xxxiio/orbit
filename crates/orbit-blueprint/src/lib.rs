@@ -16,6 +16,10 @@ pub struct Blueprint {
     pub required_capabilities: Vec<String>,
     #[serde(default)]
     pub templates: Vec<ProjectTemplate>,
+    /// Optional presentation views. Older manifests without `views` remain
+    /// valid and are rendered through a generated default project view.
+    #[serde(default)]
+    pub views: Vec<presentation::BlueprintView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,6 +166,7 @@ impl Blueprint {
         }
         unique(self.work_items.iter().map(|x| x.id.as_str()), "work-item")?;
         self.validate_templates()?;
+        presentation::validate_views(&self.views)?;
         for item in &self.work_items {
             if item.name.trim().is_empty() || item.states.is_empty() {
                 return Err(invalid(format!(
@@ -287,6 +292,7 @@ impl Blueprint {
 pub mod actions;
 pub mod bundled;
 pub mod capabilities;
+pub mod presentation;
 pub mod templates;
 pub mod workflow;
 pub use actions::{ActionInvocation, ActionOffer, ActionPlan, ActionSelection};
@@ -361,6 +367,7 @@ mod tests {
             description: String::new(),
             required_capabilities: vec![],
             templates: vec![],
+            views: vec![],
             work_items: vec![WorkItemKind {
                 id: "feature".into(),
                 name: "Feature".into(),
@@ -431,14 +438,23 @@ mod registry_contract_tests {
         let mut registry = BlueprintRegistry::default();
         registry.publish(first.clone(), &caps).unwrap();
         let mut second = first.clone();
-        second.version = 2;
+        second.version = first.version + 1;
         second.description = "Newer version".to_owned();
         registry.publish(second, &caps).unwrap();
-        let binding = registry.bind("existing-project", "development", 1).unwrap();
-        assert_eq!(binding.version, 1);
-        assert_eq!(registry.versions("development"), vec![1, 2]);
-        assert_eq!(registry.get("development", 1).unwrap(), &first);
-        assert!(registry.bind("p", "development", 3).is_err());
+        let binding = registry
+            .bind("existing-project", "development", first.version)
+            .unwrap();
+        assert_eq!(binding.version, first.version);
+        assert_eq!(
+            registry.versions("development"),
+            vec![first.version, first.version + 1]
+        );
+        assert_eq!(registry.get("development", first.version).unwrap(), &first);
+        assert!(
+            registry
+                .bind("p", "development", first.version + 2)
+                .is_err()
+        );
     }
 }
 

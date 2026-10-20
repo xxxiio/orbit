@@ -5,65 +5,97 @@ template_digest: "179af91e65608fbfd07b28126ed729856e6524410956892a698b3f40e902e6
 project_owned: true
 record_contract: current-task
 record_schema_version: 1
-id: TASK-0002
+id: TASK-0004
 status: active
-milestone_id: MILESTONE-0025
+milestone_id: MILESTONE-0028
 ---
 
-# Current Task
+# Task: M28 project-centric TUI and blueprint UI composition
 
 ## Objective
 
-Make the existing trusted blueprint capability path reachable end to end and prove it with a deterministic fake-runtime acceptance test.
+Replace the hardcoded local TUI feature tabs with a project-centric workspace
+whose views are declared by pinned project blueprints and rendered through a
+trusted, framework-neutral component registry backed by real Orbit application
+data and authorized commands.
 
 ## Current behaviour
 
-Blueprint I1/I2 and normal command receipts work. Capability-requiring blueprints cannot be published through any public path because the CLI, server and MCP publish calls pass an empty installed-capability set. `BlueprintExecutorRegistry`, `LocalAgentLaunchCapability` and `AuthoritativeHost::request_project_work_item_action` exist but have no public callers. There is no CLI/MCP/HTTP action request or status surface.
+The local TUI exposes Today, Inbox, Projects, Knowledge, Habits/Plan and Agent as
+fixed tabs. Project capabilities are separate global screens, blueprints cannot
+control presentation, and there is no shared view contract for another client.
+The connected TUI is a separate command-centric surface. All mutations already
+travel through `OrbitClient`/application services.
 
 ## Desired behaviour
 
-A trusted host configuration can supply installed capabilities and grants; a user can request an offered action against a blueprint work item with a stable command ID; the action intent is persisted and claimed exactly once; duplicate requests reconcile; missing/unauthorized capabilities fail closed; an uncertain outcome remains fenced and is never relaunched; the agent action does not complete the Orbit task.
+A user opens Orbit and navigates Home/Today, Inbox, Projects and Agents, then
+opens a project and works inside blueprint-defined or generated default views.
+Tables, lists, metrics, boards, timelines, habits, knowledge and agent jobs are
+reusable registered components. Contextual actions and the command palette use
+one catalogue, and every mutation remains authorized, revision-checked,
+duplicate-safe and clearly reported. Legacy blueprints open without migration.
 
 ## Scope
 
-- Host composition input for installed capabilities and explicit grants.
-- One explicit local CLI action request/status surface.
-- Publish path that accepts the trusted installed-capability set.
-- Deterministic fake-runtime acceptance covering success, duplicate, refusal and ambiguity.
-- Documentation update for the new surface.
+- Blueprint `views` schema, validation, layouts, component bindings and action
+  hints.
+- New `orbit-ui` crate for data contracts, registry, resolution, detail/action
+  models.
+- `orbit-client` project/workspace view data and blueprint work-item reads.
+- TUI shell, responsive layout, theme, focus, input, modals, palette and search.
+- Built-in components and bundled v2 development/research/learning/habits views.
+- Focused tests and user/developer documentation.
 
 ## Out of scope
 
-- Connected server action routing and MCP action parity (next M25-I5 step).
-- Real live Herdr execution as a gate; the existing live smoke remains separate and opt-in.
-- Blueprint version upgrades and habit recurrence extraction.
-- A plugin marketplace or untrusted plugin loader.
+- Flutter implementation, dynamic third-party code loading, plugin marketplace.
+- A second persistence model or TUI-specific business rules.
+- Cloud sync, mandatory Herdr, TLS/signing, cross-platform certification.
+- Rewriting the connected command surface.
+- Broad M15 release acceptance.
 
 ## Dependencies
 
-- MILESTONE-0025 I1/I2 model, storage and command receipt paths.
-- Existing `crates/orbit-runtime/src/blueprint_execution.rs` executor primitives.
-- `crates/orbit-runtime/src/agent_authority.rs` local launch adapter.
+- MILESTONE-0015 Linux executable baseline.
+- MILESTONE-0022 planning contracts.
+- MILESTONE-0023 agent read models.
+- MILESTONE-0025 I1/I2 blueprint registry, work items and transitions (implemented surfaces only).
 
 ## Risks
 
-- A capability path that launches a real process before authorization would be unsafe; every test must use a fake runtime and fail-closed assertions.
-- Ambiguous launch outcomes must never be retried blindly; the journal/uncertain state must be durable.
-- A public surface could be mistaken for permission to run arbitrary capabilities; grants must come from trusted host configuration, not manifests.
+- UI bypass of authority: prevented by typed client calls and architecture tests.
+- Legacy blueprint breakage: generated defaults and compatibility tests.
+- Silent version changes: immutable versions and explicit binding.
+- Narrow layout information loss: focused component mode and detail modal.
+- Duplicate mutations: submission guard plus authoritative revalidation.
+- Overclaiming connected/release readiness: records separate local M28 scope from
+  M27/M15 external gates.
 
 ## Acceptance criteria
 
-- [ ] AC-001: A blueprint requiring `agent.launch` can be published when and only when the trusted host supplies that capability and grant.
-- [ ] AC-002: A CLI action request persists a stable command ID and returns a pending/claimed status without launching an unregistered capability.
-- [ ] AC-003: A deterministic fake runtime proves single claim/execution, duplicate-command reconciliation, unauthorized refusal and ambiguous-outcome fencing.
-- [ ] AC-004: The action path never completes the associated Orbit task.
-- [ ] AC-005: The full M15 profile, 1,235 Rust tests, fmt and Clippy still pass.
+- [x] AC-001: Shared view schema validates views, layouts, components, sources,
+  bindings and actions; legacy manifests remain valid.
+- [x] AC-002: The fixed-tab shell is replaced by project-centric navigation and
+  responsive sidebar/workspace/details regions.
+- [x] AC-003: Views resolve real application data for projects, tasks, work
+  items, milestones, knowledge, habits, metrics, schedule and agent jobs.
+- [x] AC-004: Registered components cover text, list, table, metric, detail,
+  kanban, task list, timeline, habit tracker, metric history, knowledge refs,
+  agent jobs and milestone progress.
+- [x] AC-005: Blueprints declare multiple named views; legacy projects receive
+  generated defaults; bundled v2 manifests demonstrate the model.
+- [x] AC-006: Contextual actions, forms and command palette mutate only through
+  authorized client calls and show pending/accepted/rejected/stale states.
+- [x] AC-007: Focused tests cover schema, rendering, interactions and
+  architecture; workspace Rust tests pass.
+- [x] AC-008: User and developer documentation match implemented behavior.
 
 ## Validation
 
-```bash
-cargo fmt --all -- --check
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
-./scripts/m15-full-automated.sh --profile full
+```sh
+cargo test -p orbit-blueprint -p orbit-ui -p orbit-client -p orbit-tui --offline
+cargo test --workspace --offline
+cargo clippy -p orbit-blueprint -p orbit-ui -p orbit-client -p orbit-tui -p orbit-storage -p orbit-runtime --all-targets --offline -- -D warnings
+python3 -m unittest discover -s tests/documentation
 ```
