@@ -325,29 +325,27 @@ fn build_body(
                     "status"
                 });
             let mut column_keys = Vec::new();
+            if source == "tasks" {
+                for state in task_workflow_states() {
+                    if !column_keys.contains(&(*state).to_owned()) {
+                        column_keys.push((*state).to_owned());
+                    }
+                }
+            } else if source == "work_items"
+                && let Some(blueprint) = blueprint
+            {
+                for kind in &blueprint.work_items {
+                    for state in &kind.states {
+                        if !column_keys.contains(state) {
+                            column_keys.push(state.clone());
+                        }
+                    }
+                }
+            }
             for row in rows {
                 let key = row.group(group_by);
                 if !column_keys.contains(&key) {
                     column_keys.push(key);
-                }
-            }
-            if let Some(blueprint) = blueprint
-                && source == "work_items"
-            {
-                for item in &data.work_items {
-                    if let Ok(kind) = blueprint.item_kind(&item.kind) {
-                        for state in &kind.states {
-                            if !column_keys.contains(state) {
-                                column_keys.push(state.clone());
-                            }
-                        }
-                    }
-                }
-            } else if source == "tasks" {
-                for state in task_workflow_states() {
-                    if !column_keys.iter().any(|key| key == state) {
-                        column_keys.push((*state).to_owned());
-                    }
                 }
             }
             if column_keys.is_empty() {

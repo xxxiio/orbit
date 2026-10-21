@@ -124,6 +124,6 @@ impl Theme {
 }
 
 pub const SIDEBAR_WIDTH: u16 = 22;
-pub const DETAIL_WIDTH: u16 = 34;
-pub const WIDE_BREAKPOINT: u16 = 104;
+pub const DETAIL_WIDTH: u16 = 30;
+pub const WIDE_BREAKPOINT: u16 = 120;
 pub const MEDIUM_BREAKPOINT: u16 = 76;

@@ -301,6 +301,9 @@ pub fn task_selection(task: &TaskRow) -> SelectionItem {
     if !task.blocking_task_ids.is_empty() {
         fields.push(("blocked by".into(), task.blocking_task_ids.join(", ")));
     }
+    if let Some(earliest) = task.earliest_start_at_ms {
+        fields.push(("earliest".into(), format_epoch_ms(earliest)));
+    }
     if let Some(deadline) = task.deadline_at_ms {
         fields.push(("deadline".into(), format_epoch_ms(deadline)));
     }

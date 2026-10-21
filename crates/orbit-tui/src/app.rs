@@ -1,13 +1,13 @@
-//! Project-centric application state. All mutations go through `OrbitClient`;
+//! Project-centric application state. All mutations go through the local/connected backend;
 //! this module owns navigation, focus, prompts and presentation state only.
+use crate::backend::Backend;
 use crate::planning_ui;
 use crate::theme::Theme;
 use orbit_blueprint::{Blueprint, FieldKind};
 use orbit_client::{
     ConfigureProjectStrategyRequest, CreateKnowledgeRequest, CreateProjectRequest,
-    CreateTaskRequest, MetricTargetDto, OrbitClient, ProjectCriterionInputDto,
-    RecordHabitOccurrenceRequest, SetProjectStatusRequest, SetTaskPlanningRequest,
-    SetTaskStatusRequest,
+    CreateTaskRequest, MetricTargetDto, ProjectCriterionInputDto, RecordHabitOccurrenceRequest,
+    SetProjectStatusRequest, SetTaskPlanningRequest, SetTaskStatusRequest,
 };
 use orbit_runtime::planning_actions::PlanningActionMenu;
 use orbit_runtime::planning_brief::WorkBrief;
@@ -247,7 +247,7 @@ struct CursorState {
 }
 
 pub struct App {
-    pub client: OrbitClient,
+    pub client: Backend,
     pub registry: ComponentRegistry,
     pub theme: Theme,
     pub screen: Screen,
@@ -283,8 +283,28 @@ pub struct App {
 }
 
 impl App {
+    #[allow(dead_code)]
     pub fn open(path: impl Into<String>) -> Result<Self, String> {
-        let client = OrbitClient::open(path.into()).map_err(|error| format!("{error:?}"))?;
+        let client = Backend::open_local(path.into()).map_err(|error| format!("{error:?}"))?;
+        Self::open_with_backend(client)
+    }
+
+    pub fn open_deployment(
+        deployment: orbit_client::deployment::Deployment,
+    ) -> Result<Self, String> {
+        let backend = match deployment {
+            orbit_client::deployment::Deployment::Local { database } => {
+                Backend::open_local(&database)
+            }
+            orbit_client::deployment::Deployment::Connected { replica, server } => {
+                Backend::open_connected(&replica, &server.to_string())
+            }
+        }
+        .map_err(|error| format!("{error:?}"))?;
+        Self::open_with_backend(backend)
+    }
+
+    pub(crate) fn open_with_backend(client: Backend) -> Result<Self, String> {
         let mut app = Self {
             client,
             registry: ComponentRegistry::builtin(),
@@ -323,7 +343,6 @@ impl App {
             cursors: BTreeMap::new(),
             last_submission: None,
         };
-        app.refresh_planning();
         app.refresh_workspace();
         Ok(app)
     }
@@ -515,6 +534,17 @@ impl App {
         }
     }
 
+    fn mutation_status(&mut self, text: impl Into<String>) -> (String, StatusKind) {
+        if self.client.take_pending() {
+            (
+                format!("Pending (not accepted): {}", text.into()),
+                StatusKind::Pending,
+            )
+        } else {
+            (text.into(), StatusKind::Success)
+        }
+    }
+
     pub fn notify(&mut self, text: impl Into<String>, kind: StatusKind) {
         self.status = StatusMessage {
             text: text.into(),
@@ -523,12 +553,25 @@ impl App {
     }
 
     pub fn refresh_workspace(&mut self) {
+        let connected_refresh_error = self.client.refresh_accepted().err();
         match self.client.workspace_view_data() {
             Ok(workspace) => {
                 self.projects = workspace.projects.clone();
                 self.project_details = self.client.list_projects().unwrap_or_default();
                 self.workspace = Some(workspace);
-                self.workspace_error = None;
+                self.workspace_error = connected_refresh_error
+                    .as_ref()
+                    .map(|error| format!("connected refresh failed: {}", error.message));
+                if let Some(error) = &connected_refresh_error {
+                    self.notify(
+                        format!(
+                            "Connected refresh failed; cached accepted view retained: {}",
+                            error.message
+                        ),
+                        StatusKind::Warning,
+                    );
+                }
+                self.refresh_planning();
                 self.rebuild_global_views();
                 let max = self.sidebar_len().saturating_sub(1);
                 self.sidebar_selection = self.sidebar_selection.min(max);
@@ -575,6 +618,25 @@ impl App {
         self.insert_planning_component();
         self.inbox = orbit_ui::inbox_view(&workspace);
         self.agents = orbit_ui::agents_view(&workspace);
+        if let Some(error) = &self.workspace_error {
+            self.home.components.insert(
+                0,
+                ResolvedComponent {
+                    id: "workspace_error".into(),
+                    title: "Connection".into(),
+                    component_type: "text".into(),
+                    status: LoadStatus::Stale(error.clone()),
+                    body: ComponentBody::Text {
+                        heading: "Accepted view may be stale".into(),
+                        lines: vec![
+                            error.clone(),
+                            "Press r to retry; cached accepted data remains visible.".into(),
+                        ],
+                    },
+                    selection: Vec::new(),
+                },
+            );
+        }
         self.clamp_component();
     }
 
@@ -712,7 +774,6 @@ impl App {
     pub fn refresh_current(&mut self) {
         match self.screen {
             Screen::Home | Screen::Inbox | Screen::Agents | Screen::Projects => {
-                self.refresh_planning();
                 self.refresh_workspace();
             }
             Screen::Project => self.refresh_project(),
@@ -720,7 +781,6 @@ impl App {
     }
 
     pub fn refresh_after_mutation(&mut self) {
-        self.refresh_planning();
         self.refresh_workspace();
         if self.screen == Screen::Project {
             self.refresh_project();
@@ -887,6 +947,12 @@ impl App {
             Some(item) => actions::contextual(Some(item), project_scope),
             None => Vec::new(),
         };
+        if self.client.is_connected() {
+            push_unique_action(
+                &mut actions,
+                AvailableAction::enabled("flush_pending", "Flush pending commands", None),
+            );
+        }
         if self.screen == Screen::Projects
             && let Some(project) = self.selected_project()
         {
@@ -947,6 +1013,32 @@ impl App {
                 push_unique_action(&mut actions, action);
             }
         }
+        if self.client.is_connected() {
+            actions.retain(|action| {
+                matches!(
+                    action.id.as_str(),
+                    "open"
+                        | "create_task"
+                        | "edit_task"
+                        | "add_dependency"
+                        | "remove_dependency"
+                        | "set_task_status"
+                        | "complete_task"
+                        | "inspect_dependencies"
+                        | "refresh"
+                        | "command_palette"
+                        | "search"
+                        | "toggle_detail"
+                        | "help"
+                        | "go_home"
+                        | "go_inbox"
+                        | "go_agents"
+                        | "switch_project"
+                        | "flush_pending"
+                        | "quit"
+                )
+            });
+        }
         actions
     }
 
@@ -982,7 +1074,9 @@ impl App {
                     }
                 }
             }
-            FocusPane::Detail => {}
+            FocusPane::Detail => {
+                self.scroll = self.scroll.saturating_add_signed(delta);
+            }
         }
     }
 
@@ -1145,6 +1239,16 @@ impl App {
     }
 
     pub fn edit_selected(&mut self) {
+        if self.client.is_connected()
+            && (self.screen == Screen::Projects
+                || self.selected_item().map(|item| item.kind) != Some(ItemKind::Task))
+        {
+            self.notify(
+                "This edit surface is local-only; connected mode supports task edits and uses the command surface for project settings, blueprints, metrics and notes",
+                StatusKind::Warning,
+            );
+            return;
+        }
         if self.screen == Screen::Projects {
             if let Some(project) = self.selected_project() {
                 let project_id = project.id.clone();
@@ -1330,29 +1434,33 @@ impl App {
             }),
             enabled: true,
         });
-        entries.push(PaletteEntry {
-            label: "New knowledge note".into(),
-            description: "Capture a Markdown note".into(),
-            action: PaletteAction::Form(FormMode::NewKnowledge),
-            enabled: true,
-        });
-        entries.push(PaletteEntry {
-            label: "Install bundled blueprint".into(),
-            description: "development, research, learning or habits".into(),
-            action: PaletteAction::Form(FormMode::InstallBlueprint),
-            enabled: true,
-        });
-        if let Some(state) = &self.project {
+        if !self.client.is_connected() {
             entries.push(PaletteEntry {
-                label: "Bind blueprint version".into(),
-                description: "Explicitly pin a published blueprint version".into(),
-                action: PaletteAction::Form(FormMode::BindBlueprint {
-                    project_id: state.id.clone(),
-                }),
+                label: "New knowledge note".into(),
+                description: "Capture a Markdown note".into(),
+                action: PaletteAction::Form(FormMode::NewKnowledge),
                 enabled: true,
             });
+            entries.push(PaletteEntry {
+                label: "Install bundled blueprint".into(),
+                description: "development, research, learning or habits".into(),
+                action: PaletteAction::Form(FormMode::InstallBlueprint),
+                enabled: true,
+            });
+            if let Some(state) = &self.project {
+                entries.push(PaletteEntry {
+                    label: "Bind blueprint version".into(),
+                    description: "Explicitly pin a published blueprint version".into(),
+                    action: PaletteAction::Form(FormMode::BindBlueprint {
+                        project_id: state.id.clone(),
+                    }),
+                    enabled: true,
+                });
+            }
         }
-        if let Some(state) = &self.project {
+        if !self.client.is_connected()
+            && let Some(state) = &self.project
+        {
             entries.push(PaletteEntry {
                 label: "Unbind project evidence".into(),
                 description: "Remove a habit or metric binding".into(),
@@ -1654,30 +1762,47 @@ impl App {
                     },
                 });
             }
-            "review_agent" => {
-                let lines = self
-                    .selected_item()
-                    .map(|item| {
-                        item.fields
-                            .iter()
-                            .map(|(key, value)| format!("{key}: {value}"))
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                self.modal = Some(Modal::Message {
-                    title: "Agent job".into(),
-                    lines: if lines.is_empty() {
-                        vec!["No agent job selected.".into()]
-                    } else {
-                        let mut lines = lines;
+            "inspect_agent" | "review_agent" => {
+                let Some(item) = self.selected_item() else {
+                    self.notify("Select an agent job first", StatusKind::Warning);
+                    return false;
+                };
+                match self.client.agent_job_detail(&item.id) {
+                    Ok(Some(detail)) => {
+                        let mut lines = vec![
+                            format!("state: {}", detail.job.state),
+                            format!("agent: {}", detail.job.agent_kind),
+                            format!("task: {}", detail.job.task_id),
+                            format!("runtime: {}", detail.job.runtime_kind),
+                            format!("handoffs: {}", detail.handoffs.len()),
+                        ];
+                        if let Some(decision) = &detail.job.review_decision {
+                            lines.push(format!("review: {decision}"));
+                        }
+                        if let Some(review) = &detail.review {
+                            lines.push(format!("review record: {review}"));
+                        }
+                        for handoff in detail.handoffs.iter().take(5) {
+                            lines.push(format!("handoff: {handoff}"));
+                        }
                         lines.push(String::new());
                         lines.push(
-                            "Review is performed against accepted handoff evidence; job completion never completes the task."
+                            "Job completion is execution state, not task acceptance. Review/resume remains an explicit authorized command."
                                 .into(),
                         );
-                        lines
-                    },
-                });
+                        self.modal = Some(Modal::Message {
+                            title: "Agent job detail".into(),
+                            lines,
+                        });
+                    }
+                    Ok(None) => {
+                        self.notify("Agent job not found in accepted state", StatusKind::Warning)
+                    }
+                    Err(error) => self.notify(
+                        format!("Agent job unavailable: {}", error.message),
+                        StatusKind::Error,
+                    ),
+                }
             }
             "preview_plan" => self.preview_plan(),
             "apply_plan" => {
@@ -1691,6 +1816,23 @@ impl App {
                     self.notify("No pending plan; preview with p first", StatusKind::Warning);
                 }
             }
+            "flush_pending" => match self.client.flush_pending() {
+                Ok((message, blocked)) => {
+                    self.refresh_after_mutation();
+                    self.notify(
+                        message,
+                        if blocked {
+                            StatusKind::Warning
+                        } else {
+                            StatusKind::Success
+                        },
+                    );
+                }
+                Err(error) => self.notify(
+                    format!("Flush failed: {}", error.message),
+                    StatusKind::Error,
+                ),
+            },
             "refresh" => self.refresh_current(),
             "toggle_detail" => self.show_detail = !self.show_detail,
             "command_palette" => self.open_palette(),
@@ -1737,10 +1879,9 @@ impl App {
                     status: status.clone(),
                 }) {
                     Ok(task) => {
-                        self.notify(
-                            format!("Accepted: {} → {}", task.title, task.status),
-                            StatusKind::Success,
-                        );
+                        let (message, kind) =
+                            self.mutation_status(format!("{} → {}", task.title, task.status));
+                        self.notify(message, kind);
                         self.refresh_after_mutation();
                     }
                     Err(error) => self.notify(
@@ -2390,6 +2531,7 @@ impl App {
                         false,
                     ),
                     Self::text_field("milestone", "Milestone", "", false, "optional ID"),
+                    Self::integer_field("earliest", "Earliest start", "", false, "epoch ms"),
                     Self::integer_field("estimate", "Estimate", "", false, "minutes"),
                     Self::integer_field("deadline", "Deadline", "", false, "epoch ms"),
                 ],
@@ -2956,7 +3098,9 @@ impl App {
         };
         match result {
             Ok(()) => {
-                self.refresh_after_mutation();
+                if self.status.kind != StatusKind::Pending {
+                    self.refresh_after_mutation();
+                }
             }
             Err(error) => self.form_error(form, error),
         }
@@ -2975,6 +3119,17 @@ impl App {
 
     fn submit_new_project(&mut self, form: &FormState) -> Result<(), String> {
         let name = Self::form_value(form, "name").trim().to_owned();
+        if self.client.is_connected() {
+            if !Self::form_value(form, "objective").trim().is_empty() {
+                return Err(
+                    "connected mode cannot queue project objectives yet; create the project, then use the connected command surface"
+                        .into(),
+                );
+            }
+            if !Self::form_value(form, "blueprint").is_empty() {
+                return Err("connected mode cannot bind blueprints from the shared TUI yet".into());
+            }
+        }
         let project = self
             .client
             .create_project(CreateProjectRequest {
@@ -2982,6 +3137,14 @@ impl App {
                 name: name.clone(),
             })
             .map_err(|error| error.message)?;
+        if self.client.take_pending() {
+            self.refresh_workspace();
+            self.notify(
+                format!("Project {name} is pending; it is not accepted yet"),
+                StatusKind::Pending,
+            );
+            return Ok(());
+        }
         let objective = Self::form_value(form, "objective").trim();
         let mut warning = None;
         if !objective.is_empty()
@@ -3033,9 +3196,15 @@ impl App {
         let project_id = (!project.is_empty()).then_some(project);
         let milestone = Self::form_value(form, "milestone").trim();
         let estimate = Self::form_u32(form, "estimate")?;
+        let earliest = Self::form_int(form, "earliest", false)?;
         let deadline = Self::form_int(form, "deadline", false)?;
-        if deadline.is_some_and(|value| value < 0) {
-            return Err("deadline must be non-negative".into());
+        if earliest.is_some_and(|value| value < 0) || deadline.is_some_and(|value| value < 0) {
+            return Err("planning timestamps must be non-negative".into());
+        }
+        if let (Some(earliest), Some(deadline)) = (earliest, deadline)
+            && earliest > deadline
+        {
+            return Err("earliest start must not be after the deadline".into());
         }
         let task = self
             .client
@@ -3046,11 +3215,38 @@ impl App {
                 milestone_id: (!milestone.is_empty()).then(|| milestone.to_owned()),
             })
             .map_err(|error| error.message)?;
-        if (estimate.is_some() || deadline.is_some())
+        if self.client.take_pending() {
+            if estimate.is_some() || earliest.is_some() || deadline.is_some() {
+                if let Err(error) = self.client.set_task_planning(SetTaskPlanningRequest {
+                    id: task.id.clone(),
+                    estimated_minutes: estimate,
+                    earliest_start_at_ms: earliest,
+                    deadline_at_ms: deadline,
+                }) {
+                    self.refresh_after_mutation();
+                    self.notify(
+                        format!(
+                            "Task {} is pending but planning was rejected: {}",
+                            task.id, error.message
+                        ),
+                        StatusKind::Warning,
+                    );
+                    return Ok(());
+                }
+                let _ = self.client.take_pending();
+            }
+            self.refresh_after_mutation();
+            self.notify(
+                format!("Task {} is pending; it is not accepted yet", task.id),
+                StatusKind::Pending,
+            );
+            return Ok(());
+        }
+        if (estimate.is_some() || earliest.is_some() || deadline.is_some())
             && let Err(error) = self.client.set_task_planning(SetTaskPlanningRequest {
                 id: task.id.clone(),
                 estimated_minutes: estimate,
-                earliest_start_at_ms: None,
+                earliest_start_at_ms: earliest,
                 deadline_at_ms: deadline,
             })
         {
@@ -3144,7 +3340,8 @@ impl App {
                 })
                 .map_err(|error| error.message)?;
         }
-        self.notify("Task updated", StatusKind::Success);
+        let (message, kind) = self.mutation_status("Task updated");
+        self.notify(message, kind);
         Ok(())
     }
 
@@ -3153,7 +3350,8 @@ impl App {
         self.client
             .add_task_prerequisite(task_id.to_owned(), prerequisite)
             .map_err(|error| error.message)?;
-        self.notify("Task prerequisite added", StatusKind::Success);
+        let (message, kind) = self.mutation_status("Task prerequisite added");
+        self.notify(message, kind);
         Ok(())
     }
 
@@ -3162,7 +3360,8 @@ impl App {
         self.client
             .remove_task_prerequisite(task_id.to_owned(), prerequisite)
             .map_err(|error| error.message)?;
-        self.notify("Task prerequisite removed", StatusKind::Success);
+        let (message, kind) = self.mutation_status("Task prerequisite removed");
+        self.notify(message, kind);
         Ok(())
     }
 

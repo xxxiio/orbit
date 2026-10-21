@@ -65,6 +65,7 @@ pub struct TaskRow {
     pub project_id: Option<String>,
     pub milestone_id: Option<String>,
     pub estimated_minutes: Option<u32>,
+    pub earliest_start_at_ms: Option<i64>,
     pub deadline_at_ms: Option<i64>,
     pub actionable: bool,
     pub readiness: String,
@@ -144,6 +145,9 @@ pub struct AgentJobRow {
     pub runtime_kind: String,
     pub updated_at_ms: i64,
     pub runtime_session_ref: Option<String>,
+    pub handoff_count: usize,
+    pub review_decision: Option<String>,
+    pub needs_attention: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

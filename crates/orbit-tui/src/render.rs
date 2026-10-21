@@ -60,7 +60,25 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
             spans.push(Span::styled("  [stale]", app.theme.warning()));
         }
     }
-    if let Some(workspace) = &app.workspace {
+    if app.client.is_connected() {
+        spans.push(Span::styled(
+            format!(
+                "   CONNECTED{}{} · {} projects · {} pending",
+                if app.workspace_error.is_some() {
+                    " [offline/stale]"
+                } else {
+                    ""
+                },
+                "",
+                app.projects.len(),
+                app.workspace
+                    .as_ref()
+                    .map(|workspace| workspace.pending_commands)
+                    .unwrap_or(0)
+            ),
+            app.theme.warning(),
+        ));
+    } else if let Some(workspace) = &app.workspace {
         spans.push(Span::styled(
             format!(
                 "   {} projects · {} inbox{}",
@@ -231,7 +249,7 @@ fn draw_components(frame: &mut Frame, area: Rect, app: &App, view: &ResolvedView
         );
         return;
     }
-    if (area.width < 70 || area.height < 12) && count > 1 {
+    if (area.width < 60 || area.height < 10) && count > 1 {
         let index = app.active_component.min(count - 1);
         let active = app.focus == FocusPane::Workspace;
         let mut focused = area;
@@ -247,22 +265,46 @@ fn draw_components(frame: &mut Frame, area: Rect, app: &App, view: &ResolvedView
         draw_component(frame, focused, app, &view.components[index], active);
         return;
     }
-    let rects = component_rects(area, &view.layout, count);
+    let rects = component_rects(area, &view.layout, &view.components);
     for (index, (component, rect)) in view.components.iter().zip(rects).enumerate() {
         let active = app.focus == FocusPane::Workspace && index == app.active_component;
         draw_component(frame, rect, app, component, active);
     }
 }
 
+fn preferred_height(component: &ResolvedComponent) -> u16 {
+    match &component.body {
+        ComponentBody::Text { .. } => 6,
+        ComponentBody::Metric { .. } => 5,
+        ComponentBody::Detail { .. } => 7,
+        ComponentBody::Kanban { .. } => 14,
+        ComponentBody::Table { .. } => 9,
+        ComponentBody::List { .. }
+        | ComponentBody::Timeline { .. }
+        | ComponentBody::HabitTracker { .. }
+        | ComponentBody::MetricHistory { .. }
+        | ComponentBody::KnowledgeRefs { .. }
+        | ComponentBody::AgentJobs { .. }
+        | ComponentBody::MilestoneProgress { .. } => 8,
+        ComponentBody::Missing { .. } => 5,
+    }
+}
+
 fn component_rects(
     area: Rect,
     layout: &orbit_blueprint::presentation::ViewLayout,
-    count: usize,
+    components: &[ResolvedComponent],
 ) -> Vec<Rect> {
     use orbit_blueprint::presentation::ViewLayoutKind;
+    let count = components.len();
     match layout.kind {
         ViewLayoutKind::Vertical => {
-            let constraints = vec![Constraint::Ratio(1, count as u32); count];
+            let weights: Vec<u16> = components.iter().map(preferred_height).collect();
+            let total: u16 = weights.iter().sum::<u16>().max(1);
+            let constraints = weights
+                .iter()
+                .map(|weight| Constraint::Ratio(u32::from(*weight), u32::from(total)))
+                .collect::<Vec<_>>();
             Layout::default()
                 .direction(Direction::Vertical)
                 .constraints(constraints)
@@ -280,9 +322,24 @@ fn component_rects(
         ViewLayoutKind::Grid => {
             let columns = usize::from(layout.columns.max(1)).min(count.max(1));
             let rows = count.div_ceil(columns);
+            let row_weights: Vec<u16> = (0..rows)
+                .map(|row| {
+                    components[row * columns..count.min((row + 1) * columns)]
+                        .iter()
+                        .map(preferred_height)
+                        .max()
+                        .unwrap_or(5)
+                })
+                .collect();
+            let total: u16 = row_weights.iter().sum::<u16>().max(1);
             let row_rects = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Ratio(1, rows as u32); rows])
+                .constraints(
+                    row_weights
+                        .iter()
+                        .map(|weight| Constraint::Ratio(u32::from(*weight), u32::from(total)))
+                        .collect::<Vec<_>>(),
+                )
                 .split(area);
             let mut rects = Vec::new();
             for row in row_rects.iter() {
@@ -331,7 +388,8 @@ fn draw_component(
                         "The previous view remains visible until resolution completes.",
                         app.theme.muted(),
                     )),
-                ]),
+                ])
+                .wrap(Wrap { trim: false }),
                 inner,
             );
         }
@@ -606,6 +664,9 @@ fn draw_rows(
     active: bool,
 ) {
     let height = usize::from(area.height);
+    let width = usize::from(area.width);
+    let title_width = (width * 2 / 3).saturating_sub(4).max(6);
+    let subtitle_width = width / 3;
     let offset = if active { app.scroll } else { 0 };
     let visible = component
         .selection
@@ -629,18 +690,21 @@ fn draw_rows(
                     app.theme.status(&item.status),
                 ),
                 Span::styled(
-                    item.title.clone(),
+                    truncate_ellipsis(&item.title, title_width),
                     if selected {
                         app.theme.selected()
                     } else {
                         app.theme.text()
                     },
                 ),
-                Span::styled(format!("  {}", item.subtitle), app.theme.muted()),
+                Span::styled(
+                    format!("  {}", truncate_ellipsis(&item.subtitle, subtitle_width)),
+                    app.theme.muted(),
+                ),
             ])
         })
         .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(visible).wrap(Wrap { trim: false }), area);
+    frame.render_widget(Paragraph::new(visible), area);
 }
 
 fn draw_table(
@@ -656,17 +720,25 @@ fn draw_table(
         return;
     }
     let width = usize::from(area.width);
-    let column_width = (width / columns.len()).max(6);
-    let header = columns
+    let status_columns = columns
         .iter()
-        .map(|column| {
-            format!(
-                "{:<width$}",
-                truncate(&column.to_uppercase(), column_width - 1),
-                width = column_width
-            )
-        })
-        .collect::<String>();
+        .filter(|column| matches!(column.as_str(), "status" | "state"))
+        .count();
+    let available = width.saturating_sub(2 + status_columns * 2);
+    let column_width = (available / columns.len()).max(4);
+    let header = format!(
+        "  {}",
+        columns
+            .iter()
+            .map(|column| {
+                format!(
+                    "{:<width$}",
+                    truncate_ellipsis(&column.to_uppercase(), column_width.saturating_sub(1)),
+                    width = column_width
+                )
+            })
+            .collect::<String>()
+    );
     let mut lines = vec![Line::from(Span::styled(header, app.theme.muted()))];
     let height = usize::from(area.height.saturating_sub(1));
     let offset = if active { app.scroll } else { 0 };
@@ -690,11 +762,19 @@ fn draw_table(
                     app.theme.status(cell),
                 ));
             }
+            let cell_width = if columns
+                .get(cell_index)
+                .is_some_and(|c| c.as_str() == "status" || c.as_str() == "state")
+            {
+                column_width.saturating_sub(2)
+            } else {
+                column_width
+            };
             spans.push(Span::styled(
                 format!(
                     "{:<width$}",
-                    truncate(cell, column_width - 1),
-                    width = column_width
+                    truncate_ellipsis(cell, cell_width.saturating_sub(1)),
+                    width = cell_width
                 ),
                 if selected {
                     app.theme.selected()
@@ -719,13 +799,31 @@ fn draw_kanban(
     if columns.is_empty() {
         return;
     }
-    let constraints = vec![Constraint::Ratio(1, columns.len() as u32); columns.len()];
+    let min_column_width = 18u16;
+    let visible = (area.width / min_column_width).clamp(1, columns.len() as u16) as usize;
+    let mut selected_column = 0usize;
+    let mut counted = 0usize;
+    for (index, column) in columns.iter().enumerate() {
+        if active && app.selected < counted + column.items.len() {
+            selected_column = index;
+            break;
+        }
+        counted += column.items.len();
+    }
+    let start = selected_column
+        .saturating_sub(visible / 2)
+        .min(columns.len().saturating_sub(visible));
+    let window = &columns[start..start + visible];
+    let constraints = vec![Constraint::Ratio(1, window.len() as u32); window.len()];
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(constraints)
         .split(area);
-    let mut next_index = 0usize;
-    for (column, rect) in columns.iter().zip(chunks.iter()) {
+    let mut next_index = columns[..start]
+        .iter()
+        .map(|column| column.items.len())
+        .sum::<usize>();
+    for (column, rect) in window.iter().zip(chunks.iter()) {
         let column_start = next_index;
         next_index += column.items.len();
         let block = Block::default()
@@ -874,7 +972,7 @@ fn draw_detail(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(detail.subtitle.clone(), app.theme.muted()),
         ]));
         lines.push(Line::from(""));
-        for (key, value) in detail.fields.iter().take(12) {
+        for (key, value) in detail.fields.iter() {
             lines.push(Line::from(vec![
                 Span::styled(format!("{key}: "), app.theme.muted()),
                 Span::styled(value.clone(), app.theme.text()),
@@ -882,7 +980,7 @@ fn draw_detail(frame: &mut Frame, area: Rect, app: &App) {
         }
         if !detail.note.is_empty() {
             lines.push(Line::from(""));
-            let note: Vec<String> = detail.note.lines().take(8).map(str::to_owned).collect();
+            let note: Vec<String> = detail.note.lines().map(str::to_owned).collect();
             lines.extend(note.into_iter().map(Line::from));
         }
         if !detail.actions.is_empty() {
@@ -926,7 +1024,17 @@ fn draw_detail(frame: &mut Frame, area: Rect, app: &App) {
             app.theme.muted(),
         )));
     }
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+    let scroll = if app.focus == FocusPane::Detail {
+        app.scroll.min(u16::MAX as usize) as u16
+    } else {
+        0
+    };
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((scroll, 0)),
+        inner,
+    );
 }
 
 fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
@@ -1362,6 +1470,7 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
         Line::from(": or Ctrl+P       command palette"),
         Line::from("/                 search"),
         Line::from("r                 refresh accepted data"),
+        Line::from("f                 connected mode: flush pending commands"),
         Line::from("D                 toggle details"),
         Line::from("?                 this help"),
         Line::from("q                 quit when not typing in a field"),
@@ -1497,6 +1606,18 @@ fn sparkline(values: &[i64]) -> String {
             ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'][index]
         })
         .collect()
+}
+
+fn truncate_ellipsis(value: &str, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    if value.chars().count() <= width {
+        return value.to_owned();
+    }
+    let mut output: String = value.chars().take(width.saturating_sub(1)).collect();
+    output.push('…');
+    output
 }
 
 fn truncate(value: &str, width: usize) -> String {

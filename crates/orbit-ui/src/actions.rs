@@ -155,6 +155,14 @@ pub const ACTIONS: &[ActionDescriptor] = &[
         destructive: false,
     },
     ActionDescriptor {
+        id: "inspect_agent",
+        label: "Inspect agent job",
+        description: "Inspect execution state, handoffs and review decision",
+        keys: &[],
+        scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
         id: "review_agent",
         label: "Review agent job",
         description: "Inspect an agent handoff and review state",
@@ -394,11 +402,18 @@ pub fn contextual(item: Option<&SelectionItem>, project_scope: bool) -> Vec<Avai
                     Some(item.id.clone()),
                 ));
             }
-            ItemKind::AgentJob => actions.push(AvailableAction::disabled(
-                "review_agent",
-                "Review agent job",
-                "Handoff review is available from the connected authority client",
-            )),
+            ItemKind::AgentJob => {
+                actions.push(AvailableAction::enabled(
+                    "inspect_agent",
+                    "Inspect agent job",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::disabled(
+                    "review_agent",
+                    "Record review decision",
+                    "Review/resume requires an explicitly configured agent runtime or connected review service",
+                ));
+            }
             ItemKind::Project if project_scope => {
                 actions.push(AvailableAction::enabled(
                     "create_task",
@@ -498,6 +513,33 @@ mod tests {
             assert!(ids.insert(action.id), "duplicate action {}", action.id);
             let _ = action.scope;
         }
+    }
+
+    #[test]
+    fn agent_jobs_are_inspectable_and_review_is_explicitly_disabled() {
+        let job = SelectionItem {
+            id: "job".into(),
+            kind: ItemKind::AgentJob,
+            title: "Job".into(),
+            subtitle: String::new(),
+            status: "running".into(),
+            fields: Vec::new(),
+            allowed_statuses: Vec::new(),
+            allowed_transitions: Vec::new(),
+            revision: None,
+        };
+        let offers = contextual(Some(&job), false);
+        assert!(
+            offers
+                .iter()
+                .any(|action| action.id == "inspect_agent" && action.enabled)
+        );
+        let review = offers
+            .iter()
+            .find(|action| action.id == "review_agent")
+            .unwrap();
+        assert!(!review.enabled);
+        assert!(review.disabled_reason.is_some());
     }
 
     #[test]

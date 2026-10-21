@@ -195,6 +195,18 @@ impl OrbitClient {
             let Some(id) = row.get("job_id").and_then(serde_json::Value::as_str) else {
                 continue;
             };
+            let handoff_count = row
+                .get("handoff_count")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0) as usize;
+            let review_decision = row
+                .get("review_decision")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned);
+            let needs_attention = row
+                .get("needs_attention")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
             let Some(view) = self
                 .runtime
                 .local_agent_job(id)
@@ -215,9 +227,41 @@ impl OrbitClient {
                 runtime_kind: view.runtime_kind,
                 updated_at_ms: view.updated_at_ms,
                 runtime_session_ref: view.runtime_session_ref,
+                handoff_count,
+                review_decision,
+                needs_attention,
             });
         }
         Ok(jobs)
+    }
+
+    pub fn agent_job_detail(&self, job_id: &str) -> Result<Option<AgentJobDetail>, ClientError> {
+        let Some(job) = self
+            .list_agent_jobs()?
+            .into_iter()
+            .find(|job| job.id == job_id)
+        else {
+            return Ok(None);
+        };
+        let handoffs = self
+            .runtime
+            .local_agent_handoffs(job_id)
+            .map_err(|message| ClientError {
+                code: ClientErrorCode::Unavailable,
+                message,
+            })?;
+        let review = self
+            .runtime
+            .local_agent_review(job_id)
+            .map_err(|message| ClientError {
+                code: ClientErrorCode::Unavailable,
+                message,
+            })?;
+        Ok(Some(AgentJobDetail {
+            job,
+            handoffs,
+            review,
+        }))
     }
 
     /// Read-only bounded project projection for blueprint views.
@@ -283,6 +327,7 @@ impl OrbitClient {
                     project_id: task.project_id,
                     milestone_id: task.milestone_id,
                     estimated_minutes: task.estimated_minutes,
+                    earliest_start_at_ms: task.earliest_start_at_ms,
                     deadline_at_ms: task.deadline_at_ms,
                     actionable: ready.is_some_and(|row| row.actionable),
                     readiness: ready
@@ -501,6 +546,7 @@ impl OrbitClient {
                 project_id: task.project_id,
                 milestone_id: task.milestone_id,
                 estimated_minutes: task.estimated_minutes,
+                earliest_start_at_ms: task.earliest_start_at_ms,
                 deadline_at_ms: task.deadline_at_ms,
                 actionable: ready.is_some_and(|row| row.actionable),
                 readiness: ready
@@ -631,6 +677,13 @@ impl orbit_ui::ViewDataSource for OrbitClient {
     fn project(&self, project_id: &str) -> Result<ProjectData, ViewDataError> {
         self.project_view_data(project_id, now_ms())
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentJobDetail {
+    pub job: AgentJobRow,
+    pub handoffs: Vec<serde_json::Value>,
+    pub review: Option<serde_json::Value>,
 }
 
 pub fn describe_time(ms: i64) -> String {

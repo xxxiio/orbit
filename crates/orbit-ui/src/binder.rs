@@ -267,7 +267,17 @@ impl<'a> Row<'a> {
                     .unwrap_or_else(|| "—".into()),
                 row.target
             ),
-            Self::AgentJob(row) => format!("{} · {}", row.state, row.machine_ref),
+            Self::AgentJob(row) => format!(
+                "{} · {} handoff(s) · {}{}",
+                row.state,
+                row.handoff_count,
+                row.machine_ref,
+                if row.needs_attention {
+                    " · attention"
+                } else {
+                    ""
+                }
+            ),
             Self::Schedule(row) => {
                 format!(
                     "{} → {}",
@@ -393,6 +403,8 @@ impl<'a> Row<'a> {
                     _pair("task", &row.task_id),
                     _pair("runtime", &row.runtime_kind),
                     _pair("updated", &format_epoch_ms(row.updated_at_ms)),
+                    _pair("handoffs", &row.handoff_count.to_string()),
+                    _pair("review", row.review_decision.as_deref().unwrap_or("none")),
                 ],
                 allowed_statuses: Vec::new(),
                 allowed_transitions: Vec::new(),

@@ -1,7 +1,10 @@
-//! Orbit terminal client. The shell is project-centric; feature surfaces are
-//! blueprint-defined views resolved through shared `orbit-ui` contracts.
+//! Orbit terminal client. One project-centric shell serves local and connected
+//! deployments; blueprint views resolve through shared `orbit-ui` contracts.
 mod app;
+mod backend;
+#[allow(dead_code)]
 mod connected;
+#[allow(dead_code)]
 mod connected_actions;
 mod planning_ui;
 mod render;
@@ -22,13 +25,13 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let path = match orbit_client::deployment::from_env().map_err(|error| error.to_string())? {
-        orbit_client::deployment::Deployment::Connected { replica, server } => {
-            return connected::run(replica.to_string_lossy().into_owned(), server);
-        }
-        orbit_client::deployment::Deployment::Local { database } => database,
-    };
-    let mut app = App::open(path.to_string_lossy().into_owned())?;
+    let deployment = orbit_client::deployment::from_env().map_err(|error| error.to_string())?;
+    if let orbit_client::deployment::Deployment::Connected { replica, server } = &deployment
+        && std::env::var("ORBIT_TUI_LEGACY_CONNECTED").ok().as_deref() == Some("1")
+    {
+        return connected::run(replica.to_string_lossy().into_owned(), server.to_string());
+    }
+    let mut app = App::open_deployment(deployment)?;
     let mut session = terminal::TerminalSession::enter()?;
     let result = event_loop(session.terminal(), &mut app);
     session.restore();
@@ -118,6 +121,11 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
         KeyCode::Char(':') => app.open_palette(),
         KeyCode::Char('/') => app.open_search(),
         KeyCode::Char('r') => app.refresh_current(),
+        KeyCode::Char('f') if app.client.is_connected() => {
+            let action =
+                orbit_ui::AvailableAction::enabled("flush_pending", "Flush pending commands", None);
+            app.execute_action(action);
+        }
         KeyCode::Char('D') => {
             if app.viewport_width < theme::WIDE_BREAKPOINT {
                 app.open_detail();
@@ -888,7 +896,7 @@ mod m28_render_tests {
             .unwrap();
         app.switch_view_by_index(board);
         let rendered = text(&mut app, 140, 40);
-        for column in ["Inbox", "Ready", "Review", "Done"] {
+        for column in ["Inbox", "Planned", "Ready", "In progress"] {
             assert!(rendered.contains(column), "missing {column}: {rendered}");
         }
     }
@@ -939,10 +947,8 @@ mod m28_render_tests {
         );
         let rendered = text(&mut app, 120, 30);
         assert!(rendered.contains("Loading accepted data"), "{rendered}");
-        assert!(
-            rendered.contains("previous view remains visible"),
-            "{rendered}"
-        );
+        assert!(rendered.contains("previous view remains"), "{rendered}");
+        assert!(rendered.contains("resolution"), "{rendered}");
     }
 
     #[test]
@@ -1758,7 +1764,14 @@ mod m28_form_tests {
             panic!("form should stay open");
         };
         assert!(form.error.as_deref().unwrap_or("").contains("integer"));
-        assert_eq!(form.fields[3].value, "not-a-number");
+        assert_eq!(
+            form.fields
+                .iter()
+                .find(|field| field.key == "estimate")
+                .unwrap()
+                .value,
+            "not-a-number"
+        );
     }
 }
 
@@ -2131,7 +2144,11 @@ mod m28_gate2_fix_tests {
             panic!("form");
         };
         form.fields[0].value = "Too long".into();
-        form.fields[3].value = "525601".into();
+        form.fields
+            .iter_mut()
+            .find(|field| field.key == "estimate")
+            .unwrap()
+            .value = "525601".into();
         form.dirty = true;
         app.submit_form(form);
         assert!(matches!(app.modal, Some(Modal::Form(_))));
@@ -2281,5 +2298,207 @@ mod m28_task_scope_tests {
             .find(|row| row.id == task.id)
             .unwrap();
         assert_eq!(unchanged.title, "Move me");
+    }
+}
+
+#[cfg(test)]
+mod m28_unified_connected_tests {
+    use super::*;
+    use app::{FormMode, Modal};
+
+    #[test]
+    fn connected_project_objective_is_rejected_before_queueing_anything() {
+        let path = std::env::temp_dir().join(format!(
+            "orbit-tui-m28-connected-objective-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let backend = crate::backend::Backend::open_connected_with_identity(
+            &path,
+            "https://example.org",
+            None,
+        )
+        .unwrap();
+        let mut app = App::open_with_backend(backend).unwrap();
+        app.start_form(FormMode::NewProject);
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("form");
+        };
+        form.fields[0].value = "No orphan".into();
+        form.fields[1].value = "Unsupported objective".into();
+        form.dirty = true;
+        app.submit_form(form);
+        assert!(matches!(app.modal, Some(Modal::Form(_))));
+        assert_eq!(app.client.pending_count(), 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn connected_mode_uses_the_shared_shell_and_never_claims_pending_acceptance() {
+        let path = std::env::temp_dir().join(format!(
+            "orbit-tui-m28-connected-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let backend = crate::backend::Backend::open_connected_with_identity(
+            &path,
+            "https://example.org",
+            None,
+        )
+        .unwrap();
+        let mut app = App::open_with_backend(backend).unwrap();
+        assert_eq!(app.screen, Screen::Home);
+        assert!(app.client.is_connected());
+        let backend = ratatui::backend::TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render::draw(frame, &mut app))
+            .unwrap();
+        let rendered: String = (0..terminal.backend().buffer().area.height)
+            .map(|y| {
+                (0..terminal.backend().buffer().area.width)
+                    .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("CONNECTED"), "{rendered}");
+
+        app.start_form(FormMode::NewProject);
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("form");
+        };
+        form.fields[0].value = "Queued project".into();
+        form.dirty = true;
+        app.submit_form(form);
+        assert!(
+            app.projects.is_empty(),
+            "pending project must not appear accepted"
+        );
+        assert!(
+            app.status.text.to_lowercase().contains("pending"),
+            "{}",
+            app.status.text
+        );
+        assert!(app.request_quit());
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[cfg(test)]
+mod m28_layout_tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn app() -> App {
+        let path = std::env::temp_dir().join(format!(
+            "orbit-tui-m28-layout-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut app = App::open(path.to_string_lossy().into_owned()).unwrap();
+        let project = app
+            .client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: "Layout".into(),
+            })
+            .unwrap();
+        app.client.install_bundled_blueprint("development").unwrap();
+        app.client
+            .bind_project_blueprint(&project.id, "development", 2)
+            .unwrap();
+        for (title, statuses) in [
+            ("Inbox task", vec![]),
+            ("Ready task", vec!["ready"]),
+            ("Progress task", vec!["ready", "in_progress"]),
+            ("Review task", vec!["ready", "in_progress", "review"]),
+            ("Done task", vec!["ready", "in_progress", "done"]),
+        ] {
+            let task = app
+                .client
+                .create_task(orbit_client::CreateTaskRequest {
+                    id: None,
+                    title: title.into(),
+                    project_id: Some(project.id.clone()),
+                    milestone_id: None,
+                })
+                .unwrap();
+            for status in statuses {
+                app.client
+                    .set_task_status(orbit_client::SetTaskStatusRequest {
+                        id: task.id.clone(),
+                        status: status.into(),
+                    })
+                    .unwrap();
+            }
+        }
+        app.refresh_workspace();
+        app.open_project(&project.id);
+        let board = app
+            .project
+            .as_ref()
+            .unwrap()
+            .views
+            .iter()
+            .position(|view| view.id == "board")
+            .unwrap();
+        app.switch_view_by_index(board);
+        app
+    }
+
+    fn text(app: &mut App, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render::draw(frame, app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn common_terminal_sizes_remain_readable_and_keep_quit_visible() {
+        let mut app = app();
+        for (width, height) in [(60, 18), (80, 24), (100, 30), (120, 35), (160, 45)] {
+            let rendered = text(&mut app, width, height);
+            assert!(
+                rendered.contains("Ctrl+Q quit"),
+                "{width}x{height}: {rendered}"
+            );
+            assert!(rendered.contains("Task board"), "{width}x{height}");
+            assert!(rendered.contains("Inbox"), "{width}x{height}");
+            if width >= 120 {
+                assert!(rendered.contains("Details"), "{width}x{height}");
+            }
+        }
+    }
+
+    #[test]
+    fn kanban_uses_a_readable_window_instead_of_nine_slivers() {
+        let mut app = app();
+        let rendered = text(&mut app, 120, 35);
+        assert!(rendered.contains("Planned"), "{rendered}");
+        assert!(rendered.contains("Ready"), "{rendered}");
+        assert!(
+            rendered.contains("Inbox task") || rendered.contains("Ready task"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("╭ Inb╮"), "{rendered}");
     }
 }

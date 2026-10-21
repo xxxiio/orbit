@@ -48,6 +48,7 @@ pub const UI_ACTIONS: &[&str] = &[
     "open_knowledge",
     "inspect_dependencies",
     "review_agent",
+    "inspect_agent",
     "preview_plan",
     "apply_plan",
     "record_metric",

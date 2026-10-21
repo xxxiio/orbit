@@ -681,11 +681,13 @@ def test_project_form_objective_and_validation_do_not_create_partial_rows(tui_fa
     session.send(b"c", note="invalid task form")
     session.wait_for_screen_text("New task", timeout=8.0, description="task form")
     session.send_text("Should not exist")
-    for _ in range(3):
+    for _ in range(4):
         session.send(b"\t", note="focus next field")
     session.send_text("0")
     session.send(ENTER, note="submit invalid estimate")
-    session.wait_for_screen_text("New task", timeout=5.0, description="invalid form remains open")
+    session.wait_for_screen_text(
+        "between 1 and 525600", timeout=5.0, description="invalid estimate error"
+    )
     connection = sqlite3.connect(session.workspace.db)
     try:
         count = connection.execute(
@@ -777,3 +779,37 @@ def test_project_settings_preserve_satisfied_criterion(tui_factory):
         connection.close()
     assert status == "satisfied", status
     assert objective == "Updated objective", objective
+
+
+@pytest.mark.parametrize(
+    "cols,rows", [(60, 18), (80, 24), (100, 30), (120, 35), (160, 45)]
+)
+def test_responsive_layout_navigation_detail_and_exit(tui_factory, cols, rows):
+    session = tui_factory(cols, rows, seed_project="A Very Long Project Name For Layout")
+    wait_home(session)
+    session.wait_for_screen_text("Ctrl+Q quit", timeout=5.0, description="quit footer")
+    assert QUIT_SHORTCUT_RE.search(session.screen_text), session.screen_text
+
+    open_projects(session)
+    session.wait_for_screen_text(
+        "A Very Long", timeout=8.0, description="long project row"
+    )
+    session.send(ENTER, note="open long project")
+    session.wait_for_screen_regex(
+        r"ORBIT › A Very Long", timeout=10.0, description="long project header"
+    )
+    assert QUIT_SHORTCUT_RE.search(session.screen_text), session.screen_text
+
+    session.send(b"]", note="switch view")
+    session.wait_for_screen_text("Task board", timeout=8.0, description="board view")
+    session.send(b"l", note="focus next component")
+    session.send(b"?", note="contextual help")
+    session.wait_for_screen_text("Keyboard help", timeout=8.0, description="help modal")
+    session.send(ESC, note="close help")
+    session.wait_until_screen(
+        lambda view: "Keyboard help" not in view,
+        timeout=5.0,
+        description="help closes",
+    )
+    session.quit_via(CTRL_Q)
+    session.assert_clean_exit()

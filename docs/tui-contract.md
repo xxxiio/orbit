@@ -17,10 +17,12 @@ application services.
 - **Overlays** — prompts, confirmations, action menus, command palette, search,
   help, details and messages.
 
-The connected command surface exposes read-only project views (`V`) resolved from
-the accepted replica snapshot through the same `orbit-ui` contracts. Pending
-outbox commands are never merged into that view. Full interactive connected
-parity remains future work.
+Connected mode uses the same `App`/renderer over a connected `Backend`. Project
+and task reads come from the accepted replica; supported mutations queue durable
+intents and are labelled pending until server acceptance. Unsupported connected
+editing surfaces fail closed with an explanation. The legacy connected command
+palette remains available through `ORBIT_TUI_LEGACY_CONNECTED=1` while parity is
+completed.
 
 The shared presentation model lives in `orbit-ui`; blueprint declarations live
 in `orbit-blueprint`. The TUI owns terminal layout, focus, input, scrolling,
@@ -43,8 +45,8 @@ modals and theming only.
 
 | Width | Layout |
 |---|---|
-| ≥ 104 columns | Sidebar, workspace, details |
-| 76–103 columns | Sidebar and workspace; details are a modal |
+| ≥ 120 columns | Sidebar, workspace, details |
+| 76–119 columns | Sidebar and workspace; details are a modal |
 | < 76 columns | One primary pane selected by focus |
 
 Multi-component views collapse to one focused component on very narrow or short
@@ -55,7 +57,7 @@ being silently truncated.
 
 `j`/`k`, arrows, `h`/`l`, `Tab`/`Shift+Tab`, `Enter`, `Esc` (back), `a`/`s`,
 `c`, `C`, `n`, `Space`, `p`/`P`, `A`, `G`, `[`/`]`, `g h/i/p/a`, `:`, `/`, `r`,
-`D`, `V` (connected views), `?`, `q`, `Ctrl+Q`, `Ctrl+C` are
+`D`, `?`, `q`, `Ctrl+Q`, `Ctrl+C` are
 documented in the [terminal workspace guide](guides/tui-workspace.md). Color is
 never the only state signal: glyphs, borders and markers remain in monochrome
 terminals.

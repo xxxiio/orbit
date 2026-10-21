@@ -16,8 +16,8 @@ The layout adapts to the terminal:
 
 | Width | Layout |
 |---|---|
-| 104 columns or wider | Sidebar, workspace and details |
-| 76–103 columns | Sidebar and workspace; details open with `D` or `Enter` |
+| 120 columns or wider | Sidebar, workspace and details |
+| 76–119 columns | Sidebar and workspace; details open with `D` or `Enter` |
 | narrower than 76 columns | One primary pane; `Tab` moves between sidebar and workspace |
 
 ## Start the TUI
@@ -36,13 +36,20 @@ export ORBIT_DB="$HOME/.orbit/tutorial.db"
 orbit-tui
 ```
 
-Connected mode is selected by configuration, not by a TUI flag. If the
-configured deployment is connected, the TUI uses the connected authority client.
-The connected command surface offers a read-only project view with `V`: it
-resolves accepted replica data through the same shared view contracts and never
-merges pending outbox commands into accepted state. The full interactive
-project-centric shell is local in M28; connected mutations remain the existing
-durable command intents.
+Connected mode is selected by configuration, not by a TUI flag. The same
+project-centric shell reads the accepted replica and queues project/task
+mutations as durable intents. The header shows `CONNECTED` and the unresolved
+count; queued changes are labelled **Pending (not accepted)** and never appear as
+accepted project/task rows. Press `f` (or choose **Flush pending commands**) to
+submit the outbox, then `r` to load the accepted server state. Project/task
+creation, status, rename, planning, scope and dependency actions use this path. Blueprint, habit, metric and note editing
+still report that they require the connected command surface.
+
+Multi-field connected edits can queue more than one intent. If the server rejects
+a later intent, earlier intents can remain queued; inspect the outbox with the
+legacy connected surface or CLI before retrying. For compatibility while connected parity is completed, set
+`ORBIT_TUI_LEGACY_CONNECTED=1` to launch the previous connected command palette.
+It remains server-authoritative and preserves the outbox.
 
 ## Navigate
 
@@ -88,8 +95,8 @@ pinned blueprint version or says `generated default`.
 | `:` or `Ctrl+P` | Command palette |
 | `/` | Search |
 | `r` | Refresh accepted data |
+| `f` | Connected mode: flush pending commands |
 | `D` | Toggle details (wide) or open details (narrow) |
-| `V` | Connected mode: read-only project views over the accepted snapshot |
 | `?` | Keyboard help |
 | `q` | Quit from any non-text screen |
 | `Ctrl+Q` / `Ctrl+C` | Quit from anywhere, including text inputs and modals |
@@ -154,9 +161,11 @@ orbit blueprint bind --help
 
 ## Boards, tables and scrolling
 
-A **kanban** component shows workflow columns, including empty states declared
-by the task workflow or blueprint. `j`/`k` moves through the flattened cards and
-the details pane follows the highlighted card. **Table** components show typed
+A **kanban** component shows workflow columns in workflow order. Wide boards
+display a readable window of columns and follow the selected card; `j`/`k` moves
+through the flattened cards and the details pane follows the highlighted card.
+At normal terminal widths columns are no longer squeezed into one-character
+slivers. **Table** components show typed
 columns and truncate long cells to the available width; open the row for the
 full value. Lists and boards scroll with the selection.
 
@@ -203,11 +212,13 @@ the view; repeated submissions are ignored while the refresh is pending.
 ## Agent monitoring
 
 Open **Agents** in the sidebar for a workspace-wide list, or the project's
-**Agent jobs** view. Job state is advisory execution state: a completed agent
-job does not complete the Orbit task. Review remains an explicit human action
-against accepted handoff evidence. The local TUI does not expose a review
-decision where no accepted review service is available; the action explains why
-it is disabled.
+**Agent jobs** view. Select a job and press Enter/`a` to inspect its state,
+runtime, handoff count and any recorded review decision. Job completion is
+execution state: it does not complete the Orbit task. Review/resume is shown as
+a disabled action when no explicitly configured agent runtime or connected review
+service is available, with the reason visible. Starting or resuming an agent is
+never implicit. The legacy connected command surface remains available with
+`ORBIT_TUI_LEGACY_CONNECTED=1` for advanced agent transport operations.
 
 ## Feedback and uncertainty
 

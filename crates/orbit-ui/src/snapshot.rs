@@ -90,6 +90,7 @@ fn tasks(snapshot: &Value) -> Vec<TaskRow> {
                 project_id: string(row, "project_id"),
                 milestone_id: string(row, "milestone_id"),
                 estimated_minutes: number(row, "estimated_minutes").map(|value| value as u32),
+                earliest_start_at_ms: number(row, "earliest_start_at_ms"),
                 deadline_at_ms: number(row, "deadline_at_ms"),
                 actionable: status == "ready" && blocking.is_empty(),
                 readiness: status,

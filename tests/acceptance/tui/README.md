@@ -10,6 +10,7 @@ test dependency beyond pytest is required.
 ```sh
 cargo build -p orbit-tui
 cargo build -p orbit-cli   # only needed by tests that seed a project
+cargo build -p orbit-server # connected-mode test
 ```
 
 Override the binaries with `ORBIT_TUI_BIN` / `ORBIT_CLI_BIN`.
@@ -67,8 +68,10 @@ checking that something was emitted at all.
 - `q` typed inside a form field without quitting, and the connected/local quit footer;
 - a quit shortcut in the footer on Home, Projects, a project, Help, a prompt,
   and the palette;
-- 60x18 and 160x45 launches, Ctrl+Q exit, normal exit status, and restoration
-  of the non-alternate screen (`\x1b[?1049l` or equivalent).
+- project/task lifecycle and blueprint bind/work-item edit/transition with
+  restart persistence;
+- `test_m28_connected.py`: disposable authoritative server, connected header,
+  pending project/task, `f` flush, accepted refresh and clean exit.
 
 The harness treats these as target behaviour. A failure is reported as a
 failure rather than hidden by relaxing the assertion.
