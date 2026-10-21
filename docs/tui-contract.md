@@ -53,9 +53,9 @@ being silently truncated.
 
 ## Keyboard and feedback
 
-`j`/`k`, arrows, `h`/`l`, `Tab`/`Shift+Tab`, `Enter`, `Esc`, `a`/`s`, `c`, `C`,
-`n`, `Space`, `p`/`P`, `A`, `G`, `[`/`]`, `g h/i/p/a`, `:`, `/`, `r`, `D`,
-`V` (connected views), `?`, `q` are
+`j`/`k`, arrows, `h`/`l`, `Tab`/`Shift+Tab`, `Enter`, `Esc` (back), `a`/`s`,
+`c`, `C`, `n`, `Space`, `p`/`P`, `A`, `G`, `[`/`]`, `g h/i/p/a`, `:`, `/`, `r`,
+`D`, `V` (connected views), `?`, `q`, `Ctrl+Q`, `Ctrl+C` are
 documented in the [terminal workspace guide](guides/tui-workspace.md). Color is
 never the only state signal: glyphs, borders and markers remain in monochrome
 terminals.

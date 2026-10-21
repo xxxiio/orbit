@@ -67,7 +67,7 @@ pinned blueprint version or says `generated default`.
 | `h` / `l`, `←` / `→` | Move between components |
 | `Tab` / `Shift+Tab` | Focus sidebar, workspace, details |
 | `Enter` | Open the selected item, project or pane |
-| `Esc` | Close a modal; return Home from a project |
+| `Esc` | Close a modal, or go back through navigation history |
 | `[` / `]` | Previous/next project view; planning horizon on Home |
 | `1`–`9` | Jump to a project view |
 | `g` then `h` | Home / Today |
@@ -90,10 +90,14 @@ pinned blueprint version or says `generated default`.
 | `D` | Toggle details (wide) or open details (narrow) |
 | `V` | Connected mode: read-only project views over the accepted snapshot |
 | `?` | Keyboard help |
-| `q` | Quit from Home; return Home from another screen |
+| `q` | Quit from any non-text screen |
+| `Ctrl+Q` / `Ctrl+C` | Quit from anywhere, including text inputs and modals |
 
-`q` never quits from inside a project or modal. `Esc` closes a modal first;
-pressing `q` or `Esc` from Home is the only path that leaves the application.
+`q` quits from any non-text screen. While a text prompt, palette query or search
+field is focused, printable keys including `q` are entered as text; use
+`Ctrl+Q` or `Ctrl+C` to quit from that state. If the text field contains
+unsaved input, Orbit asks for confirmation before discarding it. `Esc` closes a
+modal or goes back to the previous screen instead of quitting.
 
 ## Projects and blueprint views
 
@@ -210,6 +214,18 @@ The status bar reports exactly what happened:
 A pending command is never shown as accepted state. Repeated keypresses do not
 create duplicate mutations; the TUI suppresses an identical submission until
 the view refreshes.
+
+## Quit and terminal recovery
+
+Use `q` on a normal screen, or `Ctrl+Q` / `Ctrl+C` from anywhere. If a text
+input contains unsaved text, Orbit shows a quit confirmation; `Enter`/`y` quits
+and `Esc`/`n` returns to the editor with the text intact. Pressing `Ctrl+Q` or
+`Ctrl+C` again on the confirmation forces quit.
+
+Terminal raw mode, the alternate screen and cursor visibility are restored by
+an RAII terminal guard on normal exit, recoverable errors and unwinding panics.
+If a terminal is left in an unusual state by an external kill, run `stty sane`
+and `reset` from a shell.
 
 ## Troubleshooting
 

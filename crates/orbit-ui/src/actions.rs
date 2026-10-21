@@ -51,6 +51,62 @@ pub const ACTIONS: &[ActionDescriptor] = &[
         destructive: false,
     },
     ActionDescriptor {
+        id: "edit_task",
+        label: "Edit task",
+        description: "Rename a task and set planning fields",
+        keys: &["e"],
+        scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "add_dependency",
+        label: "Add dependency",
+        description: "Add a prerequisite task",
+        keys: &[],
+        scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "remove_dependency",
+        label: "Remove dependency",
+        description: "Remove a prerequisite edge",
+        keys: &[],
+        scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "edit_project",
+        label: "Project settings",
+        description: "Change supported project status, mode and objective",
+        keys: &[],
+        scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "edit_work_item",
+        label: "Edit work item",
+        description: "Edit blueprint-declared work-item properties",
+        keys: &[],
+        scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "install_blueprint",
+        label: "Install blueprint",
+        description: "Install a bundled blueprint version",
+        keys: &[],
+        scope: ActionScope::Project,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "bind_blueprint",
+        label: "Bind blueprint",
+        description: "Explicitly pin a published blueprint version",
+        keys: &[],
+        scope: ActionScope::Project,
+        destructive: false,
+    },
+    ActionDescriptor {
         id: "set_task_status",
         label: "Change task status",
         description: "Offer an authorized task workflow transition",
@@ -244,6 +300,25 @@ pub fn contextual(item: Option<&SelectionItem>, project_scope: bool) -> Vec<Avai
         ));
         match item.kind {
             ItemKind::Task => {
+                actions.push(AvailableAction::enabled(
+                    "edit_task",
+                    "Edit task",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
+                    "add_dependency",
+                    "Add dependency",
+                    Some(item.id.clone()),
+                ));
+                if item.fields.iter().any(|(key, value)| {
+                    (key == "prerequisites" || key == "blocked by") && !value.is_empty()
+                }) {
+                    actions.push(AvailableAction::enabled(
+                        "remove_dependency",
+                        "Remove dependency",
+                        Some(item.id.clone()),
+                    ));
+                }
                 for status in &item.allowed_statuses {
                     let mut action = AvailableAction::enabled(
                         "set_task_status",
@@ -261,6 +336,11 @@ pub fn contextual(item: Option<&SelectionItem>, project_scope: bool) -> Vec<Avai
                 ));
             }
             ItemKind::WorkItem => {
+                actions.push(AvailableAction::enabled(
+                    "edit_work_item",
+                    "Edit work item",
+                    Some(item.id.clone()),
+                ));
                 for state in &item.allowed_transitions {
                     let mut action = AvailableAction::enabled(
                         "blueprint_transition",
@@ -303,11 +383,23 @@ pub fn contextual(item: Option<&SelectionItem>, project_scope: bool) -> Vec<Avai
                 "Review agent job",
                 "Handoff review is available from the connected authority client",
             )),
-            ItemKind::Project if project_scope => actions.push(AvailableAction::enabled(
-                "create_task",
-                "New task",
-                Some(item.id.clone()),
-            )),
+            ItemKind::Project if project_scope => {
+                actions.push(AvailableAction::enabled(
+                    "create_task",
+                    "New task",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
+                    "edit_project",
+                    "Project settings",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
+                    "bind_blueprint",
+                    "Bind blueprint",
+                    Some(item.id.clone()),
+                ));
+            }
             ItemKind::Project => {}
             ItemKind::Milestone | ItemKind::Schedule | ItemKind::Text => {}
         }

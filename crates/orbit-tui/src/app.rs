@@ -2,9 +2,12 @@
 //! this module owns navigation, focus, prompts and presentation state only.
 use crate::planning_ui;
 use crate::theme::Theme;
+use orbit_blueprint::{Blueprint, FieldKind};
 use orbit_client::{
-    CreateKnowledgeRequest, CreateProjectRequest, CreateTaskRequest, MetricTargetDto, OrbitClient,
-    RecordHabitOccurrenceRequest, SetTaskStatusRequest,
+    ConfigureProjectStrategyRequest, CreateKnowledgeRequest, CreateProjectRequest,
+    CreateTaskRequest, MetricTargetDto, OrbitClient, ProjectCriterionInputDto,
+    RecordHabitOccurrenceRequest, SetProjectStatusRequest, SetTaskPlanningRequest,
+    SetTaskStatusRequest,
 };
 use orbit_runtime::planning_actions::PlanningActionMenu;
 use orbit_runtime::planning_brief::WorkBrief;
@@ -58,24 +61,87 @@ pub struct ProjectState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PromptKind {
-    NewTask { project_id: Option<String> },
-    NewKnowledge,
-    NewProject,
-    NewWorkItem { project_id: String },
-    InstallBlueprint,
-    BindBlueprint { project_id: String },
-    MetricTarget { metric_id: Option<String> },
-    MetricObservation { metric_id: Option<String> },
-    BindEvidence { project_id: String, unbind: bool },
+pub struct FormChoice {
+    pub value: String,
+    pub label: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FormFieldKind {
+    Text,
+    Integer,
+    Boolean,
+    Choice(Vec<FormChoice>),
 }
 
 #[derive(Clone, Debug)]
-pub struct PromptState {
+pub struct FormField {
+    pub key: String,
+    pub label: String,
+    pub value: String,
+    pub kind: FormFieldKind,
+    pub required: bool,
+    pub hint: String,
+}
+
+#[derive(Clone, Debug)]
+pub enum FormMode {
+    NewProject,
+    NewTask {
+        project_id: Option<String>,
+    },
+    EditTask {
+        task_id: String,
+    },
+    AddDependency {
+        task_id: String,
+    },
+    RemoveDependency {
+        task_id: String,
+    },
+    EditProject {
+        project_id: String,
+    },
+    NewWorkItemKind {
+        project_id: String,
+    },
+    NewWorkItem {
+        project_id: String,
+        blueprint: Blueprint,
+        kind: String,
+    },
+    EditWorkItem {
+        item_id: String,
+        revision: u64,
+        blueprint: Blueprint,
+        kind: String,
+    },
+    NewKnowledge,
+    InstallBlueprint,
+    BindBlueprint {
+        project_id: String,
+    },
+    MetricTarget {
+        metric_id: Option<String>,
+    },
+    MetricObservation {
+        metric_id: Option<String>,
+    },
+    BindEvidence {
+        project_id: String,
+        unbind: bool,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct FormState {
     pub title: String,
     pub hint: String,
-    pub kind: PromptKind,
-    pub value: String,
+    pub mode: FormMode,
+    pub fields: Vec<FormField>,
+    pub focused: usize,
+    pub error: Option<String>,
+    pub dirty: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,28 +158,12 @@ pub enum PendingAction {
     RecordHabit {
         habit_id: String,
     },
-    RecordMetric {
-        metric_id: String,
-        value: i64,
-    },
-    SetMetricTarget {
-        metric_id: String,
-        baseline: i64,
-        target: i64,
-        direction: String,
-    },
-    BindEvidence {
-        project_id: String,
-        kind: String,
-        evidence_id: String,
-        bind: bool,
-    },
     ApplyPlan,
 }
 
 #[derive(Clone, Debug)]
 pub enum Modal {
-    Prompt(PromptState),
+    Form(FormState),
     Confirm {
         title: String,
         body: String,
@@ -131,6 +181,9 @@ pub enum Modal {
     },
     Help,
     Detail(DetailModel),
+    QuitConfirm {
+        resume: Option<Box<Modal>>,
+    },
     TodayActions {
         menu: PlanningActionMenu,
         selected: usize,
@@ -160,7 +213,7 @@ pub enum PaletteAction {
     OpenProject(String),
     OpenView(usize),
     Execute(AvailableAction),
-    Prompt(PromptKind),
+    Form(FormMode),
     SelectItem { component: usize, index: usize },
     OpenKnowledge(String),
     Quit,
@@ -171,6 +224,24 @@ pub struct SearchHit {
     pub label: String,
     pub description: String,
     pub action: PaletteAction,
+}
+
+#[derive(Clone, Debug)]
+pub struct NavigationState {
+    pub screen: Screen,
+    pub project_id: Option<String>,
+    pub active_view: usize,
+    pub active_view_id: Option<String>,
+    pub focus: FocusPane,
+    pub sidebar_selection: usize,
+    pub projects_selection: usize,
+}
+
+#[derive(Clone, Debug, Default)]
+struct CursorState {
+    active_component: usize,
+    selected: Vec<usize>,
+    scroll: Vec<usize>,
 }
 
 pub struct App {
@@ -186,6 +257,7 @@ pub struct App {
     pub inbox: ResolvedView,
     pub agents: ResolvedView,
     pub projects: Vec<orbit_ui::data::ProjectRow>,
+    pub project_details: Vec<orbit_client::ProjectDto>,
     pub projects_selection: usize,
     pub project: Option<ProjectState>,
     pub active_component: usize,
@@ -203,6 +275,8 @@ pub struct App {
     pub planning_project: Option<String>,
     pub today_action_menu: Option<(WorkBrief, PlanningActionMenu)>,
     pub viewport_width: u16,
+    history: Vec<NavigationState>,
+    cursors: BTreeMap<String, CursorState>,
     last_submission: Option<(String, Instant)>,
 }
 
@@ -222,6 +296,7 @@ impl App {
             inbox: empty_view("inbox", "Inbox"),
             agents: empty_view("agents", "Agents"),
             projects: Vec::new(),
+            project_details: Vec::new(),
             projects_selection: 0,
             project: None,
             active_component: 0,
@@ -242,11 +317,184 @@ impl App {
             planning_project: None,
             today_action_menu: None,
             viewport_width: 120,
+            history: Vec::new(),
+            cursors: BTreeMap::new(),
             last_submission: None,
         };
         app.refresh_planning();
         app.refresh_workspace();
         Ok(app)
+    }
+
+    /// Single quit path for every screen and modal. Text prompts with content
+    /// require confirmation; Ctrl+Q/Ctrl+C never insert text into a focused field.
+    pub fn request_quit(&mut self) -> bool {
+        if matches!(self.modal, Some(Modal::QuitConfirm { .. })) {
+            return true;
+        }
+        if self.has_unsaved_input() {
+            let resume = self.modal.take().map(Box::new);
+            self.modal = Some(Modal::QuitConfirm { resume });
+            self.notify(
+                "Unsaved input: confirm quit to discard, or Esc to keep editing",
+                StatusKind::Warning,
+            );
+            return false;
+        }
+        true
+    }
+
+    fn has_unsaved_input(&self) -> bool {
+        matches!(
+            &self.modal,
+            Some(Modal::Form(form)) if form.dirty
+        ) || matches!(
+            &self.modal,
+            Some(Modal::Palette { query, .. }) | Some(Modal::Search { query, .. })
+                if !query.trim().is_empty()
+        )
+    }
+
+    fn cursor_key(&self) -> Option<String> {
+        match self.screen {
+            Screen::Home => Some("home".into()),
+            Screen::Inbox => Some("inbox".into()),
+            Screen::Agents => Some("agents".into()),
+            Screen::Projects => None,
+            Screen::Project => {
+                let project = self.project.as_ref()?;
+                let view = project.views.get(project.active_view)?;
+                Some(format!("project:{}:{}", project.id, view.id))
+            }
+        }
+    }
+
+    fn sync_cursor(&mut self) {
+        let Some(key) = self.cursor_key() else {
+            return;
+        };
+        let count = self.component_count();
+        let state = self.cursors.entry(key).or_default();
+        state.active_component = self.active_component;
+        state.selected.resize(count, 0);
+        state.scroll.resize(count, 0);
+        if let Some(index) = state.selected.get_mut(self.active_component) {
+            *index = self.selected;
+        }
+        if let Some(index) = state.scroll.get_mut(self.active_component) {
+            *index = self.scroll;
+        }
+    }
+
+    fn restore_cursor(&mut self) {
+        let Some(key) = self.cursor_key() else {
+            return;
+        };
+        let count = self.component_count();
+        let state = self.cursors.get(&key).cloned().unwrap_or_default();
+        self.active_component = state.active_component.min(count.saturating_sub(1));
+        let selected = state
+            .selected
+            .get(self.active_component)
+            .copied()
+            .unwrap_or(0);
+        let scroll = state
+            .scroll
+            .get(self.active_component)
+            .copied()
+            .unwrap_or(0);
+        let len = self
+            .current_component()
+            .map(|component| component.selection.len())
+            .unwrap_or(0);
+        self.selected = selected.min(len.saturating_sub(1));
+        self.scroll = if len == 0 {
+            scroll
+        } else {
+            scroll.min(self.selected)
+        };
+    }
+
+    fn push_history(&mut self) {
+        self.sync_cursor();
+        let Some(project_id) = self.project.as_ref().map(|project| project.id.clone()) else {
+            if self.screen != Screen::Project {
+                self.history.push(self.navigation_state(None));
+                self.trim_history();
+            }
+            return;
+        };
+        if self.screen == Screen::Project {
+            self.history.push(self.navigation_state(Some(project_id)));
+        } else {
+            self.history.push(self.navigation_state(None));
+        }
+        self.trim_history();
+    }
+
+    fn trim_history(&mut self) {
+        if self.history.len() > 30 {
+            self.history.remove(0);
+        }
+    }
+
+    fn navigation_state(&self, project_id: Option<String>) -> NavigationState {
+        NavigationState {
+            screen: self.screen,
+            project_id,
+            active_view: self
+                .project
+                .as_ref()
+                .map(|project| project.active_view)
+                .unwrap_or(0),
+            active_view_id: self.project.as_ref().and_then(|project| {
+                project
+                    .views
+                    .get(project.active_view)
+                    .map(|view| view.id.clone())
+            }),
+            focus: self.focus,
+            sidebar_selection: self.sidebar_selection,
+            projects_selection: self.projects_selection,
+        }
+    }
+
+    pub fn go_back(&mut self) {
+        self.sync_cursor();
+        while let Some(previous) = self.history.pop() {
+            if previous.screen == Screen::Project {
+                let Some(project_id) = previous.project_id.as_deref() else {
+                    continue;
+                };
+                if !self.projects.iter().any(|project| project.id == project_id) {
+                    continue;
+                }
+                if self.project.as_ref().map(|project| project.id.as_str()) != Some(project_id) {
+                    self.open_project_internal(project_id, false);
+                }
+                if let Some(project) = &mut self.project {
+                    project.active_view = previous
+                        .active_view_id
+                        .as_deref()
+                        .and_then(|id| project.views.iter().position(|view| view.id == id))
+                        .unwrap_or(previous.active_view)
+                        .min(project.views.len().saturating_sub(1));
+                }
+            }
+            self.screen = previous.screen;
+            self.focus = previous.focus;
+            self.sidebar_selection = previous.sidebar_selection;
+            self.projects_selection = previous.projects_selection;
+            self.prefix = None;
+            self.restore_cursor();
+            self.notify("Back", StatusKind::Info);
+            return;
+        }
+        if self.screen != Screen::Home {
+            self.go_screen_internal(Screen::Home, false);
+        } else {
+            self.notify("Already Home • Ctrl+Q quits", StatusKind::Info);
+        }
     }
 
     pub fn notify(&mut self, text: impl Into<String>, kind: StatusKind) {
@@ -260,11 +508,16 @@ impl App {
         match self.client.workspace_view_data() {
             Ok(workspace) => {
                 self.projects = workspace.projects.clone();
+                self.project_details = self.client.list_projects().unwrap_or_default();
                 self.workspace = Some(workspace);
                 self.workspace_error = None;
                 self.rebuild_global_views();
                 let max = self.sidebar_len().saturating_sub(1);
                 self.sidebar_selection = self.sidebar_selection.min(max);
+                self.projects_selection = self
+                    .projects_selection
+                    .min(self.projects.len().saturating_sub(1));
+                self.restore_cursor();
             }
             Err(error) => {
                 self.workspace_error = Some(error.to_string());
@@ -457,14 +710,24 @@ impl App {
     }
 
     pub fn open_project(&mut self, project_id: &str) {
+        self.push_history();
+        self.open_project_internal(project_id, false);
+    }
+
+    fn open_project_internal(&mut self, project_id: &str, record_history: bool) {
+        if record_history {
+            self.push_history();
+        }
         let Some(project) = self
             .projects
             .iter()
             .find(|project| project.id == project_id)
+            .cloned()
         else {
             self.notify(format!("Unknown project: {project_id}"), StatusKind::Error);
             return;
         };
+        self.sync_cursor();
         let index = self
             .projects
             .iter()
@@ -532,6 +795,7 @@ impl App {
                         (state.blueprint_label.clone(), state.views.len()),
                     )
                 };
+                self.restore_cursor();
                 self.clamp_component();
                 if !matches!(
                     self.status.kind,
@@ -616,11 +880,30 @@ impl App {
                     Some(project.id.clone()),
                 ),
             );
+            push_unique_action(
+                &mut actions,
+                AvailableAction::enabled(
+                    "edit_project",
+                    "Project settings",
+                    Some(project.id.clone()),
+                ),
+            );
+            push_unique_action(
+                &mut actions,
+                AvailableAction::enabled(
+                    "bind_blueprint",
+                    "Bind blueprint",
+                    Some(project.id.clone()),
+                ),
+            );
         }
         if self.screen == Screen::Project {
             for action in [
                 AvailableAction::enabled("create_task", "New task", None),
                 AvailableAction::enabled("create_work_item", "New work item", None),
+                AvailableAction::enabled("edit_project", "Project settings", None),
+                AvailableAction::enabled("bind_blueprint", "Bind blueprint", None),
+                AvailableAction::enabled("install_blueprint", "Install blueprint", None),
                 AvailableAction::enabled("preview_plan", "Preview plan", None),
                 AvailableAction::enabled("bind_evidence", "Bind evidence", None),
                 AvailableAction::enabled("refresh", "Refresh project", None),
@@ -688,12 +971,18 @@ impl App {
         if count == 0 {
             return;
         }
-        self.active_component = self
+        self.sync_cursor();
+        let next = self
             .active_component
             .saturating_add_signed(delta)
             .min(count - 1);
-        self.selected = 0;
-        self.scroll = 0;
+        self.active_component = next;
+        if let Some(key) = self.cursor_key()
+            && let Some(state) = self.cursors.get_mut(&key)
+        {
+            state.active_component = next;
+        }
+        self.restore_cursor();
     }
 
     pub fn switch_view(&mut self, delta: isize) {
@@ -708,10 +997,11 @@ impl App {
             .saturating_add_signed(delta)
             .min(state.views.len() - 1);
         if next != state.active_view {
-            state.active_view = next;
-            self.active_component = 0;
-            self.selected = 0;
-            self.scroll = 0;
+            self.sync_cursor();
+            if let Some(state) = &mut self.project {
+                state.active_view = next;
+            }
+            self.restore_cursor();
         }
     }
 
@@ -720,10 +1010,11 @@ impl App {
             return;
         };
         if index < state.views.len() {
-            state.active_view = index;
-            self.active_component = 0;
-            self.selected = 0;
-            self.scroll = 0;
+            self.sync_cursor();
+            if let Some(state) = &mut self.project {
+                state.active_view = index;
+            }
+            self.restore_cursor();
         }
     }
 
@@ -771,11 +1062,16 @@ impl App {
     }
 
     pub fn go_screen(&mut self, screen: Screen) {
+        self.go_screen_internal(screen, true);
+    }
+
+    fn go_screen_internal(&mut self, screen: Screen, record_history: bool) {
+        if record_history && self.screen != screen {
+            self.push_history();
+        }
+        self.sync_cursor();
         self.screen = screen;
         self.focus = FocusPane::Workspace;
-        self.active_component = 0;
-        self.selected = 0;
-        self.scroll = 0;
         self.prefix = None;
         self.sidebar_selection = match screen {
             Screen::Home => 0,
@@ -785,8 +1081,11 @@ impl App {
             Screen::Project => self.sidebar_selection,
         };
         if screen == Screen::Projects {
-            self.projects_selection = 0;
+            self.projects_selection = self
+                .projects_selection
+                .min(self.projects.len().saturating_sub(1));
         }
+        self.restore_cursor();
         if screen == Screen::Project {
             self.refresh_project();
         }
@@ -818,7 +1117,85 @@ impl App {
             .map(|component| component.selection.len())
             .unwrap_or(0);
         self.selected = self.selected.min(selected.saturating_sub(1));
-        self.scroll = self.scroll.min(self.selected);
+        self.scroll = if selected == 0 {
+            self.scroll
+        } else {
+            self.scroll.min(self.selected)
+        };
+    }
+
+    pub fn edit_selected(&mut self) {
+        if self.screen == Screen::Projects {
+            if let Some(project) = self.selected_project() {
+                let project_id = project.id.clone();
+                self.start_form(FormMode::EditProject { project_id });
+            } else {
+                self.notify("Select a project first", StatusKind::Warning);
+            }
+            return;
+        }
+        let Some(item) = self.selected_item() else {
+            self.notify("Select an item first", StatusKind::Warning);
+            return;
+        };
+        match item.kind {
+            ItemKind::Task => {
+                let task_id = item.id.clone();
+                self.start_form(FormMode::EditTask { task_id });
+            }
+            ItemKind::Project => {
+                if let Some(project) = &self.project {
+                    let project_id = project.id.clone();
+                    self.start_form(FormMode::EditProject { project_id });
+                }
+            }
+            ItemKind::WorkItem => {
+                let item_id = item.id.clone();
+                self.start_edit_work_item(&item_id);
+            }
+            ItemKind::Metric => {
+                let metric_id = Some(item.id.clone());
+                self.start_form(FormMode::MetricTarget { metric_id });
+            }
+            _ => self.notify(
+                "This item has no supported edit form; use the action menu",
+                StatusKind::Info,
+            ),
+        }
+    }
+
+    fn start_edit_work_item(&mut self, item_id: &str) {
+        let Some(project) = &self.project else {
+            self.notify("Open a project first", StatusKind::Warning);
+            return;
+        };
+        let Some(work_item) = project
+            .data
+            .work_items
+            .iter()
+            .find(|work_item| work_item.id == item_id)
+        else {
+            self.notify(
+                "Work item is not available after refresh",
+                StatusKind::Warning,
+            );
+            return;
+        };
+        let Some(blueprint) = self
+            .client
+            .project_blueprint_definition(&project.id)
+            .ok()
+            .flatten()
+        else {
+            self.notify("Pinned blueprint is unavailable", StatusKind::Warning);
+            return;
+        };
+        self.start_form(FormMode::EditWorkItem {
+            item_id: work_item.id.clone(),
+            revision: work_item.revision,
+            blueprint,
+            kind: work_item.kind.clone(),
+        });
     }
 
     pub fn open_action_menu(&mut self) {
@@ -917,27 +1294,39 @@ impl App {
         }
         entries.push(PaletteEntry {
             label: "New project".into(),
-            description: "Create an empty project".into(),
-            action: PaletteAction::Prompt(PromptKind::NewProject),
+            description: "Create a project with a structured form".into(),
+            action: PaletteAction::Form(FormMode::NewProject),
+            enabled: true,
+        });
+        entries.push(PaletteEntry {
+            label: "New task".into(),
+            description: "Create a task with project, estimate and deadline".into(),
+            action: PaletteAction::Form(FormMode::NewTask {
+                project_id: self
+                    .project
+                    .as_ref()
+                    .filter(|_| self.screen == Screen::Project)
+                    .map(|project| project.id.clone()),
+            }),
             enabled: true,
         });
         entries.push(PaletteEntry {
             label: "New knowledge note".into(),
             description: "Capture a Markdown note".into(),
-            action: PaletteAction::Prompt(PromptKind::NewKnowledge),
+            action: PaletteAction::Form(FormMode::NewKnowledge),
             enabled: true,
         });
         entries.push(PaletteEntry {
             label: "Install bundled blueprint".into(),
             description: "development, research, learning or habits".into(),
-            action: PaletteAction::Prompt(PromptKind::InstallBlueprint),
+            action: PaletteAction::Form(FormMode::InstallBlueprint),
             enabled: true,
         });
         if let Some(state) = &self.project {
             entries.push(PaletteEntry {
                 label: "Bind blueprint version".into(),
                 description: "Explicitly pin a published blueprint version".into(),
-                action: PaletteAction::Prompt(PromptKind::BindBlueprint {
+                action: PaletteAction::Form(FormMode::BindBlueprint {
                     project_id: state.id.clone(),
                 }),
                 enabled: true,
@@ -977,7 +1366,7 @@ impl App {
                 self.switch_view_by_index(index);
             }
             PaletteAction::Execute(action) => return self.execute_action(action),
-            PaletteAction::Prompt(kind) => self.start_prompt(kind),
+            PaletteAction::Form(mode) => self.start_form(mode),
             PaletteAction::SelectItem { component, index } => {
                 self.active_component = component;
                 self.selected = index;
@@ -1030,7 +1419,7 @@ impl App {
                 }
             }
             "open" | "open_knowledge" => self.open_detail(),
-            "create_task" => self.start_prompt(PromptKind::NewTask {
+            "create_task" => self.start_form(FormMode::NewTask {
                 project_id: self
                     .project
                     .as_ref()
@@ -1039,7 +1428,7 @@ impl App {
             }),
             "create_work_item" => {
                 if let Some(state) = &self.project {
-                    self.start_prompt(PromptKind::NewWorkItem {
+                    self.start_form(FormMode::NewWorkItemKind {
                         project_id: state.id.clone(),
                     });
                 } else {
@@ -1047,6 +1436,63 @@ impl App {
                         "Open a project before creating a work item",
                         StatusKind::Warning,
                     );
+                }
+            }
+            "edit_task" => {
+                if let Some(item) = self.selected_item()
+                    && item.kind == ItemKind::Task
+                {
+                    let task_id = item.id.clone();
+                    self.start_form(FormMode::EditTask { task_id });
+                }
+            }
+            "add_dependency" => {
+                if let Some(item) = self.selected_item()
+                    && item.kind == ItemKind::Task
+                {
+                    let task_id = item.id.clone();
+                    self.start_form(FormMode::AddDependency { task_id });
+                }
+            }
+            "remove_dependency" => {
+                if let Some(item) = self.selected_item()
+                    && item.kind == ItemKind::Task
+                {
+                    let task_id = item.id.clone();
+                    self.start_form(FormMode::RemoveDependency { task_id });
+                }
+            }
+            "edit_work_item" => {
+                if let Some(item) = self.selected_item() {
+                    let item_id = item.id.clone();
+                    self.start_edit_work_item(&item_id);
+                } else {
+                    self.notify("Select a work item first", StatusKind::Warning);
+                }
+            }
+            "edit_project" => {
+                let project_id = if self.screen == Screen::Projects {
+                    self.selected_project().map(|project| project.id.clone())
+                } else {
+                    self.project.as_ref().map(|project| project.id.clone())
+                };
+                if let Some(project_id) = project_id {
+                    self.start_form(FormMode::EditProject { project_id });
+                } else {
+                    self.notify("Select a project first", StatusKind::Warning);
+                }
+            }
+            "install_blueprint" => self.start_form(FormMode::InstallBlueprint),
+            "bind_blueprint" => {
+                let project_id = if self.screen == Screen::Projects {
+                    self.selected_project().map(|project| project.id.clone())
+                } else {
+                    self.project.as_ref().map(|project| project.id.clone())
+                };
+                if let Some(project_id) = project_id {
+                    self.start_form(FormMode::BindBlueprint { project_id });
+                } else {
+                    self.notify("Select a project first", StatusKind::Warning);
                 }
             }
             "set_task_status" | "complete_task" => {
@@ -1101,15 +1547,15 @@ impl App {
             }
             "record_metric" => {
                 let metric_id = self.selected_item().map(|item| item.id.clone());
-                self.start_prompt(PromptKind::MetricObservation { metric_id });
+                self.start_form(FormMode::MetricObservation { metric_id });
             }
             "set_metric_target" => {
                 let metric_id = self.selected_item().map(|item| item.id.clone());
-                self.start_prompt(PromptKind::MetricTarget { metric_id });
+                self.start_form(FormMode::MetricTarget { metric_id });
             }
             "bind_evidence" => {
                 if let Some(state) = &self.project {
-                    self.start_prompt(PromptKind::BindEvidence {
+                    self.start_form(FormMode::BindEvidence {
                         project_id: state.id.clone(),
                         unbind: false,
                     });
@@ -1280,72 +1726,6 @@ impl App {
                     ),
                 }
             }
-            PendingAction::RecordMetric { metric_id, value } => {
-                match self
-                    .client
-                    .record_metric_observation(metric_id.clone(), now_ms(), value)
-                {
-                    Ok(()) => {
-                        self.notify(
-                            format!("Accepted observation for {metric_id}"),
-                            StatusKind::Success,
-                        );
-                        self.refresh_after_mutation();
-                    }
-                    Err(error) => self.notify(
-                        format!("Metric observation rejected: {}", error.message),
-                        StatusKind::Error,
-                    ),
-                }
-            }
-            PendingAction::SetMetricTarget {
-                metric_id,
-                baseline,
-                target,
-                direction,
-            } => match self.client.set_metric_target(MetricTargetDto {
-                metric_id: metric_id.clone(),
-                baseline,
-                target,
-                direction,
-            }) {
-                Ok(()) => {
-                    self.notify(
-                        format!("Accepted target for {metric_id}"),
-                        StatusKind::Success,
-                    );
-                    self.refresh_after_mutation();
-                }
-                Err(error) => self.notify(
-                    format!("Metric target rejected: {}", error.message),
-                    StatusKind::Error,
-                ),
-            },
-            PendingAction::BindEvidence {
-                project_id,
-                kind,
-                evidence_id,
-                bind,
-            } => match self
-                .client
-                .change_project_evidence(project_id, kind, evidence_id, bind)
-            {
-                Ok(()) => {
-                    self.notify(
-                        if bind {
-                            "Evidence binding accepted"
-                        } else {
-                            "Evidence unbinding accepted"
-                        },
-                        StatusKind::Success,
-                    );
-                    self.refresh_after_mutation();
-                }
-                Err(error) => self.notify(
-                    format!("Evidence change rejected: {}", error.message),
-                    StatusKind::Error,
-                ),
-            },
             PendingAction::ApplyPlan => {
                 let Some(plan) = self.pending_plan.clone() else {
                     self.notify("No pending plan", StatusKind::Warning);
@@ -1691,255 +2071,1081 @@ impl App {
         );
     }
 
-    pub fn start_prompt(&mut self, kind: PromptKind) {
-        let (title, hint) = match &kind {
-            PromptKind::NewTask { .. } => ("New task", "title"),
-            PromptKind::NewKnowledge => ("New knowledge note", "title"),
-            PromptKind::NewProject => ("New project", "name"),
-            PromptKind::NewWorkItem { .. } => (
-                "New work item",
-                "kind key=value key=value (e.g. hypothesis question=Does it work?)",
-            ),
-            PromptKind::InstallBlueprint => (
-                "Install bundled blueprint",
-                "development | research | learning | habits",
-            ),
-            PromptKind::BindBlueprint { .. } => ("Bind blueprint", "id@version (e.g. research@2)"),
-            PromptKind::MetricTarget { .. } => (
-                "Metric target",
-                "metric-id baseline target at_least|at_most",
-            ),
-            PromptKind::MetricObservation { .. } => ("Record metric", "metric-id value"),
-            PromptKind::BindEvidence { unbind, .. } => (
-                if *unbind {
-                    "Unbind evidence"
-                } else {
-                    "Bind evidence"
-                },
-                "habit:id or metric:id",
-            ),
-        };
-        self.modal = Some(Modal::Prompt(PromptState {
-            title: title.into(),
+    fn text_field(
+        key: &str,
+        label: &str,
+        value: impl Into<String>,
+        required: bool,
+        hint: &str,
+    ) -> FormField {
+        FormField {
+            key: key.into(),
+            label: label.into(),
+            value: value.into(),
+            kind: FormFieldKind::Text,
+            required,
             hint: hint.into(),
-            kind,
-            value: String::new(),
-        }));
+        }
     }
 
-    pub fn submit_prompt(&mut self, prompt: PromptState) {
-        let value = prompt.value.trim().to_owned();
+    fn integer_field(
+        key: &str,
+        label: &str,
+        value: impl Into<String>,
+        required: bool,
+        hint: &str,
+    ) -> FormField {
+        FormField {
+            key: key.into(),
+            label: label.into(),
+            value: value.into(),
+            kind: FormFieldKind::Integer,
+            required,
+            hint: hint.into(),
+        }
+    }
+
+    fn boolean_field(key: &str, label: &str, value: bool) -> FormField {
+        FormField {
+            key: key.into(),
+            label: label.into(),
+            value: if value { "true" } else { "false" }.into(),
+            kind: FormFieldKind::Boolean,
+            required: false,
+            hint: String::new(),
+        }
+    }
+
+    fn choice_field(
+        key: &str,
+        label: &str,
+        value: impl Into<String>,
+        choices: Vec<FormChoice>,
+        required: bool,
+    ) -> FormField {
+        FormField {
+            key: key.into(),
+            label: label.into(),
+            value: value.into(),
+            kind: FormFieldKind::Choice(choices),
+            required,
+            hint: String::new(),
+        }
+    }
+
+    fn form_choice(value: impl Into<String>, label: impl Into<String>) -> FormChoice {
+        FormChoice {
+            value: value.into(),
+            label: label.into(),
+        }
+    }
+
+    fn project_choices(&self, include_none: bool) -> Vec<FormChoice> {
+        let mut choices = Vec::new();
+        if include_none {
+            choices.push(Self::form_choice("", "(none)"));
+        }
+        choices.extend(
+            self.projects
+                .iter()
+                .map(|project| Self::form_choice(project.id.clone(), project.name.clone())),
+        );
+        choices
+    }
+
+    fn metric_choices(&self, include_none: bool) -> Vec<FormChoice> {
+        let mut choices = Vec::new();
+        if include_none {
+            choices.push(Self::form_choice("", "(select)"));
+        }
+        if let Some(project) = &self.project {
+            choices.extend(
+                project
+                    .data
+                    .metrics
+                    .iter()
+                    .map(|metric| Self::form_choice(metric.id.clone(), metric.id.clone())),
+            );
+        }
+        choices
+    }
+
+    fn blueprint_version_choices(&self) -> Vec<FormChoice> {
+        let mut choices = Vec::new();
+        if let Ok(installed) = self.client.list_blueprint_versions() {
+            choices.extend(
+                installed
+                    .into_iter()
+                    .map(|(id, version)| {
+                        Self::form_choice(format!("{id}@{version}"), format!("{id}@{version}"))
+                    })
+                    .collect::<Vec<_>>(),
+            );
+        }
+        choices
+    }
+
+    fn work_item_kind_choices(blueprint: &Blueprint) -> Vec<FormChoice> {
+        blueprint
+            .work_items
+            .iter()
+            .map(|kind| Self::form_choice(kind.id.clone(), kind.name.clone()))
+            .collect()
+    }
+
+    fn work_item_fields(blueprint: &Blueprint, kind: &str) -> Option<Vec<FormField>> {
+        let definition = blueprint.item_kind(kind).ok()?;
+        Some(
+            definition
+                .fields
+                .iter()
+                .map(|field| {
+                    let value = field
+                        .default
+                        .as_ref()
+                        .map(|value| match value {
+                            serde_json::Value::String(text) => text.clone(),
+                            other => other.to_string(),
+                        })
+                        .unwrap_or_default();
+                    match &field.kind {
+                        FieldKind::Integer => Self::integer_field(
+                            &field.id,
+                            &field.id,
+                            value,
+                            field.required,
+                            "integer",
+                        ),
+                        FieldKind::Boolean => Self::boolean_field(
+                            &field.id,
+                            &field.id,
+                            field
+                                .default
+                                .as_ref()
+                                .and_then(|value| value.as_bool())
+                                .unwrap_or(false),
+                        ),
+                        FieldKind::Choice { options } => Self::choice_field(
+                            &field.id,
+                            &field.id,
+                            value,
+                            options
+                                .iter()
+                                .map(|option| Self::form_choice(option.clone(), option.clone()))
+                                .collect(),
+                            field.required,
+                        ),
+                        FieldKind::Text => {
+                            Self::text_field(&field.id, &field.id, value, field.required, "text")
+                        }
+                    }
+                })
+                .collect(),
+        )
+    }
+
+    pub fn start_form(&mut self, mode: FormMode) {
+        let Some(form) = self.build_form(mode) else {
+            return;
+        };
+        self.modal = Some(Modal::Form(form));
+    }
+
+    fn build_form(&mut self, mode: FormMode) -> Option<FormState> {
+        match mode {
+            FormMode::NewProject => Some(FormState {
+                title: "New project".into(),
+                hint: "Create a project without leaving the TUI".into(),
+                mode: FormMode::NewProject,
+                fields: vec![
+                    Self::text_field("name", "Name", "", true, "required"),
+                    Self::text_field("objective", "Objective", "", false, "optional"),
+                    Self::choice_field(
+                        "blueprint",
+                        "Blueprint",
+                        "",
+                        std::iter::once(Self::form_choice("", "(none)"))
+                            .chain(self.blueprint_version_choices())
+                            .collect(),
+                        false,
+                    ),
+                ],
+                focused: 0,
+                error: None,
+                dirty: false,
+            }),
+            FormMode::NewTask { project_id } => Some(FormState {
+                title: "New task".into(),
+                hint: "Create a task in the selected project or inbox".into(),
+                mode: FormMode::NewTask {
+                    project_id: project_id.clone(),
+                },
+                fields: vec![
+                    Self::text_field("title", "Title", "", true, "required"),
+                    Self::choice_field(
+                        "project",
+                        "Project",
+                        project_id.unwrap_or_default(),
+                        self.project_choices(true),
+                        false,
+                    ),
+                    Self::text_field("milestone", "Milestone", "", false, "optional ID"),
+                    Self::integer_field("estimate", "Estimate", "", false, "minutes"),
+                    Self::integer_field("deadline", "Deadline", "", false, "epoch ms"),
+                ],
+                focused: 0,
+                error: None,
+                dirty: false,
+            }),
+            FormMode::EditTask { task_id } => {
+                let tasks = self.client.list_tasks().ok()?;
+                let task = tasks.iter().find(|task| task.id == task_id)?;
+                Some(FormState {
+                    title: format!("Edit task · {}", task.title),
+                    hint: "Rename and set supported planning fields".into(),
+                    mode: FormMode::EditTask {
+                        task_id: task_id.clone(),
+                    },
+                    fields: vec![
+                        Self::text_field("title", "Title", task.title.clone(), true, "required"),
+                        Self::integer_field(
+                            "estimate",
+                            "Estimate",
+                            task.estimated_minutes
+                                .map(|value| value.to_string())
+                                .unwrap_or_default(),
+                            false,
+                            "minutes",
+                        ),
+                        Self::integer_field(
+                            "earliest",
+                            "Earliest start",
+                            task.earliest_start_at_ms
+                                .map(|value| value.to_string())
+                                .unwrap_or_default(),
+                            false,
+                            "epoch ms",
+                        ),
+                        Self::integer_field(
+                            "deadline",
+                            "Deadline",
+                            task.deadline_at_ms
+                                .map(|value| value.to_string())
+                                .unwrap_or_default(),
+                            false,
+                            "epoch ms",
+                        ),
+                    ],
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::AddDependency { task_id } => {
+                let tasks = self
+                    .project
+                    .as_ref()
+                    .map(|project| project.data.tasks.clone())
+                    .unwrap_or_default();
+                let choices: Vec<FormChoice> = tasks
+                    .iter()
+                    .filter(|task| task.id != task_id)
+                    .map(|task| Self::form_choice(task.id.clone(), task.title.clone()))
+                    .collect();
+                if choices.is_empty() {
+                    self.notify(
+                        "No other task is available as a prerequisite",
+                        StatusKind::Warning,
+                    );
+                    return None;
+                }
+                Some(FormState {
+                    title: "Add task prerequisite".into(),
+                    hint: "The authority rejects self, missing and cyclic edges".into(),
+                    mode: FormMode::AddDependency {
+                        task_id: task_id.clone(),
+                    },
+                    fields: vec![Self::choice_field(
+                        "prerequisite",
+                        "Prerequisite",
+                        choices[0].value.clone(),
+                        choices,
+                        true,
+                    )],
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::RemoveDependency { task_id } => {
+                let task = self
+                    .project
+                    .as_ref()
+                    .and_then(|project| project.data.tasks.iter().find(|task| task.id == task_id))
+                    .cloned()?;
+                if task.prerequisite_ids.is_empty() {
+                    self.notify("This task has no prerequisites", StatusKind::Warning);
+                    return None;
+                }
+                let choices = task
+                    .prerequisite_ids
+                    .iter()
+                    .map(|id| Self::form_choice(id.clone(), id.clone()))
+                    .collect();
+                Some(FormState {
+                    title: "Remove task prerequisite".into(),
+                    hint: "Removal is revision-checked by the authority".into(),
+                    mode: FormMode::RemoveDependency { task_id },
+                    fields: vec![Self::choice_field(
+                        "prerequisite",
+                        "Prerequisite",
+                        "",
+                        choices,
+                        true,
+                    )],
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::EditProject { project_id } => {
+                let project = self
+                    .project_details
+                    .iter()
+                    .find(|project| project.id == project_id)?;
+                Some(FormState {
+                    title: format!("Project settings · {}", project.name),
+                    hint: "Change supported project settings; criteria and signals are preserved"
+                        .into(),
+                    mode: FormMode::EditProject {
+                        project_id: project_id.clone(),
+                    },
+                    fields: vec![
+                        Self::choice_field(
+                            "status",
+                            "Status",
+                            project.status.clone(),
+                            [
+                                "proposed",
+                                "active",
+                                "on_hold",
+                                "completed",
+                                "cancelled",
+                                "archived",
+                            ]
+                            .into_iter()
+                            .map(|status| Self::form_choice(status, status))
+                            .collect(),
+                            true,
+                        ),
+                        Self::choice_field(
+                            "mode",
+                            "Mode",
+                            project.mode.clone(),
+                            [
+                                "standard",
+                                "learning",
+                                "habit_driven",
+                                "metric_target",
+                                "maintenance",
+                                "custom",
+                            ]
+                            .into_iter()
+                            .map(|mode| Self::form_choice(mode, mode))
+                            .collect(),
+                            true,
+                        ),
+                        Self::text_field(
+                            "objective",
+                            "Objective",
+                            project.objective.clone().unwrap_or_default(),
+                            false,
+                            "optional",
+                        ),
+                    ],
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::NewWorkItemKind { project_id } => {
+                let blueprint = self
+                    .client
+                    .project_blueprint_definition(&project_id)
+                    .ok()??;
+                let choices = Self::work_item_kind_choices(&blueprint);
+                if choices.is_empty() {
+                    self.notify(
+                        "This blueprint declares no work-item kinds",
+                        StatusKind::Warning,
+                    );
+                    return None;
+                }
+                Some(FormState {
+                    title: "New work item · choose kind".into(),
+                    hint: "The next form shows the type's declared fields".into(),
+                    mode: FormMode::NewWorkItemKind {
+                        project_id: project_id.clone(),
+                    },
+                    fields: vec![Self::choice_field(
+                        "kind",
+                        "Kind",
+                        choices[0].value.clone(),
+                        choices,
+                        true,
+                    )],
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::NewWorkItem {
+                project_id,
+                blueprint,
+                kind,
+            } => Some(FormState {
+                title: format!("New {kind}"),
+                hint: "Fields are generated from the pinned blueprint".into(),
+                mode: FormMode::NewWorkItem {
+                    project_id: project_id.clone(),
+                    blueprint: blueprint.clone(),
+                    kind: kind.clone(),
+                },
+                fields: Self::work_item_fields(&blueprint, &kind)?,
+                focused: 0,
+                error: None,
+                dirty: false,
+            }),
+            FormMode::EditWorkItem {
+                item_id,
+                revision,
+                blueprint,
+                kind,
+            } => {
+                let item = self
+                    .client
+                    .list_blueprint_work_items(
+                        self.project
+                            .as_ref()
+                            .map(|project| project.id.as_str())
+                            .unwrap_or(""),
+                    )
+                    .ok()?
+                    .into_iter()
+                    .find(|item| item.id == item_id)?;
+                let mut fields = Self::work_item_fields(&blueprint, &kind)?;
+                for field in &mut fields {
+                    if let Some(value) = item.properties.get(&field.key) {
+                        field.value = match value {
+                            serde_json::Value::String(text) => text.clone(),
+                            other => other.to_string(),
+                        };
+                    }
+                }
+                Some(FormState {
+                    title: format!("Edit work item · {}", item_id),
+                    hint: "Only declared properties are editable".into(),
+                    mode: FormMode::EditWorkItem {
+                        item_id,
+                        revision,
+                        blueprint,
+                        kind,
+                    },
+                    fields,
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::NewKnowledge => Some(FormState {
+                title: "New knowledge note".into(),
+                hint: "Capture a Markdown note".into(),
+                mode: FormMode::NewKnowledge,
+                fields: vec![
+                    Self::text_field("title", "Title", "", true, "required"),
+                    Self::text_field("body", "Body", "", false, "Markdown"),
+                ],
+                focused: 0,
+                error: None,
+                dirty: false,
+            }),
+            FormMode::InstallBlueprint => Some(FormState {
+                title: "Install bundled blueprint".into(),
+                hint: "Installation publishes a version; it does not bind existing projects".into(),
+                mode: FormMode::InstallBlueprint,
+                fields: vec![Self::choice_field(
+                    "blueprint",
+                    "Blueprint",
+                    orbit_blueprint::bundled::BUNDLED_BLUEPRINTS[0].id,
+                    orbit_blueprint::bundled::BUNDLED_BLUEPRINTS
+                        .iter()
+                        .map(|descriptor| Self::form_choice(descriptor.id, descriptor.name))
+                        .collect(),
+                    true,
+                )],
+                focused: 0,
+                error: None,
+                dirty: false,
+            }),
+            FormMode::BindBlueprint { project_id } => {
+                let choices = self.blueprint_version_choices();
+                if choices.is_empty() {
+                    self.notify(
+                        "No published blueprint versions are available",
+                        StatusKind::Warning,
+                    );
+                    return None;
+                }
+                Some(FormState {
+                    title: "Bind blueprint version".into(),
+                    hint: "Binding is explicit and pins the selected version".into(),
+                    mode: FormMode::BindBlueprint {
+                        project_id: project_id.clone(),
+                    },
+                    fields: vec![Self::choice_field(
+                        "version",
+                        "Blueprint",
+                        choices[0].value.clone(),
+                        choices,
+                        true,
+                    )],
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::MetricTarget { metric_id } => {
+                let choices = self.metric_choices(true);
+                let selected = metric_id.unwrap_or_else(|| {
+                    choices
+                        .first()
+                        .map(|choice| choice.value.clone())
+                        .unwrap_or_default()
+                });
+                Some(FormState {
+                    title: "Metric target".into(),
+                    hint: "Baseline and target are integers".into(),
+                    mode: FormMode::MetricTarget {
+                        metric_id: Some(selected.clone()),
+                    },
+                    fields: vec![
+                        Self::choice_field("metric", "Metric", selected, choices, true),
+                        Self::integer_field("baseline", "Baseline", "", true, "integer"),
+                        Self::integer_field("target", "Target", "", true, "integer"),
+                        Self::choice_field(
+                            "direction",
+                            "Direction",
+                            "at_least",
+                            ["at_least", "at_most"]
+                                .into_iter()
+                                .map(|direction| Self::form_choice(direction, direction))
+                                .collect(),
+                            true,
+                        ),
+                    ],
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::MetricObservation { metric_id } => {
+                let choices = self.metric_choices(true);
+                let selected = metric_id.unwrap_or_else(|| {
+                    choices
+                        .first()
+                        .map(|choice| choice.value.clone())
+                        .unwrap_or_default()
+                });
+                Some(FormState {
+                    title: "Record metric observation".into(),
+                    hint: "The observation is appended through the authority".into(),
+                    mode: FormMode::MetricObservation {
+                        metric_id: Some(selected.clone()),
+                    },
+                    fields: vec![
+                        Self::choice_field("metric", "Metric", selected, choices, true),
+                        Self::integer_field("value", "Value", "", true, "integer"),
+                    ],
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::BindEvidence { project_id, unbind } => Some(FormState {
+                title: if unbind {
+                    "Unbind project evidence"
+                } else {
+                    "Bind project evidence"
+                }
+                .into(),
+                hint: "Use an existing habit or metric ID".into(),
+                mode: FormMode::BindEvidence { project_id, unbind },
+                fields: vec![
+                    Self::choice_field(
+                        "kind",
+                        "Kind",
+                        "habit",
+                        ["habit", "metric"]
+                            .into_iter()
+                            .map(|kind| Self::form_choice(kind, kind))
+                            .collect(),
+                        true,
+                    ),
+                    Self::text_field("id", "Evidence ID", "", true, "habit or metric ID"),
+                ],
+                focused: 0,
+                error: None,
+                dirty: false,
+            }),
+        }
+    }
+
+    pub fn form_value<'a>(form: &'a FormState, key: &str) -> &'a str {
+        form.fields
+            .iter()
+            .find(|field| field.key == key)
+            .map(|field| field.value.as_str())
+            .unwrap_or("")
+    }
+
+    fn form_int(form: &FormState, key: &str, required: bool) -> Result<Option<i64>, String> {
+        let value = Self::form_value(form, key).trim();
         if value.is_empty() {
-            self.notify("Empty input cancelled", StatusKind::Warning);
+            return if required {
+                Err(format!("{key} is required"))
+            } else {
+                Ok(None)
+            };
+        }
+        value
+            .parse::<i64>()
+            .map(Some)
+            .map_err(|_| format!("{key} must be an integer"))
+    }
+
+    fn form_u32(form: &FormState, key: &str) -> Result<Option<u32>, String> {
+        match Self::form_int(form, key, false)? {
+            Some(value) if value > 0 && value <= u32::MAX as i64 => Ok(Some(value as u32)),
+            Some(_) => Err(format!("{key} must be a positive integer")),
+            None => Ok(None),
+        }
+    }
+
+    fn form_error(&mut self, mut form: FormState, error: impl Into<String>) {
+        form.error = Some(error.into());
+        self.modal = Some(Modal::Form(form));
+    }
+
+    pub fn submit_form(&mut self, form: FormState) {
+        let mut validation_error = None;
+        for field in &form.fields {
+            if field.required && field.value.trim().is_empty() {
+                validation_error = Some(format!("{} is required", field.label));
+                break;
+            }
+            if matches!(field.kind, FormFieldKind::Integer)
+                && !field.value.trim().is_empty()
+                && field.value.trim().parse::<i64>().is_err()
+            {
+                validation_error = Some(format!("{} must be an integer", field.label));
+                break;
+            }
+            if let FormFieldKind::Choice(choices) = &field.kind
+                && !choices.iter().any(|choice| choice.value == field.value)
+            {
+                validation_error = Some(format!("{} is not a valid choice", field.label));
+                break;
+            }
+        }
+        if let Some(error) = validation_error {
+            self.form_error(form, error);
             return;
         }
-        match prompt.kind {
-            PromptKind::NewTask { project_id } => {
-                match self.client.create_task(CreateTaskRequest {
-                    id: None,
-                    title: value,
-                    project_id,
-                    milestone_id: None,
-                }) {
-                    Ok(task) => {
-                        self.notify(format!("Accepted task {}", task.id), StatusKind::Success);
-                        self.refresh_after_mutation();
-                    }
-                    Err(error) => self.notify(
-                        format!("Task capture rejected: {}", error.message),
-                        StatusKind::Error,
-                    ),
-                }
+        let result = match form.mode.clone() {
+            FormMode::NewProject => self.submit_new_project(&form),
+            FormMode::NewTask { .. } => self.submit_new_task(&form),
+            FormMode::EditTask { task_id } => self.submit_edit_task(&form, &task_id),
+            FormMode::AddDependency { task_id } => self.submit_add_dependency(&form, &task_id),
+            FormMode::RemoveDependency { task_id } => {
+                self.submit_remove_dependency(&form, &task_id)
             }
-            PromptKind::NewKnowledge => {
-                match self.client.create_knowledge(CreateKnowledgeRequest {
-                    id: None,
-                    kind: "note".into(),
-                    title: value,
-                    body_markdown: String::new(),
-                }) {
-                    Ok(note) => {
-                        self.notify(format!("Accepted note {}", note.id), StatusKind::Success);
-                        self.refresh_after_mutation();
-                    }
-                    Err(error) => self.notify(
-                        format!("Note capture rejected: {}", error.message),
-                        StatusKind::Error,
-                    ),
-                }
-            }
-            PromptKind::NewProject => {
-                match self.client.create_project(CreateProjectRequest {
-                    id: None,
-                    name: value,
-                }) {
-                    Ok(project) => {
-                        let id = project.id.clone();
-                        self.notify(
-                            format!("Accepted project {} ({})", project.name, id),
-                            StatusKind::Success,
-                        );
-                        self.refresh_workspace();
-                        self.open_project(&id);
-                    }
-                    Err(error) => self.notify(
-                        format!("Project creation rejected: {}", error.message),
-                        StatusKind::Error,
-                    ),
-                }
-            }
-            PromptKind::NewWorkItem { project_id } => {
-                let mut parts = value.split_whitespace();
-                let Some(kind) = parts.next() else {
-                    self.notify("Expected work-item kind", StatusKind::Error);
-                    return;
-                };
-                let mut properties = BTreeMap::new();
-                for token in parts {
-                    let Some((key, raw)) = token.split_once('=') else {
-                        self.notify(
-                            format!("Expected key=value, got '{token}'"),
-                            StatusKind::Error,
-                        );
-                        return;
-                    };
-                    let value = if raw == "true" {
-                        serde_json::Value::Bool(true)
-                    } else if raw == "false" {
-                        serde_json::Value::Bool(false)
-                    } else if let Ok(number) = raw.parse::<i64>() {
-                        serde_json::Value::from(number)
-                    } else {
-                        serde_json::Value::String(raw.into())
-                    };
-                    properties.insert(key.into(), value);
-                }
-                match self
+            FormMode::EditProject { project_id } => self.submit_edit_project(&form, &project_id),
+            FormMode::NewWorkItemKind { project_id } => {
+                let Some(blueprint) = self
                     .client
-                    .create_blueprint_work_item(&project_id, kind, properties)
-                {
-                    Ok(item) => {
-                        self.notify(
-                            format!("Accepted work item {}", item.id),
-                            StatusKind::Success,
-                        );
-                        self.refresh_after_mutation();
-                    }
-                    Err(error) => self.notify(
-                        format!("Work item rejected: {}", error.message),
-                        StatusKind::Error,
-                    ),
-                }
-            }
-            PromptKind::InstallBlueprint => match self.client.install_bundled_blueprint(&value) {
-                Ok(blueprint) => {
-                    self.notify(
-                        format!(
-                            "Installed {}@{} with {} views (not auto-bound)",
-                            blueprint.id,
-                            blueprint.version,
-                            blueprint.views.len()
-                        ),
-                        StatusKind::Success,
-                    );
-                }
-                Err(error) => self.notify(
-                    format!("Blueprint install rejected: {}", error.message),
-                    StatusKind::Error,
-                ),
-            },
-            PromptKind::BindBlueprint { project_id } => {
-                let Some((id, version)) = value.split_once('@') else {
-                    self.notify("Expected id@version", StatusKind::Error);
-                    return;
-                };
-                let Ok(version) = version.parse::<u32>() else {
-                    self.notify("Version must be a positive integer", StatusKind::Error);
-                    return;
-                };
-                match self.client.bind_project_blueprint(&project_id, id, version) {
-                    Ok(binding) => {
-                        self.notify(
-                            format!(
-                                "Bound {}@{} (pinned)",
-                                binding.blueprint_id, binding.version
-                            ),
-                            StatusKind::Success,
-                        );
-                        self.refresh_after_mutation();
-                    }
-                    Err(error) => self.notify(
-                        format!("Blueprint binding rejected: {}", error.message),
-                        StatusKind::Error,
-                    ),
-                }
-            }
-            PromptKind::MetricTarget { metric_id } => {
-                let parts: Vec<_> = value.split_whitespace().collect();
-                let (metric_id, baseline, target, direction) = if let Some(id) = metric_id {
-                    if parts.len() == 3 {
-                        (id, parts[0], parts[1], parts[2])
-                    } else {
-                        self.notify(
-                            "Expected baseline target at_least|at_most",
-                            StatusKind::Error,
-                        );
-                        return;
-                    }
-                } else if parts.len() == 4 {
-                    (parts[0].to_owned(), parts[1], parts[2], parts[3])
-                } else {
-                    self.notify(
-                        "Expected: metric-id baseline target at_least|at_most",
-                        StatusKind::Error,
-                    );
-                    return;
-                };
-                let (Ok(baseline), Ok(target)) = (baseline.parse::<i64>(), target.parse::<i64>())
+                    .project_blueprint_definition(&project_id)
+                    .ok()
+                    .flatten()
                 else {
-                    self.notify("Baseline and target must be integers", StatusKind::Error);
+                    self.form_error(form, "The project has no pinned blueprint");
                     return;
                 };
-                self.execute_pending(PendingAction::SetMetricTarget {
-                    metric_id,
-                    baseline,
-                    target,
-                    direction: direction.into(),
-                });
-            }
-            PromptKind::MetricObservation { metric_id } => {
-                let parts: Vec<_> = value.split_whitespace().collect();
-                let (metric_id, raw_value) = if let Some(id) = metric_id {
-                    if parts.len() != 1 {
-                        self.notify("Expected value", StatusKind::Error);
-                        return;
-                    }
-                    (id, parts[0])
-                } else if parts.len() == 2 {
-                    (parts[0].to_owned(), parts[1])
-                } else {
-                    self.notify("Expected: metric-id value", StatusKind::Error);
-                    return;
-                };
-                let Ok(value) = raw_value.parse::<i64>() else {
-                    self.notify("Observation value must be an integer", StatusKind::Error);
-                    return;
-                };
-                self.execute_pending(PendingAction::RecordMetric { metric_id, value });
-            }
-            PromptKind::BindEvidence { project_id, unbind } => {
-                let Some((kind, evidence_id)) = value.split_once(':') else {
-                    self.notify("Expected habit:<id> or metric:<id>", StatusKind::Error);
-                    return;
-                };
-                self.execute_pending(PendingAction::BindEvidence {
+                let kind = Self::form_value(&form, "kind").to_owned();
+                if let Some(next) = self.build_form(FormMode::NewWorkItem {
                     project_id,
-                    kind: kind.into(),
-                    evidence_id: evidence_id.into(),
-                    bind: !unbind,
-                });
+                    blueprint,
+                    kind,
+                }) {
+                    self.modal = Some(Modal::Form(next));
+                }
+                return;
             }
+            FormMode::NewWorkItem {
+                project_id,
+                blueprint,
+                kind,
+            } => self.submit_new_work_item(&form, &project_id, &blueprint, &kind),
+            FormMode::EditWorkItem {
+                item_id,
+                revision,
+                blueprint,
+                kind,
+            } => self.submit_edit_work_item(&form, &item_id, revision, &blueprint, &kind),
+            FormMode::NewKnowledge => self.submit_new_knowledge(&form),
+            FormMode::InstallBlueprint => self.submit_install_blueprint(&form),
+            FormMode::BindBlueprint { project_id } => {
+                self.submit_bind_blueprint(&form, &project_id)
+            }
+            FormMode::MetricTarget { .. } => self.submit_metric_target(&form),
+            FormMode::MetricObservation { .. } => self.submit_metric_observation(&form),
+            FormMode::BindEvidence { project_id, unbind } => {
+                self.submit_bind_evidence(&form, &project_id, unbind)
+            }
+        };
+        match result {
+            Ok(()) => {
+                self.refresh_after_mutation();
+            }
+            Err(error) => self.form_error(form, error),
         }
+    }
+
+    fn submit_new_project(&mut self, form: &FormState) -> Result<(), String> {
+        let name = Self::form_value(form, "name").trim().to_owned();
+        let project = self
+            .client
+            .create_project(CreateProjectRequest {
+                id: None,
+                name: name.clone(),
+            })
+            .map_err(|error| error.message)?;
+        let objective = Self::form_value(form, "objective").trim();
+        if !objective.is_empty() {
+            self.client
+                .configure_project_strategy(ConfigureProjectStrategyRequest {
+                    id: project.id.clone(),
+                    mode: "standard".into(),
+                    objective: Some(objective.to_owned()),
+                    progress_signals: Vec::new(),
+                    success_criteria: Vec::new(),
+                })
+                .map_err(|error| error.message)?;
+        }
+        let blueprint = Self::form_value(form, "blueprint");
+        if !blueprint.is_empty()
+            && let Some((id, version)) = blueprint.split_once('@')
+        {
+            let version = version
+                .parse::<u32>()
+                .map_err(|_| "blueprint version must be an integer".to_owned())?;
+            self.client
+                .bind_project_blueprint(&project.id, id, version)
+                .map_err(|error| error.message)?;
+        }
+        let id = project.id.clone();
+        self.refresh_workspace();
+        self.open_project(&id);
+        self.notify(format!("Created project {name}"), StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_new_task(&mut self, form: &FormState) -> Result<(), String> {
+        let title = Self::form_value(form, "title").trim().to_owned();
+        let project = Self::form_value(form, "project").to_owned();
+        let project_id = (!project.is_empty()).then_some(project);
+        let milestone = Self::form_value(form, "milestone").trim();
+        let task = self
+            .client
+            .create_task(CreateTaskRequest {
+                id: None,
+                title,
+                project_id,
+                milestone_id: (!milestone.is_empty()).then(|| milestone.to_owned()),
+            })
+            .map_err(|error| error.message)?;
+        let estimate = Self::form_u32(form, "estimate")?;
+        let deadline = Self::form_int(form, "deadline", false)?;
+        if estimate.is_some() || deadline.is_some() {
+            self.client
+                .set_task_planning(SetTaskPlanningRequest {
+                    id: task.id.clone(),
+                    estimated_minutes: estimate,
+                    earliest_start_at_ms: None,
+                    deadline_at_ms: deadline,
+                })
+                .map_err(|error| error.message)?;
+        }
+        self.notify(format!("Created task {}", task.id), StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_edit_task(&mut self, form: &FormState, task_id: &str) -> Result<(), String> {
+        let title = Self::form_value(form, "title").trim().to_owned();
+        let current = self
+            .client
+            .list_tasks()
+            .map_err(|error| error.message)?
+            .into_iter()
+            .find(|task| task.id == task_id)
+            .ok_or_else(|| "task no longer exists".to_owned())?;
+        if current.title != title {
+            self.client
+                .rename_task(task_id.to_owned(), title)
+                .map_err(|error| error.message)?;
+        }
+        let estimate = Self::form_u32(form, "estimate")?;
+        let earliest = Self::form_int(form, "earliest", false)?;
+        let deadline = Self::form_int(form, "deadline", false)?;
+        self.client
+            .set_task_planning(SetTaskPlanningRequest {
+                id: task_id.to_owned(),
+                estimated_minutes: estimate,
+                earliest_start_at_ms: earliest,
+                deadline_at_ms: deadline,
+            })
+            .map_err(|error| error.message)?;
+        self.notify("Task updated", StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_add_dependency(&mut self, form: &FormState, task_id: &str) -> Result<(), String> {
+        let prerequisite = Self::form_value(form, "prerequisite").to_owned();
+        self.client
+            .add_task_prerequisite(task_id.to_owned(), prerequisite)
+            .map_err(|error| error.message)?;
+        self.notify("Task prerequisite added", StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_remove_dependency(&mut self, form: &FormState, task_id: &str) -> Result<(), String> {
+        let prerequisite = Self::form_value(form, "prerequisite").to_owned();
+        self.client
+            .remove_task_prerequisite(task_id.to_owned(), prerequisite)
+            .map_err(|error| error.message)?;
+        self.notify("Task prerequisite removed", StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_edit_project(&mut self, form: &FormState, project_id: &str) -> Result<(), String> {
+        let project = self
+            .project_details
+            .iter()
+            .find(|project| project.id == project_id)
+            .cloned()
+            .ok_or_else(|| "project not found".to_owned())?;
+        let status = Self::form_value(form, "status");
+        if status != project.status {
+            self.client
+                .set_project_status(SetProjectStatusRequest {
+                    id: project_id.to_owned(),
+                    status: status.to_owned(),
+                })
+                .map_err(|error| error.message)?;
+        }
+        self.client
+            .configure_project_strategy(ConfigureProjectStrategyRequest {
+                id: project_id.to_owned(),
+                mode: Self::form_value(form, "mode").to_owned(),
+                objective: {
+                    let objective = Self::form_value(form, "objective").trim();
+                    (!objective.is_empty()).then(|| objective.to_owned())
+                },
+                progress_signals: project.progress_signals.clone(),
+                success_criteria: project
+                    .success_criteria
+                    .iter()
+                    .map(|criterion| ProjectCriterionInputDto {
+                        key: criterion.key.clone(),
+                        description: criterion.description.clone(),
+                        required: criterion.required,
+                    })
+                    .collect(),
+            })
+            .map_err(|error| error.message)?;
+        self.notify("Project updated", StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_new_work_item(
+        &mut self,
+        form: &FormState,
+        project_id: &str,
+        blueprint: &Blueprint,
+        kind: &str,
+    ) -> Result<(), String> {
+        let definition = blueprint
+            .item_kind(kind)
+            .map_err(|error| error.to_string())?;
+        let mut properties = BTreeMap::new();
+        for field in &form.fields {
+            let value = field.value.trim();
+            if value.is_empty() {
+                continue;
+            }
+            let definition = definition
+                .fields
+                .iter()
+                .find(|candidate| candidate.id == field.key)
+                .ok_or_else(|| format!("undeclared field {}", field.key))?;
+            let value = match definition.kind {
+                FieldKind::Integer => serde_json::Value::from(
+                    value
+                        .parse::<i64>()
+                        .map_err(|_| format!("{} must be an integer", field.label))?,
+                ),
+                FieldKind::Boolean => serde_json::Value::Bool(value == "true"),
+                FieldKind::Text | FieldKind::Choice { .. } => {
+                    serde_json::Value::String(value.to_owned())
+                }
+            };
+            properties.insert(field.key.clone(), value);
+        }
+        self.client
+            .create_blueprint_work_item(project_id, kind, properties)
+            .map_err(|error| error.message)?;
+        self.notify(format!("Created {kind}"), StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_edit_work_item(
+        &mut self,
+        form: &FormState,
+        item_id: &str,
+        revision: u64,
+        blueprint: &Blueprint,
+        kind: &str,
+    ) -> Result<(), String> {
+        let definition = blueprint
+            .item_kind(kind)
+            .map_err(|error| error.to_string())?;
+        let mut changes = BTreeMap::new();
+        for field in &form.fields {
+            let value = field.value.trim();
+            let definition = definition
+                .fields
+                .iter()
+                .find(|candidate| candidate.id == field.key)
+                .ok_or_else(|| format!("undeclared field {}", field.key))?;
+            let value = match definition.kind {
+                FieldKind::Integer => serde_json::Value::from(
+                    value
+                        .parse::<i64>()
+                        .map_err(|_| format!("{} must be an integer", field.label))?,
+                ),
+                FieldKind::Boolean => serde_json::Value::Bool(value == "true"),
+                FieldKind::Text | FieldKind::Choice { .. } => {
+                    serde_json::Value::String(value.to_owned())
+                }
+            };
+            changes.insert(field.key.clone(), value);
+        }
+        self.client
+            .update_blueprint_work_item(item_id, revision, changes)
+            .map_err(|error| error.message)?;
+        self.notify("Work item updated", StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_new_knowledge(&mut self, form: &FormState) -> Result<(), String> {
+        let title = Self::form_value(form, "title").trim().to_owned();
+        self.client
+            .create_knowledge(CreateKnowledgeRequest {
+                id: None,
+                kind: "note".into(),
+                title,
+                body_markdown: Self::form_value(form, "body").to_owned(),
+            })
+            .map_err(|error| error.message)?;
+        self.notify("Knowledge note created", StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_install_blueprint(&mut self, form: &FormState) -> Result<(), String> {
+        let id = Self::form_value(form, "blueprint");
+        self.client
+            .install_bundled_blueprint(id)
+            .map_err(|error| error.message)?;
+        self.notify(
+            format!("Installed bundled blueprint {id}"),
+            StatusKind::Success,
+        );
+        Ok(())
+    }
+
+    fn submit_bind_blueprint(&mut self, form: &FormState, project_id: &str) -> Result<(), String> {
+        let value = Self::form_value(form, "version");
+        let (id, version) = value
+            .split_once('@')
+            .ok_or_else(|| "invalid blueprint version".to_owned())?;
+        let version = version
+            .parse::<u32>()
+            .map_err(|_| "blueprint version must be an integer".to_owned())?;
+        self.client
+            .bind_project_blueprint(project_id, id, version)
+            .map_err(|error| error.message)?;
+        self.notify(format!("Bound {id}@{version}"), StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_metric_target(&mut self, form: &FormState) -> Result<(), String> {
+        let metric_id = Self::form_value(form, "metric").to_owned();
+        let baseline = Self::form_int(form, "baseline", true)?.unwrap();
+        let target = Self::form_int(form, "target", true)?.unwrap();
+        self.client
+            .set_metric_target(MetricTargetDto {
+                metric_id,
+                baseline,
+                target,
+                direction: Self::form_value(form, "direction").to_owned(),
+            })
+            .map_err(|error| error.message)?;
+        self.notify("Metric target accepted", StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_metric_observation(&mut self, form: &FormState) -> Result<(), String> {
+        let metric_id = Self::form_value(form, "metric").to_owned();
+        let value = Self::form_int(form, "value", true)?.unwrap();
+        self.client
+            .record_metric_observation(metric_id, now_ms(), value)
+            .map_err(|error| error.message)?;
+        self.notify("Metric observation accepted", StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_bind_evidence(
+        &mut self,
+        form: &FormState,
+        project_id: &str,
+        unbind: bool,
+    ) -> Result<(), String> {
+        self.client
+            .change_project_evidence(
+                project_id.to_owned(),
+                Self::form_value(form, "kind").to_owned(),
+                Self::form_value(form, "id").to_owned(),
+                !unbind,
+            )
+            .map_err(|error| error.message)?;
+        self.notify(
+            if unbind {
+                "Evidence unbound"
+            } else {
+                "Evidence bound"
+            },
+            StatusKind::Success,
+        );
+        Ok(())
     }
 
     pub fn open_search(&mut self) {
@@ -2026,6 +3232,9 @@ impl App {
 
     pub fn set_viewport(&mut self, width: u16) {
         self.viewport_width = width;
+        if width < crate::theme::WIDE_BREAKPOINT && self.focus == FocusPane::Detail {
+            self.focus = FocusPane::Workspace;
+        }
     }
 }
 

@@ -1,6 +1,8 @@
 //! Ratatui renderer for the project-centric shell. All data arrives through
 //! `App` and resolved `orbit-ui` models; this module never queries storage.
-use crate::app::{App, FocusPane, Modal, PaletteEntry, PromptState, Screen, StatusKind};
+use crate::app::{
+    App, FocusPane, FormFieldKind, FormState, Modal, PaletteEntry, Screen, StatusKind,
+};
 use crate::theme::{DETAIL_WIDTH, MEDIUM_BREAKPOINT, SIDEBAR_WIDTH, WIDE_BREAKPOINT};
 use orbit_ui::model::*;
 use orbit_ui::{ComponentBody, LoadStatus, ResolvedComponent, ResolvedView};
@@ -787,7 +789,7 @@ fn draw_projects_screen(frame: &mut Frame, area: Rect, app: &App) {
         Paragraph::new(Line::from(vec![
             Span::styled("Projects", app.theme.title()),
             Span::styled(
-                "  Enter open · c new project · : palette · ? help",
+                "  Enter open · c new project · : palette · q quit · ? help",
                 app.theme.muted(),
             ),
         ])),
@@ -935,15 +937,14 @@ fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
         StatusKind::Info => app.theme.muted(),
     };
     let hint = match app.screen {
-        Screen::Home => "j/k select · Tab focus · Enter detail · a actions · [ ] horizon · ? help",
-        Screen::Inbox => "j/k select · a actions · Enter detail · c capture · ? help",
-        Screen::Projects => "j/k select · Enter open · c new project · : palette",
-        Screen::Agents => "j/k select · Enter detail · r refresh · ? help",
-        Screen::Project => {
-            "j/k select · h/l component · [ ] view · a actions · c task · C work item"
-        }
+        Screen::Home => "j/k select · Tab focus · Enter detail · a actions · Esc back",
+        Screen::Inbox => "j/k select · a actions · Enter detail · c capture · Esc back",
+        Screen::Projects => "j/k select · Enter open · c new project · Esc back",
+        Screen::Agents => "j/k select · Enter detail · r refresh · Esc back",
+        Screen::Project => "j/k select · h/l component · [ ] view · a actions · Esc back",
     };
     let line = Line::from(vec![
+        Span::styled(" Ctrl+Q quit · q quit (not typing) ", style),
         Span::styled(format!(" {} ", app.status.text), style),
         Span::styled(format!("   {hint}"), app.theme.muted()),
     ]);
@@ -958,7 +959,25 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
     let popup = centered_rect(area, width, height);
     frame.render_widget(Clear, popup);
     match modal {
-        Modal::Prompt(prompt) => draw_prompt(frame, popup, app, prompt),
+        Modal::Form(form) => draw_form(frame, popup, app, form),
+        Modal::QuitConfirm { .. } => {
+            let block = modal_block("Quit Orbit?", app);
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+            let lines = vec![
+                Line::from(Span::styled("Leave Orbit now?", app.theme.title())),
+                Line::from(""),
+                Line::from("Confirm quit to discard unsaved editor input."),
+                Line::from("Accepted application state is already persisted."),
+                Line::from("Accepted data is already persisted; only unsaved input is discarded."),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "Enter or y: quit · Esc or n: keep editing · Ctrl+Q/Ctrl+C: force quit",
+                    app.theme.warning(),
+                )),
+            ];
+            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+        }
         Modal::Confirm { title, body, .. } => {
             let block = modal_block(title, app);
             let inner = block.inner(popup);
@@ -1211,21 +1230,96 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
     }
 }
 
-fn draw_prompt(frame: &mut Frame, area: Rect, app: &App, prompt: &PromptState) {
-    let block = modal_block(&prompt.title, app);
+fn draw_form(frame: &mut Frame, area: Rect, app: &App, form: &FormState) {
+    let block = modal_block(&form.title, app);
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    let lines = vec![
-        Line::from(Span::styled(prompt.hint.clone(), app.theme.muted())),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("> ", app.theme.accent()),
-            Span::styled(prompt.value.clone(), app.theme.title()),
-            Span::styled("_", app.theme.muted()),
-        ]),
-        Line::from(""),
-        Line::from(Span::styled("Enter submit · Esc cancel", app.theme.muted())),
-    ];
+    let mut lines = Vec::new();
+    lines.push(Line::from(Span::styled(
+        form.hint.clone(),
+        app.theme.muted(),
+    )));
+    lines.push(Line::from(""));
+    for (index, field) in form.fields.iter().enumerate() {
+        let focused = index == form.focused;
+        let marker = if focused { "▸ " } else { "  " };
+        let label_style = if focused {
+            app.theme.accent()
+        } else {
+            app.theme.muted()
+        };
+        let mut spans = vec![
+            Span::styled(marker, label_style),
+            Span::styled(format!("{:<22}", field.label), label_style),
+        ];
+        match &field.kind {
+            FormFieldKind::Boolean => {
+                let checked = field.value == "true";
+                spans.push(Span::styled(
+                    if checked { "[x] yes" } else { "[ ] no" },
+                    if focused {
+                        app.theme.selected()
+                    } else {
+                        app.theme.text()
+                    },
+                ));
+            }
+            FormFieldKind::Choice(choices) => {
+                let current = choices
+                    .iter()
+                    .find(|choice| choice.value == field.value)
+                    .map(|choice| choice.label.as_str())
+                    .unwrap_or(if field.value.is_empty() {
+                        "—"
+                    } else {
+                        field.value.as_str()
+                    });
+                spans.push(Span::styled(
+                    format!("‹ {current} ›"),
+                    if focused {
+                        app.theme.selected()
+                    } else {
+                        app.theme.text()
+                    },
+                ));
+            }
+            FormFieldKind::Text | FormFieldKind::Integer => {
+                let shown = if field.value.is_empty() {
+                    field.hint.as_str()
+                } else {
+                    field.value.as_str()
+                };
+                spans.push(Span::styled(
+                    shown.to_owned(),
+                    if field.value.is_empty() {
+                        app.theme.muted()
+                    } else if focused {
+                        app.theme.selected()
+                    } else {
+                        app.theme.text()
+                    },
+                ));
+                if focused {
+                    spans.push(Span::styled("_", app.theme.muted()));
+                }
+            }
+        }
+        if field.required {
+            spans.push(Span::styled(" *", app.theme.warning()));
+        }
+        lines.push(Line::from(spans));
+    }
+    lines.push(Line::from(""));
+    if let Some(error) = &form.error {
+        lines.push(Line::from(Span::styled(
+            format!("error: {error}"),
+            app.theme.danger(),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        "Tab/Shift+Tab field · ←/→ or Space choose/toggle · Enter submit · Esc cancel",
+        app.theme.muted(),
+    )));
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
@@ -1257,8 +1351,9 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
         Line::from("r                 refresh accepted data"),
         Line::from("D                 toggle details"),
         Line::from("?                 this help"),
-        Line::from("q                 quit (Home) / back to Home (project)"),
-        Line::from("Esc               close modal or return Home"),
+        Line::from("q                 quit when not typing in a field"),
+        Line::from("Ctrl+Q / Ctrl+C  quit from any screen, field or modal"),
+        Line::from("Esc               close modal or go back"),
         Line::from(""),
         Line::from(Span::styled(
             "Color is never the only state signal: glyphs and focus borders remain.",
@@ -1339,6 +1434,9 @@ fn modal_size(area: Rect, modal: &Modal) -> (u16, u16) {
             let content = 8 + detail.fields.len() as u16 + detail.note.lines().count() as u16;
             content.min(area.height.saturating_sub(4)).clamp(12, 36)
         }
+        Modal::Form(form) => (form.fields.len() as u16 + 8)
+            .min(area.height.saturating_sub(4))
+            .max(12),
         Modal::Message { lines, .. } => (lines.len() as u16 + 5)
             .min(area.height.saturating_sub(4))
             .max(8),

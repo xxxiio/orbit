@@ -145,6 +145,29 @@ impl OrbitClient {
             })
     }
 
+    pub fn update_blueprint_work_item(
+        &mut self,
+        id: &str,
+        expected_revision: u64,
+        changes: BTreeMap<String, serde_json::Value>,
+    ) -> Result<BlueprintWorkItem, ClientError> {
+        self.runtime
+            .update_project_work_item_properties(id, expected_revision, changes)
+            .map_err(|error| ClientError {
+                code: ClientErrorCode::InvalidInput,
+                message: format!("{error:?}"),
+            })
+    }
+
+    pub fn list_blueprint_versions(&self) -> Result<Vec<(String, u32)>, ClientError> {
+        self.runtime
+            .available_blueprint_versions(None)
+            .map_err(|error| ClientError {
+                code: ClientErrorCode::Unavailable,
+                message: format!("{error:?}"),
+            })
+    }
+
     pub fn transition_blueprint_work_item(
         &mut self,
         id: &str,

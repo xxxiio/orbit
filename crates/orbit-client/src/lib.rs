@@ -814,6 +814,71 @@ impl OrbitClient {
         Ok(TaskDto::from(&task))
     }
 
+    /// Rename a task through the canonical task command family.
+    pub fn rename_task(&mut self, id: String, title: String) -> Result<TaskDto, ClientError> {
+        if title.trim().is_empty() || title.len() > 4096 {
+            return Err(invalid_input(
+                "task title must be non-empty and at most 4096 bytes",
+            ));
+        }
+        self.apply_task_command(orbit_runtime::domain_commands::TaskAction::Rename {
+            task_id: id,
+            title,
+        })
+    }
+
+    /// Add a prerequisite edge. The authority rejects self/cyclic/missing edges.
+    pub fn add_task_prerequisite(
+        &mut self,
+        task_id: String,
+        prerequisite_id: String,
+    ) -> Result<TaskDto, ClientError> {
+        self.apply_task_command(
+            orbit_runtime::domain_commands::TaskAction::AddPrerequisite {
+                task_id,
+                prerequisite_id,
+            },
+        )
+    }
+
+    pub fn remove_task_prerequisite(
+        &mut self,
+        task_id: String,
+        prerequisite_id: String,
+    ) -> Result<TaskDto, ClientError> {
+        self.apply_task_command(
+            orbit_runtime::domain_commands::TaskAction::RemovePrerequisite {
+                task_id,
+                prerequisite_id,
+            },
+        )
+    }
+
+    fn apply_task_command(
+        &mut self,
+        action: orbit_runtime::domain_commands::TaskAction,
+    ) -> Result<TaskDto, ClientError> {
+        let revision = self.runtime.snapshot().map_err(authority_client_error)?.0;
+        let result = self
+            .runtime
+            .task_command(
+                "orbit-client",
+                orbit_runtime::domain_commands::TaskCommand {
+                    command_id: generate_id("command"),
+                    expected_revision: revision,
+                    action,
+                },
+            )
+            .map_err(authority_client_error)?;
+        let id = TaskId::new(result.task.id).map_err(invalid_input)?;
+        let task = self
+            .runtime
+            .application_queries()
+            .task(&id)
+            .map_err(ClientError::from)?;
+        Ok(TaskDto::from(&task))
+    }
+
     pub fn set_task_planning(
         &mut self,
         request: SetTaskPlanningRequest,

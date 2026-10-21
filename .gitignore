@@ -15,3 +15,5 @@ deploy/server/.env
 # Local runtime data
 /orbit.db
 /orbit.knowledge/
+
+.slim/deepwork/

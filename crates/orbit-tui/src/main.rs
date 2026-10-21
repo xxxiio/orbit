@@ -5,14 +5,11 @@ mod connected;
 mod connected_actions;
 mod planning_ui;
 mod render;
+mod terminal;
 mod theme;
 
-use app::{App, Modal, Screen, StatusKind};
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
+use app::{App, FormFieldKind, Modal, Screen, StatusKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 use std::time::Duration;
@@ -20,6 +17,7 @@ use std::time::Duration;
 fn main() {
     if let Err(error) = run() {
         eprintln!("orbit-tui: {error}");
+        std::process::exit(1);
     }
 }
 
@@ -31,15 +29,9 @@ fn run() -> Result<(), String> {
         orbit_client::deployment::Deployment::Local { database } => database,
     };
     let mut app = App::open(path.to_string_lossy().into_owned())?;
-    enable_raw_mode().map_err(err)?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).map_err(err)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend).map_err(err)?;
-    let result = event_loop(&mut terminal, &mut app);
-    disable_raw_mode().map_err(err)?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(err)?;
-    terminal.show_cursor().map_err(err)?;
+    let mut session = terminal::TerminalSession::enter()?;
+    let result = event_loop(session.terminal(), &mut app);
+    session.restore();
     result
 }
 
@@ -60,8 +52,13 @@ fn event_loop(
         if key.kind != KeyEventKind::Press {
             continue;
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
-            break;
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('q'))
+        {
+            if app.request_quit() {
+                break;
+            }
+            continue;
         }
         if handle_key(app, key.code, key.modifiers)? {
             break;
@@ -112,18 +109,11 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
             );
         }
         KeyCode::Char('q') => {
-            if app.screen == Screen::Home {
+            if app.request_quit() {
                 return Ok(true);
             }
-            app.go_screen(Screen::Home);
         }
-        KeyCode::Esc => {
-            if app.screen != Screen::Home {
-                app.go_screen(Screen::Home);
-            } else {
-                app.notify("Already Home", StatusKind::Info);
-            }
-        }
+        KeyCode::Esc => app.go_back(),
         KeyCode::Char('?') => app.modal = Some(Modal::Help),
         KeyCode::Char(':') => app.open_palette(),
         KeyCode::Char('/') => app.open_search(),
@@ -139,8 +129,12 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
         KeyCode::BackTab => app.focus_next(true),
         KeyCode::Down | KeyCode::Char('j') => app.move_selection(1),
         KeyCode::Up | KeyCode::Char('k') => app.move_selection(-1),
-        KeyCode::Right | KeyCode::Char('l') => app.move_component(1),
-        KeyCode::Left | KeyCode::Char('h') => app.move_component(-1),
+        KeyCode::Right | KeyCode::Char('l') if app.focus == app::FocusPane::Workspace => {
+            app.move_component(1)
+        }
+        KeyCode::Left | KeyCode::Char('h') if app.focus == app::FocusPane::Workspace => {
+            app.move_component(-1)
+        }
         KeyCode::Enter => match app.screen {
             Screen::Projects => app.activate_project_selection(),
             _ if app.focus == app::FocusPane::Sidebar => app.activate_sidebar(),
@@ -157,11 +151,12 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
             _ => app.move_component(1),
         },
         KeyCode::Char('a') | KeyCode::Char('s') => app.open_action_menu(),
+        KeyCode::Char('e') => app.edit_selected(),
         KeyCode::Char('c') => {
             if app.screen == Screen::Projects {
-                app.start_prompt(app::PromptKind::NewProject);
+                app.start_form(app::FormMode::NewProject);
             } else {
-                app.start_prompt(app::PromptKind::NewTask {
+                app.start_form(app::FormMode::NewTask {
                     project_id: app
                         .project
                         .as_ref()
@@ -172,7 +167,7 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
         }
         KeyCode::Char('C') => {
             if let Some(project) = &app.project {
-                app.start_prompt(app::PromptKind::NewWorkItem {
+                app.start_form(app::FormMode::NewWorkItemKind {
                     project_id: project.id.clone(),
                 });
             } else {
@@ -182,7 +177,7 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
                 );
             }
         }
-        KeyCode::Char('n') => app.start_prompt(app::PromptKind::NewKnowledge),
+        KeyCode::Char('n') => app.start_form(app::FormMode::NewKnowledge),
         KeyCode::Char('p') if app.screen == Screen::Project => app.preview_plan(),
         KeyCode::Char('P') if app.screen == Screen::Project => {
             if app.pending_plan.is_some() {
@@ -209,7 +204,7 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
         }
         KeyCode::Char('b') => {
             if let Some(project) = &app.project {
-                app.start_prompt(app::PromptKind::BindEvidence {
+                app.start_form(app::FormMode::BindEvidence {
                     project_id: project.id.clone(),
                     unbind: false,
                 });
@@ -219,11 +214,11 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
         }
         KeyCode::Char('o') => {
             let metric_id = app.selected_item().map(|item| item.id.clone());
-            app.start_prompt(app::PromptKind::MetricObservation { metric_id });
+            app.start_form(app::FormMode::MetricObservation { metric_id });
         }
         KeyCode::Char('t') => {
             let metric_id = app.selected_item().map(|item| item.id.clone());
-            app.start_prompt(app::PromptKind::MetricTarget { metric_id });
+            app.start_form(app::FormMode::MetricTarget { metric_id });
         }
         KeyCode::Char(' ') => {
             if let Some(item) = app.selected_item()
@@ -250,22 +245,123 @@ fn handle_modal(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Resul
     let Some(mut modal) = app.modal.take() else {
         return Ok(false);
     };
+    if matches!(code, KeyCode::Char('q'))
+        && !matches!(
+            modal,
+            Modal::Palette { .. }
+                | Modal::Search { .. }
+                | Modal::Form(_)
+                | Modal::QuitConfirm { .. }
+        )
+    {
+        return Ok(app.request_quit());
+    }
     let mut keep = true;
     match &mut modal {
-        Modal::Prompt(prompt) => match code {
+        Modal::QuitConfirm { resume } => match code {
+            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                return Ok(true);
+            }
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                keep = false;
+                app.modal = resume.take().map(|modal| *modal);
+                app.notify("Quit cancelled; input preserved", StatusKind::Info);
+            }
+            _ => {}
+        },
+        Modal::Form(form) => match code {
             KeyCode::Esc => {
                 keep = false;
-                app.notify("Prompt cancelled", StatusKind::Info);
+                app.notify("Form cancelled", StatusKind::Info);
             }
             KeyCode::Enter => {
-                let prompt = prompt.clone();
+                let form = form.clone();
                 keep = false;
-                app.submit_prompt(prompt);
+                app.submit_form(form);
+            }
+            KeyCode::Tab => {
+                if !form.fields.is_empty() {
+                    form.focused = (form.focused + 1) % form.fields.len();
+                }
+            }
+            KeyCode::BackTab => {
+                if !form.fields.is_empty() {
+                    form.focused = (form.focused + form.fields.len() - 1) % form.fields.len();
+                }
+            }
+            KeyCode::Down => {
+                if !form.fields.is_empty() {
+                    form.focused = (form.focused + 1).min(form.fields.len() - 1);
+                }
+            }
+            KeyCode::Up => {
+                form.focused = form.focused.saturating_sub(1);
+            }
+            KeyCode::Left | KeyCode::Right => {
+                let delta = if matches!(code, KeyCode::Right) {
+                    1
+                } else {
+                    -1
+                };
+                if let Some(field) = form.fields.get_mut(form.focused) {
+                    match &field.kind {
+                        FormFieldKind::Choice(choices) if !choices.is_empty() => {
+                            let current = choices
+                                .iter()
+                                .position(|choice| choice.value == field.value)
+                                .unwrap_or(0) as isize;
+                            let next =
+                                (current + delta).clamp(0, choices.len() as isize - 1) as usize;
+                            field.value = choices[next].value.clone();
+                            form.dirty = true;
+                        }
+                        FormFieldKind::Boolean => {
+                            field.value = if field.value == "true" {
+                                "false".into()
+                            } else {
+                                "true".into()
+                            };
+                            form.dirty = true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            KeyCode::Char(' ') => {
+                if let Some(field) = form.fields.get_mut(form.focused) {
+                    match field.kind {
+                        FormFieldKind::Boolean => {
+                            field.value = if field.value == "true" {
+                                "false".into()
+                            } else {
+                                "true".into()
+                            };
+                            form.dirty = true;
+                        }
+                        FormFieldKind::Text => {
+                            field.value.push(' ');
+                            form.dirty = true;
+                        }
+                        _ => {}
+                    }
+                }
             }
             KeyCode::Backspace => {
-                prompt.value.pop();
+                if let Some(field) = form.fields.get_mut(form.focused)
+                    && matches!(field.kind, FormFieldKind::Text | FormFieldKind::Integer)
+                {
+                    field.value.pop();
+                    form.dirty = true;
+                }
             }
-            KeyCode::Char(character) => prompt.value.push(character),
+            KeyCode::Char(character) => {
+                if let Some(field) = form.fields.get_mut(form.focused)
+                    && matches!(field.kind, FormFieldKind::Text | FormFieldKind::Integer)
+                {
+                    field.value.push(character);
+                    form.dirty = true;
+                }
+            }
             _ => {}
         },
         Modal::Confirm {
@@ -330,21 +426,29 @@ fn handle_modal(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Resul
             KeyCode::Enter => {
                 let action = entries.get(*selected).map(|entry| entry.action.clone());
                 keep = false;
-                if let Some(action) = action
-                    && app.execute_palette_action(action)
-                {
-                    return Ok(true);
+                if let Some(action) = action {
+                    if matches!(action, app::PaletteAction::Quit) {
+                        app.modal = Some(Modal::Palette {
+                            query: query.clone(),
+                            entries: entries.clone(),
+                            selected: *selected,
+                        });
+                        return Ok(app.request_quit());
+                    }
+                    if app.execute_palette_action(action) {
+                        return Ok(true);
+                    }
                 }
             }
             _ => {}
         },
         Modal::Help => {
-            if matches!(code, KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q')) {
+            if matches!(code, KeyCode::Esc | KeyCode::Char('?')) {
                 keep = false;
             }
         }
         Modal::Detail(_) => {
-            if matches!(code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
+            if matches!(code, KeyCode::Esc | KeyCode::Enter) {
                 keep = false;
             }
         }
@@ -389,7 +493,7 @@ fn handle_modal(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Resul
             _ => {}
         },
         Modal::Message { .. } => {
-            if matches!(code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
+            if matches!(code, KeyCode::Esc | KeyCode::Enter) {
                 keep = false;
             }
         }
@@ -407,7 +511,7 @@ fn err<E: std::fmt::Debug>(error: E) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use app::{FocusPane, Modal, PaletteAction, PendingAction, PromptKind};
+    use app::{FocusPane, FormMode, Modal, PaletteAction, PendingAction};
     use ratatui::{Terminal, backend::TestBackend};
 
     fn app() -> App {
@@ -423,13 +527,14 @@ mod tests {
         App::open(filename.to_string_lossy().into_owned()).unwrap()
     }
 
-    fn submit(app: &mut App, kind: PromptKind, value: &str) {
-        app.start_prompt(kind);
-        let Some(Modal::Prompt(mut prompt)) = app.modal.take() else {
-            panic!("expected prompt");
+    fn submit_project(app: &mut App, name: &str) {
+        app.start_form(FormMode::NewProject);
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("expected project form");
         };
-        prompt.value = value.into();
-        app.submit_prompt(prompt);
+        form.fields[0].value = name.into();
+        form.dirty = true;
+        app.submit_form(form);
     }
 
     fn buffer_text(app: &mut App, width: u16, height: u16) -> String {
@@ -461,7 +566,7 @@ mod tests {
     #[test]
     fn project_creation_opens_generated_legacy_views() {
         let mut app = app();
-        submit(&mut app, PromptKind::NewProject, "Apollo");
+        submit_project(&mut app, "Apollo");
         assert_eq!(app.screen, Screen::Project);
         let project = app.project.as_ref().unwrap();
         assert_eq!(project.name, "Apollo");
@@ -474,7 +579,7 @@ mod tests {
     #[test]
     fn research_blueprint_work_item_offers_authorized_transition() {
         let mut app = app();
-        submit(&mut app, PromptKind::NewProject, "Research");
+        submit_project(&mut app, "Research");
         let project_id = app.project.as_ref().unwrap().id.clone();
         app.client.install_bundled_blueprint("research").unwrap();
         app.client
@@ -580,8 +685,8 @@ mod tests {
     #[test]
     fn project_selection_enter_opens_project() {
         let mut app = app();
-        submit(&mut app, PromptKind::NewProject, "Apollo");
-        handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap();
+        submit_project(&mut app, "Apollo");
+        handle_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).unwrap();
         handle_key(&mut app, KeyCode::Char('g'), KeyModifiers::NONE).unwrap();
         handle_key(&mut app, KeyCode::Char('p'), KeyModifiers::NONE).unwrap();
         assert_eq!(app.screen, Screen::Projects);
@@ -595,7 +700,7 @@ mod tests {
     #[test]
     fn duplicate_record_submission_is_ignored_until_refresh() {
         let mut app = app();
-        submit(&mut app, PromptKind::NewProject, "Habits");
+        submit_project(&mut app, "Habits");
         let project_id = app.project.as_ref().unwrap().id.clone();
         let habit = app
             .client
@@ -629,18 +734,38 @@ mod tests {
     }
 
     #[test]
-    fn quit_returns_home_before_leaving() {
+    fn q_quits_from_any_non_text_screen() {
         let mut app = app();
-        submit(&mut app, PromptKind::NewProject, "Apollo");
-        assert!(!handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
-        assert_eq!(app.screen, Screen::Home);
+        submit_project(&mut app, "Apollo");
         assert!(handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
+        assert_eq!(app.screen, Screen::Project);
+        let mut home = self::app();
+        assert!(handle_key(&mut home, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
+    }
+
+    #[test]
+    fn ctrl_quit_keeps_unsaved_prompt_until_confirmed() {
+        let mut app = app();
+        app.start_form(FormMode::NewTask { project_id: None });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("form");
+        };
+        form.fields[0].value = "unsaved capture".into();
+        form.dirty = true;
+        app.modal = Some(Modal::Form(form));
+        assert!(!app.request_quit());
+        assert!(matches!(app.modal, Some(Modal::QuitConfirm { .. })));
+        handle_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).unwrap();
+        let Some(Modal::Form(form)) = &app.modal else {
+            panic!("form restored");
+        };
+        assert_eq!(form.fields[0].value, "unsaved capture");
     }
 
     #[test]
     fn palette_actions_share_the_contextual_catalogue() {
         let mut app = app();
-        submit(&mut app, PromptKind::NewProject, "Apollo");
+        submit_project(&mut app, "Apollo");
         app.open_palette();
         let Some(Modal::Palette { entries, .. }) = &app.modal else {
             panic!("palette");
@@ -884,7 +1009,7 @@ mod m28_render_tests {
             .unwrap();
         handle_key(&mut app, KeyCode::Enter, KeyModifiers::NONE).unwrap();
         assert_eq!(app.project.as_ref().unwrap().id, first.id);
-        handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap();
+        handle_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).unwrap();
         app.go_screen(Screen::Projects);
         app.projects_selection = app
             .projects
@@ -982,5 +1107,731 @@ mod m28_planning_tests {
             "expected read-only destination"
         );
         let _ = task;
+    }
+}
+
+#[cfg(test)]
+mod m28_navigation_tests {
+    use super::*;
+    use app::{FocusPane, FormMode};
+    use ratatui::backend::TestBackend;
+
+    fn app() -> App {
+        let filename = std::env::temp_dir().join(format!(
+            "orbit-tui-m28-nav-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&filename);
+        App::open(filename.to_string_lossy().into_owned()).unwrap()
+    }
+
+    fn add_project(app: &mut App, name: &str) -> String {
+        let project = app
+            .client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: name.into(),
+            })
+            .unwrap();
+        app.refresh_workspace();
+        project.id
+    }
+
+    fn add_task(app: &mut App, project_id: &str, title: &str) -> String {
+        let task = app
+            .client
+            .create_task(orbit_client::CreateTaskRequest {
+                id: None,
+                title: title.into(),
+                project_id: Some(project_id.into()),
+                milestone_id: None,
+            })
+            .unwrap();
+        app.refresh_workspace();
+        task.id
+    }
+
+    #[test]
+    fn back_navigation_restores_the_previous_screen_and_selection() {
+        let mut app = app();
+        add_project(&mut app, "First");
+        add_project(&mut app, "Second");
+        app.go_screen(Screen::Projects);
+        app.focus = FocusPane::Workspace;
+        app.projects_selection = 1;
+        handle_key(&mut app, KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        assert_eq!(app.screen, Screen::Project);
+        handle_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).unwrap();
+        assert_eq!(app.screen, Screen::Projects);
+        assert_eq!(app.projects_selection, 1);
+        handle_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).unwrap();
+        assert_eq!(app.screen, Screen::Home);
+    }
+
+    #[test]
+    fn switching_views_restores_each_views_component_and_selection() {
+        let mut app = app();
+        let project = add_project(&mut app, "Work");
+        app.client.install_bundled_blueprint("development").unwrap();
+        app.client
+            .bind_project_blueprint(&project, "development", 2)
+            .unwrap();
+        for title in ["One", "Two", "Three"] {
+            add_task(&mut app, &project, title);
+        }
+        app.open_project(&project);
+        let overview = app
+            .project
+            .as_ref()
+            .unwrap()
+            .views
+            .iter()
+            .position(|view| view.id == "overview")
+            .unwrap();
+        let board = app
+            .project
+            .as_ref()
+            .unwrap()
+            .views
+            .iter()
+            .position(|view| view.id == "board")
+            .unwrap();
+        app.switch_view_by_index(overview);
+        let component = app.project.as_ref().unwrap().views[overview]
+            .components
+            .iter()
+            .position(|component| component.selection.len() >= 3)
+            .unwrap();
+        app.active_component = component;
+        app.selected = 2;
+        app.scroll = 1;
+        app.switch_view_by_index(board);
+        let board_component = app.project.as_ref().unwrap().views[board]
+            .components
+            .iter()
+            .position(|component| component.selection.len() >= 3)
+            .unwrap();
+        app.active_component = board_component;
+        app.selected = 1;
+        app.switch_view_by_index(overview);
+        assert_eq!(app.active_component, component);
+        assert_eq!(app.selected, 2);
+        assert_eq!(app.scroll, 1);
+        app.switch_view_by_index(board);
+        assert_eq!(app.active_component, board_component);
+        assert_eq!(app.selected, 1);
+    }
+
+    #[test]
+    fn back_restores_the_same_project_view_by_stable_id() {
+        let mut app = app();
+        let project = add_project(&mut app, "View restore");
+        app.client.install_bundled_blueprint("development").unwrap();
+        app.client
+            .bind_project_blueprint(&project, "development", 2)
+            .unwrap();
+        app.open_project(&project);
+        let board = app
+            .project
+            .as_ref()
+            .unwrap()
+            .views
+            .iter()
+            .position(|view| view.id == "board")
+            .unwrap();
+        app.switch_view_by_index(board);
+        app.go_screen(Screen::Projects);
+        app.go_back();
+        assert_eq!(app.screen, Screen::Project);
+        assert_eq!(
+            app.project.as_ref().unwrap().views[app.project.as_ref().unwrap().active_view].id,
+            "board"
+        );
+    }
+
+    #[test]
+    fn switching_components_restores_each_components_selection() {
+        let mut app = app();
+        let project = add_project(&mut app, "Work");
+        app.client.install_bundled_blueprint("research").unwrap();
+        app.client
+            .bind_project_blueprint(&project, "research", 2)
+            .unwrap();
+        for question in ["One?", "Two?", "Three?"] {
+            app.client
+                .create_blueprint_work_item(
+                    &project,
+                    "hypothesis",
+                    std::collections::BTreeMap::from([(
+                        "question".into(),
+                        serde_json::json!(question),
+                    )]),
+                )
+                .unwrap();
+        }
+        app.open_project(&project);
+        let workflow = app
+            .project
+            .as_ref()
+            .unwrap()
+            .views
+            .iter()
+            .position(|view| view.id == "workflow")
+            .unwrap();
+        app.switch_view_by_index(workflow);
+        let view = app.project.as_ref().unwrap().active_view;
+        let components: Vec<usize> = app.project.as_ref().unwrap().views[view]
+            .components
+            .iter()
+            .enumerate()
+            .filter(|(_, component)| component.selection.len() >= 3)
+            .map(|(index, _)| index)
+            .collect();
+        assert!(components.len() >= 2, "need two selectable components");
+        let (first, second) = (components[0], components[1]);
+        app.active_component = first;
+        app.selected = 2;
+        app.scroll = 1;
+        app.move_component((second as isize) - (first as isize));
+        assert_eq!(app.active_component, second);
+        assert_eq!(app.selected, 0);
+        app.selected = 1;
+        app.move_component((first as isize) - (second as isize));
+        assert_eq!(app.active_component, first);
+        assert_eq!(app.selected, 2);
+        assert_eq!(app.scroll, 1);
+    }
+
+    #[test]
+    fn quit_confirmation_renders_and_can_be_cancelled() {
+        let mut app = app();
+        app.start_form(FormMode::NewTask { project_id: None });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("form");
+        };
+        form.fields[0].value = "draft".into();
+        form.dirty = true;
+        app.modal = Some(Modal::Form(form));
+        assert!(!app.request_quit());
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render::draw(frame, &mut app))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let text = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Quit Orbit?"), "{text}");
+        handle_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).unwrap();
+        assert!(matches!(app.modal, Some(Modal::Form(_))));
+    }
+}
+
+#[cfg(test)]
+mod m28_quit_tests {
+    use super::*;
+    use app::{FocusPane, FormMode};
+    use ratatui::backend::TestBackend;
+
+    fn app() -> App {
+        let filename = std::env::temp_dir().join(format!(
+            "orbit-tui-m28-quit-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&filename);
+        App::open(filename.to_string_lossy().into_owned()).unwrap()
+    }
+
+    fn selectable(app: &mut App) -> bool {
+        app.current_component()
+            .map(|component| !component.selection.is_empty())
+            .unwrap_or(false)
+            || matches!(app.screen, Screen::Projects | Screen::Home)
+    }
+
+    #[test]
+    fn q_quits_from_every_global_screen() {
+        for screen in [
+            Screen::Home,
+            Screen::Inbox,
+            Screen::Projects,
+            Screen::Agents,
+        ] {
+            let mut app = app();
+            app.go_screen(screen);
+            assert!(
+                handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap(),
+                "{screen:?}"
+            );
+        }
+        let mut app = app();
+        app.client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: "Quit".into(),
+            })
+            .unwrap();
+        app.refresh_workspace();
+        app.open_project(&app.projects[0].id.clone());
+        assert_eq!(app.screen, Screen::Project);
+        assert!(handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
+    }
+
+    #[test]
+    fn q_quits_non_text_modals_and_enters_text_in_text_fields() {
+        let mut app = app();
+        app.open_palette();
+        for _ in 0..3 {
+            handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap();
+        }
+        let Some(Modal::Palette { query, .. }) = &app.modal else {
+            panic!("palette");
+        };
+        assert_eq!(query, "qqq");
+
+        app.modal = Some(Modal::Help);
+        assert!(handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
+
+        app.modal = Some(Modal::Message {
+            title: "Notice".into(),
+            lines: vec!["text".into()],
+        });
+        assert!(handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
+
+        app.modal = Some(Modal::Confirm {
+            title: "Change".into(),
+            body: "body".into(),
+            pending: app::PendingAction::ApplyPlan,
+        });
+        assert!(handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
+    }
+
+    #[test]
+    fn quit_confirmation_appears_for_unsaved_text_and_exposes_both_choices() {
+        let mut app = app();
+        app.start_form(FormMode::NewTask { project_id: None });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("form");
+        };
+        form.fields[0].value = "draft".into();
+        form.dirty = true;
+        app.modal = Some(Modal::Form(form));
+        assert!(!app.request_quit());
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render::draw(frame, &mut app))
+            .unwrap();
+        let rendered: String = (0..terminal.backend().buffer().area.height)
+            .map(|y| {
+                (0..terminal.backend().buffer().area.width)
+                    .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("Quit Orbit?"), "{rendered}");
+        assert!(rendered.contains("Ctrl+Q"), "{rendered}");
+        assert!(rendered.contains("Esc or n"), "{rendered}");
+        handle_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).unwrap();
+        assert!(matches!(app.modal, Some(Modal::Form(_))));
+        assert!(!app.request_quit());
+        assert!(matches!(app.modal, Some(Modal::QuitConfirm { .. })));
+        assert!(handle_key(&mut app, KeyCode::Char('y'), KeyModifiers::NONE).unwrap());
+    }
+
+    #[test]
+    fn quit_is_independent_of_selection_and_focus() {
+        let mut app = app();
+        app.focus = FocusPane::Detail;
+        app.selected = 99;
+        assert!(app.request_quit());
+        app.focus = FocusPane::Sidebar;
+        app.selected = 0;
+        assert!(app.request_quit());
+        let _ = selectable(&mut app);
+    }
+}
+
+#[cfg(test)]
+mod m28_form_tests {
+    use super::*;
+    use app::{FormField, FormMode, Modal};
+
+    fn path() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "orbit-tui-m28-form-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    fn app_at(path: &std::path::Path) -> App {
+        App::open(path.to_string_lossy().into_owned()).unwrap()
+    }
+
+    fn fill(form: &mut app::FormState, key: &str, value: &str) {
+        let field = form
+            .fields
+            .iter_mut()
+            .find(|field: &&mut FormField| field.key == key)
+            .unwrap_or_else(|| panic!("missing field {key}"));
+        field.value = value.into();
+        form.dirty = true;
+    }
+
+    fn current_form(app: &mut App) -> app::FormState {
+        let Some(Modal::Form(form)) = app.modal.take() else {
+            panic!("expected form");
+        };
+        form
+    }
+
+    fn create_project(app: &mut App, name: &str) -> String {
+        app.start_form(FormMode::NewProject);
+        let mut form = current_form(app);
+        fill(&mut form, "name", name);
+        app.submit_form(form);
+        app.project.as_ref().unwrap().id.clone()
+    }
+
+    #[test]
+    fn project_and_task_forms_persist_across_restart() {
+        let path = path();
+        let mut app = app_at(&path);
+        let project = create_project(&mut app, "Form Project");
+        app.start_form(FormMode::NewTask {
+            project_id: Some(project.clone()),
+        });
+        let mut form = current_form(&mut app);
+        fill(&mut form, "title", "Form task");
+        fill(&mut form, "estimate", "45");
+        fill(&mut form, "deadline", "1893456000000");
+        app.submit_form(form);
+        assert!(
+            app.client
+                .list_tasks()
+                .unwrap()
+                .iter()
+                .any(|task| task.title == "Form task" && task.estimated_minutes == Some(45))
+        );
+        drop(app);
+
+        let app = app_at(&path);
+        assert!(app.projects.iter().any(|row| row.name == "Form Project"));
+        let task = app
+            .client
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|task| task.title == "Form task")
+            .expect("persisted task");
+        assert_eq!(task.estimated_minutes, Some(45));
+        assert_eq!(task.deadline_at_ms, Some(1_893_456_000_000));
+    }
+
+    #[test]
+    fn edit_task_form_renames_and_updates_planning_fields() {
+        let mut app = app_at(&path());
+        let project = create_project(&mut app, "Edit Project");
+        let task = app
+            .client
+            .create_task(orbit_client::CreateTaskRequest {
+                id: None,
+                title: "Old title".into(),
+                project_id: Some(project),
+                milestone_id: None,
+            })
+            .unwrap();
+        app.start_form(FormMode::EditTask {
+            task_id: task.id.clone(),
+        });
+        let mut form = current_form(&mut app);
+        fill(&mut form, "title", "New title");
+        fill(&mut form, "estimate", "30");
+        app.submit_form(form);
+        let updated = app
+            .client
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|row| row.id == task.id)
+            .unwrap();
+        assert_eq!(updated.title, "New title");
+        assert_eq!(updated.estimated_minutes, Some(30));
+    }
+
+    #[test]
+    fn edit_project_form_preserves_criteria_and_updates_supported_settings() {
+        let mut app = app_at(&path());
+        let project = create_project(&mut app, "Settings");
+        app.start_form(FormMode::EditProject {
+            project_id: project.clone(),
+        });
+        let mut form = current_form(&mut app);
+        fill(&mut form, "status", "active");
+        fill(&mut form, "mode", "learning");
+        fill(&mut form, "objective", "Learn the workflow");
+        app.submit_form(form);
+        let updated = app
+            .client
+            .list_projects()
+            .unwrap()
+            .into_iter()
+            .find(|row| row.id == project)
+            .unwrap();
+        assert_eq!(updated.status, "active");
+        assert_eq!(updated.mode, "learning");
+        assert_eq!(updated.objective.as_deref(), Some("Learn the workflow"));
+    }
+
+    #[test]
+    fn work_item_forms_use_declared_fields_and_persist_edits() {
+        let mut app = app_at(&path());
+        let project = create_project(&mut app, "Research");
+        app.client.install_bundled_blueprint("research").unwrap();
+        app.client
+            .bind_project_blueprint(&project, "research", 2)
+            .unwrap();
+        app.refresh_project();
+        app.start_form(FormMode::NewWorkItemKind {
+            project_id: project.clone(),
+        });
+        let mut kind_form = current_form(&mut app);
+        fill(&mut kind_form, "kind", "hypothesis");
+        app.submit_form(kind_form);
+        let mut fields = current_form(&mut app);
+        fill(&mut fields, "question", "Does the form work?");
+        fill(&mut fields, "confidence", "high");
+        app.submit_form(fields);
+        app.refresh_project();
+        let item = app
+            .client
+            .list_blueprint_work_items(&project)
+            .unwrap()
+            .into_iter()
+            .find(|item| item.kind == "hypothesis")
+            .expect("created item");
+        assert_eq!(item.properties["question"], "Does the form work?");
+        app.start_form(FormMode::EditWorkItem {
+            item_id: item.id.clone(),
+            revision: item.revision,
+            blueprint: app
+                .client
+                .project_blueprint_definition(&project)
+                .unwrap()
+                .unwrap(),
+            kind: item.kind.clone(),
+        });
+        let mut edit = current_form(&mut app);
+        fill(&mut edit, "question", "Edited question");
+        app.submit_form(edit);
+        let edited = app
+            .client
+            .list_blueprint_work_items(&project)
+            .unwrap()
+            .into_iter()
+            .find(|row| row.id == item.id)
+            .unwrap();
+        assert_eq!(edited.properties["question"], "Edited question");
+    }
+
+    #[test]
+    fn dependency_forms_add_and_remove_prerequisites() {
+        let mut app = app_at(&path());
+        let project = create_project(&mut app, "Dependencies");
+        let first = app
+            .client
+            .create_task(orbit_client::CreateTaskRequest {
+                id: None,
+                title: "First".into(),
+                project_id: Some(project.clone()),
+                milestone_id: None,
+            })
+            .unwrap();
+        let second = app
+            .client
+            .create_task(orbit_client::CreateTaskRequest {
+                id: None,
+                title: "Second".into(),
+                project_id: Some(project),
+                milestone_id: None,
+            })
+            .unwrap();
+        app.refresh_project();
+        app.start_form(FormMode::AddDependency {
+            task_id: second.id.clone(),
+        });
+        let mut add = current_form(&mut app);
+        fill(&mut add, "prerequisite", &first.id);
+        app.submit_form(add);
+        let data = app
+            .client
+            .project_view_data(&app.project.as_ref().unwrap().id, crate::app::now_ms())
+            .unwrap();
+        assert!(
+            data.tasks
+                .iter()
+                .find(|task| task.id == second.id)
+                .unwrap()
+                .prerequisite_ids
+                .contains(&first.id)
+        );
+
+        app.refresh_project();
+        app.start_form(FormMode::RemoveDependency {
+            task_id: second.id.clone(),
+        });
+        let mut remove = current_form(&mut app);
+        fill(&mut remove, "prerequisite", &first.id);
+        app.submit_form(remove);
+        let data = app
+            .client
+            .project_view_data(&app.project.as_ref().unwrap().id, crate::app::now_ms())
+            .unwrap();
+        assert!(
+            !data
+                .tasks
+                .iter()
+                .find(|task| task.id == second.id)
+                .unwrap()
+                .prerequisite_ids
+                .contains(&first.id)
+        );
+    }
+
+    #[test]
+    fn invalid_form_preserves_values_and_reports_the_field() {
+        let mut app = app_at(&path());
+        app.start_form(FormMode::NewTask { project_id: None });
+        let mut form = current_form(&mut app);
+        fill(&mut form, "title", "Valid title");
+        fill(&mut form, "estimate", "not-a-number");
+        app.submit_form(form);
+        let Some(Modal::Form(form)) = &app.modal else {
+            panic!("form should stay open");
+        };
+        assert!(form.error.as_deref().unwrap_or("").contains("integer"));
+        assert_eq!(form.fields[3].value, "not-a-number");
+    }
+}
+
+#[cfg(test)]
+mod m28_post_gate_tests {
+    use super::*;
+    use app::{FormMode, Modal};
+
+    fn app() -> App {
+        let filename = std::env::temp_dir().join(format!(
+            "orbit-tui-m28-gate-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&filename);
+        App::open(filename.to_string_lossy().into_owned()).unwrap()
+    }
+
+    #[test]
+    fn q_is_text_inside_forms_and_never_quits_or_discards() {
+        let mut app = app();
+        app.start_form(FormMode::NewTask { project_id: None });
+        assert!(!handle_key(&mut app, KeyCode::Char('a'), KeyModifiers::NONE).unwrap());
+        assert!(!handle_key(&mut app, KeyCode::Char('b'), KeyModifiers::NONE).unwrap());
+        assert!(!handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
+        let Some(Modal::Form(form)) = &app.modal else {
+            panic!("form should remain open");
+        };
+        assert_eq!(form.fields[0].value, "abq");
+        assert!(form.dirty);
+        assert!(!app.request_quit());
+        assert!(matches!(app.modal, Some(Modal::QuitConfirm { .. })));
+        handle_key(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).unwrap();
+        let Some(Modal::Form(form)) = &app.modal else {
+            panic!("form should be restored");
+        };
+        assert_eq!(form.fields[0].value, "abq");
+    }
+}
+
+#[cfg(test)]
+mod m28_scroll_quit_edges {
+    use super::*;
+    use app::{FocusPane, Modal};
+
+    fn app() -> App {
+        let filename = std::env::temp_dir().join(format!(
+            "orbit-tui-m28-scroll-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&filename);
+        App::open(filename.to_string_lossy().into_owned()).unwrap()
+    }
+
+    #[test]
+    fn text_component_scroll_survives_navigation_and_refresh() {
+        let mut app = app();
+        let component = app
+            .home
+            .components
+            .iter()
+            .position(|component| component.selection.is_empty())
+            .expect("text component");
+        app.screen = Screen::Home;
+        app.active_component = component;
+        app.selected = 0;
+        app.scroll = 4;
+        app.go_screen(Screen::Inbox);
+        app.go_back();
+        assert_eq!(app.active_component, component);
+        assert_eq!(app.scroll, 4);
+        app.refresh_workspace();
+        assert_eq!(app.scroll, 4);
+    }
+
+    #[test]
+    fn palette_quit_with_query_uses_the_single_confirmation_path() {
+        let mut app = app();
+        app.open_palette();
+        for character in "quit".chars() {
+            handle_key(&mut app, KeyCode::Char(character), KeyModifiers::NONE).unwrap();
+        }
+        let Some(Modal::Palette {
+            entries, selected, ..
+        }) = &mut app.modal
+        else {
+            panic!("palette");
+        };
+        *selected = entries
+            .iter()
+            .position(|entry| matches!(entry.action, app::PaletteAction::Quit))
+            .expect("quit entry");
+        let result = handle_key(&mut app, KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        assert!(!result);
+        assert!(matches!(app.modal, Some(Modal::QuitConfirm { .. })));
+        let _ = FocusPane::Workspace;
     }
 }

@@ -3,25 +3,16 @@
 //! No writes go through OrbitClient/SqliteStore in server-authoritative mode.
 use crate::connected_actions::{self, Intent, Section};
 use crate::planning_ui;
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use orbit_client::authority::{AuthorityHttp, AuthorityReplica, FlushOutcome};
 use orbit_ui::{ComponentBody, ComponentRegistry};
 use ratatui::{
-    Terminal,
-    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 use serde_json::Value;
-use std::{
-    io,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 fn describe(e: impl std::fmt::Debug) -> String {
     format!("{e:?}")
@@ -53,6 +44,7 @@ enum Editor {
     Details,
     Planning,
     Views,
+    QuitConfirm(Box<Editor>),
 }
 struct Connected {
     replica: AuthorityReplica,
@@ -1242,7 +1234,7 @@ impl Connected {
     }
 
     fn footer(&self) -> String {
-        match &self.editor {
+        let base = match &self.editor {
             Editor::Closed => self.message.clone(),
             Editor::Command(text) => format!(":{text}▏  Enter: review • Esc: cancel"),
             Editor::Filter(text) => format!("Filter: {text}▏  Enter: apply • Esc: cancel"),
@@ -1262,7 +1254,11 @@ impl Connected {
             Editor::Details => "Record details • Esc/Enter: close".into(),
             Editor::Planning => self.message.clone(),
             Editor::Views => "Connected project views • j/k: scroll • Esc: close".into(),
-        }
+            Editor::QuitConfirm(_) => {
+                "Quit Orbit? Enter/y: quit • Esc/n: keep editing • Ctrl+Q/Ctrl+C: force quit".into()
+            }
+        };
+        format!("Ctrl+Q/q quit • {base}")
     }
     fn modal_lines(&self) -> Vec<String> {
         match &self.editor {
@@ -1300,6 +1296,11 @@ impl Connected {
                 .or_else(|| self.planning.as_ref().map(|doc| doc.lines.clone()))
                 .unwrap_or_else(|| vec!["No accepted planning snapshot".into()]),
             Editor::Views => self.view_lines.clone(),
+            Editor::QuitConfirm(_) => vec![
+                "Quit Orbit and discard unsaved command text?".into(),
+                "Accepted state and durable pending commands are already persisted.".into(),
+                "Enter/y: quit · Esc/n: keep editing · Ctrl+Q/Ctrl+C: force quit".into(),
+            ],
             Editor::BatchConfirm(intents) => connected_actions::batch_preview(intents),
             Editor::Replace { old_id, intent } => {
                 vec![
@@ -1330,8 +1331,43 @@ impl Connected {
             _ => Vec::new(),
         }
     }
+    fn request_quit(&mut self) -> bool {
+        if matches!(self.editor, Editor::QuitConfirm(_)) {
+            return true;
+        }
+        if let Editor::Command(value) | Editor::Filter(value) = &self.editor
+            && !value.trim().is_empty()
+        {
+            let previous = std::mem::replace(&mut self.editor, Editor::Closed);
+            self.editor = Editor::QuitConfirm(Box::new(previous));
+            self.message =
+                "Unsaved command text: confirm quit to discard, or Esc to keep editing".into();
+            return false;
+        }
+        true
+    }
+
     fn on_key(&mut self, key: KeyCode, mods: KeyModifiers) -> bool {
+        if matches!(key, KeyCode::Char('q'))
+            && !matches!(
+                self.editor,
+                Editor::Command(_) | Editor::Filter(_) | Editor::QuitConfirm(_)
+            )
+        {
+            return self.request_quit();
+        }
         match &mut self.editor {
+            Editor::QuitConfirm(_previous) => match key {
+                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => return true,
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                    let previous = std::mem::replace(&mut self.editor, Editor::Closed);
+                    if let Editor::QuitConfirm(inner) = previous {
+                        self.editor = *inner;
+                    }
+                    self.message = "Quit cancelled; command text preserved".into();
+                }
+                _ => {}
+            },
             Editor::Filter(value) => match key {
                 KeyCode::Esc => self.editor = Editor::Closed,
                 KeyCode::Enter => {
@@ -1432,7 +1468,7 @@ impl Connected {
                 _ => {}
             },
             Editor::Views => match key {
-                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => self.editor = Editor::Closed,
+                KeyCode::Esc | KeyCode::Enter => self.editor = Editor::Closed,
                 KeyCode::Down | KeyCode::Char('j') => {
                     self.planning_scroll = self.planning_scroll.saturating_add(1)
                 }
@@ -1448,7 +1484,6 @@ impl Connected {
                 _ => {}
             },
             Editor::Closed => match key {
-                KeyCode::Char('q') => return true,
                 KeyCode::Tab => self.section(self.section.next()),
                 KeyCode::BackTab => self.section(self.section.previous()),
                 KeyCode::Char('o') => self.section(Section::Outbox),
@@ -1549,19 +1584,8 @@ pub fn run(db: String, server: String) -> Result<(), String> {
         pending_scenario: None,
         view_lines: Vec::new(),
     };
-    enable_raw_mode().map_err(describe)?;
-    let mut stdout = io::stdout();
-    if let Err(e) = execute!(stdout, EnterAlternateScreen) {
-        let _ = disable_raw_mode();
-        return Err(describe(e));
-    }
-    let mut terminal = match Terminal::new(CrosstermBackend::new(stdout)) {
-        Ok(t) => t,
-        Err(e) => {
-            let _ = disable_raw_mode();
-            return Err(describe(e));
-        }
-    };
+    let mut session = crate::terminal::TerminalSession::enter()?;
+    let terminal = session.terminal();
     let result = loop {
         let count = app.rows().len();
         let pending = app.replica.pending_count().unwrap_or(0);
@@ -1606,13 +1630,19 @@ pub fn run(db: String, server: String) -> Result<(), String> {
         if key.kind != KeyEventKind::Press {
             continue;
         }
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('q'))
+        {
+            if app.request_quit() {
+                break Ok(());
+            }
+            continue;
+        }
         if app.on_key(key.code, key.modifiers) {
             break Ok(());
         }
     };
-    let _ = disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
-    let _ = terminal.show_cursor();
+    session.restore();
     result
 }
 
@@ -1903,5 +1933,62 @@ mod m28_connected_view_tests {
         assert!(matches!(app.editor, Editor::Closed));
         assert!(app.message.contains("No accepted snapshot"));
         assert!(app.view_lines.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod m28_connected_quit_tests {
+    use super::*;
+
+    fn connected() -> Connected {
+        Connected {
+            replica: AuthorityReplica::open(":memory:").unwrap(),
+            http: None,
+            message: String::new(),
+            section: Section::Tasks,
+            selection: 0,
+            editor: Editor::Closed,
+            filter: String::new(),
+            scroll: 0,
+            dirty: false,
+            notes: Vec::new(),
+            planning: None,
+            planning_scroll: 0,
+            impact: None,
+            planning_action_menu: None,
+            pending_scenario: None,
+            view_lines: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn command_and_filter_text_require_connected_quit_confirmation() {
+        for editor in [
+            Editor::Command("draft command".into()),
+            Editor::Filter("draft filter".into()),
+        ] {
+            let mut app = connected();
+            app.editor = editor;
+            assert!(!app.request_quit());
+            assert!(matches!(app.editor, Editor::QuitConfirm(_)));
+            assert!(!app.on_key(KeyCode::Esc, KeyModifiers::NONE));
+            assert!(matches!(app.editor, Editor::Command(_) | Editor::Filter(_)));
+        }
+    }
+
+    #[test]
+    fn connected_quit_confirmation_quits_only_on_confirm() {
+        let mut app = connected();
+        app.editor = Editor::QuitConfirm(Box::new(Editor::Closed));
+        assert!(!app.on_key(KeyCode::Char('q'), KeyModifiers::NONE));
+        assert!(matches!(app.editor, Editor::QuitConfirm(_)));
+        assert!(app.on_key(KeyCode::Enter, KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn connected_closed_editor_q_quits_and_footer_shows_shortcut() {
+        let mut app = connected();
+        assert!(app.footer().contains("Ctrl+Q/q quit"), "{}", app.footer());
+        assert!(app.on_key(KeyCode::Char('q'), KeyModifiers::NONE));
     }
 }
