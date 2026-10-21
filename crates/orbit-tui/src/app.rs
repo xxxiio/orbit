@@ -265,6 +265,8 @@ pub struct App {
     pub active_component: usize,
     pub selected: usize,
     pub scroll: usize,
+    pub detail_scroll: usize,
+    pub modal_scroll: usize,
     pub sidebar_selection: usize,
     pub modal: Option<Modal>,
     pub status: StatusMessage,
@@ -324,6 +326,8 @@ impl App {
             active_component: 0,
             selected: 0,
             scroll: 0,
+            detail_scroll: 0,
+            modal_scroll: 0,
             sidebar_selection: 0,
             modal: None,
             status: StatusMessage {
@@ -618,6 +622,21 @@ impl App {
         self.insert_planning_component();
         self.inbox = orbit_ui::inbox_view(&workspace);
         self.agents = orbit_ui::agents_view(&workspace);
+        if self.client.is_connected() {
+            for component in &mut self.agents.components {
+                if component.id == "agent_config" || component.component_type == "agent_jobs" {
+                    component.body = ComponentBody::Text {
+                        heading: "Connected agent monitoring".into(),
+                        lines: vec![
+                            "Accepted agent jobs are not projected into the connected snapshot yet.".into(),
+                            "Inspection and review use the legacy connected command surface (`ORBIT_TUI_LEGACY_CONNECTED=1`).".into(),
+                        ],
+                    };
+                    component.status =
+                        LoadStatus::Stale("connected snapshot does not include agent jobs".into());
+                }
+            }
+        }
         if let Some(error) = &self.workspace_error {
             self.home.components.insert(
                 0,
@@ -1067,15 +1086,11 @@ impl App {
                     self.selected = 0;
                 } else {
                     self.selected = self.selected.saturating_add_signed(delta).min(len - 1);
-                    if self.selected < self.scroll {
-                        self.scroll = self.selected;
-                    } else if self.selected > self.scroll + 7 {
-                        self.scroll = self.selected.saturating_sub(7);
-                    }
+                    self.detail_scroll = 0;
                 }
             }
             FocusPane::Detail => {
-                self.scroll = self.scroll.saturating_add_signed(delta);
+                self.detail_scroll = self.detail_scroll.saturating_add_signed(delta);
             }
         }
     }
@@ -1133,15 +1148,10 @@ impl App {
     }
 
     pub fn focus_next(&mut self, reverse: bool) {
-        let panes = if self.show_detail && self.wide_detail() {
-            [FocusPane::Sidebar, FocusPane::Workspace, FocusPane::Detail]
-        } else {
-            [
-                FocusPane::Sidebar,
-                FocusPane::Workspace,
-                FocusPane::Workspace,
-            ]
-        };
+        let mut panes = vec![FocusPane::Sidebar, FocusPane::Workspace];
+        if self.show_detail && self.wide_detail() {
+            panes.push(FocusPane::Detail);
+        }
         let index = panes
             .iter()
             .position(|pane| *pane == self.focus)
@@ -1152,6 +1162,9 @@ impl App {
             (index + 1) % panes.len()
         };
         self.focus = panes[next];
+        if self.focus == FocusPane::Detail {
+            self.detail_scroll = 0;
+        }
     }
 
     fn wide_detail(&self) -> bool {
@@ -2731,10 +2744,27 @@ impl App {
                 })
             }
             FormMode::NewWorkItemKind { project_id } => {
-                let blueprint = self
-                    .client
-                    .project_blueprint_definition(&project_id)
-                    .ok()??;
+                if self.client.is_connected() {
+                    self.notify(
+                        "Work-item creation requires the connected command surface",
+                        StatusKind::Warning,
+                    );
+                    return None;
+                }
+                let blueprint = match self.client.project_blueprint_definition(&project_id) {
+                    Ok(Some(blueprint)) => blueprint,
+                    Ok(None) => {
+                        self.notify("This project has no pinned blueprint", StatusKind::Warning);
+                        return None;
+                    }
+                    Err(error) => {
+                        self.notify(
+                            format!("Blueprint unavailable: {}", error.message),
+                            StatusKind::Warning,
+                        );
+                        return None;
+                    }
+                };
                 let choices = Self::work_item_kind_choices(&blueprint);
                 if choices.is_empty() {
                     self.notify(
@@ -3669,10 +3699,6 @@ impl App {
         }
         hits.truncate(50);
         hits
-    }
-
-    pub fn project_scroll(&self) -> usize {
-        self.projects_selection.saturating_sub(8)
     }
 
     pub fn selected_project(&self) -> Option<&orbit_ui::data::ProjectRow> {

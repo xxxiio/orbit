@@ -17,6 +17,7 @@ evidence directory.
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import subprocess
@@ -786,6 +787,33 @@ def test_project_settings_preserve_satisfied_criterion(tui_factory):
 )
 def test_responsive_layout_navigation_detail_and_exit(tui_factory, cols, rows):
     session = tui_factory(cols, rows, seed_project="A Very Long Project Name For Layout")
+    project_id = _project_row(
+        session.workspace, "A Very Long Project Name For Layout"
+    )[0]
+    cli = str(Path(os.environ.get("ORBIT_CLI_BIN", "target/debug/orbit")))
+    for title, statuses in [
+        ("Alpha task with a long title", ["ready"]),
+        ("Beta task with a long title", ["ready"]),
+        ("Gamma task with a long title", ["ready", "in-progress", "done"]),
+    ]:
+        added = subprocess.run(
+            [cli, "--json", "task", "add", title, "--project", project_id],
+            cwd=ROOT,
+            env=dict(session.workspace.env),
+            text=True,
+            capture_output=True,
+        )
+        assert added.returncode == 0, added.stderr
+        task_id = json.loads(added.stdout)["task"]["id"]
+        for status in statuses:
+            result = subprocess.run(
+                [cli, "--json", "task", "status", task_id, status],
+                cwd=ROOT,
+                env=dict(session.workspace.env),
+                text=True,
+                capture_output=True,
+            )
+            assert result.returncode == 0, result.stderr
     wait_home(session)
     session.wait_for_screen_text("Ctrl+Q quit", timeout=5.0, description="quit footer")
     assert QUIT_SHORTCUT_RE.search(session.screen_text), session.screen_text
@@ -800,8 +828,17 @@ def test_responsive_layout_navigation_detail_and_exit(tui_factory, cols, rows):
     )
     assert QUIT_SHORTCUT_RE.search(session.screen_text), session.screen_text
 
+    session.send(b"r", note="refresh seeded tasks")
     session.send(b"]", note="switch view")
     session.wait_for_screen_text("Task board", timeout=8.0, description="board view")
+    session.wait_until_screen(
+        lambda view: any(
+            "▸" in line and "Alpha task" in line for line in view.splitlines()
+        ),
+        timeout=8.0,
+        description="selected task card",
+    )
+    session.send(b"j", note="next task card")
     session.send(b"l", note="focus next component")
     session.send(b"?", note="contextual help")
     session.wait_for_screen_text("Keyboard help", timeout=8.0, description="help modal")

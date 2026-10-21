@@ -71,6 +71,9 @@ fn event_loop(
 }
 
 fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool, String> {
+    if app.modal.is_none() {
+        app.modal_scroll = 0;
+    }
     if app.modal.is_some() {
         return handle_modal(app, code, modifiers);
     }
@@ -460,16 +463,30 @@ fn handle_modal(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Resul
             }
             _ => {}
         },
-        Modal::Help => {
-            if matches!(code, KeyCode::Esc | KeyCode::Char('?')) {
-                keep = false;
+        Modal::Help => match code {
+            KeyCode::Esc | KeyCode::Char('?') => keep = false,
+            KeyCode::Down | KeyCode::Char('j') => {
+                app.modal_scroll = app.modal_scroll.saturating_add(1)
             }
-        }
-        Modal::Detail(_) => {
-            if matches!(code, KeyCode::Esc | KeyCode::Enter) {
-                keep = false;
+            KeyCode::Up | KeyCode::Char('k') => {
+                app.modal_scroll = app.modal_scroll.saturating_sub(1)
             }
-        }
+            KeyCode::PageDown => app.modal_scroll = app.modal_scroll.saturating_add(10),
+            KeyCode::PageUp => app.modal_scroll = app.modal_scroll.saturating_sub(10),
+            _ => {}
+        },
+        Modal::Detail(_) => match code {
+            KeyCode::Esc | KeyCode::Enter => keep = false,
+            KeyCode::Down | KeyCode::Char('j') => {
+                app.modal_scroll = app.modal_scroll.saturating_add(1)
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                app.modal_scroll = app.modal_scroll.saturating_sub(1)
+            }
+            KeyCode::PageDown => app.modal_scroll = app.modal_scroll.saturating_add(10),
+            KeyCode::PageUp => app.modal_scroll = app.modal_scroll.saturating_sub(10),
+            _ => {}
+        },
         Modal::TodayActions { menu, selected } => match code {
             KeyCode::Esc => keep = false,
             KeyCode::Down | KeyCode::Char('j') => {
@@ -510,11 +527,18 @@ fn handle_modal(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Resul
             }
             _ => {}
         },
-        Modal::Message { .. } => {
-            if matches!(code, KeyCode::Esc | KeyCode::Enter) {
-                keep = false;
+        Modal::Message { .. } => match code {
+            KeyCode::Esc | KeyCode::Enter => keep = false,
+            KeyCode::Down | KeyCode::Char('j') => {
+                app.modal_scroll = app.modal_scroll.saturating_add(1)
             }
-        }
+            KeyCode::Up | KeyCode::Char('k') => {
+                app.modal_scroll = app.modal_scroll.saturating_sub(1)
+            }
+            KeyCode::PageDown => app.modal_scroll = app.modal_scroll.saturating_add(10),
+            KeyCode::PageUp => app.modal_scroll = app.modal_scroll.saturating_sub(10),
+            _ => {}
+        },
     }
     if keep {
         app.modal = Some(modal);
@@ -960,14 +984,15 @@ mod m28_render_tests {
             component_type: "table".into(),
             status: orbit_ui::LoadStatus::Ready,
             body: orbit_ui::ComponentBody::Table {
-                columns: vec!["title".into(), "status".into()],
+                columns: vec!["title".into(), "status".into(), "estimate".into()],
                 rows: vec![orbit_ui::model::TableRowModel {
                     id: "t1".into(),
                     kind: orbit_ui::ItemKind::Task,
-                    status: "ready".into(),
+                    status: "done".into(),
                     cells: vec![
                         "A long task title that should be truncated".into(),
-                        "ready".into(),
+                        "done".into(),
+                        "30m".into(),
                     ],
                 }],
             },
@@ -976,9 +1001,13 @@ mod m28_render_tests {
         app.focus = FocusPane::Workspace;
         let wide = text(&mut app, 120, 24);
         assert!(wide.contains("TITLE"), "{wide}");
+        assert!(wide.contains("STATUS"), "{wide}");
+        assert!(wide.contains("ESTIMATE"), "{wide}");
         assert!(wide.contains("A long task title"), "{wide}");
+        assert!(wide.contains("✓"), "{wide}");
         let narrow = text(&mut app, 60, 16);
         assert!(narrow.contains("TITLE"), "{narrow}");
+        assert!(narrow.contains("STATUS"), "{narrow}");
     }
 
     #[test]
@@ -2370,6 +2399,26 @@ mod m28_unified_connected_tests {
             .join("\n");
         assert!(rendered.contains("CONNECTED"), "{rendered}");
 
+        app.screen = Screen::Agents;
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(120, 35)).unwrap();
+        terminal
+            .draw(|frame| render::draw(frame, &mut app))
+            .unwrap();
+        let agents: String = (0..terminal.backend().buffer().area.height)
+            .map(|y| {
+                (0..terminal.backend().buffer().area.width)
+                    .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            agents.contains("not") && agents.contains("projected"),
+            "{agents}"
+        );
+        assert!(!agents.contains("No agent jobs"), "{agents}");
+        app.screen = Screen::Home;
+
         app.start_form(FormMode::NewProject);
         let Some(Modal::Form(mut form)) = app.modal.take() else {
             panic!("form");
@@ -2500,5 +2549,205 @@ mod m28_layout_tests {
             "{rendered}"
         );
         assert!(!rendered.contains("╭ Inb╮"), "{rendered}");
+        let wide = text(&mut app, 160, 45);
+        assert!(wide.contains("columns 1-"), "{wide}");
+    }
+}
+
+#[cfg(test)]
+mod m28_scroll_tests {
+    use super::*;
+    use app::FocusPane;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn text(app: &mut App, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render::draw(frame, app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn app() -> App {
+        let path = std::env::temp_dir().join(format!(
+            "orbit-tui-m28-scroll2-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&path);
+        App::open(path.to_string_lossy().into_owned()).unwrap()
+    }
+
+    #[test]
+    fn palette_selection_stays_visible_at_60x18() {
+        let mut app = app();
+        for index in 0..8 {
+            app.client
+                .create_project(orbit_client::CreateProjectRequest {
+                    id: None,
+                    name: format!("Palette project {index}"),
+                })
+                .unwrap();
+        }
+        app.refresh_workspace();
+        app.open_palette();
+        for _ in 0..100 {
+            handle_key(&mut app, KeyCode::Down, KeyModifiers::NONE).unwrap();
+        }
+        let rendered = text(&mut app, 60, 18);
+        assert!(rendered.contains("Quit"), "{rendered}");
+        assert!(rendered.contains("▸ Quit"), "{rendered}");
+    }
+
+    #[test]
+    fn sidebar_selection_scrolls_into_view() {
+        let mut app = app();
+        for index in 0..30 {
+            app.client
+                .create_project(orbit_client::CreateProjectRequest {
+                    id: None,
+                    name: format!("Project {index}"),
+                })
+                .unwrap();
+        }
+        app.refresh_workspace();
+        app.screen = Screen::Home;
+        app.focus = FocusPane::Sidebar;
+        app.sidebar_selection = app.sidebar_len() - 1;
+        let rendered = text(&mut app, 60, 18);
+        assert!(rendered.contains("Project 29"), "{rendered}");
+        assert!(
+            rendered
+                .lines()
+                .any(|line| line.contains("▸") && line.contains("Project 29")),
+            "{rendered}"
+        );
+    }
+
+    #[test]
+    fn help_modal_scrolls_to_later_lines() {
+        let mut app = app();
+        app.modal = Some(Modal::Help);
+        let before = text(&mut app, 60, 18);
+        assert!(!before.contains("Ctrl+Q / Ctrl+C"), "{before}");
+        for _ in 0..3 {
+            handle_key(&mut app, KeyCode::PageDown, KeyModifiers::NONE).unwrap();
+        }
+        let after = text(&mut app, 60, 18);
+        assert!(after.contains("Ctrl+Q / Ctrl+C"), "{after}");
+    }
+
+    #[test]
+    fn detail_focus_resets_its_own_scroll() {
+        let mut app = app();
+        app.focus = FocusPane::Workspace;
+        app.detail_scroll = 7;
+        app.focus_next(false);
+        assert_eq!(app.focus, FocusPane::Detail);
+        assert_eq!(app.detail_scroll, 0);
+    }
+}
+
+#[cfg(test)]
+mod m28_focus_scroll_tests {
+    use super::*;
+    use app::FocusPane;
+    use orbit_ui::model::{ItemKind, TimelineEventModel};
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn app() -> App {
+        let path = std::env::temp_dir().join(format!(
+            "orbit-tui-m28-focus-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&path);
+        App::open(path.to_string_lossy().into_owned()).unwrap()
+    }
+    fn text(app: &mut App, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render::draw(frame, app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn tab_cycles_sidebar_and_workspace_below_wide_breakpoint() {
+        let mut app = app();
+        app.set_viewport(100);
+        app.focus = FocusPane::Workspace;
+        app.focus_next(false);
+        assert_eq!(app.focus, FocusPane::Sidebar);
+        app.focus_next(false);
+        assert_eq!(app.focus, FocusPane::Workspace);
+    }
+
+    #[test]
+    fn timeline_selection_stays_visible_at_60x18() {
+        let mut app = app();
+        let events = (0..12)
+            .map(|index| TimelineEventModel {
+                id: format!("event-{index}"),
+                kind: ItemKind::Schedule,
+                title: format!("Timeline event {index}"),
+                when: format!("2026-10-22 {index:02}:00Z"),
+                sort_key: index,
+                status: "planned".into(),
+                detail: "detail".into(),
+            })
+            .collect::<Vec<_>>();
+        app.home.components = vec![orbit_ui::ResolvedComponent {
+            id: "timeline".into(),
+            title: "Timeline".into(),
+            component_type: "timeline".into(),
+            status: orbit_ui::LoadStatus::Ready,
+            body: orbit_ui::ComponentBody::Timeline { events },
+            selection: (0..12)
+                .map(|index| orbit_ui::SelectionItem {
+                    id: format!("event-{index}"),
+                    kind: ItemKind::Schedule,
+                    title: format!("Timeline event {index}"),
+                    subtitle: String::new(),
+                    status: "planned".into(),
+                    fields: Vec::new(),
+                    allowed_statuses: Vec::new(),
+                    allowed_transitions: Vec::new(),
+                    revision: None,
+                })
+                .collect(),
+        }];
+        app.screen = Screen::Home;
+        app.active_component = 0;
+        app.selected = 11;
+        app.focus = FocusPane::Workspace;
+        let rendered = text(&mut app, 60, 18);
+        assert!(rendered.contains("Timeline event 11"), "{rendered}");
+        assert!(
+            rendered
+                .lines()
+                .any(|line| line.contains("▸") && line.contains("event 11")),
+            "{rendered}"
+        );
     }
 }

@@ -5,82 +5,76 @@ template_digest: "b88835ce70ef09490ad55db0e910dc05ff721384d6ccad8d45eafedd7654aa
 project_owned: true
 record_contract: next-step
 record_schema_version: 1
-id: NEXT-0007
-status: ready
-milestone_id: MILESTONE-0028
-advances_exit_criteria: [EC-002, EC-006]
+id: NEXT-0008
+status: blocked
+milestone_id: MILESTONE-0027
+advances_exit_criteria: [EC-001, EC-002]
 ---
 
 # Next Deterministic Step
 
 ## Objective
 
-Replace the connected command-only mutation surface with project-centric
-navigation and the shared action catalogue, while preserving durable pending
-commands and accepted-state separation.
+Run the authorized release workflow and verify the real GitHub-hosted installer
+and update path against published release assets.
 
 ## Why this is next
 
-The local project-centric shell, full 42/42 profile and connected read-only
-project views are complete. Connected mode still uses its command-centric
-sections for navigation and mutations. This is the largest remaining M28
-user-visible parity gap.
+M28 functional recovery is complete and the local/loopback profile passes 42/42.
+The only remaining unfinished milestone work is M27's real release verification,
+which is blocked by maintainer authorization and write access.
 
 ## Preconditions
 
-- Connected read-only views resolve accepted snapshots through `orbit-ui`.
-- The shared action catalogue and resolved view/selection contracts are stable.
-- Mutations remain outbox intents until server acceptance.
+- A maintainer with write access explicitly authorizes a draft/test release.
+- The release workflow is merged on `main`.
+- The local account has release permissions or a maintainer runs the workflow.
 
 ## Inputs
 
-- `crates/orbit-tui/src/connected.rs`
-- `crates/orbit-tui/src/connected_actions.rs`
-- `crates/orbit-ui/src/{resolve,actions,model}.rs`
-- `crates/orbit-client/src/{unified,authority}.rs`
-- `.agent/evidence/m28-terminal-smoke.txt`
+- `.github/workflows/release.yml`
+- `install.sh`
+- `scripts/release/validate-release-version.sh`
+- `docs/releasing/release-checklist.md`
 
 ## Ordered actions
 
-1. Add project selection and view switching to the connected shell using the
-   shared resolved views.
-2. Derive contextual actions from the shared catalogue; map each to the existing
-   durable connected intent queue.
-3. Keep a visible pending/outbox distinction and never present a queued intent
-   as accepted.
-4. Add connected tests for navigation, action availability, pending state and
-   no-snapshot behavior.
-5. Update docs, acceptance and evidence.
+1. Obtain authorization and a write-capable environment.
+2. Push the source and create an approved test tag.
+3. Confirm the gate and native builds produce all canonical archives.
+4. Verify checksums/provenance on the draft release.
+5. Run the curl installer and `orbit init`/`doctor`/`update --check` on Linux.
+6. Record evidence without claiming macOS or stable-public readiness.
 
 ## Expected outputs
 
-- Connected project navigation and view switching.
-- Shared action menus/palette routed to durable intents.
-- Tests for accepted/pending separation and no duplicate execution.
-- Updated connected user documentation.
+- A real GitHub Actions run and draft release.
+- A verified install/update transcript and updated M27 evidence.
 
 ## Acceptance criteria
 
-- [ ] NS-001: Connected projects and views are navigable without command syntax.
-- [ ] NS-002: Contextual actions are derived from the shared catalogue and remain pending until accepted.
-- [ ] NS-003: Offline/no-snapshot behavior is explicit and never invents accepted state.
-- [ ] NS-004: Focused tests and docs cover navigation, actions and pending state.
+- [ ] NS-001: The authorized workflow passes and produces all assets.
+- [ ] NS-002: Installed binary and update path work against the real release.
+- [ ] NS-003: Evidence separates fixture acceptance from public readiness.
 
 ## Validation
 
 ```sh
-cargo test -p orbit-tui -p orbit-client -p orbit-ui --offline
-cargo clippy -p orbit-tui -p orbit-client -p orbit-ui --all-targets --offline -- -D warnings
+gh release view TAG --repo xxxiio/orbit
+curl -fsSL https://github.com/xxxiio/orbit/releases/latest/download/install.sh | sh
+~/.local/bin/orbit init
+~/.local/bin/orbit doctor
+~/.local/bin/orbit update --check
 ```
 
 ## Stop conditions
 
-- Stop if a connected mutation bypasses the outbox or server acceptance.
-- Stop if pending intents are projected as accepted state.
-- Stop if the shared action contract must be forked.
+- Stop without authorization or write access.
+- Stop if any release gate or native build fails.
+- Do not publish a stable release without separate approval.
 
 ## Out of scope
 
-- Blueprint work-item synchronization over connected mode.
-- Replacing the local shell.
-- Flutter implementation.
+- M28 TUI work.
+- macOS runtime verification without a runner.
+- Windows, signing keys or hosted documentation.

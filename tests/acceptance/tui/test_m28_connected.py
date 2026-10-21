@@ -136,15 +136,15 @@ def test_connected_shell_pending_flush_and_acceptance(connected_workspace):
         session.wait_for_text("ORBIT", timeout=20.0)
         session.wait_for_screen_text("CONNECTED", timeout=8.0, description="connected header")
         session.send(b"gp", note="Projects")
+        session.wait_for_screen_text("0 pending", timeout=5.0, description="zero pending")
         session.send(b"c", note="new project form")
         session.wait_for_screen_text("New project", timeout=8.0, description="project form")
         session.send_text("Connected Project")
         session.send(ENTER, note="queue project")
-        session.wait_for_text("pending", timeout=8.0, description="pending project")
-        assert "Connected Project" not in session.screen_text or "pending" in session.screen_text.lower()
+        session.wait_for_text("not accepted yet", timeout=8.0, description="pending project")
+        assert "0 project(s)" in session.screen_text, session.screen_text
 
         session.send(b"f", note="flush outbox")
-        session.wait_for_text("accepted", timeout=10.0, description="server acceptance")
         session.send(b"r", note="refresh accepted")
         session.send(b"gp", note="Projects after acceptance")
         session.wait_for_screen_text("Connected Project", timeout=10.0, description="accepted project")
@@ -162,12 +162,17 @@ def test_connected_shell_pending_flush_and_acceptance(connected_workspace):
         session.send(b"\t", note="focus estimate")
         session.send_text("30")
         session.send(ENTER, note="queue task")
-        session.wait_for_text("pending", timeout=8.0, description="pending task")
+        session.wait_for_text("not accepted yet", timeout=8.0, description="pending task")
         session.send(b"f", note="flush task")
-        session.wait_for_text("accepted", timeout=10.0, description="task accepted")
         session.send(b"r", note="refresh task")
         session.send(b"]", note="Work view")
         session.wait_for_screen_text("Connected task", timeout=10.0, description="accepted task")
+
+        session.send(b"ga", note="Agents view")
+        session.wait_for_screen_text(
+            "Connected agent monitoring", timeout=8.0, description="connected agent notice"
+        )
+        assert "No agent jobs" not in session.screen_text, session.screen_text
 
         session.quit_via(CTRL_Q)
         session.assert_clean_exit()

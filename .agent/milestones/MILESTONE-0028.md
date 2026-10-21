@@ -6,7 +6,7 @@ project_owned: true
 record_contract: milestone-plan
 record_schema_version: 1
 id: MILESTONE-0028
-status: active
+status: completed
 ---
 
 # Milestone: Project-centric TUI and blueprint UI composition
@@ -140,35 +140,36 @@ locally and materially improves every project.
 
 - EC-001: `cargo test -p orbit-blueprint` 20 tests pass; `presentation.rs`
   validation tests and bundled YAML/JSON round-trip.
-- EC-002: `crates/orbit-tui/src/{main,app,render,theme}.rs`; Ratatui TestBackend
-  tests for wide/narrow layout, focus, tabs and project switching.
-- EC-003: `crates/orbit-client/src/view_data.rs`; 2 client view-data tests plus
-  project/workspace resolution in the TUI; `cargo test --workspace` 1,306 tests
-  pass.
-- EC-004: `crates/orbit-ui` 13 tests; `orbit-tui` 82 tests including overview
-  metrics/tasks, board columns, table, missing/loading/stale/error rendering.
+- EC-002: `crates/orbit-tui/src/{main,app,backend,render,theme,terminal}.rs`; one
+  App/renderer over local and connected backends; TestBackend and PTY tests for
+  wide/narrow layout, focus, tabs, project switching, quit and restoration.
+- EC-003: `crates/orbit-client/src/view_data.rs`, `orbit-tui/src/backend.rs`;
+  local/connected project/workspace resolution, pending/accepted separation and
+  connected flush verified against a real server.
+- EC-004: `crates/orbit-ui` 14 tests; `orbit-tui` 125 tests including overview,
+  readable Kanban window, table/list sizing, detail scrolling, missing/loading/
+  stale/error rendering and common terminal sizes.
 - EC-005: `blueprints/*.json` version 2 with views; generated fallback test;
   blueprint binding/work-item transition test.
-- EC-006: TUI duplicate-submission test; action catalogue tests proving blueprint
-  declarations do not grant actions; palette/search tests; no-SQL/no-process
-  source boundary test.
-- EC-007: `cargo test --workspace --offline` 1,306 passed, 0 failed; clippy
+- EC-006: structured forms and contextual actions; duplicate-submission tests;
+  action-authority tests; palette/search tests; no-SQL/no-process source boundary;
+  real PTY lifecycle and blueprint-workflow persistence.
+- EC-007: `cargo test --workspace --offline` 1,350 passed, 0 failed; clippy
   `-D warnings` on affected crates; fmt clean.
 - EC-008: This milestone, task/status/acceptance/evidence records, roadmap,
   journal and documentation pages.
 
 ## Remaining work
 
-- Connected mode has read-only project views over the accepted snapshot using
-  the shared contracts, but its mutation surface remains the existing
-  command-centric shell. Full interactive connected parity is future work.
-- Agent handoff review is inspect-only in the local TUI because no accepted
-  local review service surface is exposed; the action explains this.
-- Loading is represented but local loads are synchronous; asynchronous loading
-  and richer caching are future work.
-- No screenshots are claimed; documentation uses verified keyboard and behavior
-  contracts from terminal-buffer tests.
-- Broad M15 release acceptance remains assigned to M15.
+- Connected project/task workflows share the shell and preserve pending/accepted
+  separation. Connected multi-command edits are not atomic: a later rejected
+  intent can leave earlier intents queued (documented recovery via outbox/CLI).
+- Connected blueprint/work-item, habits, metrics and notes remain on the
+  explicitly available legacy connected command surface.
+- Agent execution is inspectable; review/resume stays disabled without an
+  explicitly configured runtime or connected review service.
+- Local loading is synchronous; no screenshots are claimed.
+- Broad public release acceptance remains assigned to M15/M27.
 
 ## Next milestone
 

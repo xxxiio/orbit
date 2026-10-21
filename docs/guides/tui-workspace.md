@@ -42,8 +42,9 @@ mutations as durable intents. The header shows `CONNECTED` and the unresolved
 count; queued changes are labelled **Pending (not accepted)** and never appear as
 accepted project/task rows. Press `f` (or choose **Flush pending commands**) to
 submit the outbox, then `r` to load the accepted server state. Project/task
-creation, status, rename, planning, scope and dependency actions use this path. Blueprint, habit, metric and note editing
-still report that they require the connected command surface.
+creation and task status, rename, planning, scope and dependency actions use
+this path. Connected project settings, blueprint/work-item, habit, metric and
+note editing still report that they require the connected command surface.
 
 Multi-field connected edits can queue more than one intent. If the server rejects
 a later intent, earlier intents can remain queued; inspect the outbox with the
@@ -211,14 +212,16 @@ the view; repeated submissions are ignored while the refresh is pending.
 
 ## Agent monitoring
 
-Open **Agents** in the sidebar for a workspace-wide list, or the project's
+Open **Agents** in the sidebar for the local workspace list, or the project's
 **Agent jobs** view. Select a job and press Enter/`a` to inspect its state,
 runtime, handoff count and any recorded review decision. Job completion is
 execution state: it does not complete the Orbit task. Review/resume is shown as
 a disabled action when no explicitly configured agent runtime or connected review
 service is available, with the reason visible. Starting or resuming an agent is
-never implicit. The legacy connected command surface remains available with
-`ORBIT_TUI_LEGACY_CONNECTED=1` for advanced agent transport operations.
+never implicit. Connected mode does not yet project accepted agent jobs into the shared
+snapshot, so the Agents view says so explicitly. The legacy connected command
+surface remains available with `ORBIT_TUI_LEGACY_CONNECTED=1` for connected agent
+transport operations.
 
 ## Feedback and uncertainty
 

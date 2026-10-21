@@ -1,15 +1,17 @@
 M28 workspace regression
-Date: 2026-10-20
+Date: 2026-10-22
 
 Command: cargo test --workspace --offline
-Result: 1,306 tests passed across all workspace suites; 0 failed.
+Result: 1,350 tests passed across all workspace suites; 0 failed.
 
 Focused TUI suites:
 - Rendering: Home, overview metrics/tasks, board columns, table, narrow pane,
   missing component, loading, stale/error states.
-- Interaction: palette/search cancellation, project selection and switching,
-  action menu transition, duplicate habit submission suppression, key prefix,
-  focus cycle, quit/back behavior.
+- Interaction: centralized quit/confirmation/restoration, navigation history,
+  per-view/component/id selection, forms, status/dependency/transition actions,
+  duplicate submission suppression, palette/search cancellation.
+- PTY acceptance: 37 real-terminal scenarios (local lifecycle/blueprint/restart,
+  responsive sizes, connected pending/flush/accepted).
 - Architecture: TUI source has no rusqlite, SELECT/INSERT, or Command::new.
 
 Schema/resolution suites:

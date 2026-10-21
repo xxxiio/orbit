@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Modifier,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -162,8 +162,7 @@ fn draw_sidebar(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(app.sidebar_label(index), style),
         ])));
     }
-    let list = List::new(items);
-    frame.render_widget(list, inner);
+    render_selectable_list(frame, inner, items, app.sidebar_selection);
 }
 
 fn draw_main(frame: &mut Frame, area: Rect, app: &App) {
@@ -274,18 +273,21 @@ fn draw_components(frame: &mut Frame, area: Rect, app: &App, view: &ResolvedView
 
 fn preferred_height(component: &ResolvedComponent) -> u16 {
     match &component.body {
-        ComponentBody::Text { .. } => 6,
+        ComponentBody::Text { lines, .. } => 3 + lines.len().min(12) as u16,
         ComponentBody::Metric { .. } => 5,
-        ComponentBody::Detail { .. } => 7,
+        ComponentBody::Detail { properties, note } => {
+            5 + properties.len().min(10) as u16 + note.lines().take(6).count() as u16
+        }
         ComponentBody::Kanban { .. } => 14,
-        ComponentBody::Table { .. } => 9,
-        ComponentBody::List { .. }
-        | ComponentBody::Timeline { .. }
-        | ComponentBody::HabitTracker { .. }
-        | ComponentBody::MetricHistory { .. }
-        | ComponentBody::KnowledgeRefs { .. }
-        | ComponentBody::AgentJobs { .. }
-        | ComponentBody::MilestoneProgress { .. } => 8,
+        ComponentBody::Table { rows, .. } => 4 + rows.len().min(10) as u16,
+        ComponentBody::List { items } | ComponentBody::KnowledgeRefs { items } => {
+            3 + items.len().min(10) as u16
+        }
+        ComponentBody::AgentJobs { jobs } => 3 + jobs.len().min(10) as u16,
+        ComponentBody::Timeline { events } => 3 + events.len().min(10) as u16,
+        ComponentBody::HabitTracker { habits } => 3 + habits.len().min(10) as u16,
+        ComponentBody::MetricHistory { metrics } => 4 + 2 * metrics.len().min(6) as u16,
+        ComponentBody::MilestoneProgress { milestones } => 3 + milestones.len().min(10) as u16,
         ComponentBody::Missing { .. } => 5,
     }
 }
@@ -469,7 +471,11 @@ fn draw_component(
         }
         ComponentBody::Timeline { events } => {
             let height = usize::from(inner.height);
-            let offset = if active { app.scroll } else { 0 };
+            let offset = if active {
+                app.selected.saturating_sub(height.saturating_sub(1))
+            } else {
+                0
+            };
             let lines = events
                 .iter()
                 .enumerate()
@@ -503,18 +509,43 @@ fn draw_component(
                     ])
                 })
                 .collect::<Vec<_>>();
-            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+            frame.render_widget(Paragraph::new(lines), inner);
         }
         ComponentBody::HabitTracker { habits } => {
             let today = format_epoch_ms(crate::app::now_ms());
             let today = today.get(..10).unwrap_or("");
+            let height = usize::from(inner.height);
+            let offset = if active {
+                app.selected.saturating_sub(height.saturating_sub(1))
+            } else {
+                0
+            };
             let lines = habits
                 .iter()
-                .map(|habit| {
+                .enumerate()
+                .skip(offset)
+                .take(height)
+                .map(|(index, habit)| {
                     let checked = habit.last.starts_with(today) && habit.last != "never";
+                    let selected = active && index == app.selected;
                     Line::from(vec![
+                        Span::styled(
+                            if selected { "▸ " } else { "  " },
+                            if selected {
+                                app.theme.accent()
+                            } else {
+                                app.theme.muted()
+                            },
+                        ),
                         Span::styled(if checked { "[x] " } else { "[ ] " }, app.theme.success()),
-                        Span::styled(habit.name.clone(), app.theme.text()),
+                        Span::styled(
+                            habit.name.clone(),
+                            if selected {
+                                app.theme.selected()
+                            } else {
+                                app.theme.text()
+                            },
+                        ),
                         Span::styled(
                             format!(
                                 "  {} · {} in 28d · last {}",
@@ -525,11 +556,15 @@ fn draw_component(
                     ])
                 })
                 .collect::<Vec<_>>();
-            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+            frame.render_widget(Paragraph::new(lines), inner);
         }
         ComponentBody::MetricHistory { metrics } => {
             let height = usize::from(inner.height) / 2;
-            let offset = if active { app.scroll } else { 0 };
+            let offset = if active {
+                app.selected.saturating_sub(height.saturating_sub(1))
+            } else {
+                0
+            };
             let lines = metrics
                 .iter()
                 .enumerate()
@@ -576,11 +611,15 @@ fn draw_component(
                     ]
                 })
                 .collect::<Vec<_>>();
-            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+            frame.render_widget(Paragraph::new(lines), inner);
         }
         ComponentBody::MilestoneProgress { milestones } => {
             let height = usize::from(inner.height);
-            let offset = if active { app.scroll } else { 0 };
+            let offset = if active {
+                app.selected.saturating_sub(height.saturating_sub(1))
+            } else {
+                0
+            };
             let lines = milestones
                 .iter()
                 .enumerate()
@@ -618,7 +657,7 @@ fn draw_component(
                     ])
                 })
                 .collect::<Vec<_>>();
-            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+            frame.render_widget(Paragraph::new(lines), inner);
         }
         ComponentBody::Missing {
             component_type,
@@ -667,7 +706,11 @@ fn draw_rows(
     let width = usize::from(area.width);
     let title_width = (width * 2 / 3).saturating_sub(4).max(6);
     let subtitle_width = width / 3;
-    let offset = if active { app.scroll } else { 0 };
+    let offset = if active {
+        app.selected.saturating_sub(height.saturating_sub(1))
+    } else {
+        0
+    };
     let visible = component
         .selection
         .iter()
@@ -741,7 +784,11 @@ fn draw_table(
     );
     let mut lines = vec![Line::from(Span::styled(header, app.theme.muted()))];
     let height = usize::from(area.height.saturating_sub(1));
-    let offset = if active { app.scroll } else { 0 };
+    let offset = if active {
+        app.selected.saturating_sub(height.saturating_sub(1))
+    } else {
+        0
+    };
     for (index, row) in rows.iter().enumerate().skip(offset).take(height) {
         let selected = active && index == app.selected;
         let mut spans = vec![Span::styled(
@@ -814,11 +861,32 @@ fn draw_kanban(
         .saturating_sub(visible / 2)
         .min(columns.len().saturating_sub(visible));
     let window = &columns[start..start + visible];
+    let body_area = if columns.len() > visible {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(1)])
+            .split(area);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                format!(
+                    "columns {}-{} of {} · selection follows cards",
+                    start + 1,
+                    start + visible,
+                    columns.len()
+                ),
+                app.theme.muted(),
+            ))),
+            chunks[0],
+        );
+        chunks[1]
+    } else {
+        area
+    };
     let constraints = vec![Constraint::Ratio(1, window.len() as u32); window.len()];
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(constraints)
-        .split(area);
+        .split(body_area);
     let mut next_index = columns[..start]
         .iter()
         .map(|column| column.items.len())
@@ -905,7 +973,10 @@ fn draw_projects_screen(frame: &mut Frame, area: Rect, app: &App) {
         .projects
         .iter()
         .enumerate()
-        .skip(app.project_scroll())
+        .skip(
+            app.projects_selection
+                .saturating_sub(height.saturating_sub(1)),
+        )
         .take(height)
         .map(|(index, project)| {
             let selected = index == app.projects_selection;
@@ -1025,7 +1096,7 @@ fn draw_detail(frame: &mut Frame, area: Rect, app: &App) {
         )));
     }
     let scroll = if app.focus == FocusPane::Detail {
-        app.scroll.min(u16::MAX as usize) as u16
+        app.detail_scroll.min(u16::MAX as usize) as u16
     } else {
         0
     };
@@ -1139,7 +1210,7 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                     ]))
                 })
                 .collect::<Vec<_>>();
-            frame.render_widget(List::new(items), inner);
+            render_selectable_list(frame, inner, items, *selected);
         }
         Modal::Palette {
             query,
@@ -1162,7 +1233,7 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                 chunks[0],
             );
             let items = palette_lines(app, entries, *selected);
-            frame.render_widget(List::new(items), chunks[1]);
+            render_selectable_list(frame, chunks[1], items, *selected);
         }
         Modal::Help => draw_help(frame, popup, app),
         Modal::Detail(detail) => {
@@ -1217,7 +1288,12 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                     ]));
                 }
             }
-            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .wrap(Wrap { trim: false })
+                    .scroll((app.modal_scroll.min(u16::MAX as usize) as u16, 0)),
+                inner,
+            );
         }
         Modal::TodayActions { menu, selected } => {
             let block = modal_block("Today/Next actions", app);
@@ -1262,7 +1338,7 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Min(1), Constraint::Length(1)])
                 .split(inner);
-            frame.render_widget(List::new(items), chunks[0]);
+            render_selectable_list(frame, chunks[0], items, *selected);
             frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
                     "Read-only destinations · revision checked · Esc close",
@@ -1317,7 +1393,7 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                     ]))
                 })
                 .collect::<Vec<_>>();
-            frame.render_widget(List::new(items), chunks[1]);
+            render_selectable_list(frame, chunks[1], items, *selected);
         }
         Modal::Message { title, lines } => {
             let block = modal_block(title, app);
@@ -1333,7 +1409,12 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                     app.theme.muted(),
                 ))))
                 .collect::<Vec<_>>();
-            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .wrap(Wrap { trim: false })
+                    .scroll((app.modal_scroll.min(u16::MAX as usize) as u16, 0)),
+                inner,
+            );
         }
     }
 }
@@ -1482,7 +1563,25 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
             app.theme.muted(),
         )),
     ];
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((app.modal_scroll.min(u16::MAX as usize) as u16, 0)),
+        inner,
+    );
+}
+
+fn render_selectable_list<'a>(
+    frame: &mut Frame,
+    area: Rect,
+    items: Vec<ListItem<'a>>,
+    selected: usize,
+) {
+    let height = usize::from(area.height).max(1);
+    let offset = selected.saturating_sub(height.saturating_sub(1));
+    let mut state = ListState::default();
+    *state.offset_mut() = offset;
+    frame.render_stateful_widget(List::new(items), area, &mut state);
 }
 
 fn palette_lines<'a>(app: &App, entries: &[PaletteEntry], selected: usize) -> Vec<ListItem<'a>> {
@@ -1553,7 +1652,10 @@ fn modal_size(area: Rect, modal: &Modal) -> (u16, u16) {
     let height = match modal {
         Modal::Help => area.height.saturating_sub(4).clamp(12, 32),
         Modal::Detail(detail) => {
-            let content = 8 + detail.fields.len() as u16 + detail.note.lines().count() as u16;
+            let content = 8
+                + detail.fields.len() as u16
+                + detail.note.lines().count() as u16
+                + detail.actions.len() as u16;
             content.min(area.height.saturating_sub(4)).clamp(12, 36)
         }
         Modal::Form(form) => (form.fields.len() as u16 + 8)

@@ -1,0 +1,25 @@
+M28 functional recovery evidence
+Date: 2026-10-22
+
+Workspace:
+- cargo test --workspace --offline: 1,350 passed, 0 failed.
+- cargo test -p orbit-tui: 125 passed.
+- cargo test -p orbit-ui: 14 passed.
+- cargo test -p orbit-client: 305 passed.
+- clippy affected crates --all-targets -D warnings: clean.
+- cargo fmt --all -- --check: clean.
+- documentation: 29 passed.
+
+Real PTY (tests/acceptance/tui):
+- python3 -m pytest -q tests/acceptance/tui: 37 passed.
+- 36 local scenarios: quit/Ctrl+Q/Ctrl+C and unsaved confirm, terminal/cursor restoration,
+  help/history navigation, project/task lifecycle + restart, project settings/criterion
+  preservation, blueprint bind/work-item edit/transition + restart, responsive 60x18,
+  80x24, 100x30, 120x35, 160x45.
+- 1 connected scenario against a disposable authoritative server: accepted replica shell,
+  pending project/task, `f` flush, server acceptance, accepted refresh, earliest=1000 and
+  estimate=30 present in the server snapshot, clean exit.
+
+M15:
+- ./scripts/m15-full-automated.sh --profile full: 42 passed, 0 failed, 0 not_run.
+- Evidence: .agent/evidence/m28-m15-final.zip

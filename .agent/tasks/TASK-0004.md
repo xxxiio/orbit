@@ -6,7 +6,7 @@ project_owned: true
 record_contract: current-task
 record_schema_version: 1
 id: TASK-0004
-status: active
+status: completed
 milestone_id: MILESTONE-0028
 ---
 
@@ -94,8 +94,12 @@ duplicate-safe and clearly reported. Legacy blueprints open without migration.
 ## Validation
 
 ```sh
+cargo build -p orbit-tui -p orbit-cli -p orbit-server --offline
 cargo test -p orbit-blueprint -p orbit-ui -p orbit-client -p orbit-tui --offline
 cargo test --workspace --offline
-cargo clippy -p orbit-blueprint -p orbit-ui -p orbit-client -p orbit-tui -p orbit-storage -p orbit-runtime --all-targets --offline -- -D warnings
+cargo clippy -p orbit-tui -p orbit-client -p orbit-ui --all-targets --offline -- -D warnings
+cargo fmt --all -- --check
+python3 -m pytest -q tests/acceptance/tui
 python3 -m unittest discover -s tests/documentation
+./scripts/m15-full-automated.sh --profile full
 ```

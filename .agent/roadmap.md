@@ -6,7 +6,7 @@ project_owned: true
 record_contract: roadmap
 record_schema_version: 1
 status: current
-current_milestone: MILESTONE-0028
+current_milestone: null
 ---
 
 # Project Roadmap
@@ -325,7 +325,7 @@ MILESTONE-0028
 
 ### MILESTONE-0028 — M28 Project-Centric TUI and Blueprint UI Composition
 
-- **Status:** active
+- **Status:** completed
 - **Outcome:** Users navigate Orbit by project, project blueprints declare reusable views, and a trusted registry renders real application data with authorized actions in a responsive terminal workspace.
 - **Why now:** M27's remaining gap is an external publication gate. M28 is the highest-priority unfinished product work that can be completed locally and replaces six hardcoded tabs with the blueprint-driven workspace the product vision requires.
 - **Depends on:** MILESTONE-0015, MILESTONE-0022, MILESTONE-0023, MILESTONE-0024
@@ -354,29 +354,29 @@ MILESTONE-0028
 - [x] EC-004: A trusted registry provides 13 typed components with empty/loading/error/stale/missing states.
 - [x] EC-005: Blueprints declare multiple named views, legacy projects receive generated defaults, and bundled v2 manifests demonstrate differentiated project types.
 - [x] EC-006: Contextual actions, forms and the command palette share one catalogue, use authorized client calls and suppress duplicate submissions.
-- [x] EC-007: Focused schema, rendering, interaction and architecture tests pass with 1,306 workspace tests.
+- [x] EC-007: Focused schema, rendering, interaction and architecture tests pass with 1,350 workspace tests and 37 real-PTY acceptance items.
 - [x] EC-008: User/developer documentation and GetDone records state actual progress and remaining limitations.
 
 #### Evidence
 
 - EC-001: `cargo test -p orbit-blueprint` 20 tests; `presentation.rs` validation and bundled round-trip.
 - EC-002: `crates/orbit-tui/src/{main,app,render,theme}.rs`; wide/narrow TestBackend tests.
-- EC-003: `crates/orbit-client/src/view_data.rs`; workspace 1,306 tests including view data.
-- EC-004: `crates/orbit-ui` 13 tests; `orbit-tui` 82 tests for metrics, boards, tables and states.
+- EC-003: `crates/orbit-client/src/view_data.rs`; workspace 1,350 tests including local/connected view data and shared backend.
+- EC-004: `crates/orbit-ui` 14 tests; `orbit-tui` 125 tests for metrics, readable boards, tables, details and states.
 - EC-005: bundled v2 JSON views; generated fallback and work-item transition tests.
 - EC-006: action authority/declaration tests; duplicate-submission and palette/search tests.
-- EC-007: `cargo test --workspace --offline` 1,306 passed; full M15 profile 42/42; clippy and fmt clean.
+- EC-007: `cargo test --workspace --offline` 1,350 passed; 37 PTY; full M15 profile 42/42; clippy and fmt clean.
 - EC-008: TUI/blueprint/UI docs and GetDone records.
 
 ##### Remaining work
 
-- Full interactive connected-shell parity (read-only views exist).
-- Local agent review remains inspect-only.
-- Synchronous local loading and unclaimed screenshots.
+- Connected multi-command edits are not atomic; inspect/recover the outbox.
+- Connected blueprint/work-item, habit, metric and note editing remains on the legacy command surface.
+- Agent review/resume is disabled without an explicitly configured runtime or connected review service.
 
 #### Next milestone
 
-MILESTONE-0028
+none
 
 ## Deferred work
 

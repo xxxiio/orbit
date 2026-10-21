@@ -103,7 +103,7 @@ status: current
 - **Source:** RISK-0003
 
 ### TODO-0007 — Adopt the shared Orbit UI renderer in connected mode
-- **Status:** open
+- **Status:** completed
 - **Priority:** P1
 - **Milestone:** MILESTONE-0028
 - **Reason:** Read-only connected project views are implemented over the accepted snapshot; the full connected interactive shell and mutation surface remain command-centric.
@@ -112,6 +112,7 @@ status: current
 - **Unblock condition:** connected replica data can be mapped to `WorkspaceData`/`ProjectData` without bypassing acceptance rules
 - **Acceptance:** Connected mode renders project views through `orbit-ui` and preserves pending/accepted distinctions.
 - **Source:** NEXT-0005
+- **Completion:** Unified `App`/renderer over `backend.rs`; connected project/task pending→flush→accepted PTY test passes.
 
 ### TODO-0008 — Local agent handoff review surface
 - **Status:** open
