@@ -203,6 +203,22 @@ pub const ACTIONS: &[ActionDescriptor] = &[
         destructive: false,
     },
     ActionDescriptor {
+        id: "inspect_evidence",
+        label: "Project evidence",
+        description: "List habits and metrics bound to this project",
+        keys: &[],
+        scope: ActionScope::Project,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "unbind_evidence",
+        label: "Unbind evidence",
+        description: "Remove a habit or metric binding",
+        keys: &[],
+        scope: ActionScope::Project,
+        destructive: false,
+    },
+    ActionDescriptor {
         id: "switch_project",
         label: "Switch project",
         description: "Open the project picker",

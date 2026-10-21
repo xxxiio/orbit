@@ -76,7 +76,8 @@ pinned blueprint version or says `generated default`.
 | `g` then `a` | Agents |
 | `a` or `s` | Contextual action menu |
 | `c` | New task (or new project on the Projects screen) |
-| `C` | New blueprint work item |
+| `C` | New blueprint work item (choose kind, then declared fields) |
+| `e` | Edit the selected task, project or work item |
 | `n` | New knowledge note |
 | `Space` | Record the selected habit occurrence |
 | `p` / `P` | Preview / apply a task schedule |
@@ -120,8 +121,8 @@ explicitly rebound.
 2. Choose **Install bundled blueprint** and enter `research`, `development`,
    `learning` or `habits`.
 3. Open the target project.
-4. Open the palette, choose **Bind blueprint version**, and enter
-   `research@2` (or the installed version).
+4. Open the palette, choose **Bind blueprint version**, and select the installed
+   `research@2` version from the form.
 
 Binding is explicit and pins the version. Installing a newer version does not
 silently change an existing project's views. Existing work items are not
@@ -143,13 +144,10 @@ orbit blueprint bind --help
 - Use `a` to open the contextual action menu. Task status changes are offered
   only when the domain workflow permits them; the authority validates the
   transition again.
-- Create a typed blueprint work item with `C`. The prompt takes a kind followed
-  by `key=value` properties, for example:
-
-  ```text
-  hypothesis question=Does the workflow resolve? confidence=medium
-  ```
-
+- Create a typed blueprint work item with `C`. Orbit first asks for the work-item
+  kind, then renders a form from the pinned blueprint's declared fields. Required
+  fields, choices and integer fields are validated before submission.
+- Edit the selected task, project or work item with `e`, or use the action menu.
 - Move a work item with the action menu. The pinned blueprint controls the
   allowed states and guards. Required capabilities still require a trusted
   host grant; a manifest cannot grant itself authority.
@@ -165,6 +163,17 @@ full value. Lists and boards scroll with the selection.
 On very narrow terminals a view with multiple components shows one focused
 component at a time. The component counter and `h`/`l` let you move without
 losing data.
+
+## Structured forms
+
+Project, task, knowledge, work-item and blueprint operations use a structured
+form rather than a single encoded string. `Tab`/`Shift+Tab` moves between
+fields; `←`/`→` selects a choice or boolean; printable keys edit text; `Enter`
+submits; `Esc` cancels. Validation errors keep the form and all entered values
+visible. The project form includes an optional objective and an already-installed
+blueprint version; the task form includes project, milestone, estimate (minutes)
+and deadline (Unix epoch milliseconds). Blueprint work-item forms are generated
+from the pinned schema.
 
 ## Contextual actions and the command palette
 

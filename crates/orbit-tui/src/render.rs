@@ -1239,8 +1239,26 @@ fn draw_form(frame: &mut Frame, area: Rect, app: &App, form: &FormState) {
         form.hint.clone(),
         app.theme.muted(),
     )));
+    if let Some(error) = &form.error {
+        lines.push(Line::from(Span::styled(
+            format!("error: {error}"),
+            app.theme.danger(),
+        )));
+    }
     lines.push(Line::from(""));
-    for (index, field) in form.fields.iter().enumerate() {
+    let visible_fields = usize::from(inner.height.saturating_sub(6)).max(1);
+    let start = if form.focused >= visible_fields {
+        form.focused + 1 - visible_fields
+    } else {
+        0
+    };
+    for (index, field) in form
+        .fields
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(visible_fields)
+    {
         let focused = index == form.focused;
         let marker = if focused { "▸ " } else { "  " };
         let label_style = if focused {
@@ -1310,12 +1328,6 @@ fn draw_form(frame: &mut Frame, area: Rect, app: &App, form: &FormState) {
         lines.push(Line::from(spans));
     }
     lines.push(Line::from(""));
-    if let Some(error) = &form.error {
-        lines.push(Line::from(Span::styled(
-            format!("error: {error}"),
-            app.theme.danger(),
-        )));
-    }
     lines.push(Line::from(Span::styled(
         "Tab/Shift+Tab field · ←/→ or Space choose/toggle · Enter submit · Esc cancel",
         app.theme.muted(),
@@ -1340,6 +1352,7 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
         Line::from("Enter             open selected item / project"),
         Line::from("a or s            contextual action menu"),
         Line::from("c / C             new task / blueprint work item"),
+        Line::from("e                 edit selected task, project or work item"),
         Line::from("n                 new knowledge note"),
         Line::from("space             record selected habit occurrence"),
         Line::from("p / P             preview / apply plan"),

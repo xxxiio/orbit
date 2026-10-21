@@ -390,6 +390,7 @@ mod tests {
                     key: "mock".into(),
                     description: "Pass an N2 mock exam".into(),
                     required: true,
+                    status: "pending".into(),
                 }],
             })
             .unwrap();
@@ -412,7 +413,7 @@ mod tests {
         let path = temp_db("bridge-contract");
         let client = OrbitClient::open(&path).expect("open client");
         let contract = client.bridge_contract();
-        assert_eq!(contract.api_version, 3);
+        assert_eq!(contract.api_version, 4);
         assert!(contract.primitive_dtos_only);
         assert!(contract.embedded_runtime);
         assert!(contract.refresh_after_sync_pull_required);

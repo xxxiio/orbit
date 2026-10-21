@@ -58,7 +58,7 @@ use orbit_planner::{
     validate_habit_proposal_with_buffers, validate_proposal_with_buffers,
 };
 
-pub const ORBIT_CLIENT_API_VERSION: u32 = 3;
+pub const ORBIT_CLIENT_API_VERSION: u32 = 4;
 
 static CLIENT_ID_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -496,12 +496,16 @@ impl OrbitClient {
             .success_criteria
             .into_iter()
             .map(|criterion| {
-                ProjectSuccessCriterion::new(
+                let status =
+                    SuccessCriterionStatus::parse(&criterion.status).map_err(invalid_input)?;
+                let mut created = ProjectSuccessCriterion::new(
                     criterion.key,
                     criterion.description,
                     criterion.required,
                 )
-                .map_err(invalid_input)
+                .map_err(invalid_input)?;
+                created.set_status(status);
+                Ok::<_, ClientError>(created)
             })
             .collect::<Result<Vec<_>, _>>()?;
         let project = {
@@ -837,6 +841,30 @@ impl OrbitClient {
             orbit_runtime::domain_commands::TaskAction::AddPrerequisite {
                 task_id,
                 prerequisite_id,
+            },
+        )
+    }
+
+    pub fn assign_task_project(
+        &mut self,
+        task_id: String,
+        project_id: Option<String>,
+    ) -> Result<TaskDto, ClientError> {
+        self.apply_task_command(orbit_runtime::domain_commands::TaskAction::AssignProject {
+            task_id,
+            project_id,
+        })
+    }
+
+    pub fn assign_task_milestone(
+        &mut self,
+        task_id: String,
+        milestone_id: Option<String>,
+    ) -> Result<TaskDto, ClientError> {
+        self.apply_task_command(
+            orbit_runtime::domain_commands::TaskAction::AssignMilestone {
+                task_id,
+                milestone_id,
             },
         )
     }

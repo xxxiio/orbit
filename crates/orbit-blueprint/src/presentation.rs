@@ -53,6 +53,8 @@ pub const UI_ACTIONS: &[&str] = &[
     "record_metric",
     "set_metric_target",
     "bind_evidence",
+    "inspect_evidence",
+    "unbind_evidence",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

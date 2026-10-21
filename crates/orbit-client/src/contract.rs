@@ -237,6 +237,8 @@ pub struct ProjectCriterionInputDto {
     pub key: String,
     pub description: String,
     pub required: bool,
+    /// Existing status (`pending`, `satisfied`, `waived`) preserved by edits.
+    pub status: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -18,8 +18,10 @@ evidence directory.
 from __future__ import annotations
 
 import os
+import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -435,3 +437,343 @@ def test_extreme_terminal_sizes_launch_and_quit(tui_factory, size):
 
     session.quit_via(CTRL_Q)
     session.assert_clean_exit()
+
+
+def test_project_task_lifecycle_persists_after_restart(tui_factory):
+    session = tui_factory(120, 35)
+    wait_home(session)
+    open_projects(session)
+
+    session.send(b"c", note="new project")
+    session.wait_for_screen_text("New project", timeout=8.0, description="project form")
+    session.send_text("Lifecycle Project")
+    session.send(ENTER, note="submit project")
+    session.wait_for_screen_regex(
+        r"ORBIT › Lifecycle Project", timeout=10.0, description="new project opened"
+    )
+
+    session.send(b"c", note="new task")
+    session.wait_for_screen_text("New task", timeout=8.0, description="task form")
+    session.send_text("First task")
+    session.send(ENTER, note="submit task")
+    session.wait_until_screen(
+        lambda view: "New task" not in view,
+        timeout=10.0,
+        description="task form to close",
+    )
+    session.wait_for_screen_text("1 tasks", timeout=10.0, description="project refresh")
+    session.send(b"]", note="switch to Work view")
+    session.wait_for_screen_text("Task board", timeout=8.0, description="Work view")
+    session.wait_for_screen_text("First task", timeout=8.0, description="task card")
+    session.send(b"e", note="edit selected task")
+    session.wait_for_screen_text("Edit task", timeout=8.0, description="edit task form")
+    for _ in range(len("First task")):
+        session.send(b"\x7f", note="erase old title")
+    session.send_text("Edited task")
+    session.send(ENTER, note="submit task edit")
+    session.wait_until_screen(
+        lambda view: "Edit task" not in view,
+        timeout=10.0,
+        description="edit form to close",
+    )
+    session.wait_for_screen_text("Edited task", timeout=10.0, description="renamed task")
+
+    session.send(b":", note="open palette")
+    session.wait_for_screen_text("New project", timeout=8.0, description="palette")
+    session.send_text("Move to ready")
+    session.wait_for_screen_text("Move to ready", timeout=8.0, description="status action")
+    session.send(ENTER, note="set task ready")
+    session.wait_for_text("ready", timeout=10.0, description="ready status accepted")
+
+    session.quit_via(CTRL_Q)
+    session.assert_clean_exit()
+    _, persisted_title, persisted_status = _task_row(session.workspace, "Edited task")
+    assert persisted_title == "Edited task"
+    assert persisted_status == "ready", persisted_status
+
+    restarted = TuiSession(
+        session.workspace,
+        cols=120,
+        rows=35,
+        label="lifecycle-restart",
+    )
+    try:
+        restarted.wait_for_text("ORBIT", timeout=10.0)
+        open_projects(restarted)
+        restarted.wait_for_screen_text(
+            "Lifecycle Project", timeout=8.0, description="persisted project"
+        )
+        restarted.send(ENTER, note="open persisted project")
+        restarted.wait_for_screen_regex(
+            r"ORBIT › Lifecycle Project", timeout=10.0, description="persisted project opens"
+        )
+        restarted.send(b"]", note="switch to Work view after restart")
+        restarted.wait_for_screen_text("Task board", timeout=8.0, description="persisted Work view")
+        restarted.wait_for_screen_text(
+            "Edited task", timeout=10.0, description="persisted task title"
+        )
+        restarted.quit_via(CTRL_Q)
+        restarted.assert_clean_exit()
+    finally:
+        restarted.close()
+
+
+
+def _task_row(workspace, title):
+    connection = sqlite3.connect(workspace.db)
+    try:
+        row = connection.execute(
+            "SELECT id,title,status FROM tasks WHERE title=?1", (title,)
+        ).fetchone()
+    finally:
+        connection.close()
+    assert row is not None, f"task {title!r} not persisted"
+    return row
+
+
+def _last_blueprint_item(workspace):
+    connection = sqlite3.connect(workspace.db)
+    try:
+        row = connection.execute(
+            "SELECT id,state,properties_json FROM orbit_blueprint_work_items "
+            "ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+    finally:
+        connection.close()
+    assert row is not None, "no blueprint work item persisted"
+    return row[0], row[1], row[2]
+
+
+def test_blueprint_bind_work_item_edit_and_transition_persist(tui_factory):
+    session = tui_factory(120, 35)
+    wait_home(session)
+    open_projects(session)
+
+    session.send(b"c", note="new project")
+    session.wait_for_screen_text("New project", timeout=8.0, description="project form")
+    session.send_text("Blueprint Project")
+    session.send(ENTER, note="submit project")
+    session.wait_for_screen_regex(
+        r"ORBIT › Blueprint Project", timeout=10.0, description="project opened"
+    )
+
+    session.send(b":", note="palette install blueprint")
+    session.wait_for_screen_text("New project", timeout=8.0, description="palette")
+    session.send_text("Install bundled blueprint")
+    session.wait_for_screen_text("Install bundled blueprint", timeout=8.0, description="install action")
+    session.send(ENTER, note="open install form")
+    session.wait_for_screen_text("Install bundled blueprint", timeout=8.0, description="install form")
+    session.send(ENTER, note="install default bundled blueprint")
+    session.wait_until_screen(
+        lambda view: "Install bundled blueprint" not in view,
+        timeout=10.0,
+        description="install form closes",
+    )
+
+    session.send(b":", note="palette bind blueprint")
+    session.wait_for_screen_text("New project", timeout=8.0, description="palette")
+    session.send_text("Bind blueprint version")
+    session.wait_for_screen_text("Bind blueprint version", timeout=8.0, description="bind action")
+    session.send(ENTER, note="open bind form")
+    session.wait_for_screen_text("Bind blueprint version", timeout=8.0, description="bind form")
+    session.send(ENTER, note="bind default installed version")
+    session.wait_until_screen(
+        lambda view: "Bind blueprint version" not in view,
+        timeout=10.0,
+        description="bind form closes",
+    )
+    session.wait_for_screen_text("development@2", timeout=10.0, description="pinned blueprint header")
+
+    session.send(b"C", note="new work item")
+    session.wait_for_screen_text("New work item", timeout=8.0, description="kind form")
+    session.send(ENTER, note="choose default kind")
+    session.wait_for_screen_text("New feature", timeout=8.0, description="property form")
+    session.send(ENTER, note="submit default properties")
+    session.wait_until_screen(
+        lambda view: "New feature" not in view,
+        timeout=10.0,
+        description="work item form closes",
+    )
+
+    session.send(b"]", note="switch to Board")
+    session.wait_for_screen_text("Task board", timeout=8.0, description="Board view")
+    session.wait_for_screen_text("feature", timeout=8.0, description="work-item board")
+    session.send(b"l", note="focus work-item board")
+    session.wait_for_screen_text("feature", timeout=5.0, description="work-item card")
+    session.send(b"e", note="edit work item")
+    session.wait_for_screen_text("Edit work item", timeout=8.0, description="work-item edit form")
+    session.send(b"\x1b[C", note="select next priority")
+    session.send(ENTER, note="submit work-item edit")
+    session.wait_until_screen(
+        lambda view: "Edit work item" not in view,
+        timeout=10.0,
+        description="work-item edit form closes",
+    )
+
+    session.send(b":", note="palette transition")
+    session.wait_for_screen_text("New project", timeout=8.0, description="palette")
+    session.send_text("Move to ready")
+    session.wait_for_screen_text("Move to ready", timeout=8.0, description="transition action")
+    session.send(ENTER, note="transition work item")
+    session.wait_for_text("ready", timeout=10.0, description="transition accepted")
+
+    session.quit_via(CTRL_Q)
+    session.assert_clean_exit()
+
+    item_id, state, properties = _last_blueprint_item(session.workspace)
+    assert state == "ready", (item_id, state, properties)
+    assert '"priority":"high"' in properties.replace(" ", ""), properties
+
+    restarted = TuiSession(
+        session.workspace,
+        cols=120,
+        rows=35,
+        label="blueprint-restart",
+    )
+    try:
+        restarted.wait_for_text("ORBIT", timeout=10.0)
+        open_projects(restarted)
+        restarted.wait_for_screen_text(
+            "Blueprint Project", timeout=8.0, description="persisted blueprint project"
+        )
+        restarted.send(ENTER, note="open persisted project")
+        restarted.wait_for_screen_regex(
+            r"ORBIT › Blueprint Project", timeout=10.0, description="persisted project opens"
+        )
+        restarted.wait_for_screen_text("development@2", timeout=8.0, description="pinned blueprint")
+        restarted.send(b"]", note="Board after restart")
+        restarted.wait_for_screen_text("Task board", timeout=8.0, description="Board after restart")
+        restarted.send(b"l", note="focus persisted work-item board")
+        restarted.wait_for_screen_text("feature", timeout=8.0, description="persisted work item")
+        restarted.quit_via(CTRL_Q)
+        restarted.assert_clean_exit()
+    finally:
+        restarted.close()
+
+
+def _project_row(workspace, name):
+    connection = sqlite3.connect(workspace.db)
+    try:
+        return connection.execute(
+            "SELECT id,objective FROM projects WHERE name=?1", (name,)
+        ).fetchone()
+    finally:
+        connection.close()
+
+
+def test_project_form_objective_and_validation_do_not_create_partial_rows(tui_factory):
+    session = tui_factory(120, 35)
+    wait_home(session)
+    open_projects(session)
+
+    session.send(b"c", note="new project")
+    session.wait_for_screen_text("New project", timeout=8.0, description="project form")
+    session.send_text("Objective Project")
+    session.send(b"\t", note="focus objective")
+    session.send_text("Ship the objective")
+    session.send(ENTER, note="submit project with objective")
+    session.wait_for_screen_regex(
+        r"ORBIT › Objective Project", timeout=10.0, description="project with objective opens"
+    )
+    row = _project_row(session.workspace, "Objective Project")
+    assert row is not None and row[1] == "Ship the objective", row
+
+    session.send(b"c", note="invalid task form")
+    session.wait_for_screen_text("New task", timeout=8.0, description="task form")
+    session.send_text("Should not exist")
+    for _ in range(3):
+        session.send(b"\t", note="focus next field")
+    session.send_text("0")
+    session.send(ENTER, note="submit invalid estimate")
+    session.wait_for_screen_text("New task", timeout=5.0, description="invalid form remains open")
+    connection = sqlite3.connect(session.workspace.db)
+    try:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM tasks WHERE title='Should not exist'"
+        ).fetchone()[0]
+    finally:
+        connection.close()
+    assert count == 0, "invalid estimate created a task before validation"
+
+    session.send(ESC, note="cancel invalid form")
+    session.quit_via(CTRL_Q)
+    session.assert_clean_exit()
+
+
+def test_project_settings_preserve_satisfied_criterion(tui_factory):
+    session = tui_factory(120, 35)
+    wait_home(session)
+    session.workspace.create_project("Settings Project", cli_binary=os.environ.get("ORBIT_CLI_BIN"))
+    project_id = _project_row(session.workspace, "Settings Project")[0]
+    env = dict(os.environ, ORBIT_DB=str(session.workspace.db))
+    configure = subprocess.run(
+        [
+            str(Path(os.environ.get("ORBIT_CLI_BIN", "target/debug/orbit"))),
+            "--json",
+            "project",
+            "configure",
+            project_id,
+            "--mode",
+            "standard",
+            "--criterion",
+            "ship=Ship",
+        ],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert configure.returncode == 0, configure.stderr
+    satisfied = subprocess.run(
+        [
+            str(Path(os.environ.get("ORBIT_CLI_BIN", "target/debug/orbit"))),
+            "--json",
+            "project",
+            "criterion",
+            project_id,
+            "ship",
+            "satisfied",
+        ],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert satisfied.returncode == 0, satisfied.stderr
+
+    open_projects(session)
+    session.send(b"r", note="refresh seeded project")
+    session.wait_for_screen_text("Settings Project", timeout=8.0, description="seeded settings project")
+    session.send(ENTER, note="open settings project")
+    session.wait_for_screen_regex(r"ORBIT › Settings Project", timeout=10.0, description="settings project opens")
+    session.send(b":", note="palette project settings")
+    session.wait_for_screen_text("New project", timeout=8.0, description="palette")
+    session.send_text("Project settings")
+    session.wait_for_screen_text("Project settings", timeout=8.0, description="settings action")
+    session.send(ENTER, note="open project settings form")
+    session.wait_for_screen_text("Project settings", timeout=8.0, description="settings form")
+    session.send(b"\t", note="focus mode")
+    session.send(b"\t", note="focus objective")
+    session.send_text("Updated objective")
+    session.send(ENTER, note="save settings")
+    session.wait_until_screen(
+        lambda view: "Project settings" not in view,
+        timeout=10.0,
+        description="settings form closes",
+    )
+    session.quit_via(CTRL_Q)
+    session.assert_clean_exit()
+
+    connection = sqlite3.connect(session.workspace.db)
+    try:
+        status = connection.execute(
+            "SELECT status FROM project_success_criteria WHERE project_id=?1 AND criterion_key='ship'",
+            (project_id,),
+        ).fetchone()[0]
+        objective = connection.execute(
+            "SELECT objective FROM projects WHERE id=?1", (project_id,)
+        ).fetchone()[0]
+    finally:
+        connection.close()
+    assert status == "satisfied", status
+    assert objective == "Updated objective", objective

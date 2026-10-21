@@ -4,9 +4,9 @@
 
 ## Version
 
-The current bridge contract is `ORBIT_CLIENT_API_VERSION = 3`. V2 extended the frozen V1 project DTO with project mode, objective, supported progress signals, explicit success criteria, and criterion-status mutations.
+The current bridge contract is `ORBIT_CLIENT_API_VERSION = 4`. V2 extended the frozen V1 project DTO with project mode, objective, supported progress signals, explicit success criteria, and criterion-status mutations.
 
-Breaking DTO/command changes require a client API version bump. Internal domain/storage refactors that preserve the client DTO contract do not.
+V4 adds criterion status to `ProjectCriterionInputDto` so strategy edits preserve satisfied/waived progress. Breaking DTO/command changes require a client API version bump. Internal domain/storage refactors that preserve the client DTO contract do not.
 
 ## Runtime model
 

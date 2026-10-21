@@ -79,6 +79,7 @@ pub struct FormField {
     pub key: String,
     pub label: String,
     pub value: String,
+    pub initial: String,
     pub kind: FormFieldKind,
     pub required: bool,
     pub hint: String,
@@ -241,6 +242,7 @@ pub struct NavigationState {
 struct CursorState {
     active_component: usize,
     selected: Vec<usize>,
+    selected_id: Vec<Option<String>>,
     scroll: Vec<usize>,
 }
 
@@ -374,12 +376,17 @@ impl App {
             return;
         };
         let count = self.component_count();
+        let selected_id = self.selected_item().map(|item| item.id.clone());
         let state = self.cursors.entry(key).or_default();
         state.active_component = self.active_component;
         state.selected.resize(count, 0);
+        state.selected_id.resize(count, None);
         state.scroll.resize(count, 0);
         if let Some(index) = state.selected.get_mut(self.active_component) {
             *index = self.selected;
+        }
+        if let Some(index) = state.selected_id.get_mut(self.active_component) {
+            *index = selected_id.clone();
         }
         if let Some(index) = state.scroll.get_mut(self.active_component) {
             *index = self.scroll;
@@ -398,6 +405,11 @@ impl App {
             .get(self.active_component)
             .copied()
             .unwrap_or(0);
+        let selected_id = state
+            .selected_id
+            .get(self.active_component)
+            .cloned()
+            .flatten();
         let scroll = state
             .scroll
             .get(self.active_component)
@@ -407,6 +419,12 @@ impl App {
             .current_component()
             .map(|component| component.selection.len())
             .unwrap_or(0);
+        let selected = selected_id
+            .and_then(|id| {
+                self.current_component()
+                    .and_then(|component| component.selection.iter().position(|item| item.id == id))
+            })
+            .unwrap_or(selected);
         self.selected = selected.min(len.saturating_sub(1));
         self.scroll = if len == 0 {
             scroll
@@ -906,6 +924,8 @@ impl App {
                 AvailableAction::enabled("install_blueprint", "Install blueprint", None),
                 AvailableAction::enabled("preview_plan", "Preview plan", None),
                 AvailableAction::enabled("bind_evidence", "Bind evidence", None),
+                AvailableAction::enabled("inspect_evidence", "Project evidence", None),
+                AvailableAction::enabled("unbind_evidence", "Unbind evidence", None),
                 AvailableAction::enabled("refresh", "Refresh project", None),
                 AvailableAction::enabled("command_palette", "Command palette", None),
             ] {
@@ -1332,6 +1352,17 @@ impl App {
                 enabled: true,
             });
         }
+        if let Some(state) = &self.project {
+            entries.push(PaletteEntry {
+                label: "Unbind project evidence".into(),
+                description: "Remove a habit or metric binding".into(),
+                action: PaletteAction::Form(FormMode::BindEvidence {
+                    project_id: state.id.clone(),
+                    unbind: true,
+                }),
+                enabled: true,
+            });
+        }
         entries.push(PaletteEntry {
             label: "Keyboard help".into(),
             description: "Show all navigation and action keys".into(),
@@ -1561,6 +1592,42 @@ impl App {
                     });
                 } else {
                     self.notify("Open a project first", StatusKind::Warning);
+                }
+            }
+            "inspect_evidence" => {
+                let project_id = self.project.as_ref().map(|project| project.id.clone());
+                if let Some(project_id) = project_id {
+                    match self.client.list_project_evidence(project_id) {
+                        Ok(bindings) if bindings.is_empty() => {
+                            self.modal = Some(Modal::Message {
+                                title: "Project evidence".into(),
+                                lines: vec![
+                                    "No habits or metrics are bound to this project.".into(),
+                                ],
+                            });
+                        }
+                        Ok(bindings) => {
+                            self.modal = Some(Modal::Message {
+                                title: "Project evidence".into(),
+                                lines: bindings
+                                    .into_iter()
+                                    .map(|binding| format!("{}:{}", binding.kind, binding.id))
+                                    .collect(),
+                            });
+                        }
+                        Err(error) => self.notify(
+                            format!("Evidence unavailable: {}", error.message),
+                            StatusKind::Error,
+                        ),
+                    }
+                }
+            }
+            "unbind_evidence" => {
+                if let Some(state) = &self.project {
+                    self.start_form(FormMode::BindEvidence {
+                        project_id: state.id.clone(),
+                        unbind: true,
+                    });
                 }
             }
             "inspect_dependencies" => {
@@ -2078,10 +2145,12 @@ impl App {
         required: bool,
         hint: &str,
     ) -> FormField {
+        let value = value.into();
         FormField {
             key: key.into(),
             label: label.into(),
-            value: value.into(),
+            initial: value.clone(),
+            value,
             kind: FormFieldKind::Text,
             required,
             hint: hint.into(),
@@ -2095,10 +2164,12 @@ impl App {
         required: bool,
         hint: &str,
     ) -> FormField {
+        let value = value.into();
         FormField {
             key: key.into(),
             label: label.into(),
-            value: value.into(),
+            initial: value.clone(),
+            value,
             kind: FormFieldKind::Integer,
             required,
             hint: hint.into(),
@@ -2106,10 +2177,12 @@ impl App {
     }
 
     fn boolean_field(key: &str, label: &str, value: bool) -> FormField {
+        let value = if value { "true" } else { "false" }.to_owned();
         FormField {
             key: key.into(),
             label: label.into(),
-            value: if value { "true" } else { "false" }.into(),
+            initial: value.clone(),
+            value,
             kind: FormFieldKind::Boolean,
             required: false,
             hint: String::new(),
@@ -2123,10 +2196,12 @@ impl App {
         choices: Vec<FormChoice>,
         required: bool,
     ) -> FormField {
+        let value = value.into();
         FormField {
             key: key.into(),
             label: label.into(),
-            value: value.into(),
+            initial: value.clone(),
+            value,
             kind: FormFieldKind::Choice(choices),
             required,
             hint: String::new(),
@@ -2251,6 +2326,31 @@ impl App {
         self.modal = Some(Modal::Form(form));
     }
 
+    fn project_status_choices(current: &str) -> Vec<FormChoice> {
+        use orbit_domain::ProjectStatus;
+        let current_status = match current {
+            "proposed" => ProjectStatus::Proposed,
+            "active" => ProjectStatus::Active,
+            "on_hold" => ProjectStatus::OnHold,
+            "completed" => ProjectStatus::Completed,
+            "cancelled" => ProjectStatus::Cancelled,
+            "archived" => ProjectStatus::Archived,
+            _ => return Vec::new(),
+        };
+        [
+            ProjectStatus::Proposed,
+            ProjectStatus::Active,
+            ProjectStatus::OnHold,
+            ProjectStatus::Completed,
+            ProjectStatus::Cancelled,
+            ProjectStatus::Archived,
+        ]
+        .into_iter()
+        .filter(|status| current_status.can_transition_to(*status))
+        .map(|status| Self::form_choice(status.as_str(), status.as_str()))
+        .collect()
+    }
+
     fn build_form(&mut self, mode: FormMode) -> Option<FormState> {
         match mode {
             FormMode::NewProject => Some(FormState {
@@ -2308,6 +2408,20 @@ impl App {
                     },
                     fields: vec![
                         Self::text_field("title", "Title", task.title.clone(), true, "required"),
+                        Self::choice_field(
+                            "project",
+                            "Project",
+                            task.project_id.clone().unwrap_or_default(),
+                            self.project_choices(true),
+                            false,
+                        ),
+                        Self::text_field(
+                            "milestone",
+                            "Milestone",
+                            task.milestone_id.clone().unwrap_or_default(),
+                            false,
+                            "optional ID",
+                        ),
                         Self::integer_field(
                             "estimate",
                             "Estimate",
@@ -2343,9 +2457,15 @@ impl App {
             }
             FormMode::AddDependency { task_id } => {
                 let tasks = self
-                    .project
+                    .workspace
                     .as_ref()
-                    .map(|project| project.data.tasks.clone())
+                    .map(|workspace| workspace.tasks.clone())
+                    .filter(|tasks| !tasks.is_empty())
+                    .or_else(|| {
+                        self.project
+                            .as_ref()
+                            .map(|project| project.data.tasks.clone())
+                    })
                     .unwrap_or_default();
                 let choices: Vec<FormChoice> = tasks
                     .iter()
@@ -2379,10 +2499,20 @@ impl App {
             }
             FormMode::RemoveDependency { task_id } => {
                 let task = self
-                    .project
+                    .workspace
                     .as_ref()
-                    .and_then(|project| project.data.tasks.iter().find(|task| task.id == task_id))
-                    .cloned()?;
+                    .and_then(|workspace| workspace.tasks.iter().find(|task| task.id == task_id))
+                    .cloned()
+                    .or_else(|| {
+                        self.project.as_ref().and_then(|project| {
+                            project
+                                .data
+                                .tasks
+                                .iter()
+                                .find(|task| task.id == task_id)
+                                .cloned()
+                        })
+                    })?;
                 if task.prerequisite_ids.is_empty() {
                     self.notify("This task has no prerequisites", StatusKind::Warning);
                     return None;
@@ -2425,17 +2555,7 @@ impl App {
                             "status",
                             "Status",
                             project.status.clone(),
-                            [
-                                "proposed",
-                                "active",
-                                "on_hold",
-                                "completed",
-                                "cancelled",
-                                "archived",
-                            ]
-                            .into_iter()
-                            .map(|status| Self::form_choice(status, status))
-                            .collect(),
+                            Self::project_status_choices(&project.status),
                             true,
                         ),
                         Self::choice_field(
@@ -2541,6 +2661,7 @@ impl App {
                             other => other.to_string(),
                         };
                     }
+                    field.initial = field.value.clone();
                 }
                 Some(FormState {
                     title: format!("Edit work item · {}", item_id),
@@ -2618,18 +2739,23 @@ impl App {
                 let choices = self.metric_choices(true);
                 let selected = metric_id.unwrap_or_else(|| {
                     choices
-                        .first()
+                        .get(1)
                         .map(|choice| choice.value.clone())
                         .unwrap_or_default()
                 });
+                let metric_field = if choices.len() <= 1 {
+                    Self::text_field("metric", "Metric ID", selected.clone(), true, "metric ID")
+                } else {
+                    Self::choice_field("metric", "Metric", selected.clone(), choices, true)
+                };
                 Some(FormState {
                     title: "Metric target".into(),
                     hint: "Baseline and target are integers".into(),
                     mode: FormMode::MetricTarget {
-                        metric_id: Some(selected.clone()),
+                        metric_id: Some(selected),
                     },
                     fields: vec![
-                        Self::choice_field("metric", "Metric", selected, choices, true),
+                        metric_field,
                         Self::integer_field("baseline", "Baseline", "", true, "integer"),
                         Self::integer_field("target", "Target", "", true, "integer"),
                         Self::choice_field(
@@ -2652,18 +2778,23 @@ impl App {
                 let choices = self.metric_choices(true);
                 let selected = metric_id.unwrap_or_else(|| {
                     choices
-                        .first()
+                        .get(1)
                         .map(|choice| choice.value.clone())
                         .unwrap_or_default()
                 });
+                let metric_field = if choices.len() <= 1 {
+                    Self::text_field("metric", "Metric ID", selected.clone(), true, "metric ID")
+                } else {
+                    Self::choice_field("metric", "Metric", selected.clone(), choices, true)
+                };
                 Some(FormState {
                     title: "Record metric observation".into(),
                     hint: "The observation is appended through the authority".into(),
                     mode: FormMode::MetricObservation {
-                        metric_id: Some(selected.clone()),
+                        metric_id: Some(selected),
                     },
                     fields: vec![
-                        Self::choice_field("metric", "Metric", selected, choices, true),
+                        metric_field,
                         Self::integer_field("value", "Value", "", true, "integer"),
                     ],
                     focused: 0,
@@ -2725,8 +2856,8 @@ impl App {
 
     fn form_u32(form: &FormState, key: &str) -> Result<Option<u32>, String> {
         match Self::form_int(form, key, false)? {
-            Some(value) if value > 0 && value <= u32::MAX as i64 => Ok(Some(value as u32)),
-            Some(_) => Err(format!("{key} must be a positive integer")),
+            Some(value) if (1..=525_600).contains(&value) => Ok(Some(value as u32)),
+            Some(_) => Err(format!("{key} must be between 1 and 525600")),
             None => Ok(None),
         }
     }
@@ -2737,6 +2868,16 @@ impl App {
     }
 
     pub fn submit_form(&mut self, form: FormState) {
+        let key = format!("form:{:?}", form.mode);
+        if let Some((last, at)) = &self.last_submission
+            && last == &key
+            && at.elapsed() < Duration::from_millis(250)
+        {
+            self.notify("Duplicate form submission ignored", StatusKind::Warning);
+            self.modal = Some(Modal::Form(form));
+            return;
+        }
+        self.last_submission = Some((key, Instant::now()));
         let mut validation_error = None;
         for field in &form.fields {
             if field.required && field.value.trim().is_empty() {
@@ -2751,6 +2892,7 @@ impl App {
                 break;
             }
             if let FormFieldKind::Choice(choices) = &field.kind
+                && (!field.value.trim().is_empty() || field.required)
                 && !choices.iter().any(|choice| choice.value == field.value)
             {
                 validation_error = Some(format!("{} is not a valid choice", field.label));
@@ -2820,6 +2962,17 @@ impl App {
         }
     }
 
+    fn default_project_signals(mode: &str) -> Vec<String> {
+        orbit_domain::ProjectMode::parse(mode)
+            .map(|mode| {
+                mode.default_signals()
+                    .into_iter()
+                    .map(|signal| signal.as_str().to_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     fn submit_new_project(&mut self, form: &FormState) -> Result<(), String> {
         let name = Self::form_value(form, "name").trim().to_owned();
         let project = self
@@ -2830,32 +2983,47 @@ impl App {
             })
             .map_err(|error| error.message)?;
         let objective = Self::form_value(form, "objective").trim();
-        if !objective.is_empty() {
-            self.client
-                .configure_project_strategy(ConfigureProjectStrategyRequest {
-                    id: project.id.clone(),
-                    mode: "standard".into(),
-                    objective: Some(objective.to_owned()),
-                    progress_signals: Vec::new(),
-                    success_criteria: Vec::new(),
-                })
-                .map_err(|error| error.message)?;
+        let mut warning = None;
+        if !objective.is_empty()
+            && let Err(error) =
+                self.client
+                    .configure_project_strategy(ConfigureProjectStrategyRequest {
+                        id: project.id.clone(),
+                        mode: "standard".into(),
+                        objective: Some(objective.to_owned()),
+                        progress_signals: Self::default_project_signals("standard"),
+                        success_criteria: Vec::new(),
+                    })
+        {
+            warning = Some(format!("objective update failed: {}", error.message));
         }
         let blueprint = Self::form_value(form, "blueprint");
         if !blueprint.is_empty()
             && let Some((id, version)) = blueprint.split_once('@')
         {
-            let version = version
-                .parse::<u32>()
-                .map_err(|_| "blueprint version must be an integer".to_owned())?;
-            self.client
-                .bind_project_blueprint(&project.id, id, version)
-                .map_err(|error| error.message)?;
+            match version.parse::<u32>() {
+                Ok(version) => {
+                    if let Err(error) = self.client.bind_project_blueprint(&project.id, id, version)
+                    {
+                        warning = Some(format!("blueprint binding failed: {}", error.message));
+                    }
+                }
+                Err(_) => {
+                    warning = Some("blueprint version was invalid; project was created".into());
+                }
+            }
         }
         let id = project.id.clone();
         self.refresh_workspace();
         self.open_project(&id);
-        self.notify(format!("Created project {name}"), StatusKind::Success);
+        if let Some(warning) = warning {
+            self.notify(
+                format!("Created project {name}; {warning}"),
+                StatusKind::Warning,
+            );
+        } else {
+            self.notify(format!("Created project {name}"), StatusKind::Success);
+        }
         Ok(())
     }
 
@@ -2864,6 +3032,11 @@ impl App {
         let project = Self::form_value(form, "project").to_owned();
         let project_id = (!project.is_empty()).then_some(project);
         let milestone = Self::form_value(form, "milestone").trim();
+        let estimate = Self::form_u32(form, "estimate")?;
+        let deadline = Self::form_int(form, "deadline", false)?;
+        if deadline.is_some_and(|value| value < 0) {
+            return Err("deadline must be non-negative".into());
+        }
         let task = self
             .client
             .create_task(CreateTaskRequest {
@@ -2873,17 +3046,22 @@ impl App {
                 milestone_id: (!milestone.is_empty()).then(|| milestone.to_owned()),
             })
             .map_err(|error| error.message)?;
-        let estimate = Self::form_u32(form, "estimate")?;
-        let deadline = Self::form_int(form, "deadline", false)?;
-        if estimate.is_some() || deadline.is_some() {
-            self.client
-                .set_task_planning(SetTaskPlanningRequest {
-                    id: task.id.clone(),
-                    estimated_minutes: estimate,
-                    earliest_start_at_ms: None,
-                    deadline_at_ms: deadline,
-                })
-                .map_err(|error| error.message)?;
+        if (estimate.is_some() || deadline.is_some())
+            && let Err(error) = self.client.set_task_planning(SetTaskPlanningRequest {
+                id: task.id.clone(),
+                estimated_minutes: estimate,
+                earliest_start_at_ms: None,
+                deadline_at_ms: deadline,
+            })
+        {
+            self.notify(
+                format!(
+                    "Created task {} but planning was rejected: {}",
+                    task.id, error.message
+                ),
+                StatusKind::Warning,
+            );
+            return Ok(());
         }
         self.notify(format!("Created task {}", task.id), StatusKind::Success);
         Ok(())
@@ -2898,22 +3076,74 @@ impl App {
             .into_iter()
             .find(|task| task.id == task_id)
             .ok_or_else(|| "task no longer exists".to_owned())?;
+        let estimate = Self::form_u32(form, "estimate")?;
+        let earliest = Self::form_int(form, "earliest", false)?;
+        let deadline = Self::form_int(form, "deadline", false)?;
+        if earliest.is_some_and(|value| value < 0) || deadline.is_some_and(|value| value < 0) {
+            return Err("planning timestamps must be non-negative".into());
+        }
+        if let (Some(earliest), Some(deadline)) = (earliest, deadline)
+            && earliest > deadline
+        {
+            return Err("earliest start must not be after the deadline".into());
+        }
+        let project = Self::form_value(form, "project");
+        let project_id = (!project.is_empty()).then(|| project.to_owned());
+        let milestone = Self::form_value(form, "milestone").trim();
+        let milestone_id = (!milestone.is_empty()).then(|| milestone.to_owned());
+        if project_id == current.project_id
+            && let Some(milestone_id) = &milestone_id
+            && let Some(project) = &self.project
+            && project.id == current.project_id.as_deref().unwrap_or("")
+            && !project
+                .data
+                .milestones
+                .iter()
+                .any(|milestone| &milestone.id == milestone_id)
+        {
+            return Err(format!("milestone {milestone_id} is not in this project"));
+        }
+        if project_id != current.project_id {
+            if let Some(project_id) = &project_id
+                && !self
+                    .projects
+                    .iter()
+                    .any(|project| &project.id == project_id)
+            {
+                return Err(format!("project {project_id} is not available"));
+            }
+            if current.milestone_id.is_some() {
+                self.client
+                    .assign_task_milestone(task_id.to_owned(), None)
+                    .map_err(|error| error.message)?;
+            }
+            self.client
+                .assign_task_project(task_id.to_owned(), project_id)
+                .map_err(|error| error.message)?;
+        }
+        if milestone_id != current.milestone_id {
+            self.client
+                .assign_task_milestone(task_id.to_owned(), milestone_id)
+                .map_err(|error| error.message)?;
+        }
         if current.title != title {
             self.client
                 .rename_task(task_id.to_owned(), title)
                 .map_err(|error| error.message)?;
         }
-        let estimate = Self::form_u32(form, "estimate")?;
-        let earliest = Self::form_int(form, "earliest", false)?;
-        let deadline = Self::form_int(form, "deadline", false)?;
-        self.client
-            .set_task_planning(SetTaskPlanningRequest {
-                id: task_id.to_owned(),
-                estimated_minutes: estimate,
-                earliest_start_at_ms: earliest,
-                deadline_at_ms: deadline,
-            })
-            .map_err(|error| error.message)?;
+        if estimate != current.estimated_minutes
+            || earliest != current.earliest_start_at_ms
+            || deadline != current.deadline_at_ms
+        {
+            self.client
+                .set_task_planning(SetTaskPlanningRequest {
+                    id: task_id.to_owned(),
+                    estimated_minutes: estimate,
+                    earliest_start_at_ms: earliest,
+                    deadline_at_ms: deadline,
+                })
+                .map_err(|error| error.message)?;
+        }
         self.notify("Task updated", StatusKind::Success);
         Ok(())
     }
@@ -2943,36 +3173,56 @@ impl App {
             .find(|project| project.id == project_id)
             .cloned()
             .ok_or_else(|| "project not found".to_owned())?;
-        let status = Self::form_value(form, "status");
-        if status != project.status {
+        let status = Self::form_value(form, "status").to_owned();
+        let mode = Self::form_value(form, "mode").to_owned();
+        let objective = {
+            let objective = Self::form_value(form, "objective").trim();
+            (!objective.is_empty()).then(|| objective.to_owned())
+        };
+        let mode_changed = mode != project.mode;
+        let objective_changed = objective != project.objective;
+        if mode_changed || objective_changed {
+            let signals = if mode_changed {
+                Self::default_project_signals(&mode)
+            } else {
+                project.progress_signals.clone()
+            };
             self.client
-                .set_project_status(SetProjectStatusRequest {
+                .configure_project_strategy(ConfigureProjectStrategyRequest {
                     id: project_id.to_owned(),
-                    status: status.to_owned(),
+                    mode,
+                    objective,
+                    progress_signals: signals,
+                    success_criteria: project
+                        .success_criteria
+                        .iter()
+                        .map(|criterion| ProjectCriterionInputDto {
+                            key: criterion.key.clone(),
+                            description: criterion.description.clone(),
+                            required: criterion.required,
+                            status: criterion.status.clone(),
+                        })
+                        .collect(),
                 })
                 .map_err(|error| error.message)?;
         }
-        self.client
-            .configure_project_strategy(ConfigureProjectStrategyRequest {
+        let mut warning = None;
+        if status != project.status
+            && let Err(error) = self.client.set_project_status(SetProjectStatusRequest {
                 id: project_id.to_owned(),
-                mode: Self::form_value(form, "mode").to_owned(),
-                objective: {
-                    let objective = Self::form_value(form, "objective").trim();
-                    (!objective.is_empty()).then(|| objective.to_owned())
-                },
-                progress_signals: project.progress_signals.clone(),
-                success_criteria: project
-                    .success_criteria
-                    .iter()
-                    .map(|criterion| ProjectCriterionInputDto {
-                        key: criterion.key.clone(),
-                        description: criterion.description.clone(),
-                        required: criterion.required,
-                    })
-                    .collect(),
+                status,
             })
-            .map_err(|error| error.message)?;
-        self.notify("Project updated", StatusKind::Success);
+        {
+            warning = Some(error.message);
+        }
+        if let Some(warning) = warning {
+            self.notify(
+                format!("Project settings partially applied; status update failed: {warning}"),
+                StatusKind::Warning,
+            );
+        } else {
+            self.notify("Project updated", StatusKind::Success);
+        }
         Ok(())
     }
 
@@ -3030,6 +3280,9 @@ impl App {
             .map_err(|error| error.to_string())?;
         let mut changes = BTreeMap::new();
         for field in &form.fields {
+            if field.value == field.initial {
+                continue;
+            }
             let value = field.value.trim();
             let definition = definition
                 .fields
@@ -3048,6 +3301,10 @@ impl App {
                 }
             };
             changes.insert(field.key.clone(), value);
+        }
+        if changes.is_empty() {
+            self.notify("No work-item changes to save", StatusKind::Info);
+            return Ok(());
         }
         self.client
             .update_blueprint_work_item(item_id, revision, changes)
