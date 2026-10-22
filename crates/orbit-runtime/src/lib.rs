@@ -9,6 +9,11 @@
 
 mod accepted_application;
 mod command_engine;
+pub(crate) mod default_workflow;
+
+#[cfg(test)]
+#[path = "attachment_authority_tests.rs"]
+mod attachment_authority_tests;
 
 use std::path::Path;
 
@@ -16,6 +21,7 @@ use std::path::Path;
 /// Both REST and MCP invoke these same atomic domain command methods.
 pub mod agent_authority;
 pub mod application_services;
+pub mod attachment_store;
 pub mod authority_milestones;
 pub mod authority_routines;
 pub mod authority_schedule;
@@ -75,6 +81,7 @@ pub type AuthoritySnapshot = (
 pub struct AuthoritativeHost {
     authority: store::AuthorityStore,
     knowledge_vault: knowledge_operations::KnowledgeOperations,
+    attachment_store: attachment_store::AttachmentObjectStore,
 }
 
 impl AuthoritativeHost {
@@ -97,6 +104,28 @@ impl AuthoritativeHost {
         } else {
             path.with_extension("knowledge")
         };
+        let attachment_root = if path == Path::new(":memory:") {
+            std::env::temp_dir().join(format!(
+                "orbit-ephemeral-attachments-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|_| store::AuthorityError::Invalid("clock"))?
+                    .as_nanos()
+            ))
+        } else {
+            path.parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join("attachments")
+                .join("objects")
+        };
+        let max_bytes = std::env::var("ORBIT_ATTACHMENT_MAX_BYTES")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(orbit_domain::DEFAULT_ATTACHMENT_MAX_BYTES);
+        let attachment_store =
+            attachment_store::AttachmentObjectStore::open(&attachment_root, max_bytes)
+                .map_err(|_| store::AuthorityError::Invalid("attachment store unavailable"))?;
         let knowledge_vault = knowledge_operations::KnowledgeOperations::open(&vault_root)
             .map_err(|_| store::AuthorityError::Invalid("knowledge vault unavailable"))?;
         // One SqliteStore instance owns both application entities and the
@@ -111,6 +140,7 @@ impl AuthoritativeHost {
         let mut host = Self {
             authority,
             knowledge_vault,
+            attachment_store,
         };
         host.recover_folder_creates()?;
         host.recover_markdown_commands()?;
@@ -130,8 +160,53 @@ impl AuthoritativeHost {
     }
 
     /// Shared application services used by embedded and server-side adapters.
+    /// Split field borrows let attachment use cases access the object store and
+    /// the SQLite metadata repository in the same call.
     pub(crate) fn application_services(&mut self) -> application_services::ApplicationServices<'_> {
-        application_services::ApplicationServices::new(&mut self.authority.conn)
+        application_services::ApplicationServices::new(
+            &mut self.authority.conn,
+            &mut self.attachment_store,
+        )
+    }
+
+    /// Root directory of the managed, content-addressed attachment store.
+    pub fn attachment_store_root(&self) -> &Path {
+        self.attachment_store.root()
+    }
+
+    /// Attachment metadata associations for one owner in stable creation order.
+    pub fn list_attachments(
+        &self,
+        owner: &orbit_domain::AttachmentOwner,
+    ) -> Result<Vec<orbit_domain::Attachment>, orbit_application::ApplicationError> {
+        orbit_application::AttachmentRepository::list_attachments(&self.authority.conn, owner)
+            .map_err(orbit_application::ApplicationError::from)
+    }
+
+    /// Read one attachment's content after SHA-256 integrity verification.
+    pub fn attachment_content(
+        &self,
+        id: &orbit_domain::AttachmentId,
+    ) -> Result<(orbit_domain::Attachment, Vec<u8>), orbit_application::ApplicationError> {
+        orbit_application::read_attachment_content(&self.authority.conn, &self.attachment_store, id)
+    }
+
+    /// Ordered acceptance criteria for one task.
+    pub fn acceptance_criteria(
+        &self,
+        task_id: &orbit_domain::TaskId,
+    ) -> Result<orbit_domain::AcceptanceCriteria, orbit_application::ApplicationError> {
+        orbit_application::list_acceptance_criteria(&self.authority.conn, task_id)
+    }
+
+    /// Remove content objects no attachment references any more.
+    pub fn purge_attachment_content(
+        &mut self,
+    ) -> Result<usize, orbit_application::ApplicationError> {
+        orbit_application::purge_unreferenced_attachment_content(
+            &mut self.authority.conn,
+            &mut self.attachment_store,
+        )
     }
 
     /// Execute a batch of rich application use cases within one authority-owned

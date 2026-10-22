@@ -8,10 +8,12 @@
 use orbit_client::OrbitClient;
 use orbit_client::unified::{AuthorityConnection, CommandDisposition};
 use orbit_client::{
-    ClientError, ClientErrorCode, ConfigureProjectStrategyRequest, CreateKnowledgeRequest,
-    CreateProjectRequest, CreateTaskRequest, HabitDto, MetricTargetDto, ProjectDto,
-    ProjectEvidenceBindingDto, RecordHabitOccurrenceRequest, SetProjectStatusRequest,
+    AcceptanceCriterionDto, ActivityDto, AttachmentDto, ClientError, ClientErrorCode,
+    ConfigureProjectStrategyRequest, CreateKnowledgeRequest, CreateProjectRequest,
+    CreateTaskRequest, HabitDto, MetricTargetDto, ProjectDto, ProjectEvidenceBindingDto,
+    ProjectWorkflowDto, RecordHabitOccurrenceRequest, SetProjectStatusRequest,
     SetTaskPlanningRequest, SetTaskStatusRequest, TaskDto, TaskPlanProposalDto,
+    WorkflowDescriptorDto,
 };
 use orbit_runtime::domain_commands::{ProjectCommand, TaskAction, TaskCommand};
 use std::path::Path;
@@ -41,6 +43,17 @@ fn unavailable(message: impl Into<String>) -> ClientError {
 
 fn mapped(error: impl std::fmt::Debug) -> ClientError {
     unavailable(format!("{error:?}"))
+}
+
+/// Map a connected-connection error into the shared typed client error so the
+/// shell has one failure contract. Local facade errors keep their code.
+fn connected_error(error: orbit_client::unified::ClientConnectionError) -> ClientError {
+    use orbit_client::unified::ClientConnectionError;
+    match error {
+        ClientConnectionError::Local(error) => error,
+        ClientConnectionError::Unavailable(message) => unavailable(message),
+        other => mapped(other),
+    }
 }
 
 pub enum Backend {
@@ -219,6 +232,9 @@ impl Backend {
                 .tasks
                 .into_iter()
                 .map(|task| TaskDto {
+                    description: String::new(),
+                    priority: None,
+                    labels: Vec::new(),
                     id: task.id,
                     title: task.title,
                     status: task.status,
@@ -270,6 +286,7 @@ impl Backend {
                     .unwrap_or(0);
                 let disposition = connection
                     .create_project(ProjectCommand {
+                        workflow_id: None,
                         command_id: next_id("command"),
                         expected_revision: revision,
                         project_id: id.clone(),
@@ -331,6 +348,9 @@ impl Backend {
                     *pending |= matches!(disposition, CommandDisposition::Pending);
                 }
                 Ok(TaskDto {
+                    description: String::new(),
+                    priority: None,
+                    labels: Vec::new(),
                     id,
                     title: request.title,
                     status: "inbox".into(),
@@ -389,6 +409,9 @@ impl Backend {
                     })
                     .unwrap_or_else(|| "Task".into());
                 Ok(TaskDto {
+                    description: String::new(),
+                    priority: None,
+                    labels: Vec::new(),
                     id: request.id,
                     title,
                     status: request.status,
@@ -411,6 +434,9 @@ impl Backend {
                     title,
                 })?;
                 Ok(TaskDto {
+                    description: String::new(),
+                    priority: None,
+                    labels: Vec::new(),
                     id,
                     title: String::new(),
                     status: String::new(),
@@ -438,6 +464,9 @@ impl Backend {
                     deadline_at_ms: request.deadline_at_ms,
                 })?;
                 Ok(TaskDto {
+                    description: String::new(),
+                    priority: None,
+                    labels: Vec::new(),
                     id: request.id,
                     title: String::new(),
                     status: String::new(),
@@ -464,6 +493,9 @@ impl Backend {
                     prerequisite_id,
                 })?;
                 Ok(TaskDto {
+                    description: String::new(),
+                    priority: None,
+                    labels: Vec::new(),
                     id: task_id,
                     title: String::new(),
                     status: String::new(),
@@ -490,6 +522,9 @@ impl Backend {
                     prerequisite_id,
                 })?;
                 Ok(TaskDto {
+                    description: String::new(),
+                    priority: None,
+                    labels: Vec::new(),
                     id: task_id,
                     title: String::new(),
                     status: String::new(),
@@ -516,6 +551,9 @@ impl Backend {
                     project_id,
                 })?;
                 Ok(TaskDto {
+                    description: String::new(),
+                    priority: None,
+                    labels: Vec::new(),
                     id: task_id,
                     title: String::new(),
                     status: String::new(),
@@ -542,6 +580,9 @@ impl Backend {
                     milestone_id,
                 })?;
                 Ok(TaskDto {
+                    description: String::new(),
+                    priority: None,
+                    labels: Vec::new(),
                     id: task_id,
                     title: String::new(),
                     status: String::new(),
@@ -730,6 +771,9 @@ impl Backend {
         }
     }
 
+    /// Raw pinned binding; the shell prefers `project_workflow` for labels and
+    /// keeps this for connected/legacy diagnostics.
+    #[allow(dead_code)]
     pub fn project_blueprint_binding(
         &self,
         project_id: &str,
@@ -915,6 +959,254 @@ impl Backend {
             Self::Local(client) => client.apply_task_plan(_plan),
             Self::Connected { .. } => Err(unavailable(
                 "task-plan application requires the connected command surface",
+            )),
+        }
+    }
+
+    /// Rich task details (description, priority, labels). Connected mode fails
+    /// closed: the server does not accept these fields yet.
+    pub fn update_task_details(
+        &mut self,
+        task_id: String,
+        description: String,
+        priority: Option<String>,
+        labels: Vec<String>,
+    ) -> Result<TaskDto, ClientError> {
+        match self {
+            Self::Local(client) => {
+                client.update_task_details(task_id, description, priority, labels)
+            }
+            Self::Connected { connection, .. } => connection
+                .update_task_details(task_id, description, priority, labels)
+                .map_err(connected_error),
+        }
+    }
+
+    pub fn acceptance_criteria(
+        &self,
+        task_id: &str,
+    ) -> Result<Vec<AcceptanceCriterionDto>, ClientError> {
+        match self {
+            Self::Local(client) => client.acceptance_criteria(task_id),
+            Self::Connected { connection, .. } => connection
+                .acceptance_criteria(task_id)
+                .map_err(connected_error),
+        }
+    }
+
+    pub fn add_acceptance_criterion(
+        &mut self,
+        task_id: String,
+        text: String,
+    ) -> Result<Vec<AcceptanceCriterionDto>, ClientError> {
+        match self {
+            Self::Local(client) => client.add_acceptance_criterion(task_id, text),
+            Self::Connected { connection, .. } => connection
+                .add_acceptance_criterion(task_id, text)
+                .map_err(connected_error),
+        }
+    }
+
+    pub fn set_acceptance_criterion_text(
+        &mut self,
+        task_id: String,
+        criterion_id: String,
+        text: String,
+    ) -> Result<Vec<AcceptanceCriterionDto>, ClientError> {
+        match self {
+            Self::Local(client) => {
+                client.set_acceptance_criterion_text(task_id, criterion_id, text)
+            }
+            Self::Connected { connection, .. } => connection
+                .set_acceptance_criterion_text(task_id, criterion_id, text)
+                .map_err(connected_error),
+        }
+    }
+
+    pub fn set_acceptance_criterion_completed(
+        &mut self,
+        task_id: String,
+        criterion_id: String,
+        completed: bool,
+    ) -> Result<Vec<AcceptanceCriterionDto>, ClientError> {
+        match self {
+            Self::Local(client) => {
+                client.set_acceptance_criterion_completed(task_id, criterion_id, completed)
+            }
+            Self::Connected { connection, .. } => connection
+                .set_acceptance_criterion_completed(task_id, criterion_id, completed)
+                .map_err(connected_error),
+        }
+    }
+
+    pub fn move_acceptance_criterion(
+        &mut self,
+        task_id: String,
+        criterion_id: String,
+        position: usize,
+    ) -> Result<Vec<AcceptanceCriterionDto>, ClientError> {
+        match self {
+            Self::Local(client) => {
+                client.move_acceptance_criterion(task_id, criterion_id, position)
+            }
+            Self::Connected { connection, .. } => connection
+                .move_acceptance_criterion(task_id, criterion_id, position)
+                .map_err(connected_error),
+        }
+    }
+
+    pub fn remove_acceptance_criterion(
+        &mut self,
+        task_id: String,
+        criterion_id: String,
+    ) -> Result<Vec<AcceptanceCriterionDto>, ClientError> {
+        match self {
+            Self::Local(client) => client.remove_acceptance_criterion(task_id, criterion_id),
+            Self::Connected { connection, .. } => connection
+                .remove_acceptance_criterion(task_id, criterion_id)
+                .map_err(connected_error),
+        }
+    }
+
+    pub fn task_activity(&self, task_id: &str) -> Result<Vec<ActivityDto>, ClientError> {
+        match self {
+            Self::Local(client) => client.task_activity(task_id),
+            Self::Connected { connection, .. } => {
+                connection.task_activity(task_id).map_err(connected_error)
+            }
+        }
+    }
+
+    pub fn list_attachments(
+        &self,
+        owner_kind: &str,
+        owner_id: &str,
+    ) -> Result<Vec<AttachmentDto>, ClientError> {
+        match self {
+            Self::Local(client) => client.list_attachments(owner_kind, owner_id),
+            Self::Connected { connection, .. } => connection
+                .list_attachments(owner_kind, owner_id)
+                .map_err(connected_error),
+        }
+    }
+
+    pub fn import_attachment(
+        &mut self,
+        owner_kind: String,
+        owner_id: String,
+        path: String,
+        description: Option<String>,
+    ) -> Result<AttachmentDto, ClientError> {
+        match self {
+            Self::Local(client) => {
+                client.import_attachment(owner_kind, owner_id, path, description)
+            }
+            Self::Connected { connection, .. } => connection
+                .import_attachment(owner_kind, owner_id, path, description)
+                .map_err(connected_error),
+        }
+    }
+
+    pub fn attachment_content(&self, id: &str) -> Result<(AttachmentDto, Vec<u8>), ClientError> {
+        match self {
+            Self::Local(client) => client.attachment_content(id),
+            Self::Connected { connection, .. } => {
+                connection.attachment_content(id).map_err(connected_error)
+            }
+        }
+    }
+
+    pub fn export_attachment(
+        &self,
+        id: &str,
+        destination: String,
+    ) -> Result<AttachmentDto, ClientError> {
+        match self {
+            Self::Local(client) => client.export_attachment(id, destination),
+            Self::Connected { connection, .. } => connection
+                .export_attachment(id, destination)
+                .map_err(connected_error),
+        }
+    }
+
+    pub fn remove_attachment(&mut self, id: String) -> Result<bool, ClientError> {
+        match self {
+            Self::Local(client) => client.remove_attachment(id),
+            Self::Connected { connection, .. } => {
+                connection.remove_attachment(id).map_err(connected_error)
+            }
+        }
+    }
+
+    pub fn purge_attachment_content(&mut self) -> Result<usize, ClientError> {
+        match self {
+            Self::Local(client) => client.purge_attachment_content(),
+            Self::Connected { connection, .. } => connection
+                .purge_attachment_content()
+                .map_err(connected_error),
+        }
+    }
+
+    /// Workflows available offline. The descriptors are compiled into the
+    /// binary, so this works in both deployment modes.
+    pub fn bundled_workflows(&self) -> Vec<WorkflowDescriptorDto> {
+        match self {
+            Self::Local(client) => client.bundled_workflows(),
+            Self::Connected { .. } => orbit_blueprint::bundled::BUNDLED_BLUEPRINTS
+                .iter()
+                .map(|descriptor| WorkflowDescriptorDto {
+                    id: descriptor.id.to_owned(),
+                    name: descriptor.name.to_owned(),
+                    description: descriptor.description.to_owned(),
+                    version: descriptor.version,
+                    bundled: true,
+                    is_default: descriptor.id == "basic",
+                })
+                .collect(),
+        }
+    }
+
+    pub fn apply_workflow(
+        &mut self,
+        project_id: String,
+        workflow_id: String,
+        version: Option<u32>,
+    ) -> Result<ProjectDto, ClientError> {
+        match self {
+            Self::Local(client) => client.apply_workflow(project_id, workflow_id, version),
+            Self::Connected { .. } => Err(unavailable(
+                "changing a project workflow requires the local authoritative workspace",
+            )),
+        }
+    }
+
+    pub fn project_workflow(
+        &self,
+        project_id: &str,
+    ) -> Result<Option<ProjectWorkflowDto>, ClientError> {
+        match self {
+            Self::Local(client) => client.project_workflow(project_id),
+            Self::Connected { .. } => Ok(None),
+        }
+    }
+
+    /// Directory used for explicit attachment exports and viewer handoff.
+    pub fn attachment_export_dir(&self) -> Result<std::path::PathBuf, ClientError> {
+        match self {
+            Self::Local(client) => Ok(client.attachment_store_root().join("exports")),
+            Self::Connected { .. } => Err(unavailable(
+                "attachment viewing is not available in connected mode in this build",
+            )),
+        }
+    }
+
+    /// Explicitly unpin a project's workflow (falls back to generated views).
+    #[allow(dead_code)]
+    pub fn remove_project_workflow(&mut self, project_id: String) -> Result<bool, ClientError> {
+        match self {
+            Self::Local(client) => client.remove_project_workflow(project_id),
+            Self::Connected { .. } => Err(unavailable(
+                "changing a project workflow requires the local authoritative workspace",
             )),
         }
     }

@@ -12,6 +12,29 @@ status: current
 
 ## Active
 
+### TODO-0011 — Server-authoritative attachment upload and retrieval
+- **Status:** ready
+- **Priority:** P1
+- **Milestone:** MILESTONE-0028
+- **Reason:** Connected attachment operations currently fail closed; required scenario D needs durable upload intents, integrity verification and cross-client retrieval.
+- **Depends on:** none
+- **Blocks:** connected attachment parity and scenario D acceptance
+- **Unblock condition:** none
+- **Acceptance:** A file attached while connected is server-accepted, retrievable by another authorized client, and an interrupted/offline upload retries exactly once with matching checksum and no duplicate content.
+- **Source:** NEXT-0009
+
+### TODO-0012 — Live Herdr Agent Development acceptance
+- **Status:** blocked
+- **Priority:** P2
+- **Milestone:** MILESTONE-0028
+- **Reason:** Agent Development workflow composition exists, but launch/monitor/review/resume could not be exercised without an authorized runtime.
+- **Depends on:** an explicitly configured, authorized Herdr runtime and disposable repository
+- **Blocks:** scenario C acceptance evidence
+- **Unblock condition:** A maintainer provides an authorized runtime configuration
+- **Acceptance:** Launch, monitor, handoff review, correction request, resume and explicit completion are exercised with disposable data and no implicit launch from MCP or Basic.
+- **Source:** TASK-0005
+
+
 ### TODO-0001 — Connected MCP blueprint writes use the canonical outbox and receipts
 - **Status:** ready
 - **Priority:** P1

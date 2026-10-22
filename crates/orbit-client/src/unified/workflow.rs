@@ -106,6 +106,7 @@ impl ProjectBootstrap {
         }
         let mut steps = Vec::with_capacity(self.tasks.len() + 1);
         steps.push(DomainWorkflowStep::Project(ProjectCommand {
+            workflow_id: None,
             command_id: format!("{}-project", self.command_prefix),
             expected_revision: self.base_revision,
             project_id: self.project_id.clone(),

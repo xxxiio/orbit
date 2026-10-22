@@ -463,7 +463,13 @@ impl SqliteStore {
                 .execute_batch(agent_jobs::AGENT_JOB_SCHEMA)
                 .map_err(repo_error)?;
             transaction
-                .execute("UPDATE orbit_schema SET version = 19 WHERE id = 1", [])
+                .execute_batch(TASK_DETAILS_SCHEMA)
+                .map_err(repo_error)?;
+            transaction
+                .execute_batch(ATTACHMENT_SCHEMA)
+                .map_err(repo_error)?;
+            transaction
+                .execute("UPDATE orbit_schema SET version = 20 WHERE id = 1", [])
                 .map_err(repo_error)?;
             return transaction.commit().map_err(repo_error);
         }
@@ -736,6 +742,14 @@ impl SqliteStore {
         transaction
             .execute_batch(agent_jobs::AGENT_JOB_SCHEMA)
             .map_err(repo_error)?;
+        if existing_version < 20 {
+            transaction
+                .execute_batch(TASK_DETAILS_SCHEMA)
+                .map_err(repo_error)?;
+            transaction
+                .execute_batch(ATTACHMENT_SCHEMA)
+                .map_err(repo_error)?;
+        }
         // Retired v12 SQL knowledge storage is not created in fresh workspaces.
         transaction
             .execute(

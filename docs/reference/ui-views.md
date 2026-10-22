@@ -4,6 +4,11 @@ This reference describes the shared, renderer-neutral view schema used by
 `orbit-blueprint` and `orbit-ui`. The schema is consumed by the terminal
 renderer today and is suitable for a future Flutter renderer.
 
+Orbit calls a project manifest a **workflow** in the TUI and in prose. The
+`orbit-blueprint` crate, persisted identifiers, the `orbit blueprint` command
+group and `blueprint.*` MCP tools keep the older name for compatibility; they
+describe the same schema.
+
 ## Location
 
 | Layer | Path | Responsibility |
@@ -18,7 +23,12 @@ renderer today and is suitable for a future Flutter renderer.
 The shared schema has no Ratatui dependency. Renderers receive
 `orbit_ui::ResolvedView` values and must not query storage directly.
 
-## Blueprint views
+## Workflow views
+
+A bundled manifest declares `views`. The default workflow for new projects is
+**Basic** (version 1), which declares `overview`, `tasks`, `board` and
+`timeline` and no specialized work items. Development, Research, Learning and
+Habits are version 2 and declare additional views.
 
 ```json
 {
@@ -119,8 +129,9 @@ read-only providers it accepts; manifests cannot request arbitrary queries.
 | `agent_jobs` | `id`, `state`, `agent`, `task`, `updated`, `machine` |
 | `schedule` | `id`, `title`, `start`, `end`, `target`, `flexibility` |
 
-`priority` is not a core task field. The task source exposes the current status
-as a coarse sorting value; typed priority belongs to a blueprint work-item field.
+`priority` is a core task field (`low`, `medium`, `high`, `urgent`). The task
+source exposes it for sorting, filtering and tables. Descriptions, labels and
+acceptance criteria are not view sources; open the task to read them.
 
 ## Metric aggregates
 
@@ -152,14 +163,14 @@ the view remains renderable and the UI explains the required capability.
 
 ## Actions
 
-The action catalogue lives in `orbit_ui::actions::ACTIONS`. Blueprint action
+The action catalogue lives in `orbit_ui::actions::ACTIONS`. Workflow action
 strings are validated against `UI_ACTIONS`. Contextual availability is computed
 from the selected item:
 
 | Item | Offered actions |
 |---|---|
 | Task | Open, allowed status transitions, dependencies |
-| Work item | Open, allowed blueprint transitions, dependencies |
+| Work item | Open, allowed workflow transitions, dependencies |
 | Habit | Record occurrence |
 | Metric | Record observation, set target |
 | Knowledge | Open note |
@@ -174,13 +185,16 @@ manifest. Every mutation is a typed `OrbitClient` call.
 - Older manifests without `views` parse unchanged.
 - Existing pinned versions keep their definitions and fall back to generated
   views.
-- New bundled manifests use version 2 and demonstrate views.
-- Publishing a version is immutable; rebinding is explicit.
+- New bundled manifests are Basic v1 plus Development, Research, Learning and
+  Habits v2; Basic is the default for new projects.
+- Publishing a version is immutable; applying or changing a workflow is
+  explicit.
 - Unsupported component/source/action IDs fail publication; a runtime registry
   miss degrades to a missing-component panel.
 
 ## Related documentation
 
-- [Blueprint-defined views](../guides/blueprint-views.md)
+- [Workflow-defined views](../guides/blueprint-views.md)
 - [TUI workspace](../guides/tui-workspace.md)
+- [Task details and attachments](../guides/task-details-and-attachments.md)
 - [UI component authoring](../developers/ui-components.md)

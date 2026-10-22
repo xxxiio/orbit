@@ -110,7 +110,10 @@ durable reference. `relations` reports note-to-note links and backlinks;
 
 ## Attachments
 
-Attachments are immutable and content-addressed:
+Note assets are immutable and content-addressed **inside the vault**. They are
+distinct from first-class task/project attachments, which use the workspace
+object store; see
+[task details and attachments](task-details-and-attachments.md).
 
 ```sh
 orbit note asset add NOTE_ID ./diagram.png
@@ -135,10 +138,13 @@ Import preserves stable IDs where present and into an existing vault. Export
 writes a complete copy to a new directory without modifying originals. Review
 the destination before running either command.
 
-## Use notes for task acceptance criteria
+## Task acceptance criteria and notes
 
-There is no task-level acceptance-criteria field. A linked note is a supported
-way to record them:
+Tasks now have first-class acceptance criteria: an ordered list with stable IDs
+and per-criterion completion. Edit them in the TUI with `K`, or over MCP with
+`task.acceptance.*`. They are local-authoritative only in this build. A linked
+note remains useful when the acceptance argument needs longer prose or shared
+context:
 
 ```sh
 orbit note create acceptance.md --id note-acceptance --body "# Acceptance
@@ -148,13 +154,15 @@ orbit note reference note-acceptance task:TASK_ID
 orbit note reference-backlinks task:TASK_ID
 ```
 
-Alternatively, use a project success criterion. State which approach a project
-uses so reviewers know where to look.
+Checking every task criterion never completes the task implicitly; completion
+remains an explicit task transition. See
+[task details and attachments](task-details-and-attachments.md).
 
 ## Backup and limits
 
-Back up the Markdown vault together with the SQLite database. Exporting notes is
-not a database backup, and copying the database alone is not a vault backup.
+Back up the Markdown vault, the SQLite database and the workspace attachment
+object store together. Exporting notes is not a database backup, and copying the
+database alone is not a vault or attachment backup.
 See [backup and recovery](backup-and-recovery.md).
 
 This build has no knowledge command group. The note and folder commands above

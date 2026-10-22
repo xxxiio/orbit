@@ -107,6 +107,12 @@ fn endpoint(command: BlueprintSubcommand) -> Result<BlueprintEndpoint, CliError>
             "blueprints/bind",
             Some(json!({"project_id": project, "id": id, "version": version})),
         ),
+        Apply { .. } | Unbind { .. } => {
+            return Err(CliError::Usage(
+                "changing or unpinning a project workflow is local-authoritative in this build; use the local workspace"
+                    .into(),
+            ));
+        }
         Binding { project } => {
             query.push(("project_id".into(), project));
             ("blueprints/binding", None)

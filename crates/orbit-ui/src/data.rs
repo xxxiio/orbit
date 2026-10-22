@@ -74,6 +74,45 @@ pub struct TaskRow {
     /// Workflow transitions offered by the application layer. The authority
     /// still validates every request; this is presentation input only.
     pub allowed_statuses: Vec<String>,
+    /// Task priority exactly as accepted by the client, e.g. `high`. Empty when
+    /// the task has no priority; the renderer never invents a default.
+    #[serde(default)]
+    pub priority: String,
+    /// Preformatted `YYYY-MM-DD` due date. Empty when the task has no due date.
+    /// Conversion code owns the formatting so renderers stay dependency-free.
+    #[serde(default)]
+    pub due_date: String,
+    /// Acceptance criteria progress. Zero/zero when the task has none.
+    #[serde(default)]
+    pub acceptance_total: usize,
+    #[serde(default)]
+    pub acceptance_completed: usize,
+}
+
+impl TaskRow {
+    /// Minimal constructor for renderers and tests that only know the identity
+    /// columns. Every planning/rich field defaults to empty; callers that have
+    /// richer data should set the remaining fields explicitly.
+    pub fn new(id: impl Into<String>, title: impl Into<String>, status: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+            status: status.into(),
+            ..Self::default()
+        }
+    }
+
+    /// `done/total` acceptance progress, or `None` when the task has no
+    /// criteria. Bounded so the detail view cannot report more done than total.
+    pub fn acceptance_progress(&self) -> Option<(usize, usize)> {
+        if self.acceptance_total == 0 {
+            return None;
+        }
+        Some((
+            self.acceptance_completed.min(self.acceptance_total),
+            self.acceptance_total,
+        ))
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,4 +231,44 @@ impl std::error::Error for ViewDataError {}
 pub trait ViewDataSource {
     fn workspace(&self) -> Result<WorkspaceData, ViewDataError>;
     fn project(&self, project_id: &str) -> Result<ProjectData, ViewDataError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_row_new_defaults_rich_fields() {
+        let row = TaskRow::new("t1", "Title", "ready");
+        assert_eq!(row.id, "t1");
+        assert_eq!(row.title, "Title");
+        assert_eq!(row.status, "ready");
+        assert_eq!(row.priority, "");
+        assert_eq!(row.due_date, "");
+        assert_eq!(row.acceptance_total, 0);
+        assert_eq!(row.acceptance_completed, 0);
+        assert_eq!(row.acceptance_progress(), None);
+    }
+
+    #[test]
+    fn acceptance_progress_is_bounded() {
+        let mut row = TaskRow::new("t1", "Title", "ready");
+        row.acceptance_total = 3;
+        row.acceptance_completed = 9;
+        assert_eq!(row.acceptance_progress(), Some((3, 3)));
+    }
+
+    #[test]
+    fn new_fields_deserialize_when_absent() {
+        let row: TaskRow = serde_json::from_str(
+            r#"{"id":"t1","title":"T","status":"ready","project_id":null,
+                "milestone_id":null,"estimated_minutes":null,
+                "earliest_start_at_ms":null,"deadline_at_ms":null,
+                "actionable":false,"readiness":"ready","prerequisite_ids":[],
+                "blocking_task_ids":[],"allowed_statuses":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(row.priority, "");
+        assert_eq!(row.due_date, "");
+    }
 }

@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn bundled_views_use_only_registered_components_and_sources() {
-        for id in ["development", "research", "learning", "habits"] {
+        for id in ["development", "research", "learning", "habits", "basic"] {
             let blueprint = crate::bundled::bundled_blueprint(id).unwrap();
             assert!(!blueprint.views.is_empty(), "{id} should demonstrate views");
             for view in &blueprint.views {

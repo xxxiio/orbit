@@ -13,8 +13,10 @@ uses commands implemented by the current `orbit` binary; run `orbit --help` or
 
 - A local SQLite workspace for projects, tasks, dependencies and planning.
 - A file-authoritative Markdown knowledge vault alongside the database.
+- A content-addressed attachment object store for tasks, projects and notes.
 - Habits, routines, schedule blocks and deterministic daily planning.
-- Versioned project blueprints for custom workflows.
+- Versioned project workflows (bundled manifests retain the `blueprint` name)
+  for custom work items and views.
 - Optional agent jobs, handoffs and human review through Herdr.
 - Optional connected mode where a self-hosted server is authoritative.
 
@@ -32,7 +34,7 @@ uses commands implemented by the current `orbit` binary; run `orbit --help` or
 1. Install Orbit and put the install prefix on `PATH`.
 2. Run `orbit init`, then `orbit doctor`.
 3. Create a project, add two tasks and make one depend on the other.
-4. Capture acceptance criteria in a note or a project success criterion.
+4. Add acceptance criteria to a task (or capture longer criteria in a note).
 5. Complete a task and inspect the result.
 
 - [Local quickstart](getting-started/quickstart.md) — a complete first session with representative output.
@@ -43,7 +45,8 @@ uses commands implemented by the current `orbit` binary; run `orbit --help` or
 ## Terminal workspace
 
 - [The Orbit terminal workspace](guides/tui-workspace.md) — project-centric navigation, keyboard, panels and agent monitoring.
-- [Blueprint-defined project views](guides/blueprint-views.md) — declare overviews, boards, tables, metrics and detail views.
+- [Workflow-defined project views](guides/blueprint-views.md) — declare overviews, boards, tables, metrics and detail views; Basic is the default.
+- [Task details, acceptance criteria and attachments](guides/task-details-and-attachments.md) — rich task fields, ordered criteria and the managed attachment store.
 - [UI view reference](reference/ui-views.md) — exact component, source, binding and action schema.
 - [UI component and renderer development](developers/ui-components.md) — registration, data providers, actions and future Flutter integration.
 
@@ -51,15 +54,15 @@ uses commands implemented by the current `orbit` binary; run `orbit --help` or
 
 - [Projects and planning](guides/projects-and-planning.md) — modes, criteria, dependencies, readiness and planning.
 - [Habits, routines and schedules](guides/habits-routines-schedules.md) — recurring personal work and calendar blocks.
-- [Notes and folders](guides/notes-and-folders.md) — the Markdown vault, references and attachments.
+- [Notes and folders](guides/notes-and-folders.md) — the Markdown vault, references and vault assets.
 - [Search and navigation](guides/search-and-navigation.md) — `search`, `today`, `status` and task drilldowns.
-- [Backup and recovery](guides/backup-and-recovery.md) — database, vault and update backups.
+- [Backup and recovery](guides/backup-and-recovery.md) — database, vault, attachment object store and update backups.
 - [Development projects](guides/development-projects.md) — a software project from task to accepted change.
 - [Learning projects](guides/learning-projects.md) — learning evidence, notes and review.
 - [Research workflow](guides/research-workflow.md) — research questions, evidence and decision memos.
 - [Offline operation](guides/offline-operation.md) — local authority, replica queues and pending work.
 
-## Blueprints
+## Workflows (blueprints)
 
 - [Blueprints versus tasks](guides/blueprints-vs-tasks.md) — when a custom work item is the right model.
 - [Custom workflow walkthrough](guides/blueprint-walkthrough.md) — export, edit, validate, publish and bind.

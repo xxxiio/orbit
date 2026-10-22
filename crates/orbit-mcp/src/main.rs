@@ -9,6 +9,7 @@
 mod blueprint_tools;
 mod connected_backend;
 mod embedded_backend;
+mod rich_tools;
 
 use std::{
     collections::BTreeSet,
@@ -234,6 +235,11 @@ fn connected_tool_list() -> Value {
             "projects.list",
             "Read accepted projects from last server snapshot"
         ),
+        // The accepted connected snapshot carries only task identity, title,
+        // status, project/milestone and planning fields. It does not project
+        // description, priority, labels, acceptance criteria, per-task activity
+        // or attachments, so the local-only task.get/task.activity and all
+        // attachment tools are intentionally not advertised here.
         tool(
             "tasks.list",
             "Read accepted tasks from last server snapshot"
@@ -546,10 +552,155 @@ fn tool_list() -> Value {
         ),
         tool("milestone.set_status", "Transition a milestone"),
         tool("habit.set_active", "Pause/resume a habit"),
+        schema_tool(
+            "task.get",
+            "Read one task with description, priority, labels, lifecycle, planning fields and ordered acceptance criteria",
+            json!({"id":{"type":"string","description":"Task id"}}),
+            json!(["id"]),
+        ),
+        schema_tool(
+            "task.update",
+            "Update an existing task's description, priority and/or labels; omitted fields keep their current value",
+            json!({
+                "id":{"type":"string","description":"Task id"},
+                "description":{"type":"string","description":"Markdown-compatible description"},
+                "priority":{"type":"string","enum":["low","medium","high","urgent","none"],
+                    "description":"Priority label; none clears it"},
+                "labels":{"type":"array","items":{"type":"string"},
+                    "description":"Complete replacement label list, normalised by the task aggregate"},
+            }),
+            json!(["id"]),
+        ),
+        schema_tool(
+            "task.acceptance.list",
+            "List the ordered acceptance criteria for a task",
+            json!({"task_id":{"type":"string"}}),
+            json!(["task_id"]),
+        ),
+        schema_tool(
+            "task.acceptance.add",
+            "Append an acceptance criterion; checking criteria never changes task status",
+            json!({"task_id":{"type":"string"},"text":{"type":"string"}}),
+            json!(["task_id", "text"]),
+        ),
+        schema_tool(
+            "task.acceptance.update",
+            "Replace one acceptance criterion's text, preserving completion and position",
+            json!({"task_id":{"type":"string"},"criterion_id":{"type":"string"},"text":{"type":"string"}}),
+            json!(["task_id", "criterion_id", "text"]),
+        ),
+        schema_tool(
+            "task.acceptance.check",
+            "Check or reopen one acceptance criterion; task status must still be changed explicitly",
+            json!({"task_id":{"type":"string"},"criterion_id":{"type":"string"},
+                "completed":{"type":"boolean","default":true}}),
+            json!(["task_id", "criterion_id"]),
+        ),
+        schema_tool(
+            "task.acceptance.reorder",
+            "Move one acceptance criterion to a zero-based position",
+            json!({"task_id":{"type":"string"},"criterion_id":{"type":"string"},
+                "position":{"type":"integer","minimum":0}}),
+            json!(["task_id", "criterion_id", "position"]),
+        ),
+        schema_tool(
+            "task.acceptance.remove",
+            "Remove one acceptance criterion from the ordered list",
+            json!({"task_id":{"type":"string"},"criterion_id":{"type":"string"}}),
+            json!(["task_id", "criterion_id"]),
+        ),
+        schema_tool(
+            "task.activity",
+            "Read durable semantic activity for one task, newest first",
+            json!({"task_id":{"type":"string"},
+                "limit":{"type":"integer","minimum":0,"maximum":200,"default":50}}),
+            json!(["task_id"]),
+        ),
+        schema_tool(
+            "project.create",
+            "Create a project through the same authority service as the CLI/TUI; Basic is bound automatically and an explicit workflow is applied afterwards. Never launches an agent",
+            json!({
+                "id":{"type":"string","description":"Optional project id; required under a scoped policy"},
+                "name":{"type":"string"},
+                "workflow":{"type":"string","default":"basic",
+                    "description":"Bundled workflow id to bind after creation"},
+            }),
+            json!(["name"]),
+        ),
+        schema_tool(
+            "workflow.list",
+            "List bundled workflows and, when project_id is supplied, the project's bound workflow",
+            json!({"project_id":{"type":"string"}}),
+            json!([]),
+        ),
+        schema_tool(
+            "workflow.apply",
+            "Bind a project to a workflow version; this is the user-facing workflow alias of the blueprint binding operation",
+            json!({"project_id":{"type":"string"},"workflow_id":{"type":"string"},
+                "version":{"type":"integer","minimum":0}}),
+            json!(["project_id", "workflow_id"]),
+        ),
+        schema_tool(
+            "attachment.list",
+            "List attachment metadata for an owner in stable creation order",
+            json!({"owner_kind":{"type":"string",
+                    "enum":["task","project","work_item","knowledge","agent_job"]},
+                "owner_id":{"type":"string"}}),
+            json!(["owner_kind", "owner_id"]),
+        ),
+        schema_tool(
+            "attachment.inspect",
+            "Read attachment metadata plus content availability and size",
+            json!({"id":{"type":"string"}}),
+            json!(["id"]),
+        ),
+        schema_tool(
+            "attachment.add",
+            "Explicitly import one regular local file as an attachment association; symlinks and non-regular files are rejected",
+            json!({"owner_kind":{"type":"string",
+                    "enum":["task","project","work_item","knowledge","agent_job"]},
+                "owner_id":{"type":"string"},"path":{"type":"string"},
+                "description":{"type":"string"}}),
+            json!(["owner_kind", "owner_id", "path"]),
+        ),
+        schema_tool(
+            "attachment.read",
+            "Read attachment metadata and base64 content within an explicit byte limit",
+            json!({"id":{"type":"string"},
+                "max_bytes":{"type":"integer","minimum":1,"maximum":4194304,"default":1048576}}),
+            json!(["id"]),
+        ),
+        schema_tool(
+            "attachment.remove",
+            "Remove one attachment association",
+            json!({"id":{"type":"string"}}),
+            json!(["id"]),
+        ),
+        schema_tool(
+            "attachment.associate",
+            "Associate existing attachment content with another owner without duplicating the content object",
+            json!({"source_id":{"type":"string"},
+                "owner_kind":{"type":"string",
+                    "enum":["task","project","work_item","knowledge","agent_job"]},
+                "owner_id":{"type":"string"}}),
+            json!(["source_id", "owner_kind", "owner_id"]),
+        ),
     ])
 }
 fn tool(name: &str, description: &str) -> Value {
     json!({"name":name,"description":description,"inputSchema":{"type":"object","additionalProperties":true}})
+}
+fn schema_tool(name: &str, description: &str, properties: Value, required: Value) -> Value {
+    json!({
+        "name":name,
+        "description":description,
+        "inputSchema":{
+            "type":"object",
+            "properties":properties,
+            "required":required,
+            "additionalProperties":false,
+        }
+    })
 }
 
 fn main() {
@@ -1260,6 +1411,7 @@ mod connected_authority_mcp_tests {
                 .project_command(
                     "setup",
                     ProjectCommand {
+                        workflow_id: None,
                         command_id: format!("project-{project}"),
                         expected_revision: revision,
                         project_id: project.into(),
@@ -2269,5 +2421,484 @@ mod planning_scenario_mcp_contract_tests {
                 )
                 .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod rich_mcp_tests {
+    use super::*;
+
+    fn developer(projects: &[&str]) -> Server {
+        Server {
+            authority: AuthoritativeHost::open(":memory:").unwrap(),
+            policy: AgentPolicy {
+                agent_id: "codex".into(),
+                session_id: "rich".into(),
+                mode: Mode::Developer,
+                projects: projects.iter().map(|id| (*id).to_owned()).collect(),
+                allow_unscoped_execution: false,
+                allow_unscoped_knowledge: false,
+            },
+        }
+    }
+
+    fn temp_file(contents: &[u8]) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "orbit-mcp-attachment-{}-{}.txt",
+            process::id(),
+            new_id("tmp").replace(':', "_")
+        ));
+        std::fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn project_create_binds_basic_and_task_details_roundtrip() {
+        let mut server = developer(&[]);
+        let created = server
+            .dispatch(
+                "project.create",
+                &json!({"id":"project-one","name":"Project One"}),
+            )
+            .unwrap();
+        assert_eq!(created["workflow"]["id"], "basic");
+        assert_eq!(created["workflow"]["version"], 1);
+
+        let workflows = server
+            .dispatch("workflow.list", &json!({"project_id":"project-one"}))
+            .unwrap();
+        assert_eq!(workflows["binding"]["workflow_id"], "basic");
+        assert_eq!(workflows["binding"]["version"], 1);
+        assert!(
+            workflows["workflows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|workflow| workflow["id"] == "basic" && workflow["default"] == true)
+        );
+
+        server
+            .dispatch(
+                "task.create",
+                &json!({"id":"task-one","project_id":"project-one","title":"Write docs"}),
+            )
+            .unwrap();
+        let updated = server
+            .dispatch(
+                "task.update",
+                &json!({
+                    "id":"task-one",
+                    "description":"Explain the workflow",
+                    "priority":"high",
+                    "labels":["docs","mcp"],
+                }),
+            )
+            .unwrap();
+        assert_eq!(updated["description"], "Explain the workflow");
+        assert_eq!(updated["priority"], "high");
+        assert_eq!(updated["labels"], json!(["docs", "mcp"]));
+
+        let projected = server
+            .dispatch("task.get", &json!({"id":"task-one"}))
+            .unwrap();
+        assert_eq!(projected["description"], "Explain the workflow");
+        assert_eq!(projected["priority"], "high");
+        assert_eq!(projected["labels"], json!(["docs", "mcp"]));
+        assert_eq!(projected["project_id"], "project-one");
+        assert_eq!(projected["status"], "inbox");
+        assert_eq!(projected["acceptance_criteria"], json!([]));
+        assert!(projected["planning"].is_object());
+
+        // Omitted fields keep their current value.
+        let partial = server
+            .dispatch(
+                "task.update",
+                &json!({"id":"task-one","description":"Updated"}),
+            )
+            .unwrap();
+        assert_eq!(partial["description"], "Updated");
+        assert_eq!(partial["priority"], "high");
+        assert_eq!(partial["labels"], json!(["docs", "mcp"]));
+
+        let error = server
+            .dispatch(
+                "task.update",
+                &json!({"id":"task-one","priority":"blocker"}),
+            )
+            .unwrap_err();
+        assert!(error.contains("low, medium, high, urgent, none"), "{error}");
+        assert!(
+            server
+                .dispatch("task.update", &json!({"id":"task-one"}))
+                .unwrap_err()
+                .contains("at least one")
+        );
+
+        // None of the rich operations may launch an agent job.
+        assert!(
+            server
+                .authority
+                .agent_jobs_needing_attention_authoritatively("device-1")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn acceptance_criteria_are_ordered_and_never_complete_the_task() {
+        let mut server = developer(&[]);
+        server
+            .dispatch("project.create", &json!({"id":"p","name":"P"}))
+            .unwrap();
+        server
+            .dispatch(
+                "task.create",
+                &json!({"id":"t","project_id":"p","title":"Task"}),
+            )
+            .unwrap();
+
+        let first = server
+            .dispatch(
+                "task.acceptance.add",
+                &json!({"task_id":"t","text":"First"}),
+            )
+            .unwrap();
+        let first_id = first["criteria"][0]["id"].as_str().unwrap().to_owned();
+        let second = server
+            .dispatch(
+                "task.acceptance.add",
+                &json!({"task_id":"t","text":"Second"}),
+            )
+            .unwrap();
+        let second_id = second["criteria"][1]["id"].as_str().unwrap().to_owned();
+
+        let checked = server
+            .dispatch(
+                "task.acceptance.check",
+                &json!({"task_id":"t","criterion_id":first_id}),
+            )
+            .unwrap();
+        assert_eq!(checked["criteria"][0]["completed"], true);
+        // Default is completed=true, and checking all criteria is not a task
+        // transition by itself.
+        server
+            .dispatch(
+                "task.acceptance.check",
+                &json!({"task_id":"t","criterion_id":second_id}),
+            )
+            .unwrap();
+        assert_eq!(
+            server.dispatch("task.get", &json!({"id":"t"})).unwrap()["status"],
+            "inbox"
+        );
+
+        server
+            .dispatch(
+                "task.acceptance.update",
+                &json!({"task_id":"t","criterion_id":first_id,"text":"First revised"}),
+            )
+            .unwrap();
+        let reordered = server
+            .dispatch(
+                "task.acceptance.reorder",
+                &json!({"task_id":"t","criterion_id":second_id,"position":0}),
+            )
+            .unwrap();
+        assert_eq!(reordered["criteria"][0]["id"], second_id);
+        assert_eq!(reordered["criteria"][1]["text"], "First revised");
+
+        let listed = server
+            .dispatch("task.acceptance.list", &json!({"task_id":"t"}))
+            .unwrap();
+        assert_eq!(listed["criteria"].as_array().unwrap().len(), 2);
+        let removed = server
+            .dispatch(
+                "task.acceptance.remove",
+                &json!({"task_id":"t","criterion_id":first_id}),
+            )
+            .unwrap();
+        assert_eq!(removed["criteria"].as_array().unwrap().len(), 1);
+
+        // The lifecycle still requires an explicit transition chain.
+        for status in ["ready", "in_progress", "done"] {
+            server
+                .dispatch(
+                    "task.set_status",
+                    &json!({"id":"t","status":status,"command_id":format!("status-{status}")}),
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            server.dispatch("task.get", &json!({"id":"t"})).unwrap()["status"],
+            "done"
+        );
+    }
+
+    #[test]
+    fn attachment_add_list_inspect_read_associate_and_remove_roundtrip() {
+        let mut server = developer(&[]);
+        server
+            .dispatch("project.create", &json!({"id":"p","name":"P"}))
+            .unwrap();
+        for id in ["t1", "t2"] {
+            server
+                .dispatch("task.create", &json!({"id":id,"project_id":"p","title":id}))
+                .unwrap();
+        }
+        let content = b"hello attachment";
+        let path = temp_file(content);
+        let added = server
+            .dispatch(
+                "attachment.add",
+                &json!({
+                    "owner_kind":"task","owner_id":"t1","path":path.to_str().unwrap(),
+                    "description":"test fixture",
+                }),
+            )
+            .unwrap();
+        let attachment_id = added["id"].as_str().unwrap().to_owned();
+        assert_eq!(added["owner_id"], "t1");
+        assert_eq!(added["size_bytes"], content.len());
+        assert_eq!(added["description"], "test fixture");
+
+        let listed = server
+            .dispatch(
+                "attachment.list",
+                &json!({"owner_kind":"task","owner_id":"t1"}),
+            )
+            .unwrap();
+        assert_eq!(listed["attachments"].as_array().unwrap().len(), 1);
+
+        let inspected = server
+            .dispatch("attachment.inspect", &json!({"id":attachment_id}))
+            .unwrap();
+        assert_eq!(inspected["content_available"], true);
+        assert_eq!(inspected["content_size"], content.len());
+
+        let read = server
+            .dispatch("attachment.read", &json!({"id":attachment_id}))
+            .unwrap();
+        assert_eq!(read["content_omitted"], false);
+        assert_eq!(read["content"], rich_tools::base64_encode(content));
+
+        let omitted = server
+            .dispatch(
+                "attachment.read",
+                &json!({"id":attachment_id,"max_bytes":4}),
+            )
+            .unwrap();
+        assert_eq!(omitted["content_omitted"], true);
+        assert_eq!(omitted["content_size"], content.len());
+        assert!(omitted.get("content").is_none());
+
+        let associated = server
+            .dispatch(
+                "attachment.associate",
+                &json!({"source_id":attachment_id,"owner_kind":"task","owner_id":"t2"}),
+            )
+            .unwrap();
+        let second_id = associated["id"].as_str().unwrap().to_owned();
+        assert_eq!(associated["owner_id"], "t2");
+        assert_eq!(associated["checksum"], added["checksum"]);
+
+        let removed = server
+            .dispatch("attachment.remove", &json!({"id":attachment_id}))
+            .unwrap();
+        assert_eq!(removed["removed"], true);
+        assert_eq!(removed["content_removed"], false);
+
+        // The second association still shares the same immutable content.
+        let still_readable = server
+            .dispatch("attachment.read", &json!({"id":second_id}))
+            .unwrap();
+        assert_eq!(
+            still_readable["content"],
+            rich_tools::base64_encode(content)
+        );
+
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn attachment_add_rejects_symlinks_and_directories() {
+        let mut server = developer(&[]);
+        server
+            .dispatch("project.create", &json!({"id":"p","name":"P"}))
+            .unwrap();
+        server
+            .dispatch(
+                "task.create",
+                &json!({"id":"t","project_id":"p","title":"T"}),
+            )
+            .unwrap();
+        let directory = std::env::temp_dir().join(format!(
+            "orbit-mcp-attachment-dir-{}-{}",
+            process::id(),
+            new_id("tmp")
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let error = server
+            .dispatch(
+                "attachment.add",
+                &json!({
+                    "owner_kind":"task","owner_id":"t",
+                    "path":directory.to_str().unwrap(),
+                }),
+            )
+            .unwrap_err();
+        assert!(error.contains("not a regular file"), "{error}");
+
+        #[cfg(unix)]
+        {
+            let target = temp_file(b"target");
+            let link = directory.join("link.txt");
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            let error = server
+                .dispatch(
+                    "attachment.add",
+                    &json!({
+                        "owner_kind":"task","owner_id":"t",
+                        "path":link.to_str().unwrap(),
+                    }),
+                )
+                .unwrap_err();
+            assert!(error.contains("symbolic link"), "{error}");
+            std::fs::remove_file(target).unwrap();
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn project_scope_denies_hidden_task_and_attachment_operations() {
+        let mut server = developer(&[]);
+        for (project, task) in [("hidden", "hidden-task"), ("allowed", "allowed-task")] {
+            server
+                .dispatch("project.create", &json!({"id":project,"name":project}))
+                .unwrap();
+            server
+                .dispatch(
+                    "task.create",
+                    &json!({"id":task,"project_id":project,"title":task}),
+                )
+                .unwrap();
+        }
+        server.policy.projects.insert("allowed".into());
+
+        for (tool, args) in [
+            ("task.get", json!({"id":"hidden-task"})),
+            (
+                "task.update",
+                json!({"id":"hidden-task","description":"no"}),
+            ),
+            ("task.acceptance.list", json!({"task_id":"hidden-task"})),
+            (
+                "attachment.list",
+                json!({"owner_kind":"project","owner_id":"hidden"}),
+            ),
+            (
+                "attachment.list",
+                json!({"owner_kind":"task","owner_id":"hidden-task"}),
+            ),
+        ] {
+            let error = server.dispatch(tool, &args).unwrap_err();
+            assert!(error.contains("scope"), "{tool}: {error}");
+        }
+        let path = temp_file(b"invisible");
+        let error = server
+            .dispatch(
+                "attachment.add",
+                &json!({
+                    "owner_kind":"task","owner_id":"hidden-task",
+                    "path":path.to_str().unwrap(),
+                }),
+            )
+            .unwrap_err();
+        assert!(error.contains("scope"), "{error}");
+        std::fs::remove_file(path).unwrap();
+
+        // The allowed project remains fully usable.
+        server
+            .dispatch(
+                "task.update",
+                &json!({"id":"allowed-task","description":"visible"}),
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn read_only_mode_denies_task_update_and_attachment_add() {
+        let mut server = developer(&[]);
+        server
+            .dispatch("project.create", &json!({"id":"p","name":"P"}))
+            .unwrap();
+        server
+            .dispatch(
+                "task.create",
+                &json!({"id":"t","project_id":"p","title":"T"}),
+            )
+            .unwrap();
+        server.policy.mode = Mode::ReadOnly;
+        let error = server
+            .dispatch("task.update", &json!({"id":"t","description":"no"}))
+            .unwrap_err();
+        assert!(error.contains("read-only"), "{error}");
+        let path = temp_file(b"denied");
+        let error = server
+            .dispatch(
+                "attachment.add",
+                &json!({
+                    "owner_kind":"task","owner_id":"t","path":path.to_str().unwrap(),
+                }),
+            )
+            .unwrap_err();
+        assert!(error.contains("read-only"), "{error}");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn rich_tools_advertise_object_schemas_in_local_mode_only() {
+        let tools = tool_list();
+        let required = [
+            "task.get",
+            "task.update",
+            "task.acceptance.list",
+            "task.acceptance.add",
+            "task.acceptance.update",
+            "task.acceptance.check",
+            "task.acceptance.reorder",
+            "task.acceptance.remove",
+            "task.activity",
+            "project.create",
+            "workflow.list",
+            "workflow.apply",
+            "attachment.list",
+            "attachment.inspect",
+            "attachment.add",
+            "attachment.read",
+            "attachment.remove",
+            "attachment.associate",
+        ];
+        for name in required {
+            let tool = tools
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap_or_else(|| panic!("missing {name}"));
+            assert_eq!(tool["inputSchema"]["type"], "object", "{name}");
+            assert_eq!(tool["inputSchema"]["additionalProperties"], false, "{name}");
+            assert!(tool["inputSchema"]["properties"].is_object(), "{name}");
+        }
+        let connected = connected_tool_list();
+        for name in required {
+            assert!(
+                !connected
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|tool| tool["name"] == name),
+                "connected mode must not advertise {name}"
+            );
+        }
     }
 }

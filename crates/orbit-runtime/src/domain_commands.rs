@@ -83,6 +83,10 @@ pub struct ProjectCommand {
     pub expected_revision: i64,
     pub project_id: String,
     pub name: String,
+    /// Optional workflow to pin at creation. Absent means the Basic default.
+    /// Only read on the first, accepted command; retries return the receipt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectRecord {

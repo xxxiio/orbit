@@ -7,18 +7,19 @@
 //! uncertain network response without repeating the application mutation.
 use crate::{AuthoritativeHost, store::AuthorityError};
 use orbit_application::{
-    ApplyValidatedHabitPlanCommand, ApplyValidatedPlanCommand, ChangeProjectEvidenceCommand,
+    AcceptanceCriteriaCommand, ApplyValidatedHabitPlanCommand, ApplyValidatedPlanCommand,
+    AssociateAttachmentCommand, ChangeProjectEvidenceCommand,
     ConfigureProjectStrategyWithActivityCommand, CreateHabitWithActivityCommand,
     CreateProjectWithActivityCommand, CreateRoutineWithActivityCommand,
-    CreateScheduleBlockWithActivityCommand, CreateTaskWithActivityCommand, MetricObservation,
-    MetricTargetRecord, RecordHabitOccurrenceWithActivityCommand,
-    RescheduleBlockWithActivityCommand, SetHabitActiveWithActivityCommand,
+    CreateScheduleBlockWithActivityCommand, CreateTaskWithActivityCommand, ImportAttachmentCommand,
+    MetricObservation, MetricTargetRecord, RecordHabitOccurrenceWithActivityCommand,
+    RemoveAttachmentCommand, RescheduleBlockWithActivityCommand, SetHabitActiveWithActivityCommand,
     SetProjectCriterionStatusWithActivityCommand, SetRoutineHabitMembershipWithActivityCommand,
     SetTaskPlanningWithActivityCommand, StartTaskWithActivityCommand,
     TransitionMilestoneWithActivityCommand, TransitionProjectWithActivityCommand,
-    TransitionTaskWithActivityCommand,
+    TransitionTaskWithActivityCommand, UpdateTaskDetailsCommand,
 };
-use orbit_domain::{Habit, Project, Routine, Task};
+use orbit_domain::{AttachmentId, Habit, Project, ProjectId, Routine, Task};
 use orbit_sync::{ChangeEnvelope, ChangeId, EntityKind, EntityRef, FieldMutation, SemanticChange};
 
 fn field(name: &str, value: Option<String>) -> Result<FieldMutation, AuthorityError> {
@@ -96,6 +97,19 @@ impl AuthoritativeHost {
             &mut crate::application_services::ApplicationServices<'_>,
         ) -> Result<String, orbit_application::ApplicationError>,
     ) -> Result<(i64, bool, String), AuthorityError> {
+        self.accept_rich_state_result(input, apply)
+    }
+
+    fn accept_rich_state_result<T>(
+        &mut self,
+        input: RichStateInput<'_>,
+        apply: impl FnOnce(
+            &mut crate::application_services::ApplicationServices<'_>,
+        ) -> Result<T, orbit_application::ApplicationError>,
+    ) -> Result<(i64, bool, T), AuthorityError>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned,
+    {
         let RichStateInput {
             actor,
             command_id,
@@ -163,6 +177,101 @@ impl AuthoritativeHost {
             .project(&id)
             .map_err(|_| AuthorityError::MigrationConflict)?;
         Ok((revision, duplicate, project))
+    }
+
+    /// Explicitly change a project's pinned workflow.
+    ///
+    /// Resolution order: an explicit version wins; otherwise the bundled
+    /// descriptor version; otherwise the latest published revision. Bundled
+    /// manifests are installed on demand (never overwriting a published
+    /// revision) so a fresh offline workspace can switch workflows. Unknown
+    /// projects and unresolvable workflows are rejected without creating a
+    /// project or rebinding anything; a duplicate command id returns the
+    /// original receipt and never applies the change twice.
+    pub fn set_project_workflow_accepted(
+        &mut self,
+        actor: &str,
+        command_id: &str,
+        expected_revision: i64,
+        project_id: ProjectId,
+        blueprint_id: String,
+        version: Option<u32>,
+    ) -> Result<(i64, bool, String), AuthorityError> {
+        let bundled_version = crate::default_workflow::bundled_version(&blueprint_id);
+        let version = match version {
+            Some(version) => version,
+            None => match bundled_version {
+                Some(version) => version,
+                None => self
+                    .authority
+                    .conn
+                    .latest_blueprint_version(&blueprint_id)
+                    .map_err(|_| AuthorityError::MigrationConflict)?
+                    .ok_or(AuthorityError::Invalid("unknown workflow"))?,
+            },
+        };
+        if bundled_version.is_some() {
+            crate::default_workflow::install_bundled_workflow(&self.authority.conn, &blueprint_id)?;
+        }
+        let project_exists: bool = self.authority.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM projects WHERE id=?1)",
+            [project_id.as_str()],
+            |row| row.get(0),
+        )?;
+        if !project_exists {
+            return Err(AuthorityError::Invalid("unknown project"));
+        }
+        if self
+            .authority
+            .conn
+            .load_blueprint(&blueprint_id, version)
+            .map_err(|_| AuthorityError::MigrationConflict)?
+            .is_none()
+        {
+            return Err(AuthorityError::Invalid("unknown workflow"));
+        }
+        let entity_id = project_id.as_str().to_owned();
+        let payload = serde_json::to_string(&(entity_id.as_str(), blueprint_id.as_str(), version))
+            .map_err(|_| AuthorityError::Invalid("invalid workflow command"))?;
+        self.accept_rich_state(
+            RichStateInput {
+                actor,
+                command_id,
+                expected_revision,
+                kind: EntityKind::Project,
+                entity_id: &entity_id,
+                payload,
+            },
+            move |app| {
+                app.replace_project_workflow(&project_id, &blueprint_id, version)?;
+                Ok(project_id.as_str().to_owned())
+            },
+        )
+    }
+
+    /// Explicitly unpin a project's workflow so it falls back to generated
+    /// default views. The project itself is never modified or deleted.
+    pub fn remove_project_workflow_accepted(
+        &mut self,
+        actor: &str,
+        command_id: &str,
+        expected_revision: i64,
+        project_id: ProjectId,
+    ) -> Result<(i64, bool, bool), AuthorityError> {
+        let entity_id = project_id.as_str().to_owned();
+        let payload = serde_json::to_string(&("unpin", entity_id.as_str()))
+            .map_err(|_| AuthorityError::Invalid("invalid workflow command"))?;
+        self.accept_rich_state_result(
+            RichStateInput {
+                actor,
+                command_id,
+                expected_revision,
+                kind: EntityKind::Project,
+                entity_id: &entity_id,
+                payload,
+            },
+            move |app| app.remove_project_workflow(&project_id),
+        )
     }
 
     /// Canonical task creation, including optional project/milestone placement.
@@ -837,6 +946,158 @@ impl AuthoritativeHost {
             },
         )
     }
+
+    /// Canonical, retriable rich task-detail update.
+    ///
+    /// The command carries its activity identity, so the immutable payload
+    /// prevents a duplicate command id from appending a second activity even
+    /// though the application layer would otherwise consider the update a
+    /// no-op and skip writing.
+    pub fn update_task_details_accepted(
+        &mut self,
+        actor: &str,
+        command_id: &str,
+        expected_revision: i64,
+        command: UpdateTaskDetailsCommand,
+    ) -> Result<(i64, bool, String), AuthorityError> {
+        let id = command.task_id.as_str().to_owned();
+        let payload = command_payload(&command)?;
+        self.accept_rich_state(
+            RichStateInput {
+                actor,
+                command_id,
+                expected_revision,
+                kind: EntityKind::Task,
+                entity_id: &id,
+                payload,
+            },
+            |app| {
+                let task = app.update_task_details(command)?;
+                Ok(task.id().as_str().to_owned())
+            },
+        )
+    }
+
+    /// Canonical, retriable ordered acceptance-criteria change. The whole
+    /// ordered list is replaced atomically inside the command transaction.
+    pub fn apply_acceptance_criteria_accepted(
+        &mut self,
+        actor: &str,
+        command_id: &str,
+        expected_revision: i64,
+        command: AcceptanceCriteriaCommand,
+    ) -> Result<(i64, bool, String), AuthorityError> {
+        let id = command.task_id.as_str().to_owned();
+        let payload = command_payload(&command)?;
+        self.accept_rich_state(
+            RichStateInput {
+                actor,
+                command_id,
+                expected_revision,
+                kind: EntityKind::Task,
+                entity_id: &id,
+                payload,
+            },
+            |app| {
+                app.apply_acceptance_criteria(command)?;
+                Ok(id.clone())
+            },
+        )
+    }
+
+    /// Canonical, retriable attachment import.
+    ///
+    /// Content bytes are written to the content-addressed object store before
+    /// the metadata transaction runs. If that transaction rolls back the object
+    /// remains as a harmless, deduplicated orphan that a later purge removes;
+    /// a retried command returns its original receipt and never creates a
+    /// second attachment row or activity.
+    pub fn import_attachment_accepted(
+        &mut self,
+        actor: &str,
+        command_id: &str,
+        expected_revision: i64,
+        command: ImportAttachmentCommand,
+    ) -> Result<(i64, bool, AttachmentId), AuthorityError> {
+        let id = command.id.clone();
+        let payload = command_payload(&command)?;
+        let (revision, duplicate, result_id) = self.accept_rich_state(
+            RichStateInput {
+                actor,
+                command_id,
+                expected_revision,
+                kind: EntityKind::Attachment,
+                entity_id: id.as_str(),
+                payload,
+            },
+            |app| {
+                let attachment = app.import_attachment(command)?;
+                Ok(attachment.id().as_str().to_owned())
+            },
+        )?;
+        if result_id != id.as_str() {
+            return Err(AuthorityError::MigrationConflict);
+        }
+        Ok((revision, duplicate, id))
+    }
+
+    /// Canonical, retriable attachment removal. The returned boolean records
+    /// whether the shared content object was also removed.
+    pub fn remove_attachment_accepted(
+        &mut self,
+        actor: &str,
+        command_id: &str,
+        expected_revision: i64,
+        command: RemoveAttachmentCommand,
+    ) -> Result<(i64, bool, bool), AuthorityError> {
+        let id = command.id.as_str().to_owned();
+        let payload = command_payload(&command)?;
+        self.accept_rich_state_result(
+            RichStateInput {
+                actor,
+                command_id,
+                expected_revision,
+                kind: EntityKind::Attachment,
+                entity_id: &id,
+                payload,
+            },
+            |app| {
+                let removal = app.remove_attachment(command)?;
+                Ok(removal.content_removed)
+            },
+        )
+    }
+
+    /// Canonical, retriable association of existing deduplicated content with
+    /// another owner. Both associations share one immutable object.
+    pub fn associate_attachment_accepted(
+        &mut self,
+        actor: &str,
+        command_id: &str,
+        expected_revision: i64,
+        command: AssociateAttachmentCommand,
+    ) -> Result<(i64, bool, AttachmentId), AuthorityError> {
+        let id = command.new_id.clone();
+        let payload = command_payload(&command)?;
+        let (revision, duplicate, result_id) = self.accept_rich_state(
+            RichStateInput {
+                actor,
+                command_id,
+                expected_revision,
+                kind: EntityKind::Attachment,
+                entity_id: id.as_str(),
+                payload,
+            },
+            |app| {
+                let attachment = app.associate_attachment(command)?;
+                Ok(attachment.id().as_str().to_owned())
+            },
+        )?;
+        if result_id != id.as_str() {
+            return Err(AuthorityError::MigrationConflict);
+        }
+        Ok((revision, duplicate, id))
+    }
 }
 
 #[cfg(test)]
@@ -902,6 +1163,7 @@ mod tests {
             .project_command(
                 "device",
                 ProjectCommand {
+                    workflow_id: None,
                     command_id: "minimal-p".into(),
                     expected_revision: 0,
                     project_id: "minimal".into(),
@@ -927,6 +1189,7 @@ mod tests {
         let reused = host.project_command(
             "user",
             ProjectCommand {
+                workflow_id: None,
                 command_id: "rich-p".into(),
                 expected_revision: 3,
                 project_id: "other".into(),

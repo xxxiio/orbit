@@ -5,9 +5,10 @@ use crate::planning_ui;
 use crate::theme::Theme;
 use orbit_blueprint::{Blueprint, FieldKind};
 use orbit_client::{
-    ConfigureProjectStrategyRequest, CreateKnowledgeRequest, CreateProjectRequest,
-    CreateTaskRequest, MetricTargetDto, ProjectCriterionInputDto, RecordHabitOccurrenceRequest,
-    SetProjectStatusRequest, SetTaskPlanningRequest, SetTaskStatusRequest,
+    AcceptanceCriterionDto, ActivityDto, AttachmentDto, ConfigureProjectStrategyRequest,
+    CreateKnowledgeRequest, CreateProjectRequest, CreateTaskRequest, MetricTargetDto,
+    ProjectCriterionInputDto, RecordHabitOccurrenceRequest, SetProjectStatusRequest,
+    SetTaskPlanningRequest, SetTaskStatusRequest,
 };
 use orbit_runtime::planning_actions::PlanningActionMenu;
 use orbit_runtime::planning_brief::WorkBrief;
@@ -69,6 +70,9 @@ pub struct FormChoice {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FormFieldKind {
     Text,
+    /// Markdown-compatible multi-line text. Enter inserts a newline; the form is
+    /// saved with Ctrl+S.
+    Multiline,
     Integer,
     Boolean,
     Choice(Vec<FormChoice>),
@@ -80,6 +84,8 @@ pub struct FormField {
     pub label: String,
     pub value: String,
     pub initial: String,
+    /// Caret position as a character index. Only used by text-like fields.
+    pub cursor: usize,
     pub kind: FormFieldKind,
     pub required: bool,
     pub hint: String,
@@ -93,6 +99,26 @@ pub enum FormMode {
     },
     EditTask {
         task_id: String,
+    },
+    EditTaskDetails {
+        task_id: String,
+    },
+    AddCriterion {
+        task_id: String,
+    },
+    EditCriterion {
+        task_id: String,
+        criterion_id: String,
+    },
+    AttachFile {
+        owner_kind: String,
+        owner_id: String,
+    },
+    ExportAttachment {
+        attachment_id: String,
+    },
+    ChangeWorkflow {
+        project_id: String,
     },
     AddDependency {
         task_id: String,
@@ -145,7 +171,7 @@ pub struct FormState {
     pub dirty: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum PendingAction {
     SetTaskStatus {
         task_id: String,
@@ -160,6 +186,52 @@ pub enum PendingAction {
         habit_id: String,
     },
     ApplyPlan,
+    RemoveCriterion {
+        task_id: String,
+        criterion_id: String,
+        task_title: String,
+    },
+    RemoveAttachment {
+        attachment_id: String,
+        owner_kind: String,
+        owner_id: String,
+        title: String,
+    },
+    OpenAttachment {
+        attachment_id: String,
+        filename: String,
+    },
+    /// Restore a dirty form after the user declines to discard it.
+    DiscardFormChanges {
+        form: Box<FormState>,
+    },
+}
+
+/// Ordered acceptance criteria for one task, with a selectable row.
+#[derive(Clone, Debug)]
+pub struct CriteriaModal {
+    pub task_id: String,
+    pub task_title: String,
+    pub items: Vec<AcceptanceCriterionDto>,
+    pub selected: usize,
+}
+
+/// Attachments for one owner entity, with a selectable row.
+#[derive(Clone, Debug)]
+pub struct AttachmentsModal {
+    pub owner_kind: String,
+    pub owner_id: String,
+    pub title: String,
+    pub items: Vec<AttachmentDto>,
+    pub selected: usize,
+}
+
+/// Read-only activity history for one entity.
+#[derive(Clone, Debug)]
+pub struct ActivityModal {
+    pub title: String,
+    pub items: Vec<ActivityDto>,
+    pub scroll: u16,
 }
 
 #[derive(Clone, Debug)]
@@ -182,6 +254,9 @@ pub enum Modal {
     },
     Help,
     Detail(DetailModel),
+    Criteria(CriteriaModal),
+    Attachments(AttachmentsModal),
+    Activity(ActivityModal),
     QuitConfirm {
         resume: Option<Box<Modal>>,
     },
@@ -811,6 +886,25 @@ impl App {
         self.open_project_internal(project_id, false);
     }
 
+    /// True when the project is present in the last accepted workspace.
+    pub fn project_exists(&self, project_id: &str) -> bool {
+        self.projects.iter().any(|project| project.id == project_id)
+    }
+
+    /// Reopen a project from durable session state, selecting the saved view by
+    /// identifier so view reordering never lands on the wrong view.
+    pub fn open_project_restored(&mut self, project_id: &str, view_id: Option<&str>) {
+        self.open_project_internal(project_id, false);
+        if let (Some(view_id), Some(project)) = (view_id, self.project.as_mut())
+            && let Some(index) = project
+                .views
+                .iter()
+                .position(|view| view.id.as_str() == view_id)
+        {
+            project.active_view = index;
+        }
+    }
+
     fn open_project_internal(&mut self, project_id: &str, record_history: bool) {
         if record_history {
             self.push_history();
@@ -869,11 +963,11 @@ impl App {
             Ok((data, views, generated)) => {
                 let blueprint_label = self
                     .client
-                    .project_blueprint_binding(&project_id)
+                    .project_workflow(&project_id)
                     .ok()
                     .flatten()
-                    .map(|binding| format!("{}@{}", binding.blueprint_id, binding.version))
-                    .unwrap_or_else(|| "generated default".into());
+                    .map(|workflow| self.workflow_label(&workflow.workflow_id, workflow.version))
+                    .unwrap_or_else(|| "generated default views".into());
                 let (name, labels) = {
                     let Some(state) = &mut self.project else {
                         return;
@@ -901,7 +995,7 @@ impl App {
                     self.notify(
                         if generated {
                             format!(
-                                "{name} • legacy blueprint: generated default views • r refresh"
+                                "{name} • no workflow pinned: generated default views • W change workflow • r refresh"
                             )
                         } else {
                             format!("{name} • {} • {} views • r refresh", labels.0, labels.1)
@@ -957,7 +1051,46 @@ impl App {
         }
         let project_scope = self.screen == Screen::Project;
         let item = self.selected_item()?;
-        Some(actions::detail_for(item, project_scope))
+        let mut detail = actions::detail_for(item, project_scope);
+        if item.kind == ItemKind::Task
+            && let Some(task) = self.task_dto(&item.id)
+        {
+            {
+                if !task.description.trim().is_empty() {
+                    detail
+                        .fields
+                        .push(("Description".into(), task.description.clone()));
+                }
+                if let Some(priority) = &task.priority {
+                    detail.fields.push(("Priority".into(), priority.clone()));
+                }
+                if !task.labels.is_empty() {
+                    detail
+                        .fields
+                        .push(("Labels".into(), task.labels.join(", ")));
+                }
+                if let Ok(criteria) = self.client.acceptance_criteria(&item.id) {
+                    let done = criteria.iter().filter(|item| item.completed).count();
+                    if !criteria.is_empty() {
+                        detail.fields.push((
+                            "Acceptance".into(),
+                            format!("{done}/{} checked", criteria.len()),
+                        ));
+                    }
+                }
+                if let Ok(attachments) = self.client.list_attachments("task", &item.id) {
+                    detail.fields.push((
+                        "Attachments".into(),
+                        if attachments.is_empty() {
+                            "none".into()
+                        } else {
+                            format!("{} file(s)", attachments.len())
+                        },
+                    ));
+                }
+            }
+        }
+        Some(detail)
     }
 
     pub fn available_actions(&self) -> Vec<AvailableAction> {
@@ -994,8 +1127,16 @@ impl App {
             push_unique_action(
                 &mut actions,
                 AvailableAction::enabled(
+                    "change_workflow",
+                    "Change workflow",
+                    Some(project.id.clone()),
+                ),
+            );
+            push_unique_action(
+                &mut actions,
+                AvailableAction::enabled(
                     "bind_blueprint",
-                    "Bind blueprint",
+                    "Apply workflow version",
                     Some(project.id.clone()),
                 ),
             );
@@ -1005,8 +1146,9 @@ impl App {
                 AvailableAction::enabled("create_task", "New task", None),
                 AvailableAction::enabled("create_work_item", "New work item", None),
                 AvailableAction::enabled("edit_project", "Project settings", None),
-                AvailableAction::enabled("bind_blueprint", "Bind blueprint", None),
-                AvailableAction::enabled("install_blueprint", "Install blueprint", None),
+                AvailableAction::enabled("change_workflow", "Change workflow", None),
+                AvailableAction::enabled("bind_blueprint", "Apply workflow version", None),
+                AvailableAction::enabled("install_blueprint", "Add bundled workflow", None),
                 AvailableAction::enabled("preview_plan", "Preview plan", None),
                 AvailableAction::enabled("bind_evidence", "Bind evidence", None),
                 AvailableAction::enabled("inspect_evidence", "Project evidence", None),
@@ -1016,10 +1158,30 @@ impl App {
             ] {
                 push_unique_action(&mut actions, action);
             }
+            if self
+                .project
+                .as_ref()
+                .is_some_and(|project| project.generated)
+            {
+                push_unique_action(
+                    &mut actions,
+                    AvailableAction::enabled("apply_basic_workflow", "Apply Basic workflow", None),
+                );
+            }
             if self.pending_plan.is_some() {
                 push_unique_action(
                     &mut actions,
                     AvailableAction::enabled("apply_plan", "Apply previewed plan", None),
+                );
+            }
+            if !self.client.is_connected() {
+                push_unique_action(
+                    &mut actions,
+                    AvailableAction::enabled(
+                        "purge_attachments",
+                        "Clean up unreferenced attachment content",
+                        None,
+                    ),
                 );
             }
         } else {
@@ -1688,6 +1850,118 @@ impl App {
                     revision,
                 });
             }
+            "edit_task_details" => {
+                let Some(item) = self.selected_item() else {
+                    self.notify("Select a task first", StatusKind::Warning);
+                    return false;
+                };
+                if item.kind != ItemKind::Task {
+                    self.notify("Details editing applies to tasks", StatusKind::Warning);
+                    return false;
+                }
+                let task_id = item.id.clone();
+                self.start_form(FormMode::EditTaskDetails { task_id });
+            }
+            "manage_acceptance_criteria" => {
+                let Some(item) = self.selected_item() else {
+                    self.notify("Select a task first", StatusKind::Warning);
+                    return false;
+                };
+                if item.kind != ItemKind::Task {
+                    self.notify("Acceptance criteria apply to tasks", StatusKind::Warning);
+                    return false;
+                }
+                let task_id = item.id.clone();
+                let title = item.title.clone();
+                self.open_criteria(task_id, title);
+            }
+            "task_activity" => {
+                let Some(item) = self.selected_item() else {
+                    self.notify("Select a task first", StatusKind::Warning);
+                    return false;
+                };
+                if item.kind != ItemKind::Task {
+                    self.notify("Activity history applies to tasks", StatusKind::Warning);
+                    return false;
+                }
+                let task_id = item.id.clone();
+                let title = format!("Activity · {}", item.title);
+                self.open_activity(task_id, title);
+            }
+            "attach_file" => {
+                let Some(item) = self.selected_item() else {
+                    self.notify("Select an item first", StatusKind::Warning);
+                    return false;
+                };
+                let Some((owner_kind, owner_id)) = Self::attachment_owner(item) else {
+                    self.notify(
+                        "Attachments are supported for tasks, projects and work items",
+                        StatusKind::Warning,
+                    );
+                    return false;
+                };
+                self.start_form(FormMode::AttachFile {
+                    owner_kind: owner_kind.to_owned(),
+                    owner_id,
+                });
+            }
+            "open_attachments" => {
+                let Some(item) = self.selected_item() else {
+                    self.notify("Select an item first", StatusKind::Warning);
+                    return false;
+                };
+                let Some((owner_kind, owner_id)) = Self::attachment_owner(item) else {
+                    self.notify(
+                        "Attachments are supported for tasks, projects and work items",
+                        StatusKind::Warning,
+                    );
+                    return false;
+                };
+                let title = format!("Attachments · {}", item.title);
+                self.open_attachments(owner_kind.to_owned(), owner_id, title);
+            }
+            "change_workflow" => {
+                let project_id = if self.screen == Screen::Projects {
+                    self.selected_project().map(|project| project.id.clone())
+                } else {
+                    self.project.as_ref().map(|project| project.id.clone())
+                };
+                if let Some(project_id) = project_id {
+                    self.start_form(FormMode::ChangeWorkflow { project_id });
+                } else {
+                    self.notify("Select a project first", StatusKind::Warning);
+                }
+            }
+            "apply_basic_workflow" => {
+                let Some(project_id) = self.project.as_ref().map(|project| project.id.clone())
+                else {
+                    self.notify("Open a project first", StatusKind::Warning);
+                    return false;
+                };
+                match self
+                    .client
+                    .apply_workflow(project_id.clone(), "basic".to_owned(), None)
+                {
+                    Ok(_) => {
+                        self.notify("Basic workflow applied", StatusKind::Success);
+                        self.refresh_after_mutation();
+                    }
+                    Err(error) => self.notify(
+                        format!("Applying the Basic workflow failed: {}", error.message),
+                        StatusKind::Error,
+                    ),
+                }
+            }
+            "purge_attachments" => match self.client.purge_attachment_content() {
+                Ok(removed) => self.notify(
+                    format!("Removed {removed} unreferenced attachment object(s)"),
+                    StatusKind::Success,
+                ),
+                Err(error) => self.notify(
+                    format!("Attachment cleanup failed: {}", error.message),
+                    StatusKind::Error,
+                ),
+            },
             "record_habit" => {
                 let Some(item) = self.selected_item() else {
                     self.notify("Select a habit first", StatusKind::Warning);
@@ -1946,6 +2220,58 @@ impl App {
                         StatusKind::Error,
                     ),
                 }
+            }
+            PendingAction::RemoveCriterion {
+                task_id,
+                criterion_id,
+                task_title,
+            } => {
+                match self
+                    .client
+                    .remove_acceptance_criterion(task_id.clone(), criterion_id)
+                {
+                    Ok(_) => {
+                        self.notify("Acceptance criterion removed", StatusKind::Success);
+                        self.open_criteria(task_id, task_title);
+                    }
+                    Err(error) => self.notify(
+                        format!("Removing the criterion failed: {}", error.message),
+                        StatusKind::Error,
+                    ),
+                }
+            }
+            PendingAction::RemoveAttachment {
+                attachment_id,
+                owner_kind,
+                owner_id,
+                title,
+            } => match self.client.remove_attachment(attachment_id) {
+                Ok(content_removed) => {
+                    self.notify(
+                        if content_removed {
+                            "Attachment removed; unreferenced content deleted"
+                        } else {
+                            "Attachment removed; content still referenced elsewhere"
+                        },
+                        StatusKind::Success,
+                    );
+                    self.open_attachments(owner_kind, owner_id, title);
+                }
+                Err(error) => self.notify(
+                    format!("Removing the attachment failed: {}", error.message),
+                    StatusKind::Error,
+                ),
+            },
+            PendingAction::OpenAttachment {
+                attachment_id,
+                filename,
+            } => {
+                self.open_attachment_externally(&attachment_id, &filename);
+            }
+            PendingAction::DiscardFormChanges { form } => {
+                // The user confirmed discarding; nothing was mutated.
+                self.notify("Unsaved changes discarded", StatusKind::Info);
+                let _ = form;
             }
             PendingAction::ApplyPlan => {
                 let Some(plan) = self.pending_plan.clone() else {
@@ -2300,11 +2626,13 @@ impl App {
         hint: &str,
     ) -> FormField {
         let value = value.into();
+        let cursor = value.chars().count();
         FormField {
             key: key.into(),
             label: label.into(),
             initial: value.clone(),
             value,
+            cursor,
             kind: FormFieldKind::Text,
             required,
             hint: hint.into(),
@@ -2319,11 +2647,13 @@ impl App {
         hint: &str,
     ) -> FormField {
         let value = value.into();
+        let cursor = value.chars().count();
         FormField {
             key: key.into(),
             label: label.into(),
             initial: value.clone(),
             value,
+            cursor,
             kind: FormFieldKind::Integer,
             required,
             hint: hint.into(),
@@ -2337,6 +2667,7 @@ impl App {
             label: label.into(),
             initial: value.clone(),
             value,
+            cursor: 0,
             kind: FormFieldKind::Boolean,
             required: false,
             hint: String::new(),
@@ -2356,6 +2687,7 @@ impl App {
             label: label.into(),
             initial: value.clone(),
             value,
+            cursor: 0,
             kind: FormFieldKind::Choice(choices),
             required,
             hint: String::new(),
@@ -2366,6 +2698,217 @@ impl App {
         FormChoice {
             value: value.into(),
             label: label.into(),
+        }
+    }
+
+    fn multiline_field(
+        key: &str,
+        label: &str,
+        value: impl Into<String>,
+        required: bool,
+        hint: &str,
+    ) -> FormField {
+        let value = value.into();
+        let cursor = value.chars().count();
+        FormField {
+            key: key.into(),
+            label: label.into(),
+            initial: value.clone(),
+            value,
+            cursor,
+            kind: FormFieldKind::Multiline,
+            required,
+            hint: hint.into(),
+        }
+    }
+
+    /// Workflows available to apply, with Basic first and clearly marked as the
+    /// default. Works offline because the descriptors are compiled in.
+    fn workflow_choices(&self) -> Vec<FormChoice> {
+        let mut descriptors = self.client.bundled_workflows();
+        descriptors.sort_by_key(|descriptor| (!descriptor.is_default, descriptor.name.clone()));
+        descriptors
+            .into_iter()
+            .map(|descriptor| {
+                let label = if descriptor.is_default {
+                    format!("{} (default)", descriptor.name)
+                } else {
+                    descriptor.name.clone()
+                };
+                Self::form_choice(descriptor.id, label)
+            })
+            .collect()
+    }
+
+    fn workflow_label(&self, workflow_id: &str, version: u32) -> String {
+        self.client
+            .bundled_workflows()
+            .into_iter()
+            .find(|descriptor| descriptor.id == workflow_id)
+            .map(|descriptor| format!("{} v{version}", descriptor.name))
+            .unwrap_or_else(|| format!("{workflow_id} v{version}"))
+    }
+
+    /// Attachment owner kind for an item, when the entity supports attachments.
+    fn attachment_owner(item: &SelectionItem) -> Option<(&'static str, String)> {
+        match item.kind {
+            ItemKind::Task => Some(("task", item.id.clone())),
+            ItemKind::WorkItem => Some(("work_item", item.id.clone())),
+            ItemKind::Project => Some(("project", item.id.clone())),
+            _ => None,
+        }
+    }
+
+    fn task_dto(&self, task_id: &str) -> Option<orbit_client::TaskDto> {
+        self.client
+            .list_tasks()
+            .ok()?
+            .into_iter()
+            .find(|task| task.id == task_id)
+    }
+
+    /// Load ordered acceptance criteria for a task into a modal.
+    pub fn open_criteria(&mut self, task_id: String, task_title: String) {
+        match self.client.acceptance_criteria(&task_id) {
+            Ok(items) => {
+                let selected = 0;
+                self.modal = Some(Modal::Criteria(CriteriaModal {
+                    task_id,
+                    task_title,
+                    items,
+                    selected,
+                }));
+            }
+            Err(error) => self.notify(
+                format!("Acceptance criteria unavailable: {}", error.message),
+                StatusKind::Warning,
+            ),
+        }
+    }
+
+    /// Reload the criteria modal in place after a mutation.
+    /// Metadata and a bounded text preview for one attachment. Binary content
+    /// is never executed or decoded as an image here; the user is directed to
+    /// the external viewer instead.
+    pub fn preview_attachment(&mut self, attachment_id: String) {
+        match self.client.attachment_content(&attachment_id) {
+            Ok((attachment, content)) => {
+                let mut lines = vec![
+                    format!("File: {}", attachment.filename),
+                    format!("Type: {}", attachment.content_type),
+                    format!("Size: {} bytes", attachment.size_bytes),
+                    format!("Checksum: {}", attachment.checksum),
+                    format!("Created: {}", attachment.created_at_ms),
+                ];
+                if let Some(description) = &attachment.description {
+                    lines.push(format!("Caption: {description}"));
+                }
+                if attachment.is_image {
+                    lines.push(String::new());
+                    lines.push(
+                        "Image preview is not inlined in this terminal. Press o to open it with your configured viewer."
+                            .into(),
+                    );
+                } else if let Ok(text) = std::str::from_utf8(&content) {
+                    lines.push(String::new());
+                    lines.push("Preview (first 200 lines):".into());
+                    lines.extend(text.lines().take(200).map(str::to_owned));
+                } else {
+                    lines.push(String::new());
+                    lines.push("Binary content: no inline preview. Press o to open it.".into());
+                }
+                self.modal = Some(Modal::Message {
+                    title: format!("Attachment · {}", attachment.filename),
+                    lines,
+                });
+            }
+            Err(error) => self.notify(
+                format!("Attachment preview failed: {}", error.message),
+                StatusKind::Error,
+            ),
+        }
+    }
+
+    /// Toggle one criterion's completion. Task status is never changed here.
+    /// Move one criterion to a new index within the ordered list.
+    pub fn open_attachments(&mut self, owner_kind: String, owner_id: String, title: String) {
+        match self.client.list_attachments(&owner_kind, &owner_id) {
+            Ok(items) => {
+                self.modal = Some(Modal::Attachments(AttachmentsModal {
+                    owner_kind,
+                    owner_id,
+                    title,
+                    items,
+                    selected: 0,
+                }));
+            }
+            Err(error) => self.notify(
+                format!("Attachments unavailable: {}", error.message),
+                StatusKind::Warning,
+            ),
+        }
+    }
+
+    pub fn open_activity(&mut self, task_id: String, title: String) {
+        match self.client.task_activity(&task_id) {
+            Ok(items) => {
+                self.modal = Some(Modal::Activity(ActivityModal {
+                    title,
+                    items,
+                    scroll: 0,
+                }));
+            }
+            Err(error) => self.notify(
+                format!("Activity history unavailable: {}", error.message),
+                StatusKind::Warning,
+            ),
+        }
+    }
+
+    /// Export an attachment to a managed export directory, then hand the path
+    /// to the user-approved external viewer. Attachment content is never
+    /// executed and never passed through a shell.
+    fn open_attachment_externally(&mut self, attachment_id: &str, filename: &str) {
+        let export_dir = match self.client.attachment_export_dir() {
+            Ok(dir) => dir,
+            Err(error) => {
+                self.notify(
+                    format!("Attachment viewing is unavailable: {}", error.message),
+                    StatusKind::Warning,
+                );
+                return;
+            }
+        };
+        if let Err(error) = std::fs::create_dir_all(&export_dir) {
+            self.notify(
+                format!("Could not prepare the export directory: {error}"),
+                StatusKind::Error,
+            );
+            return;
+        }
+        let destination = export_dir.join(format!("{attachment_id}-{filename}"));
+        match self
+            .client
+            .export_attachment(attachment_id, destination.to_string_lossy().into_owned())
+        {
+            Ok(attachment) => match crate::viewer::open_with_viewer(&destination) {
+                Ok(viewer) => self.notify(
+                    format!("Opened {} with {viewer}", attachment.filename),
+                    StatusKind::Success,
+                ),
+                Err(reason) => self.notify(
+                    format!(
+                        "Exported {} to {}; open it manually ({reason})",
+                        attachment.filename,
+                        destination.display()
+                    ),
+                    StatusKind::Info,
+                ),
+            },
+            Err(error) => self.notify(
+                format!("Opening the attachment failed: {}", error.message),
+                StatusKind::Error,
+            ),
         }
     }
 
@@ -2515,13 +3058,11 @@ impl App {
                     Self::text_field("name", "Name", "", true, "required"),
                     Self::text_field("objective", "Objective", "", false, "optional"),
                     Self::choice_field(
-                        "blueprint",
-                        "Blueprint",
-                        "",
-                        std::iter::once(Self::form_choice("", "(none)"))
-                            .chain(self.blueprint_version_choices())
-                            .collect(),
-                        false,
+                        "workflow",
+                        "Workflow",
+                        "basic",
+                        self.workflow_choices(),
+                        true,
                     ),
                 ],
                 focused: 0,
@@ -2604,12 +3145,178 @@ impl App {
                             false,
                             "epoch ms",
                         ),
+                        Self::multiline_field(
+                            "description",
+                            "Description",
+                            task.description.clone(),
+                            false,
+                            "Markdown text",
+                        ),
+                        Self::choice_field(
+                            "priority",
+                            "Priority",
+                            task.priority.clone().unwrap_or_default(),
+                            vec![
+                                Self::form_choice("", "(unset)"),
+                                Self::form_choice("low", "low"),
+                                Self::form_choice("medium", "medium"),
+                                Self::form_choice("high", "high"),
+                                Self::form_choice("urgent", "urgent"),
+                            ],
+                            false,
+                        ),
+                        Self::text_field(
+                            "labels",
+                            "Labels",
+                            task.labels.join(", "),
+                            false,
+                            "comma separated",
+                        ),
                     ],
                     focused: 0,
                     error: None,
                     dirty: false,
                 })
             }
+            FormMode::EditTaskDetails { task_id } => {
+                let task = self.task_dto(&task_id)?;
+                let priority = task.priority.clone().unwrap_or_default();
+                Some(FormState {
+                    title: format!("Edit details · {}", task.title),
+                    hint: "Markdown description, priority and labels. Ctrl+S saves; Esc cancels."
+                        .into(),
+                    mode: FormMode::EditTaskDetails {
+                        task_id: task_id.clone(),
+                    },
+                    fields: vec![
+                        Self::multiline_field(
+                            "description",
+                            "Description",
+                            task.description.clone(),
+                            false,
+                            "Markdown text",
+                        ),
+                        Self::choice_field(
+                            "priority",
+                            "Priority",
+                            priority,
+                            vec![
+                                Self::form_choice("", "(unset)"),
+                                Self::form_choice("low", "low"),
+                                Self::form_choice("medium", "medium"),
+                                Self::form_choice("high", "high"),
+                                Self::form_choice("urgent", "urgent"),
+                            ],
+                            false,
+                        ),
+                        Self::text_field(
+                            "labels",
+                            "Labels",
+                            task.labels.join(", "),
+                            false,
+                            "comma separated",
+                        ),
+                    ],
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::AddCriterion { task_id } => {
+                let task = self.task_dto(&task_id)?;
+                Some(FormState {
+                    title: format!("Add acceptance criterion · {}", task.title),
+                    hint: "Ordered and independently checkable".into(),
+                    mode: FormMode::AddCriterion {
+                        task_id: task_id.clone(),
+                    },
+                    fields: vec![Self::text_field("text", "Criterion", "", true, "required")],
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::EditCriterion {
+                task_id,
+                criterion_id,
+            } => {
+                let items = self.client.acceptance_criteria(&task_id).ok()?;
+                let item = items.iter().find(|item| item.id == criterion_id)?;
+                Some(FormState {
+                    title: "Edit acceptance criterion".into(),
+                    hint: "Update the criterion text".into(),
+                    mode: FormMode::EditCriterion {
+                        task_id: task_id.clone(),
+                        criterion_id: criterion_id.clone(),
+                    },
+                    fields: vec![Self::text_field(
+                        "text",
+                        "Criterion",
+                        item.text.clone(),
+                        true,
+                        "required",
+                    )],
+                    focused: 0,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::AttachFile {
+                owner_kind,
+                owner_id,
+            } => Some(FormState {
+                title: "Attach file".into(),
+                hint: "Enter an existing file path; content is copied into managed storage".into(),
+                mode: FormMode::AttachFile {
+                    owner_kind: owner_kind.clone(),
+                    owner_id: owner_id.clone(),
+                },
+                fields: vec![
+                    Self::text_field("path", "File path", "", true, "required"),
+                    Self::text_field("description", "Caption", "", false, "optional"),
+                ],
+                focused: 0,
+                error: None,
+                dirty: false,
+            }),
+            FormMode::ExportAttachment { attachment_id } => Some(FormState {
+                title: "Export attachment".into(),
+                hint: "The destination must not already exist".into(),
+                mode: FormMode::ExportAttachment {
+                    attachment_id: attachment_id.clone(),
+                },
+                fields: vec![Self::text_field(
+                    "destination",
+                    "Destination path",
+                    "",
+                    true,
+                    "required",
+                )],
+                focused: 0,
+                error: None,
+                dirty: false,
+            }),
+            FormMode::ChangeWorkflow { project_id } => Some(FormState {
+                title: "Change workflow".into(),
+                hint: "Basic is the default; the pinned version is preserved for existing bindings"
+                    .into(),
+                mode: FormMode::ChangeWorkflow {
+                    project_id: project_id.clone(),
+                },
+                fields: vec![
+                    Self::choice_field(
+                        "workflow",
+                        "Workflow",
+                        "basic",
+                        self.workflow_choices(),
+                        true,
+                    ),
+                    Self::integer_field("version", "Version", "", false, "optional"),
+                ],
+                focused: 0,
+                error: None,
+                dirty: false,
+            }),
             FormMode::AddDependency { task_id } => {
                 let tasks = self
                     .workspace
@@ -3079,6 +3786,22 @@ impl App {
             FormMode::NewProject => self.submit_new_project(&form),
             FormMode::NewTask { .. } => self.submit_new_task(&form),
             FormMode::EditTask { task_id } => self.submit_edit_task(&form, &task_id),
+            FormMode::EditTaskDetails { task_id } => self.submit_edit_task_details(&form, &task_id),
+            FormMode::AddCriterion { task_id } => self.submit_add_criterion(&form, &task_id),
+            FormMode::EditCriterion {
+                task_id,
+                criterion_id,
+            } => self.submit_edit_criterion(&form, &task_id, &criterion_id),
+            FormMode::AttachFile {
+                owner_kind,
+                owner_id,
+            } => self.submit_attach_file(&form, &owner_kind, &owner_id),
+            FormMode::ExportAttachment { attachment_id } => {
+                self.submit_export_attachment(&form, &attachment_id)
+            }
+            FormMode::ChangeWorkflow { project_id } => {
+                self.submit_change_workflow(&form, &project_id)
+            }
             FormMode::AddDependency { task_id } => self.submit_add_dependency(&form, &task_id),
             FormMode::RemoveDependency { task_id } => {
                 self.submit_remove_dependency(&form, &task_id)
@@ -3131,9 +3854,135 @@ impl App {
                 if self.status.kind != StatusKind::Pending {
                     self.refresh_after_mutation();
                 }
+                self.reopen_after_mutation(&form.mode);
             }
             Err(error) => self.form_error(form, error),
         }
+    }
+
+    /// Keep list-style modals in sync after a successful form submission.
+    fn reopen_after_mutation(&mut self, mode: &FormMode) {
+        match mode {
+            FormMode::AddCriterion { task_id } | FormMode::EditCriterion { task_id, .. } => {
+                let title = self
+                    .task_dto(task_id)
+                    .map(|task| task.title)
+                    .unwrap_or_else(|| task_id.clone());
+                self.open_criteria(task_id.clone(), title);
+            }
+            FormMode::AttachFile {
+                owner_kind,
+                owner_id,
+            } => {
+                let title = format!("Attachments · {owner_id}");
+                self.open_attachments(owner_kind.clone(), owner_id.clone(), title);
+            }
+            _ => {}
+        }
+    }
+
+    fn submit_edit_task_details(&mut self, form: &FormState, task_id: &str) -> Result<(), String> {
+        let description = Self::form_value(form, "description").to_owned();
+        let priority_raw = Self::form_value(form, "priority").trim().to_owned();
+        let priority = (!priority_raw.is_empty()).then_some(priority_raw);
+        let labels: Vec<String> = Self::form_value(form, "labels")
+            .split(',')
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+            .map(str::to_owned)
+            .collect();
+        self.client
+            .update_task_details(task_id.to_owned(), description, priority, labels)
+            .map_err(|error| error.message)?;
+        self.notify("Task details saved", StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_add_criterion(&mut self, form: &FormState, task_id: &str) -> Result<(), String> {
+        let text = Self::form_value(form, "text").trim().to_owned();
+        self.client
+            .add_acceptance_criterion(task_id.to_owned(), text)
+            .map_err(|error| error.message)?;
+        self.notify("Acceptance criterion added", StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_edit_criterion(
+        &mut self,
+        form: &FormState,
+        task_id: &str,
+        criterion_id: &str,
+    ) -> Result<(), String> {
+        let text = Self::form_value(form, "text").trim().to_owned();
+        self.client
+            .set_acceptance_criterion_text(task_id.to_owned(), criterion_id.to_owned(), text)
+            .map_err(|error| error.message)?;
+        self.notify("Acceptance criterion updated", StatusKind::Success);
+        Ok(())
+    }
+
+    fn submit_attach_file(
+        &mut self,
+        form: &FormState,
+        owner_kind: &str,
+        owner_id: &str,
+    ) -> Result<(), String> {
+        let path = Self::form_value(form, "path").trim().to_owned();
+        if path.is_empty() {
+            return Err("File path is required".into());
+        }
+        let description = Self::form_value(form, "description").trim();
+        let description = (!description.is_empty()).then(|| description.to_owned());
+        let attachment = self
+            .client
+            .import_attachment(
+                owner_kind.to_owned(),
+                owner_id.to_owned(),
+                path,
+                description,
+            )
+            .map_err(|error| error.message)?;
+        self.notify(
+            format!("Attached {}", attachment.filename),
+            StatusKind::Success,
+        );
+        Ok(())
+    }
+
+    fn submit_export_attachment(
+        &mut self,
+        form: &FormState,
+        attachment_id: &str,
+    ) -> Result<(), String> {
+        let destination = Self::form_value(form, "destination").trim().to_owned();
+        if destination.is_empty() {
+            return Err("Destination path is required".into());
+        }
+        let attachment = self
+            .client
+            .export_attachment(attachment_id, destination.clone())
+            .map_err(|error| error.message)?;
+        self.notify(
+            format!("Exported {} to {destination}", attachment.filename),
+            StatusKind::Success,
+        );
+        Ok(())
+    }
+
+    fn submit_change_workflow(&mut self, form: &FormState, project_id: &str) -> Result<(), String> {
+        let workflow = Self::form_value(form, "workflow").trim().to_owned();
+        if workflow.is_empty() {
+            return Err("Select a workflow".into());
+        }
+        let version = Self::form_int(form, "version", false)?
+            .map(|value| u32::try_from(value).map_err(|_| "Version must be positive".to_owned()))
+            .transpose()?;
+        self.client
+            .apply_workflow(project_id.to_owned(), workflow.clone(), version)
+            .map_err(|error| error.message)?;
+        let label = self.workflow_label(&workflow, version.unwrap_or(1));
+        self.notify(format!("Workflow applied: {label}"), StatusKind::Success);
+        Ok(())
     }
 
     fn default_project_signals(mode: &str) -> Vec<String> {
@@ -3149,6 +3998,7 @@ impl App {
 
     fn submit_new_project(&mut self, form: &FormState) -> Result<(), String> {
         let name = Self::form_value(form, "name").trim().to_owned();
+        let workflow = Self::form_value(form, "workflow").trim().to_owned();
         if self.client.is_connected() {
             if !Self::form_value(form, "objective").trim().is_empty() {
                 return Err(
@@ -3156,8 +4006,11 @@ impl App {
                         .into(),
                 );
             }
-            if !Self::form_value(form, "blueprint").is_empty() {
-                return Err("connected mode cannot bind blueprints from the shared TUI yet".into());
+            if !workflow.is_empty() && workflow != "basic" {
+                return Err(
+                    "connected mode uses the server default workflow (Basic); change it after the project is accepted"
+                        .into(),
+                );
             }
         }
         let project = self
@@ -3190,21 +4043,15 @@ impl App {
         {
             warning = Some(format!("objective update failed: {}", error.message));
         }
-        let blueprint = Self::form_value(form, "blueprint");
-        if !blueprint.is_empty()
-            && let Some((id, version)) = blueprint.split_once('@')
+        // New projects already carry the Basic binding from the authority; only
+        // an explicit different workflow needs an extra pinned change.
+        if !workflow.is_empty()
+            && workflow != "basic"
+            && let Err(error) =
+                self.client
+                    .apply_workflow(project.id.clone(), workflow.clone(), None)
         {
-            match version.parse::<u32>() {
-                Ok(version) => {
-                    if let Err(error) = self.client.bind_project_blueprint(&project.id, id, version)
-                    {
-                        warning = Some(format!("blueprint binding failed: {}", error.message));
-                    }
-                }
-                Err(_) => {
-                    warning = Some("blueprint version was invalid; project was created".into());
-                }
-            }
+            warning = Some(format!("applying the workflow failed: {}", error.message));
         }
         let id = project.id.clone();
         self.refresh_workspace();
@@ -3370,6 +4217,18 @@ impl App {
                 })
                 .map_err(|error| error.message)?;
         }
+        let description = Self::form_value(form, "description").to_owned();
+        let priority_raw = Self::form_value(form, "priority").trim().to_owned();
+        let priority = (!priority_raw.is_empty()).then_some(priority_raw);
+        let labels: Vec<String> = Self::form_value(form, "labels")
+            .split(',')
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+            .map(str::to_owned)
+            .collect();
+        self.client
+            .update_task_details(task_id.to_owned(), description, priority, labels)
+            .map_err(|error| error.message)?;
         let (message, kind) = self.mutation_status("Task updated");
         self.notify(message, kind);
         Ok(())

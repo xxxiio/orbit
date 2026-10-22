@@ -152,8 +152,10 @@ impl Blueprint {
                 "blueprint needs a valid id, positive version and name",
             ));
         }
-        if self.work_items.is_empty() {
-            return Err(invalid("at least one work-item kind is required"));
+        if self.work_items.is_empty() && self.views.is_empty() {
+            return Err(invalid(
+                "at least one work-item kind or presentation view is required",
+            ));
         }
         unique(
             self.required_capabilities.iter().map(String::as_str),
@@ -408,6 +410,42 @@ mod tests {
             Err(BlueprintError::Conflict(_))
         ));
     }
+    fn text_view() -> presentation::BlueprintView {
+        presentation::BlueprintView {
+            id: "overview".into(),
+            title: "Overview".into(),
+            description: String::new(),
+            layout: presentation::ViewLayout::default(),
+            components: vec![presentation::ViewComponent {
+                id: "intro".into(),
+                component_type: "text".into(),
+                title: Some("Intro".into()),
+                text: Some("Ordinary tasks only".into()),
+                source: None,
+                aggregate: None,
+                field: None,
+                group_by: None,
+                filter: BTreeMap::new(),
+                sort: None,
+                descending: false,
+                limit: None,
+                columns: Vec::new(),
+                actions: Vec::new(),
+                options: BTreeMap::new(),
+            }],
+        }
+    }
+
+    #[test]
+    fn work_items_may_be_empty_when_views_are_declared() {
+        let caps = BTreeSet::new();
+        let mut m = sample();
+        m.work_items.clear();
+        assert!(m.validate(&caps).is_err());
+        m.views = vec![text_view()];
+        m.validate(&caps).unwrap();
+    }
+
     #[test]
     fn rejects_bad_references_and_defaults() {
         let caps = BTreeSet::new();

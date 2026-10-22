@@ -94,6 +94,12 @@ The following names are extracted from the explicit Rust registrations in `crate
 - `agent.handoff_submit`
 - `agent.inspect`
 - `agent.job_context`
+- `attachment.add`
+- `attachment.associate`
+- `attachment.inspect`
+- `attachment.list`
+- `attachment.read`
+- `attachment.remove`
 - `blueprint.bind`
 - `blueprint.binding`
 - `blueprint.create_item`
@@ -138,6 +144,7 @@ The following names are extracted from the explicit Rust registrations in `crate
 - `planning.workload`
 - `priorities.list`
 - `project.configure_strategy`
+- `project.create`
 - `project.evidence_bind`
 - `project.evidence_list`
 - `project.evidence_report`
@@ -149,6 +156,15 @@ The following names are extracted from the explicit Rust registrations in `crate
 - `project.set_status`
 - `projects.list`
 - `task.create`
+- `task.get`
+- `task.update`
+- `task.activity`
+- `task.acceptance.add`
+- `task.acceptance.check`
+- `task.acceptance.list`
+- `task.acceptance.remove`
+- `task.acceptance.reorder`
+- `task.acceptance.update`
 - `task.dependencies.add`
 - `task.dependencies.preview`
 - `task.dependencies.remove`
@@ -157,14 +173,54 @@ The following names are extracted from the explicit Rust registrations in `crate
 - `task.readiness`
 - `task.set_status`
 - `tasks.list`
+- `workflow.apply`
+- `workflow.list`
+
+## Workflow and rich-task tooling
+
+Orbit calls project manifests **workflows** in the TUI and in prose. The
+`blueprint.*` tools and the `orbit blueprint` command group keep their names for
+compatibility. The local registry adds explicit aliases and rich operations:
+
+| Tool | Purpose |
+|---|---|
+| `workflow.list` | List bundled workflows and, with `project_id`, the bound workflow |
+| `workflow.apply` | Bind a project to a workflow version (alias of blueprint binding) |
+| `project.create` | Create a project through the canonical authority; Basic is bound automatically |
+| `task.get` / `task.update` | Read or replace description, priority and labels |
+| `task.acceptance.list` | Ordered criteria with stable IDs and completion timestamps |
+| `task.acceptance.add` / `update` / `check` / `reorder` / `remove` | Explicit ordered-criteria operations |
+| `task.activity` | Durable semantic activity for one task, newest first |
+| `attachment.list` / `inspect` / `add` / `read` / `remove` / `associate` | Managed content-addressed attachments |
+
+`task.get`, `task.update`, task acceptance, `task.activity`, workflow binding
+and all attachment tools are **local-authoritative only** in this build. They
+are not advertised in the connected registry: the accepted server snapshot does
+not project these fields, and the server does not accept attachment uploads.
+Calling them against a remote connection returns a typed `Unavailable` failure
+instead of a false success. `project.create` under a scoped policy still
+requires an explicit project ID inside `ORBIT_MCP_PROJECTS`.
+
+No MCP operation in this group launches an agent job or a Herdr session.
+Checking or completing acceptance criteria never completes the task implicitly.
 
 ## Typical workflows
 
-**Read first:** call `agent.inspect` to inspect effective mode and scope; list accepted project/task state, then inspect the relevant blueprint or task before requesting mutation.
+**Read first:** call `agent.inspect` to inspect effective mode and scope; list accepted project/task state, then inspect the relevant workflow or task before requesting mutation.
 
 **Connected writes:** submit canonical commands using the developer permission mode, then inspect `authority.status` / `authority.unresolved`. Use `authority.flush` and `authority.refresh` when online; use reviewed conflict resolution rather than silently overwriting accepted server history.
 
-**Blueprints:** inspect `blueprint.list` and `blueprint.show`, select an immutable version, then `blueprint.bind` only for an authorized project. `blueprint.create_item`, `blueprint.transition`, and `blueprint.properties` are user-directed mutations; declaring an action does **not** grant arbitrary shell or agent access.
+**Blueprints and workflows:** inspect `blueprint.list` and `blueprint.show`, or
+use `workflow.list`, select an immutable version, then `blueprint.bind` (or
+`workflow.apply`) only for an authorized project. `blueprint.create_item`,
+`blueprint.transition`, and `blueprint.properties` are user-directed mutations;
+declaring an action does **not** grant arbitrary shell or agent access. Basic is
+the default binding for newly created projects.
+
+**Rich local tasks:** use `task.get` and `task.update` for description, priority
+and labels; `task.acceptance.*` for ordered criteria; `task.activity` for
+history; and `attachment.*` for managed files. These are local-workspace tools
+in this build and fail closed in connected mode.
 
 **Agent operations:** job context and handoff submission are job-scoped. A reported agent success does not automatically mark the Orbit task complete.
 

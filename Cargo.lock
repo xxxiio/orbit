@@ -1136,6 +1136,7 @@ dependencies = [
  "orbit-storage",
  "orbit-ui",
  "ratatui",
+ "serde",
  "serde_json",
 ]
 

@@ -3,29 +3,36 @@ use super::super::*;
 
 impl TaskRepository for SqliteStore {
     fn get(&self, id: &TaskId) -> Result<Option<Task>, RepositoryError> {
-        self.connection
+        let mut task = self
+            .connection
             .query_row(
-                "SELECT id, title, status, project_id, milestone_id, estimated_minutes, earliest_start_at_ms, deadline_at_ms FROM tasks WHERE id = ?1",
+                "SELECT id, title, status, project_id, milestone_id, estimated_minutes, earliest_start_at_ms, deadline_at_ms, description, priority FROM tasks WHERE id = ?1",
                 [id.as_str()],
                 task_from_row,
             )
             .optional()
-            .map_err(repo_error)
+            .map_err(repo_error)?;
+        if let Some(task) = task.as_mut() {
+            self.apply_task_labels(std::slice::from_mut(task))?;
+        }
+        Ok(task)
     }
 
     fn list(&self) -> Result<Vec<Task>, RepositoryError> {
         let mut statement = self
             .connection
-            .prepare("SELECT id, title, status, project_id, milestone_id, estimated_minutes, earliest_start_at_ms, deadline_at_ms FROM tasks ORDER BY id")
+            .prepare("SELECT id, title, status, project_id, milestone_id, estimated_minutes, earliest_start_at_ms, deadline_at_ms, description, priority FROM tasks ORDER BY id")
             .map_err(repo_error)?;
-        collect_rows(statement.query_map([], task_from_row).map_err(repo_error)?)
+        let mut tasks = collect_rows(statement.query_map([], task_from_row).map_err(repo_error)?)?;
+        self.apply_task_labels(&mut tasks)?;
+        Ok(tasks)
     }
 
     fn save(&mut self, task: Task) -> Result<(), RepositoryError> {
         self.connection
             .execute(
-                r#"INSERT INTO tasks(id, title, status, project_id, milestone_id, estimated_minutes, earliest_start_at_ms, deadline_at_ms)
-                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                r#"INSERT INTO tasks(id, title, status, project_id, milestone_id, estimated_minutes, earliest_start_at_ms, deadline_at_ms, description, priority)
+                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                    ON CONFLICT(id) DO UPDATE SET
                      title = excluded.title,
                      status = excluded.status,
@@ -33,7 +40,9 @@ impl TaskRepository for SqliteStore {
                      milestone_id = excluded.milestone_id,
                      estimated_minutes = excluded.estimated_minutes,
                      earliest_start_at_ms = excluded.earliest_start_at_ms,
-                     deadline_at_ms = excluded.deadline_at_ms"#,
+                     deadline_at_ms = excluded.deadline_at_ms,
+                     description = excluded.description,
+                     priority = excluded.priority"#,
                 params![
                     task.id().as_str(),
                     task.title(),
@@ -43,9 +52,58 @@ impl TaskRepository for SqliteStore {
                     task.planning().estimated_minutes().map(i64::from),
                     task.planning().earliest_start_at_ms(),
                     task.planning().deadline_at_ms(),
+                    task.details().description(),
+                    task.details().priority().map(|priority| priority.as_str()),
                 ],
             )
             .map_err(repo_error)?;
+        self.replace_task_labels(task.id(), task.details().labels())?;
+        Ok(())
+    }
+}
+
+impl SqliteStore {
+    fn replace_task_labels(
+        &mut self,
+        id: &TaskId,
+        labels: &[String],
+    ) -> Result<(), RepositoryError> {
+        self.connection
+            .execute("DELETE FROM task_labels WHERE task_id = ?1", [id.as_str()])
+            .map_err(repo_error)?;
+        for label in labels {
+            self.connection
+                .execute(
+                    "INSERT OR IGNORE INTO task_labels(task_id, label) VALUES (?1, ?2)",
+                    params![id.as_str(), label],
+                )
+                .map_err(repo_error)?;
+        }
+        Ok(())
+    }
+
+    fn apply_task_labels(&self, tasks: &mut [Task]) -> Result<(), RepositoryError> {
+        if tasks.is_empty() {
+            return Ok(());
+        }
+        let mut statement = self
+            .connection
+            .prepare("SELECT label FROM task_labels WHERE task_id = ?1 ORDER BY label")
+            .map_err(repo_error)?;
+        for task in tasks.iter_mut() {
+            let labels: Vec<String> = statement
+                .query_map([task.id().as_str()], |row| row.get::<_, String>(0))
+                .map_err(repo_error)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(repo_error)?;
+            let mut details = task.details().clone();
+            details
+                .set_labels(labels)
+                .map_err(|error| RepositoryError::CorruptData {
+                    detail: error.to_string(),
+                })?;
+            task.set_details(details);
+        }
         Ok(())
     }
 }

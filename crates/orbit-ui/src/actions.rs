@@ -45,7 +45,7 @@ pub const ACTIONS: &[ActionDescriptor] = &[
     ActionDescriptor {
         id: "create_work_item",
         label: "New work item",
-        description: "Create a typed blueprint work item",
+        description: "Create a typed workflow work item",
         keys: &["C"],
         scope: ActionScope::Project,
         destructive: false,
@@ -56,6 +56,54 @@ pub const ACTIONS: &[ActionDescriptor] = &[
         description: "Rename a task and set planning fields",
         keys: &["e"],
         scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "edit_task_details",
+        label: "Edit details",
+        description: "Edit a task's description, priority and labels",
+        keys: &[],
+        scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "manage_acceptance_criteria",
+        label: "Acceptance criteria",
+        description: "Review and update a task's acceptance criteria",
+        keys: &[],
+        scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "attach_file",
+        label: "Attach file",
+        description: "Attach a file to a task, project or work item",
+        keys: &[],
+        scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "open_attachments",
+        label: "Attachments",
+        description: "Browse and open files attached to this item",
+        keys: &[],
+        scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "task_activity",
+        label: "Activity history",
+        description: "Show the recorded activity history of this task",
+        keys: &[],
+        scope: ActionScope::Item,
+        destructive: false,
+    },
+    ActionDescriptor {
+        id: "change_workflow",
+        label: "Change workflow",
+        description: "Apply a different bundled or published workflow",
+        keys: &[],
+        scope: ActionScope::Project,
         destructive: false,
     },
     ActionDescriptor {
@@ -85,23 +133,23 @@ pub const ACTIONS: &[ActionDescriptor] = &[
     ActionDescriptor {
         id: "edit_work_item",
         label: "Edit work item",
-        description: "Edit blueprint-declared work-item properties",
+        description: "Edit workflow-declared work-item properties",
         keys: &[],
         scope: ActionScope::Item,
         destructive: false,
     },
     ActionDescriptor {
         id: "install_blueprint",
-        label: "Install blueprint",
-        description: "Install a bundled blueprint version",
+        label: "Install workflow",
+        description: "Install a bundled workflow version",
         keys: &[],
         scope: ActionScope::Project,
         destructive: false,
     },
     ActionDescriptor {
         id: "bind_blueprint",
-        label: "Bind blueprint",
-        description: "Explicitly pin a published blueprint version",
+        label: "Bind workflow",
+        description: "Explicitly pin a published workflow version",
         keys: &[],
         scope: ActionScope::Project,
         destructive: false,
@@ -125,7 +173,7 @@ pub const ACTIONS: &[ActionDescriptor] = &[
     ActionDescriptor {
         id: "blueprint_transition",
         label: "Workflow transition",
-        description: "Apply a transition declared by the pinned blueprint",
+        description: "Apply a transition declared by the pinned workflow",
         keys: &["s"],
         scope: ActionScope::Item,
         destructive: false,
@@ -330,6 +378,31 @@ pub fn contextual(item: Option<&SelectionItem>, project_scope: bool) -> Vec<Avai
                     Some(item.id.clone()),
                 ));
                 actions.push(AvailableAction::enabled(
+                    "edit_task_details",
+                    "Edit details",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
+                    "manage_acceptance_criteria",
+                    "Acceptance criteria",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
+                    "attach_file",
+                    "Attach file",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
+                    "open_attachments",
+                    "Attachments",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
+                    "task_activity",
+                    "Activity history",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
                     "add_dependency",
                     "Add dependency",
                     Some(item.id.clone()),
@@ -363,6 +436,16 @@ pub fn contextual(item: Option<&SelectionItem>, project_scope: bool) -> Vec<Avai
                 actions.push(AvailableAction::enabled(
                     "edit_work_item",
                     "Edit work item",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
+                    "attach_file",
+                    "Attach file",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
+                    "open_attachments",
+                    "Attachments",
                     Some(item.id.clone()),
                 ));
                 for state in &item.allowed_transitions {
@@ -426,8 +509,23 @@ pub fn contextual(item: Option<&SelectionItem>, project_scope: bool) -> Vec<Avai
                     Some(item.id.clone()),
                 ));
                 actions.push(AvailableAction::enabled(
+                    "change_workflow",
+                    "Change workflow",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
+                    "attach_file",
+                    "Attach file",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
+                    "open_attachments",
+                    "Attachments",
+                    Some(item.id.clone()),
+                ));
+                actions.push(AvailableAction::enabled(
                     "bind_blueprint",
-                    "Bind blueprint",
+                    "Bind workflow",
                     Some(item.id.clone()),
                 ));
             }
@@ -561,5 +659,107 @@ mod tests {
             .unwrap();
         assert!(!review.enabled);
         assert!(review.disabled_reason.is_some());
+    }
+
+    fn selection(id: &str, kind: ItemKind) -> SelectionItem {
+        SelectionItem {
+            id: id.into(),
+            kind,
+            title: "Item".into(),
+            subtitle: String::new(),
+            status: "ready".into(),
+            fields: Vec::new(),
+            allowed_statuses: Vec::new(),
+            allowed_transitions: Vec::new(),
+            revision: None,
+        }
+    }
+
+    fn ids(offers: &[AvailableAction]) -> Vec<&str> {
+        offers.iter().map(|action| action.id.as_str()).collect()
+    }
+
+    #[test]
+    fn new_action_descriptors_use_the_agreed_ids_and_labels() {
+        for (id, label) in [
+            ("edit_task_details", "Edit details"),
+            ("manage_acceptance_criteria", "Acceptance criteria"),
+            ("attach_file", "Attach file"),
+            ("open_attachments", "Attachments"),
+            ("change_workflow", "Change workflow"),
+            ("task_activity", "Activity history"),
+        ] {
+            let action = descriptor(id).unwrap_or_else(|| panic!("missing action {id}"));
+            assert_eq!(action.label, label);
+        }
+        let details = descriptor("edit_task_details").unwrap();
+        for term in ["description", "priority", "labels"] {
+            assert!(details.description.contains(term), "{term}");
+        }
+        assert!(
+            descriptor("change_workflow")
+                .unwrap()
+                .description
+                .contains("bundled or published workflow")
+        );
+        // Compatibility ids stay in the catalogue.
+        assert!(descriptor("install_blueprint").is_some());
+        assert!(descriptor("bind_blueprint").is_some());
+        assert!(descriptor("blueprint_transition").is_some());
+    }
+
+    #[test]
+    fn task_offers_task_detail_attachment_and_activity_actions() {
+        let offers = contextual(Some(&selection("task-1", ItemKind::Task)), false);
+        let ids = ids(&offers);
+        for id in [
+            "edit_task_details",
+            "manage_acceptance_criteria",
+            "attach_file",
+            "open_attachments",
+            "task_activity",
+        ] {
+            let action = offers
+                .iter()
+                .find(|action| action.id == id)
+                .unwrap_or_else(|| panic!("missing {id}"));
+            assert!(action.enabled, "{id} should be enabled");
+            assert_eq!(action.payload.as_deref(), Some("task-1"));
+        }
+        assert!(!ids.contains(&"change_workflow"));
+    }
+
+    #[test]
+    fn work_item_offers_attachments_but_not_task_only_actions() {
+        let offers = contextual(Some(&selection("w1", ItemKind::WorkItem)), false);
+        let ids = ids(&offers);
+        for id in ["attach_file", "open_attachments"] {
+            let action = offers.iter().find(|action| action.id == id).unwrap();
+            assert!(action.enabled);
+            assert_eq!(action.payload.as_deref(), Some("w1"));
+        }
+        for id in [
+            "edit_task_details",
+            "manage_acceptance_criteria",
+            "task_activity",
+            "change_workflow",
+        ] {
+            assert!(!ids.contains(&id), "{id} should not be offered");
+        }
+    }
+
+    #[test]
+    fn project_scope_offers_workflow_and_attachment_actions() {
+        let offers = contextual(Some(&selection("p1", ItemKind::Project)), true);
+        let ids = ids(&offers);
+        for id in ["change_workflow", "attach_file", "open_attachments"] {
+            let action = offers
+                .iter()
+                .find(|action| action.id == id)
+                .unwrap_or_else(|| panic!("missing {id}"));
+            assert!(action.enabled);
+            assert_eq!(action.payload.as_deref(), Some("p1"));
+        }
+        assert!(!ids.contains(&"task_activity"));
     }
 }

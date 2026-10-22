@@ -26,6 +26,9 @@ pub enum ApplicationError {
     PlanRejected { violations: Vec<PlanViolation> },
     HabitPlanRejected { violations: Vec<HabitPlanViolation> },
     Progress(ProgressError),
+    AttachmentTooLarge { max_bytes: u64 },
+    AttachmentContentUnavailable { object: String },
+    AttachmentStore(String),
 }
 
 impl From<DomainError> for ApplicationError {

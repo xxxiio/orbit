@@ -2163,4 +2163,60 @@ mod m19_retired_sql_knowledge_contract {
         drop(conn);
         let _ = fs::remove_file(path);
     }
+
+    #[test]
+    fn explicit_workflow_replacement_requires_published_manifest() {
+        let mut store = SqliteStore::in_memory().expect("open database");
+        let project = Project::new(
+            ProjectId::new("workflow-project").unwrap(),
+            "Workflow project",
+        )
+        .unwrap();
+        ProjectRepository::save(&mut store, project.clone()).expect("save project");
+        let basic = orbit_blueprint::bundled::bundled_blueprint("basic").unwrap();
+        store
+            .publish_blueprint(&basic, &Default::default())
+            .unwrap();
+        let development = orbit_blueprint::bundled::bundled_blueprint("development").unwrap();
+        store
+            .publish_blueprint(&development, &Default::default())
+            .unwrap();
+        store
+            .bind_project_blueprint(&orbit_blueprint::BlueprintBinding {
+                project_id: "workflow-project".into(),
+                blueprint_id: "basic".into(),
+                version: 1,
+            })
+            .unwrap();
+        assert_eq!(
+            store.latest_blueprint_version("development").unwrap(),
+            Some(2)
+        );
+        assert_eq!(store.latest_blueprint_version("missing").unwrap(), None);
+        store
+            .replace_project_blueprint_binding(project.id(), "development", 2)
+            .unwrap();
+        let binding = store
+            .project_blueprint_binding("workflow-project")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (binding.blueprint_id.as_str(), binding.version),
+            ("development", 2)
+        );
+        // Unknown manifest is rejected and leaves the previous binding intact.
+        assert!(
+            store
+                .replace_project_blueprint_binding(project.id(), "development", 99)
+                .is_err()
+        );
+        let binding = store
+            .project_blueprint_binding("workflow-project")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (binding.blueprint_id.as_str(), binding.version),
+            ("development", 2)
+        );
+    }
 }

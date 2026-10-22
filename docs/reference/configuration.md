@@ -130,6 +130,8 @@ database instead.
 | `ORBIT_MCP_MODE` | `orbit-mcp` | `read_only` or `developer` |
 | `ORBIT_MCP_PROJECTS` | `orbit-mcp` | Allowed project IDs |
 | `ORBIT_DEVICE_ID` / `ORBIT_DEVICE_TOKEN` | `orbit-mcp` connected | Connected device credentials |
+| `ORBIT_ATTACHMENT_MAX_BYTES` | CLI/TUI/MCP local | Maximum attachment size in bytes; default 64 MiB |
+| `ORBIT_VIEWER` | `orbit-tui` | External viewer command for attachment open |
 | `ORBIT_VERSION` | `install.sh` | Requested install version |
 | `ORBIT_INSTALL_PREFIX` | `install.sh` | Install prefix |
 | `ORBIT_TARGET` | `install.sh` tests | Target override; not for normal use |
@@ -145,6 +147,7 @@ the target.
 | Config | `~/.orbit/config.toml` | Override with `--config`/`ORBIT_CONFIG` |
 | Database | `~/.orbit/orbit.db` | Local authority, or configured path |
 | Markdown vault | `<database>.knowledge/` | Must be backed up with the database |
+| Attachment objects | `<database directory>/attachments/objects/` | Content-addressed; back up with the database |
 | Logs | `~/.orbit/logs/` | Created by `orbit init` |
 | State | `~/.orbit/state/` | Created by `orbit init` |
 | Backups | `~/.orbit/backups/` | Used by `orbit update` |

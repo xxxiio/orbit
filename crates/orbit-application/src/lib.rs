@@ -7,6 +7,7 @@
 
 mod activity_commands;
 pub mod agent_runtime;
+mod attachment_commands;
 mod error;
 mod habit_commands;
 mod habit_occurrence_commands;
@@ -30,6 +31,7 @@ mod schedule_queries;
 mod sync_materialization;
 mod sync_outbox;
 mod task_commands;
+mod task_detail_commands;
 mod task_queries;
 mod task_scope;
 
@@ -37,6 +39,12 @@ pub use activity_commands::{RecordActivityCommand, record_activity};
 pub use agent_runtime::{
     AgentInspector, AgentLaunchOutcome, AgentLaunchRequest, AgentLauncher, AgentMessageOutcome,
     AgentMessenger, AgentRuntime, AgentSessionObservation,
+};
+pub use attachment_commands::{
+    AssociateAttachmentCommand, AttachmentRemoval, ImportAttachmentCommand,
+    RemoveAttachmentCommand, associate_existing_attachment_with_activity,
+    import_attachment_with_activity, purge_unreferenced_attachment_content,
+    read_attachment_content, remove_attachment_with_activity,
 };
 pub use error::{ApplicationError, RepositoryError};
 pub use habit_commands::{
@@ -60,9 +68,11 @@ pub use plan_commands::{
     PlanApplicationIdentity, apply_validated_habit_plan, apply_validated_plan,
 };
 pub use ports::{
-    ActivityRepository, Clock, HabitOccurrenceRepository, HabitRepository, MilestoneRepository,
-    ProjectEvidenceBinding, ProjectEvidenceRepository, ProjectRepository, RoutineRepository,
-    ScheduleRepository, TaskRepository, UnitOfWork,
+    AcceptanceCriteriaRepository, ActivityRepository, AttachmentContentStore,
+    AttachmentObjectRecord, AttachmentRepository, AttachmentStoreError, Clock,
+    HabitOccurrenceRepository, HabitRepository, MilestoneRepository, ProjectEvidenceBinding,
+    ProjectEvidenceRepository, ProjectRepository, RoutineRepository, ScheduleRepository,
+    StoredAttachmentContent, TaskRepository, UnitOfWork,
 };
 pub use project_commands::{
     ConfigureProjectStrategyCommand, ConfigureProjectStrategyWithActivityCommand,
@@ -109,6 +119,11 @@ pub use task_commands::{
     TransitionTaskWithActivityCommand, create_task, create_task_with_activity, set_task_planning,
     set_task_planning_with_activity, start_task_with_activity, transition_task,
     transition_task_with_activity,
+};
+pub use task_detail_commands::{
+    AcceptanceCriteriaChange, AcceptanceCriteriaCommand, UpdateTaskDetailsCommand,
+    apply_acceptance_criteria_change, list_acceptance_criteria, parse_task_priority,
+    update_task_details_with_activity,
 };
 pub use task_queries::{get_task, list_tasks, list_tasks_by_status};
 pub use task_scope::validate_task_scope;

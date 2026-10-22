@@ -326,8 +326,8 @@ MILESTONE-0028
 ### MILESTONE-0028 — M28 Project-Centric TUI and Blueprint UI Composition
 
 - **Status:** completed
-- **Outcome:** Users navigate Orbit by project, project blueprints declare reusable views, and a trusted registry renders real application data with authorized actions in a responsive terminal workspace.
-- **Why now:** M27's remaining gap is an external publication gate. M28 is the highest-priority unfinished product work that can be completed locally and replaces six hardcoded tabs with the blueprint-driven workspace the product vision requires.
+- **Outcome:** Users navigate Orbit by project, workflows declare reusable views, and a trusted registry renders real application data with authorized actions in a responsive terminal workspace. Basic is the default offline workflow; tasks support descriptions, priority, labels, acceptance criteria and first-class local attachments; external agents manage Basic tasks through MCP without managed-agent orchestration.
+- **Why now:** M27's remaining gap is an external publication gate. M28 was the highest-priority unfinished product work that can be completed locally, and the usability recovery turned the shell into a genuinely usable everyday project manager.
 - **Depends on:** MILESTONE-0015, MILESTONE-0022, MILESTONE-0023, MILESTONE-0024
 
 #### Scope
@@ -356,6 +356,7 @@ MILESTONE-0028
 - [x] EC-006: Contextual actions, forms and the command palette share one catalogue, use authorized client calls and suppress duplicate submissions.
 - [x] EC-007: Focused schema, rendering, interaction and architecture tests pass with 1,350 workspace tests and 37 real-PTY acceptance items.
 - [x] EC-008: User/developer documentation and GetDone records state actual progress and remaining limitations.
+- [x] EC-009: Usability recovery: Basic default workflow, rich task details and acceptance criteria, local attachments, non-Vim navigation, workflow terminology and MCP parity for external agents.
 
 #### Evidence
 
@@ -367,12 +368,14 @@ MILESTONE-0028
 - EC-006: action authority/declaration tests; duplicate-submission and palette/search tests.
 - EC-007: `cargo test --workspace --offline` 1,350 passed; 37 PTY; full M15 profile 42/42; clippy and fmt clean.
 - EC-008: TUI/blueprint/UI docs and GetDone records.
+- EC-009: `blueprints/basic.json`; schema 20 task/attachment tables; TUI 136 tests; external MCP stdio acceptance; 1,423 workspace tests; 40 PTY/MCP acceptance items.
 
 ##### Remaining work
 
+- Connected attachments and rich task details/criteria are local-only; they fail closed with explicit messages (NEXT-0009).
 - Connected multi-command edits are not atomic; inspect/recover the outbox.
 - Connected blueprint/work-item, habit, metric and note editing remains on the legacy command surface.
-- Agent review/resume is disabled without an explicitly configured runtime or connected review service.
+- Live Herdr Agent Development launch/review acceptance is unavailable without an authorized runtime.
 
 #### Next milestone
 

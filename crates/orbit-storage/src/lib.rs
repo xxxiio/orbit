@@ -5,20 +5,21 @@
 //! copying the live database file.
 
 use orbit_application::{
-    ActivityRepository, ApplicationError, HabitOccurrenceRepository, HabitRepository,
-    MetricEvidenceRepository, MetricObservation, MetricTargetRecord, MilestoneRepository,
-    PendingConflictResolution, PendingSemanticChange, ProjectEvidenceBinding,
-    ProjectEvidenceRepository, ProjectRepository, RepositoryError, ReservedConflictResolution,
-    ReservedSemanticChange, RoutineRepository, ScheduleRepository, SemanticEntityKind,
-    SemanticFieldMutation, SyncFieldVersion, SyncOutboxRepository, TaskRepository, UnitOfWork,
+    AcceptanceCriteriaRepository, ActivityRepository, ApplicationError, AttachmentObjectRecord,
+    AttachmentRepository, HabitOccurrenceRepository, HabitRepository, MetricEvidenceRepository,
+    MetricObservation, MetricTargetRecord, MilestoneRepository, PendingConflictResolution,
+    PendingSemanticChange, ProjectEvidenceBinding, ProjectEvidenceRepository, ProjectRepository,
+    RepositoryError, ReservedConflictResolution, ReservedSemanticChange, RoutineRepository,
+    ScheduleRepository, SemanticEntityKind, SemanticFieldMutation, SyncFieldVersion,
+    SyncOutboxRepository, TaskRepository, UnitOfWork,
 };
 use orbit_domain::{
-    ActivityId, ActivityKind, ActivityOrigin, ActivityRecord, ActivitySubject, Habit, HabitCadence,
-    HabitId, HabitOccurrence, HabitOccurrenceId, KnowledgeItemId, Milestone, MilestoneId,
-    MilestoneStatus, Project, ProjectId, ProjectMode, ProjectProgressSignal, ProjectStatus,
-    ProjectSuccessCriterion, Routine, RoutineId, ScheduleBlock, ScheduleBlockId,
-    ScheduleFlexibility, ScheduleTarget, SuccessCriterionStatus, Task, TaskId, TaskPlanning,
-    TaskScope, TaskStatus,
+    AcceptanceCriteria, AcceptanceCriterionId, ActivityId, ActivityKind, ActivityOrigin,
+    ActivityRecord, ActivitySubject, AttachmentId, Habit, HabitCadence, HabitId, HabitOccurrence,
+    HabitOccurrenceId, KnowledgeItemId, Milestone, MilestoneId, MilestoneStatus, Project,
+    ProjectId, ProjectMode, ProjectProgressSignal, ProjectStatus, ProjectSuccessCriterion, Routine,
+    RoutineId, ScheduleBlock, ScheduleBlockId, ScheduleFlexibility, ScheduleTarget,
+    SuccessCriterionStatus, Task, TaskId, TaskPlanning, TaskScope, TaskStatus,
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
 use std::{
@@ -39,8 +40,69 @@ pub mod blueprints;
 mod repositories;
 pub use agent_jobs::{AgentRuntimeObservation, RuntimeActivity};
 
-const SCHEMA_VERSION: i64 = 19;
+const SCHEMA_VERSION: i64 = 20;
 const DEFAULT_BUSY_TIMEOUT_MS: u64 = 5_000;
+
+/// Task richness added in schema 20. Descriptions and priorities are typed
+/// columns; labels are a separate table so the payload never becomes one
+/// untyped JSON object.
+const TASK_DETAILS_SCHEMA: &str = r#"
+ALTER TABLE tasks ADD COLUMN description TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN priority TEXT;
+
+CREATE TABLE IF NOT EXISTS task_labels (
+    task_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    PRIMARY KEY(task_id, label),
+    FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_labels_label ON task_labels(label);
+
+CREATE TABLE IF NOT EXISTS task_acceptance_criteria (
+    task_id TEXT NOT NULL,
+    criterion_id TEXT NOT NULL,
+    position INTEGER NOT NULL CHECK(position >= 0),
+    text TEXT NOT NULL,
+    completed_at_ms INTEGER,
+    PRIMARY KEY(task_id, criterion_id),
+    UNIQUE(task_id, position),
+    FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_acceptance_task_position
+    ON task_acceptance_criteria(task_id, position);
+"#;
+
+/// Attachment metadata. Content bytes live in a managed, content-addressed
+/// object store on the filesystem; only metadata and associations are stored
+/// here. Multiple associations may reference the same immutable object.
+const ATTACHMENT_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS attachment_objects (
+    object_hash TEXT PRIMARY KEY NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+    created_at_ms INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS attachments (
+    id TEXT PRIMARY KEY NOT NULL,
+    object_hash TEXT NOT NULL,
+    owner_kind TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+    checksum TEXT NOT NULL,
+    description TEXT,
+    created_at_ms INTEGER NOT NULL,
+    FOREIGN KEY(object_hash) REFERENCES attachment_objects(object_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_owner
+    ON attachments(owner_kind, owner_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_object
+    ON attachments(object_hash);
+"#;
 
 /// The schema version this build creates and understands.
 pub const SUPPORTED_SCHEMA_VERSION: i64 = SCHEMA_VERSION;
@@ -112,6 +174,8 @@ impl StorageIntegrityReport {
 // The storage facade intentionally contains only stable public types and module wiring.
 // Implementation is grouped by responsibility while all operations retain their
 // original SqliteStore receiver and transaction behavior.
+#[cfg(test)]
+mod attachment_storage_tests;
 mod project_criteria;
 mod row_mapping;
 mod sqlite_helpers;

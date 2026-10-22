@@ -37,6 +37,23 @@ impl EmbeddedAuthorityClient {
         self.host.snapshot()
     }
 
+    /// Borrow the host for richer facade commands that must use the same
+    /// authoritative command path as the local `OrbitClient`.
+    pub(crate) fn host(&self) -> &AuthoritativeHost {
+        &self.host
+    }
+
+    /// Mutably borrow the host for accepted rich commands.
+    pub(crate) fn host_mut(&mut self) -> &mut AuthoritativeHost {
+        &mut self.host
+    }
+
+    /// Split the trusted actor from a mutable host borrow for one command.
+    pub(crate) fn command_context(&mut self) -> (String, &mut AuthoritativeHost) {
+        let actor = self.actor.clone();
+        (actor, &mut self.host)
+    }
+
     pub fn projects(&self) -> Result<(i64, Vec<ProjectRecord>), AuthorityError> {
         self.host.projects()
     }
@@ -377,6 +394,7 @@ mod tests {
         let empty = client.snapshot().unwrap();
         assert_eq!(empty.0, 0);
         let project = ProjectCommand {
+            workflow_id: None,
             command_id: "p1".into(),
             expected_revision: 0,
             project_id: "project-1".into(),

@@ -1,6 +1,8 @@
 # Blueprint work items versus Orbit tasks
 
-**Projects and tasks** are Orbit's base productivity entities. **Blueprints** are versioned definitions that add domain-specific kinds, properties, states, transitions, templates, and optional capability actions. A blueprint work item is **not automatically** an Orbit task, and an item transition is not a call to an agent runtime.
+**Projects and tasks** are Orbit's base productivity entities. **Blueprints** are versioned definitions that add domain-specific kinds, properties, states, transitions, templates, and optional capability actions. Orbit calls them **workflows** in the TUI and in prose; the persisted identifiers and the `orbit blueprint` command group keep the original name for compatibility. Every new project starts on the bundled **Basic** workflow.
+
+A blueprint work item is **not automatically** an Orbit task, and an item transition is not a call to an agent runtime.
 
 ## Start from a bundled blueprint
 

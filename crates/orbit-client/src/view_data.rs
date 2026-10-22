@@ -21,6 +21,37 @@ fn invalid(message: impl Into<String>) -> ViewDataError {
     ViewDataError::invalid(message)
 }
 
+/// Convert Unix epoch milliseconds to a UTC `YYYY-MM-DD` civil date.
+///
+/// Dates are display metadata only; clients must not reinterpret them as local
+/// time. Implemented with the proleptic Gregorian civil-from-days algorithm so
+/// the facade needs no date dependency.
+pub fn civil_date_from_ms(epoch_ms: i64) -> String {
+    let days = epoch_ms.div_euclid(86_400_000);
+    // Howard Hinnant's `civil_from_days`, relative to 1970-01-01.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = if month_prime < 10 {
+        month_prime + 3
+    } else {
+        month_prime - 9
+    };
+    let year = if month <= 2 { year + 1 } else { year };
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// Human-readable UTC due date for a task deadline, empty when unset.
+pub fn due_date_label(deadline_at_ms: Option<i64>) -> String {
+    deadline_at_ms.map(civil_date_from_ms).unwrap_or_default()
+}
+
 /// Application-owned list of domain workflow targets. The renderer only
 /// displays these offers; `set_task_status` revalidates them.
 pub fn allowed_task_statuses(status: &str) -> Vec<String> {
@@ -324,6 +355,10 @@ impl OrbitClient {
                     id: task.id,
                     title: task.title,
                     status: task.status.clone(),
+                    priority: task.priority.clone().unwrap_or_default(),
+                    due_date: due_date_label(task.deadline_at_ms),
+                    acceptance_total: 0,
+                    acceptance_completed: 0,
                     project_id: task.project_id,
                     milestone_id: task.milestone_id,
                     estimated_minutes: task.estimated_minutes,
@@ -543,6 +578,10 @@ impl OrbitClient {
                 id: task.id,
                 title: task.title,
                 status: task.status.clone(),
+                priority: task.priority.clone().unwrap_or_default(),
+                due_date: due_date_label(task.deadline_at_ms),
+                acceptance_total: 0,
+                acceptance_completed: 0,
                 project_id: task.project_id,
                 milestone_id: task.milestone_id,
                 estimated_minutes: task.estimated_minutes,
@@ -700,7 +739,19 @@ mod tests {
     }
 
     #[test]
-    fn empty_workspace_has_a_generated_project_view() {
+    fn civil_dates_render_utc_days_without_a_date_dependency() {
+        assert_eq!(civil_date_from_ms(0), "1970-01-01");
+        assert_eq!(civil_date_from_ms(86_399_999), "1970-01-01");
+        assert_eq!(civil_date_from_ms(86_400_000), "1970-01-02");
+        assert_eq!(civil_date_from_ms(1_700_000_000_000), "2023-11-14");
+        assert_eq!(civil_date_from_ms(1_709_164_800_000), "2024-02-29");
+        assert_eq!(civil_date_from_ms(-86_400_000), "1969-12-31");
+        assert_eq!(due_date_label(None), "");
+        assert_eq!(due_date_label(Some(1_700_000_000_000)), "2023-11-14");
+    }
+
+    #[test]
+    fn created_project_resolves_its_pinned_default_workflow_views() {
         let mut client = client();
         let project = client
             .create_project(crate::CreateProjectRequest {
@@ -713,8 +764,10 @@ mod tests {
             .resolve_project_views(&project.id, &registry, now_ms())
             .unwrap();
         assert_eq!(data.project.name, "Legacy");
-        assert!(generated);
-        assert!(views.iter().any(|view| view.id == "overview"));
+        // Creation binds the bundled `basic` workflow, so views are declared
+        // rather than generated for an unbound legacy project.
+        assert!(!generated);
+        assert!(views.iter().any(|view| view.id == "tasks"));
         assert!(views.iter().all(|view| !view.components.is_empty()));
     }
 
@@ -757,9 +810,8 @@ mod tests {
                 name: "Research".into(),
             })
             .unwrap();
-        client.install_bundled_blueprint("research").unwrap();
         client
-            .bind_project_blueprint(&project.id, "research", 2)
+            .apply_workflow(project.id.clone(), "research".into(), None)
             .unwrap();
         let item = client
             .create_blueprint_work_item(

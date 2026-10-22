@@ -5,6 +5,7 @@
 //! without opening a second store or reinterpreting pending commands as
 //! accepted state.
 use crate::data::*;
+use crate::model::format_epoch_date;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -97,6 +98,16 @@ fn tasks(snapshot: &Value) -> Vec<TaskRow> {
                 prerequisite_ids: prerequisites,
                 blocking_task_ids: blocking,
                 allowed_statuses: Vec::new(),
+                priority: string(row, "priority").unwrap_or_default(),
+                due_date: string(row, "due_date").unwrap_or_else(|| {
+                    number(row, "deadline_at_ms")
+                        .filter(|deadline| *deadline != 0)
+                        .map(format_epoch_date)
+                        .unwrap_or_default()
+                }),
+                acceptance_total: number(row, "acceptance_total").unwrap_or(0).max(0) as usize,
+                acceptance_completed: number(row, "acceptance_completed").unwrap_or(0).max(0)
+                    as usize,
             }
         })
         .collect();
@@ -312,7 +323,7 @@ mod tests {
                 {"id":"p2","name":"Other","status":"proposed"}
             ],
             "tasks": [
-                {"id":"t1","title":"Ready task","status":"ready","project_id":"p1","estimated_minutes":30},
+                {"id":"t1","title":"Ready task","status":"ready","project_id":"p1","estimated_minutes":30,"deadline_at_ms":1700000000000i64,"priority":"high"},
                 {"id":"t2","title":"Blocked task","status":"ready","project_id":"p1"},
                 {"id":"t3","title":"Inbox","status":"inbox"},
                 {"id":"t4","title":"Done prerequisite","status":"done","project_id":"p1"}
@@ -350,6 +361,9 @@ mod tests {
                 .iter()
                 .any(|task| task.id == "t1" && task.actionable)
         );
+        let t1 = workspace.tasks.iter().find(|task| task.id == "t1").unwrap();
+        assert_eq!(t1.priority, "high");
+        assert_eq!(t1.due_date, "2023-11-14");
         assert!(
             workspace
                 .tasks

@@ -114,11 +114,19 @@ pub fn invoke(args: SyncAuthorityArgs) -> Result<Value, String> {
             revision,
             id,
             name,
+            workflow,
         } => {
-            let response=client.post(format!("{base}/v1/authoritative/project-commands"))
-                .bearer_auth(&args.token).header("x-orbit-device-id", &args.device)
-                .json(&json!({"command_id":command_id,"expected_revision":revision,"project_id":id,"name":name}))
-                .send().map_err(|e|e.to_string())?;
+            let mut body = json!({"command_id":command_id,"expected_revision":revision,"project_id":id,"name":name});
+            if let Some(workflow) = workflow {
+                body["workflow_id"] = serde_json::Value::String(workflow);
+            }
+            let response = client
+                .post(format!("{base}/v1/authoritative/project-commands"))
+                .bearer_auth(&args.token)
+                .header("x-orbit-device-id", &args.device)
+                .json(&body)
+                .send()
+                .map_err(|e| e.to_string())?;
             return decode(response);
         }
         AuthorityTaskAction::Create {

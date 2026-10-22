@@ -346,6 +346,7 @@ mod tests {
         db.authority_project_command(
             "user",
             ProjectCommand {
+                workflow_id: None,
                 command_id: format!("project-{id}"),
                 expected_revision: rev,
                 project_id: id.into(),

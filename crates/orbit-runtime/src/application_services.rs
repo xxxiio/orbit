@@ -4,28 +4,35 @@
 //! opening repositories or reconstructing project/task business rules.
 //! The application UnitOfWork makes each entity/activity update atomic.
 use orbit_application::{
-    ApplicationError, ApplyValidatedHabitPlanCommand, ApplyValidatedPlanCommand,
+    AcceptanceCriteriaCommand, ApplicationError, ApplyValidatedHabitPlanCommand,
+    ApplyValidatedPlanCommand, AssociateAttachmentCommand, AttachmentRemoval,
     ChangeProjectEvidenceCommand, Clock, ConfigureProjectStrategyWithActivityCommand,
     CreateHabitWithActivityCommand, CreateProjectWithActivityCommand,
     CreateRoutineWithActivityCommand, CreateScheduleBlockWithActivityCommand,
-    CreateTaskWithActivityCommand, MetricObservation, MetricTargetRecord,
-    RecordHabitOccurrenceWithActivityCommand, RescheduleBlockWithActivityCommand,
-    SetHabitActiveWithActivityCommand, SetProjectCriterionStatusWithActivityCommand,
-    SetRoutineHabitMembershipWithActivityCommand, SetTaskPlanningWithActivityCommand,
-    StartTaskWithActivityCommand, TransitionMilestoneWithActivityCommand,
-    TransitionProjectWithActivityCommand, TransitionTaskWithActivityCommand,
-    apply_validated_habit_plan, apply_validated_plan, bind_project_evidence,
-    configure_project_strategy_with_activity, create_habit_with_activity,
+    CreateTaskWithActivityCommand, ImportAttachmentCommand, MetricObservation, MetricTargetRecord,
+    RecordHabitOccurrenceWithActivityCommand, RemoveAttachmentCommand,
+    RescheduleBlockWithActivityCommand, SetHabitActiveWithActivityCommand,
+    SetProjectCriterionStatusWithActivityCommand, SetRoutineHabitMembershipWithActivityCommand,
+    SetTaskPlanningWithActivityCommand, StartTaskWithActivityCommand,
+    TransitionMilestoneWithActivityCommand, TransitionProjectWithActivityCommand,
+    TransitionTaskWithActivityCommand, UpdateTaskDetailsCommand, apply_acceptance_criteria_change,
+    apply_validated_habit_plan, apply_validated_plan, associate_existing_attachment_with_activity,
+    bind_project_evidence, configure_project_strategy_with_activity, create_habit_with_activity,
     create_project_with_activity, create_routine_with_activity,
     create_schedule_block_with_activity, create_task_with_activity,
-    record_habit_occurrence_with_activity, record_metric_observation,
-    reschedule_block_with_activity, set_habit_active_with_activity, set_metric_target,
-    set_project_criterion_status_with_activity, set_routine_habit_membership_with_activity,
-    set_task_planning_with_activity, start_task_with_activity, transition_milestone_with_activity,
-    transition_project_with_activity, transition_task_with_activity, unbind_project_evidence,
+    import_attachment_with_activity, record_habit_occurrence_with_activity,
+    record_metric_observation, remove_attachment_with_activity, reschedule_block_with_activity,
+    set_habit_active_with_activity, set_metric_target, set_project_criterion_status_with_activity,
+    set_routine_habit_membership_with_activity, set_task_planning_with_activity,
+    start_task_with_activity, transition_milestone_with_activity, transition_project_with_activity,
+    transition_task_with_activity, unbind_project_evidence, update_task_details_with_activity,
 };
-use orbit_domain::{Habit, HabitOccurrence, Project, Routine, ScheduleBlock, Task};
+use orbit_domain::{
+    AcceptanceCriteria, Attachment, Habit, HabitOccurrence, Project, Routine, ScheduleBlock, Task,
+};
 use orbit_storage::SqliteStore;
+
+use crate::attachment_store::AttachmentObjectStore;
 
 struct RuntimeClock;
 impl Clock for RuntimeClock {
@@ -208,10 +215,14 @@ impl<'a> ApplicationQueries<'a> {
 /// This service is hosted inside AuthoritativeHost for either deployment mode.
 pub struct ApplicationServices<'a> {
     store: &'a mut SqliteStore,
+    attachments: &'a mut AttachmentObjectStore,
 }
 impl<'a> ApplicationServices<'a> {
-    pub(crate) fn new(store: &'a mut SqliteStore) -> Self {
-        Self { store }
+    pub(crate) fn new(
+        store: &'a mut SqliteStore,
+        attachments: &'a mut AttachmentObjectStore,
+    ) -> Self {
+        Self { store, attachments }
     }
 
     pub(crate) fn create_routine(
@@ -226,11 +237,41 @@ impl<'a> ApplicationServices<'a> {
     ) -> Result<Routine, ApplicationError> {
         set_routine_habit_membership_with_activity(self.store, &RuntimeClock, cmd)
     }
+    /// Project creation also installs and binds the bundled `basic` workflow.
+    /// The authority command engine already holds the enclosing transaction on
+    /// this exact connection, so the project row, its activity, the published
+    /// manifest and the default binding commit (or roll back) atomically.
     pub(crate) fn create_project(
         &mut self,
         cmd: CreateProjectWithActivityCommand,
     ) -> Result<Project, ApplicationError> {
-        create_project_with_activity(self.store, &RuntimeClock, cmd)
+        let project = create_project_with_activity(self.store, &RuntimeClock, cmd)?;
+        crate::default_workflow::ensure_basic_workflow(self.store, project.id().as_str()).map_err(
+            |error| {
+                ApplicationError::Repository(orbit_application::RepositoryError::Other(format!(
+                    "default workflow binding failed: {error:?}"
+                )))
+            },
+        )?;
+        Ok(project)
+    }
+    pub(crate) fn replace_project_workflow(
+        &mut self,
+        project_id: &orbit_domain::ProjectId,
+        blueprint_id: &str,
+        version: u32,
+    ) -> Result<(), ApplicationError> {
+        self.store
+            .replace_project_blueprint_binding(project_id, blueprint_id, version)
+            .map_err(ApplicationError::from)
+    }
+    pub(crate) fn remove_project_workflow(
+        &mut self,
+        project_id: &orbit_domain::ProjectId,
+    ) -> Result<bool, ApplicationError> {
+        self.store
+            .remove_project_blueprint_binding(project_id)
+            .map_err(ApplicationError::from)
     }
     pub(crate) fn transition_project(
         &mut self,
@@ -345,6 +386,46 @@ impl<'a> ApplicationServices<'a> {
         cmd: ApplyValidatedHabitPlanCommand,
     ) -> Result<Vec<ScheduleBlock>, ApplicationError> {
         apply_validated_habit_plan(self.store, &RuntimeClock, cmd)
+    }
+
+    pub(crate) fn import_attachment(
+        &mut self,
+        cmd: ImportAttachmentCommand,
+    ) -> Result<Attachment, ApplicationError> {
+        import_attachment_with_activity(self.store, self.attachments, &RuntimeClock, cmd)
+    }
+
+    pub(crate) fn remove_attachment(
+        &mut self,
+        cmd: RemoveAttachmentCommand,
+    ) -> Result<AttachmentRemoval, ApplicationError> {
+        remove_attachment_with_activity(self.store, self.attachments, &RuntimeClock, cmd)
+    }
+
+    pub(crate) fn associate_attachment(
+        &mut self,
+        cmd: AssociateAttachmentCommand,
+    ) -> Result<Attachment, ApplicationError> {
+        associate_existing_attachment_with_activity(
+            self.store,
+            self.attachments,
+            &RuntimeClock,
+            cmd,
+        )
+    }
+
+    pub(crate) fn update_task_details(
+        &mut self,
+        cmd: UpdateTaskDetailsCommand,
+    ) -> Result<Task, ApplicationError> {
+        update_task_details_with_activity(self.store, &RuntimeClock, cmd)
+    }
+
+    pub(crate) fn apply_acceptance_criteria(
+        &mut self,
+        cmd: AcceptanceCriteriaCommand,
+    ) -> Result<AcceptanceCriteria, ApplicationError> {
+        apply_acceptance_criteria_change(self.store, &RuntimeClock, cmd)
     }
 }
 

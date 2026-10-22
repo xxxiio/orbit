@@ -442,6 +442,7 @@ mod tests {
         db.authority_project_command(
             "owner",
             ProjectCommand {
+                workflow_id: None,
                 command_id: format!("make-{id}"),
                 expected_revision: revision,
                 project_id: id.into(),
@@ -832,6 +833,7 @@ mod strategy_matrix_tests {
         db.authority_project_command(
             "owner",
             ProjectCommand {
+                workflow_id: None,
                 command_id: "seed".into(),
                 expected_revision: 0,
                 project_id: "proj".into(),

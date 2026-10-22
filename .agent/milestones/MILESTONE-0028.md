@@ -159,15 +159,37 @@ locally and materially improves every project.
 - EC-008: This milestone, task/status/acceptance/evidence records, roadmap,
   journal and documentation pages.
 
+#### Usability recovery (2026-10-22)
+
+The original M28 delivery was a working project-centric shell but not an
+everyday project manager. Recovery added:
+
+- Bundled `basic` v1 workflow (ordinary tasks; Overview/Tasks/Board/Timeline)
+  and authority-owned default binding for every new project on both creation
+  paths, with explicit change/unpin.
+- Task description (Markdown), priority, labels and ordered acceptance criteria
+  with stable ids and completion timestamps.
+- A content-addressed attachment subsystem (metadata + managed objects) with
+  size limits, symlink rejection, deduplication, GC and explicit viewer handoff.
+- TUI editing, criteria/attachment/activity modals, action bar, multiline
+  editor, session restore, first-run guidance and workflow terminology.
+- MCP task detail/acceptance/attachment/project/workflow tools; no implicit agent
+  launch.
+- 1,238 focused tests, 1,423 workspace tests, 40 real PTY/MCP acceptance items,
+  clippy/fmt clean, 34 documentation tests.
+
 ## Remaining work
 
+- Connected attachment upload/retrieval is not implemented; all connected
+  attachment operations fail closed with an explicit message (next step
+  NEXT-0009). Connected task descriptions/criteria have the same limitation.
 - Connected project/task workflows share the shell and preserve pending/accepted
   separation. Connected multi-command edits are not atomic: a later rejected
   intent can leave earlier intents queued (documented recovery via outbox/CLI).
 - Connected blueprint/work-item, habits, metrics and notes remain on the
   explicitly available legacy connected command surface.
-- Agent execution is inspectable; review/resume stays disabled without an
-  explicitly configured runtime or connected review service.
+- Agent execution is inspectable; review/resume and live Herdr launch stay
+  disabled without an explicitly configured runtime or connected review service.
 - Local loading is synchronous; no screenshots are claimed.
 - Broad public release acceptance remains assigned to M15/M27.
 

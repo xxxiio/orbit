@@ -64,9 +64,13 @@ acceptance requirements are satisfied.
 orbit task complete TASK_ID
 ```
 
-This build has no task-level acceptance-criteria field. Represent criteria in a
-linked note or as a project success criterion, and state which one is
-authoritative. See [notes and folders](notes-and-folders.md).
+Tasks have first-class acceptance criteria (local-authoritative in this build):
+edit them in the TUI with `K` or over MCP with `task.acceptance.*`. They are a
+separate ordered aggregate; checking every criterion never completes the task.
+For longer arguments you can also use a linked note or a project success
+criterion, and state which one is authoritative. See
+[task details and attachments](task-details-and-attachments.md) and
+[notes and folders](notes-and-folders.md).
 
 ## Request changes
 

@@ -376,6 +376,7 @@ mod authoritative_task_tests {
         let mut store = AuthorityStore::open(Path::new(":memory:")).unwrap();
         store.enroll("device-a", &"a".repeat(40)).unwrap();
         let p = crate::domain_commands::ProjectCommand {
+            workflow_id: None,
             command_id: "p-create".into(),
             expected_revision: 0,
             project_id: "project-1".into(),
@@ -493,6 +494,7 @@ mod authoritative_task_tests {
             db.authority_project_command(
                 "user",
                 ProjectCommand {
+                    workflow_id: None,
                     command_id: format!("new-{id}"),
                     expected_revision: revision,
                     project_id: id.into(),
@@ -668,6 +670,7 @@ mod authoritative_project_tests {
     fn projects_and_tasks_share_revision_history_and_atomic_receipts() {
         let mut store = AuthorityStore::open(Path::new(":memory:")).unwrap();
         let create = ProjectCommand {
+            workflow_id: None,
             command_id: "project-1".into(),
             expected_revision: 0,
             project_id: "p1".into(),
@@ -755,6 +758,7 @@ mod authoritative_project_tests {
         assert_eq!(store.history().unwrap().len(), 3);
         assert!(store.authority_projection().unwrap().is_some());
         let bad = ProjectCommand {
+            workflow_id: None,
             command_id: "project-2".into(),
             expected_revision: 1,
             project_id: "p2".into(),
@@ -784,6 +788,7 @@ mod authority_snapshot_tests {
             .authority_project_command(
                 "device-a",
                 ProjectCommand {
+                    workflow_id: None,
                     command_id: "p-command".into(),
                     expected_revision: 0,
                     project_id: "p".into(),
@@ -827,6 +832,7 @@ mod verified_authority_snapshot_tests {
             .authority_project_command(
                 "device-a",
                 ProjectCommand {
+                    workflow_id: None,
                     command_id: "first".into(),
                     expected_revision: 0,
                     project_id: "p1".into(),
@@ -839,6 +845,7 @@ mod verified_authority_snapshot_tests {
             .authority_project_command(
                 "device-a",
                 ProjectCommand {
+                    workflow_id: None,
                     command_id: "second".into(),
                     expected_revision: 1,
                     project_id: "p2".into(),
@@ -864,6 +871,7 @@ mod verified_authority_snapshot_tests {
         assert!(projects.is_empty() && tasks.is_empty());
         assert_eq!(store.authority_verified_snapshot().unwrap().1, initial);
         let project = ProjectCommand {
+            workflow_id: None,
             command_id: "p1-command".into(),
             expected_revision: 0,
             project_id: "p1".into(),

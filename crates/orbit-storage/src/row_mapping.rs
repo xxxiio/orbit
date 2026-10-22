@@ -10,6 +10,8 @@ pub(super) fn task_from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
     let estimated_minutes_raw: Option<i64> = row.get(5)?;
     let earliest_start_at_ms: Option<i64> = row.get(6)?;
     let deadline_at_ms: Option<i64> = row.get(7)?;
+    let description: Option<String> = row.get(8)?;
+    let priority: Option<String> = row.get(9)?;
 
     let project_id = project_id
         .map(project_id_from_string)
@@ -28,6 +30,17 @@ pub(super) fn task_from_row(row: &Row<'_>) -> rusqlite::Result<Task> {
     let planning = TaskPlanning::new(estimated_minutes, earliest_start_at_ms, deadline_at_ms)
         .map_err(to_sql_error)?;
     task.set_planning(planning);
+    let mut details = orbit_domain::TaskDetails::default();
+    details
+        .set_description(description.unwrap_or_default())
+        .map_err(to_sql_error)?;
+    if let Some(priority) = priority {
+        details.set_priority(Some(
+            orbit_domain::TaskPriority::parse(&priority)
+                .ok_or_else(|| to_sql_error("invalid task priority"))?,
+        ));
+    }
+    task.set_details(details);
     restore_task_status(&mut task, &status).map_err(to_sql_error)?;
     Ok(task)
 }
@@ -329,6 +342,8 @@ pub(super) fn encode_activity_kind(kind: &ActivityKind) -> (&'static str, Option
         ActivityKind::Scheduled => ("scheduled", None),
         ActivityKind::Rescheduled => ("rescheduled", None),
         ActivityKind::Completed => ("completed", None),
+        ActivityKind::AttachmentAdded => ("attachment_added", None),
+        ActivityKind::AttachmentRemoved => ("attachment_removed", None),
         ActivityKind::Custom(value) => ("custom", Some(value.as_str())),
     }
 }
@@ -347,6 +362,8 @@ pub(super) fn decode_activity_kind(
         ("scheduled", None) => Ok(ActivityKind::Scheduled),
         ("rescheduled", None) => Ok(ActivityKind::Rescheduled),
         ("completed", None) => Ok(ActivityKind::Completed),
+        ("attachment_added", None) => Ok(ActivityKind::AttachmentAdded),
+        ("attachment_removed", None) => Ok(ActivityKind::AttachmentRemoved),
         ("custom", Some(value)) => Ok(ActivityKind::Custom(value)),
         _ => Err("invalid activity kind"),
     }

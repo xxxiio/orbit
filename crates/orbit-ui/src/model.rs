@@ -301,6 +301,15 @@ pub fn task_selection(task: &TaskRow) -> SelectionItem {
     if !task.blocking_task_ids.is_empty() {
         fields.push(("blocked by".into(), task.blocking_task_ids.join(", ")));
     }
+    if !task.priority.is_empty() {
+        fields.push(("priority".into(), task.priority.clone()));
+    }
+    if !task.due_date.is_empty() {
+        fields.push(("due".into(), task.due_date.clone()));
+    }
+    if let Some((completed, total)) = task.acceptance_progress() {
+        fields.push(("acceptance".into(), format!("{completed}/{total}")));
+    }
     if let Some(earliest) = task.earliest_start_at_ms {
         fields.push(("earliest".into(), format_epoch_ms(earliest)));
     }
@@ -387,6 +396,15 @@ pub fn format_epoch_ms(ms: i64) -> String {
         day_seconds / 3600,
         (day_seconds % 3600) / 60
     )
+}
+
+/// UTC calendar date (`YYYY-MM-DD`) for an epoch-millisecond instant. This is
+/// the renderer-side equivalent of the client's due-date label helper, used by
+/// accepted-snapshot conversions that only carry `deadline_at_ms`.
+pub fn format_epoch_date(ms: i64) -> String {
+    let days = ms.div_euclid(1000).div_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    format!("{year:04}-{month:02}-{day:02}")
 }
 
 fn civil_from_days(days: i64) -> (i64, i64, i64) {

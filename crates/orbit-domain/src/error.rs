@@ -64,6 +64,27 @@ pub enum DomainError {
     EmptyKnowledgeResourceMediaType,
     EmptyKnowledgeResourceHash,
     EmptyLocalResourcePath,
+    TaskDescriptionTooLong,
+    InvalidTaskPriority,
+    TooManyTaskLabels,
+    InvalidTaskLabel,
+    EmptyAcceptanceCriterionText,
+    AcceptanceCriterionTextTooLong,
+    TooManyAcceptanceCriteria,
+    DuplicateAcceptanceCriterionId,
+    UnknownAcceptanceCriterion,
+    InvalidAcceptanceCriterionOrder,
+    EmptyAttachmentFilename,
+    InvalidAttachmentFilename,
+    EmptyAttachmentContentType,
+    InvalidAttachmentContentType,
+    EmptyAttachmentChecksum,
+    InvalidAttachmentChecksum,
+    AttachmentTooLarge {
+        max_bytes: u64,
+    },
+    EmptyAttachmentOwner,
+    InvalidAttachmentDescription,
 }
 
 impl fmt::Display for DomainError {
@@ -172,6 +193,65 @@ impl fmt::Display for DomainError {
             Self::EmptyLocalResourcePath => {
                 write!(f, "local knowledge resource path must not be empty")
             }
+            Self::TaskDescriptionTooLong => write!(
+                f,
+                "task description exceeds the maximum supported length (100000 characters)"
+            ),
+            Self::InvalidTaskPriority => {
+                write!(f, "task priority must be one of: low, medium, high, urgent")
+            }
+            Self::TooManyTaskLabels => write!(f, "a task supports at most 32 labels"),
+            Self::InvalidTaskLabel => write!(
+                f,
+                "task labels must be 1-64 characters without control characters"
+            ),
+            Self::EmptyAcceptanceCriterionText => {
+                write!(f, "acceptance criterion text must not be empty")
+            }
+            Self::AcceptanceCriterionTextTooLong => write!(
+                f,
+                "acceptance criterion text exceeds the maximum supported length (2000 characters)"
+            ),
+            Self::TooManyAcceptanceCriteria => {
+                write!(f, "a task supports at most 100 acceptance criteria")
+            }
+            Self::DuplicateAcceptanceCriterionId => {
+                write!(f, "acceptance criterion identifiers must be unique")
+            }
+            Self::UnknownAcceptanceCriterion => {
+                write!(f, "acceptance criterion does not exist")
+            }
+            Self::InvalidAcceptanceCriterionOrder => {
+                write!(f, "acceptance criterion order is out of range")
+            }
+            Self::EmptyAttachmentFilename => write!(f, "attachment filename must not be empty"),
+            Self::InvalidAttachmentFilename => write!(
+                f,
+                "attachment filename must be a plain file name without path separators"
+            ),
+            Self::EmptyAttachmentContentType => {
+                write!(f, "attachment content type must not be empty")
+            }
+            Self::InvalidAttachmentContentType => write!(
+                f,
+                "attachment content type must be a valid media type without control characters"
+            ),
+            Self::EmptyAttachmentChecksum => write!(f, "attachment checksum must not be empty"),
+            Self::InvalidAttachmentChecksum => write!(
+                f,
+                "attachment checksum must be 64 lowercase hexadecimal characters"
+            ),
+            Self::AttachmentTooLarge { max_bytes } => write!(
+                f,
+                "attachment exceeds the configured size limit of {max_bytes} bytes"
+            ),
+            Self::EmptyAttachmentOwner => {
+                write!(f, "attachment owner identifier must not be empty")
+            }
+            Self::InvalidAttachmentDescription => write!(
+                f,
+                "attachment description must not exceed 1000 characters or contain control characters"
+            ),
         }
     }
 }

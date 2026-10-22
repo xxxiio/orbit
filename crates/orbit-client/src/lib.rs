@@ -62,10 +62,12 @@ pub const ORBIT_CLIENT_API_VERSION: u32 = 4;
 
 static CLIENT_ID_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
+mod attachments;
 pub mod authority;
 pub mod connected;
 pub mod embedded_authority;
 mod file_knowledge_bridge;
+mod task_details;
 pub mod unified;
 pub mod view_data;
 pub use embedded_authority::EmbeddedAuthorityClient;
@@ -1782,3 +1784,7 @@ use facade_conversions::*;
 #[cfg(test)]
 #[path = "client_facade_tests.rs"]
 mod client_facade_tests;
+
+#[cfg(test)]
+#[path = "rich_client_tests.rs"]
+mod rich_client_tests;

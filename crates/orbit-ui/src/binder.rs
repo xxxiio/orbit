@@ -171,12 +171,21 @@ impl<'a> Row<'a> {
                 .estimated_minutes
                 .map(|value| value.to_string())
                 .unwrap_or_default(),
+            (Self::Task(row), "due") | (Self::Task(row), "due_date") => row.due_date.clone(),
             (Self::Task(row), "deadline") => {
-                row.deadline_at_ms.map(format_epoch_ms).unwrap_or_default()
+                if !row.due_date.is_empty() {
+                    row.due_date.clone()
+                } else {
+                    row.deadline_at_ms.map(format_epoch_ms).unwrap_or_default()
+                }
             }
             (Self::Task(row), "readiness") => row.readiness.clone(),
             (Self::Task(row), "actionable") => row.actionable.to_string(),
-            (Self::Task(row), "priority") => row.status.clone(),
+            (Self::Task(row), "priority") => row.priority.clone(),
+            (Self::Task(row), "acceptance") => row
+                .acceptance_progress()
+                .map(|(completed, total)| format!("{completed}/{total}"))
+                .unwrap_or_default(),
             (Self::WorkItem(row), "id") => row.id.clone(),
             (Self::WorkItem(row), "title") => work_item_title(row),
             (Self::WorkItem(row), "kind") => row.kind.clone(),
@@ -533,5 +542,76 @@ pub fn aggregate(
                 _ => None,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task() -> TaskRow {
+        TaskRow {
+            id: "t1".into(),
+            title: "Ship it".into(),
+            status: "ready".into(),
+            priority: "high".into(),
+            due_date: "2026-11-03".into(),
+            acceptance_total: 4,
+            acceptance_completed: 1,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn task_priority_is_not_the_status() {
+        let row = task();
+        let row = Row::Task(&row);
+        assert_eq!(row.field("priority"), "high");
+        assert_eq!(row.field("status"), "ready");
+    }
+
+    #[test]
+    fn task_due_aliases_return_the_preformatted_date() {
+        let row = task();
+        let row = Row::Task(&row);
+        for field in ["due", "due_date", "deadline"] {
+            assert_eq!(row.field(field), "2026-11-03", "field {field}");
+        }
+    }
+
+    #[test]
+    fn unset_priority_and_due_are_empty() {
+        let row = TaskRow::new("t2", "Untitled", "inbox");
+        let row = Row::Task(&row);
+        assert_eq!(row.field("priority"), "");
+        assert_eq!(row.field("due"), "");
+        assert_eq!(row.field("due_date"), "");
+        assert_eq!(row.field("deadline"), "");
+        assert_eq!(row.field("acceptance"), "");
+    }
+
+    #[test]
+    fn existing_task_fields_keep_working() {
+        let mut row = task();
+        row.project_id = Some("p1".into());
+        row.milestone_id = Some("m1".into());
+        row.estimated_minutes = Some(45);
+        row.actionable = true;
+        let row = Row::Task(&row);
+        assert_eq!(row.field("project"), "p1");
+        assert_eq!(row.field("milestone"), "m1");
+        assert_eq!(row.field("estimate"), "45");
+        assert_eq!(row.field("readiness"), "");
+        assert_eq!(row.field("actionable"), "true");
+        assert_eq!(row.field("acceptance"), "1/4");
+    }
+
+    #[test]
+    fn deadline_falls_back_to_the_epoch_label_when_no_due_date_is_supplied() {
+        let mut row = TaskRow::new("t3", "Fallback", "ready");
+        row.deadline_at_ms = Some(1_700_000_000_000);
+        let row = Row::Task(&row);
+        assert_eq!(row.field("due"), "");
+        assert_eq!(row.field("deadline"), format_epoch_ms(1_700_000_000_000));
     }
 }

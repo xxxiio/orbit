@@ -25,7 +25,17 @@ pub enum ClientConnectionError {
     Remote(AuthorityError),
     Serialization(serde_json::Error),
     Unsupported(&'static str),
+    /// A local facade command failed with the typed client error contract.
+    Local(crate::ClientError),
+    /// The requested capability is not implemented by this connected build.
+    /// Never returned for a command the authority actually accepted.
+    Unavailable(String),
     Vault(orbit_runtime::knowledge_files::VaultError),
+}
+impl From<crate::ClientError> for ClientConnectionError {
+    fn from(error: crate::ClientError) -> Self {
+        Self::Local(error)
+    }
 }
 impl From<AuthorityError> for ClientConnectionError {
     fn from(error: AuthorityError) -> Self {
@@ -96,6 +106,8 @@ fn remote_disposition(
 mod workflow;
 pub use workflow::*;
 mod planning_queries;
+mod rich_client;
+pub use rich_client::*;
 
 pub enum AuthorityConnection {
     Embedded(EmbeddedAuthorityClient),
@@ -1698,6 +1710,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("remote.db");
         let command = ProjectCommand {
+            workflow_id: None,
             command_id: "same-project".into(),
             expected_revision: 0,
             project_id: "project-x".into(),
@@ -1727,6 +1740,7 @@ mod tests {
         );
         assert_eq!(reopened.workspace().unwrap()["pending_count"], 1);
         let changed = ProjectCommand {
+            workflow_id: None,
             name: "Changed".into(),
             ..command
         };
@@ -1740,6 +1754,7 @@ mod tests {
         assert_eq!(local.projects().unwrap().len(), 0);
         assert_eq!(local.habits().unwrap().len(), 0);
         let cmd = ProjectCommand {
+            workflow_id: None,
             command_id: "accept-read-p".into(),
             expected_revision: 0,
             project_id: "read-project".into(),
@@ -1782,6 +1797,7 @@ mod tests {
         let mut local = AuthorityConnection::embedded(":memory:", "owner").unwrap();
         local
             .create_project(ProjectCommand {
+                workflow_id: None,
                 command_id: "filtered-p".into(),
                 expected_revision: 0,
                 project_id: "p".into(),
@@ -1849,6 +1865,7 @@ mod tests {
         let mut embedded = AuthorityConnection::embedded(":memory:", "owner").unwrap();
         embedded
             .create_project(ProjectCommand {
+                workflow_id: None,
                 command_id: "summary-project".into(),
                 expected_revision: 0,
                 project_id: "summary".into(),
@@ -1909,6 +1926,7 @@ mod tests {
         let mut embedded = AuthorityConnection::embedded(":memory:", "owner").unwrap();
         embedded
             .create_project(ProjectCommand {
+                workflow_id: None,
                 command_id: "dashboard-p".into(),
                 expected_revision: 0,
                 project_id: "dashboard".into(),
@@ -1987,6 +2005,7 @@ mod tests {
             AuthorityConnection::remote(":memory:", "https://example.org", None).unwrap();
         remote
             .create_project(ProjectCommand {
+                workflow_id: None,
                 command_id: "pending-read".into(),
                 expected_revision: 0,
                 project_id: "p".into(),
@@ -2003,6 +2022,7 @@ mod tests {
     fn embedded_and_remote_share_commands_but_not_acceptance_semantics() {
         let mut local = AuthorityConnection::embedded(":memory:", "owner").unwrap();
         let command = ProjectCommand {
+            workflow_id: None,
             command_id: "p1".into(),
             expected_revision: 0,
             project_id: "project-1".into(),
@@ -2177,6 +2197,7 @@ mod typed_workflow_tests {
 
     fn project(id: &str) -> DomainWorkflowStep {
         DomainWorkflowStep::Project(ProjectCommand {
+            workflow_id: None,
             command_id: id.into(),
             expected_revision: 0,
             project_id: "p1".into(),
@@ -2622,6 +2643,7 @@ mod m20_planning_session_tests {
         use orbit_runtime::authority_routines::{RoutineAction, RoutineCommand};
         let mut host = AuthorityConnection::embedded(":memory:", "owner").unwrap();
         host.create_project(ProjectCommand {
+            workflow_id: None,
             command_id: "project-a".into(),
             expected_revision: 0,
             project_id: "project".into(),
@@ -2754,6 +2776,7 @@ mod m20_planning_session_tests {
         let mut local = AuthorityConnection::embedded(":memory:", "owner").unwrap();
         local
             .create_project(ProjectCommand {
+                workflow_id: None,
                 command_id: "project".into(),
                 expected_revision: 0,
                 project_id: "p".into(),
@@ -2821,6 +2844,7 @@ mod strategy_parity_tests {
         let mut client = AuthorityConnection::embedded(":memory:", "owner").unwrap();
         client
             .create_project(ProjectCommand {
+                workflow_id: None,
                 command_id: "project-create".into(),
                 expected_revision: 0,
                 project_id: "project".into(),
@@ -2846,6 +2870,7 @@ mod strategy_parity_tests {
         let mut client = AuthorityConnection::embedded(":memory:", "owner").unwrap();
         client
             .create_project(ProjectCommand {
+                workflow_id: None,
                 command_id: "create".into(),
                 expected_revision: 0,
                 project_id: "project".into(),
@@ -2903,6 +2928,7 @@ mod unified_remote_atomic_workflow_tests {
 
     fn project(id: &str) -> DomainWorkflowStep {
         DomainWorkflowStep::Project(ProjectCommand {
+            workflow_id: None,
             command_id: id.to_owned(),
             expected_revision: 0,
             project_id: "proj".to_owned(),
@@ -3234,6 +3260,7 @@ mod renderer_contract_tests {
         assert_eq!(
             client
                 .create_project(ProjectCommand {
+                    workflow_id: None,
                     command_id: "project-view".into(),
                     expected_revision: 0,
                     project_id: "p1".into(),

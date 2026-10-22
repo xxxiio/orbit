@@ -119,7 +119,11 @@ Desktop/headless only: CLI, TUI, Git-specific desktop integration as needed, MCP
 
 Orbit distinguishes recovery artifacts from synchronization artifacts.
 
+- A local workspace backup comprises three together: the SQLite database, the
+  Markdown knowledge vault (`<database>.knowledge/`) and the content-addressed
+  attachment object store (`attachments/objects/` beside the database).
 - `SqliteStore::export_backup` creates a validated point-in-time SQLite snapshot for user-owned backup and portability.
+- Attachment metadata is inside SQLite; attachment bytes are immutable objects addressed by SHA-256. A database-only restore therefore preserves associations but not content.
 - Backups are written to a sibling temporary file, fsynced, then renamed into place.
 - `SqliteStore::restore_backup` never mutates the source backup and never overwrites an existing destination.
 - Restore copies into a temporary sibling, applies supported migrations to that copy, runs integrity checks, fsyncs it, and only then publishes it with a rename.

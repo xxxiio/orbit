@@ -203,4 +203,104 @@ impl SqliteStore {
             |r| Ok(BlueprintBinding {project_id:r.get(0)?,blueprint_id:r.get(1)?,version:r.get(2)?}))
             .optional().map_err(repo_error)
     }
+
+    /// Latest published revision for a workflow id.
+    pub fn latest_blueprint_version(&self, id: &str) -> Result<Option<u32>, RepositoryError> {
+        self.query_row(
+            "SELECT MAX(version) FROM orbit_blueprints WHERE id=?1",
+            [id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(repo_error)
+        .map(Option::flatten)
+    }
+
+    /// Explicit workflow change: replace the project's binding with a pinned
+    /// published revision. Project and manifest are verified inside the same
+    /// savepoint as the upsert; unknown projects and unpublished manifests
+    /// are rejected without touching the existing binding.
+    pub fn replace_project_blueprint_binding(
+        &mut self,
+        project_id: &orbit_domain::ProjectId,
+        blueprint_id: &str,
+        version: u32,
+    ) -> Result<(), RepositoryError> {
+        if version == 0 || blueprint_id.trim().is_empty() {
+            return Err(RepositoryError::Other("invalid blueprint binding".into()));
+        }
+        self.execute_batch("SAVEPOINT orbit_replace_project_blueprint")
+            .map_err(repo_error)?;
+        let outcome = self.replace_project_blueprint_inner(project_id, blueprint_id, version);
+        match outcome {
+            Ok(()) => {
+                self.execute_batch("RELEASE SAVEPOINT orbit_replace_project_blueprint")
+                    .map_err(repo_error)?;
+                Ok(())
+            }
+            Err(error) => {
+                let _ = self.execute_batch(
+                    "ROLLBACK TO SAVEPOINT orbit_replace_project_blueprint; RELEASE SAVEPOINT orbit_replace_project_blueprint",
+                );
+                Err(error)
+            }
+        }
+    }
+
+    /// Explicit unpin: remove the project's workflow binding so the workspace
+    /// falls back to generated default views. Used for legacy migration and by
+    /// users who deliberately want no pinned workflow.
+    pub fn remove_project_blueprint_binding(
+        &mut self,
+        project_id: &orbit_domain::ProjectId,
+    ) -> Result<bool, RepositoryError> {
+        let project_exists: bool = self
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?1)",
+                [project_id.as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|value| value != 0)
+            .map_err(repo_error)?;
+        if !project_exists {
+            return Err(RepositoryError::Other("unknown project".into()));
+        }
+        let affected = self
+            .execute(
+                "DELETE FROM orbit_project_blueprints WHERE project_id = ?1",
+                [project_id.as_str()],
+            )
+            .map_err(repo_error)?;
+        Ok(affected > 0)
+    }
+
+    fn replace_project_blueprint_inner(
+        &mut self,
+        project_id: &orbit_domain::ProjectId,
+        blueprint_id: &str,
+        version: u32,
+    ) -> Result<(), RepositoryError> {
+        let project_exists: bool = self
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM projects WHERE id=?1)",
+                [project_id.as_str()],
+                |r| r.get(0),
+            )
+            .map_err(repo_error)?;
+        if !project_exists {
+            return Err(RepositoryError::Other("unknown project".into()));
+        }
+        if self.load_blueprint(blueprint_id, version)?.is_none() {
+            return Err(RepositoryError::Other(format!(
+                "unknown blueprint manifest: {blueprint_id}@{version}"
+            )));
+        }
+        self.execute(
+            "INSERT INTO orbit_project_blueprints(project_id,blueprint_id,blueprint_version) VALUES (?1,?2,?3) \
+             ON CONFLICT(project_id) DO UPDATE SET blueprint_id=excluded.blueprint_id, blueprint_version=excluded.blueprint_version",
+            params![project_id.as_str(), blueprint_id, version],
+        )
+        .map_err(repo_error)?;
+        Ok(())
+    }
 }

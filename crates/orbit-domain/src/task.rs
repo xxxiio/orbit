@@ -178,6 +178,132 @@ impl TaskPlanning {
     }
 }
 
+/// User-visible task priority. Absence of a priority is represented by
+/// `Option::None` rather than a synthetic "none" variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TaskPriority {
+    Low,
+    Medium,
+    High,
+    Urgent,
+}
+
+impl TaskPriority {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Urgent => "urgent",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            "urgent" => Some(Self::Urgent),
+            _ => None,
+        }
+    }
+
+    pub fn from_str_checked(value: &str) -> Result<Self, DomainError> {
+        Self::parse(value).ok_or(DomainError::InvalidTaskPriority)
+    }
+}
+
+/// Maximum rich-description length in characters. Descriptions are
+/// Markdown-compatible text and are never interpreted as executable input.
+pub const MAX_TASK_DESCRIPTION_CHARS: usize = 100_000;
+/// Maximum number of labels attached to one task.
+pub const MAX_TASK_LABELS: usize = 32;
+/// Maximum length of one label in characters.
+pub const MAX_TASK_LABEL_CHARS: usize = 64;
+
+/// Rich, optional task metadata that is not part of the task identity.
+///
+/// Keeping these fields together avoids growing the base task aggregate into an
+/// untyped property bag while still supporting ordinary project management.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TaskDetails {
+    description: String,
+    priority: Option<TaskPriority>,
+    labels: Vec<String>,
+}
+
+impl TaskDetails {
+    pub fn new(
+        description: impl Into<String>,
+        priority: Option<TaskPriority>,
+        labels: impl IntoIterator<Item = String>,
+    ) -> Result<Self, DomainError> {
+        let mut details = Self::default();
+        details.set_description(description)?;
+        details.set_priority(priority);
+        details.set_labels(labels)?;
+        Ok(details)
+    }
+
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+
+    pub fn priority(&self) -> Option<TaskPriority> {
+        self.priority
+    }
+
+    pub fn labels(&self) -> &[String] {
+        &self.labels
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.description.is_empty() && self.priority.is_none() && self.labels.is_empty()
+    }
+
+    pub fn set_description(&mut self, description: impl Into<String>) -> Result<(), DomainError> {
+        let description = description.into();
+        if description.chars().count() > MAX_TASK_DESCRIPTION_CHARS {
+            return Err(DomainError::TaskDescriptionTooLong);
+        }
+        if description.contains('\0') {
+            return Err(DomainError::TaskDescriptionTooLong);
+        }
+        self.description = description;
+        Ok(())
+    }
+
+    pub fn set_priority(&mut self, priority: Option<TaskPriority>) {
+        self.priority = priority;
+    }
+
+    /// Normalises labels: trims, rejects empty/control-character labels,
+    /// removes duplicates while preserving the caller's order.
+    pub fn set_labels(
+        &mut self,
+        labels: impl IntoIterator<Item = String>,
+    ) -> Result<(), DomainError> {
+        let mut normalised: Vec<String> = Vec::new();
+        for label in labels {
+            let label = label.trim().to_owned();
+            if label.is_empty()
+                || label.chars().count() > MAX_TASK_LABEL_CHARS
+                || label.chars().any(char::is_control)
+            {
+                return Err(DomainError::InvalidTaskLabel);
+            }
+            if !normalised.iter().any(|existing| existing == &label) {
+                normalised.push(label);
+            }
+        }
+        if normalised.len() > MAX_TASK_LABELS {
+            return Err(DomainError::TooManyTaskLabels);
+        }
+        self.labels = normalised;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
     id: TaskId,
@@ -185,6 +311,7 @@ pub struct Task {
     status: TaskStatus,
     scope: TaskScope,
     planning: TaskPlanning,
+    details: TaskDetails,
 }
 
 impl Task {
@@ -204,6 +331,7 @@ impl Task {
             status: TaskStatus::Inbox,
             scope,
             planning: TaskPlanning::default(),
+            details: TaskDetails::default(),
         })
     }
 
@@ -225,6 +353,14 @@ impl Task {
 
     pub fn planning(&self) -> TaskPlanning {
         self.planning
+    }
+
+    pub fn details(&self) -> &TaskDetails {
+        &self.details
+    }
+
+    pub fn set_details(&mut self, details: TaskDetails) {
+        self.details = details;
     }
 
     pub fn set_planning(&mut self, planning: TaskPlanning) {

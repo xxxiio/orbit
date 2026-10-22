@@ -1,11 +1,35 @@
-# Blueprint-defined project views
+# Workflow-defined project views
 
-A project blueprint can declare presentation views in addition to work-item
+A project **workflow** can declare presentation views in addition to work-item
 types, fields, transitions and templates. The view declaration says *what* to
 show; Orbit's trusted renderer registry decides *how* to render it.
 
+Orbit calls these objects **workflows** in the TUI, in prose and in the
+`workflow.*` compatibility tooling. Internal crate names, persisted identifiers,
+the `orbit blueprint` command group and `blueprint.*` MCP tools retain the older
+`blueprint` name for compatibility; they refer to the same immutable manifest.
+
 The `views` section is optional. Manifests without it remain valid and open
 through generated default views.
+
+## The Basic default
+
+Bundled **Basic** (version 1) is the default workflow for every new project. It
+works offline, declares no specialized work items, and needs no agent runtime.
+Its four views are:
+
+| View | Purpose |
+|---|---|
+| `overview` | Task metrics, project details, recent activity and next actions |
+| `tasks` | Every task with status, priority, deadline and title |
+| `board` | Tasks grouped by status with authorized status changes |
+| `timeline` | Milestones and scheduled work in chronological order |
+
+New projects are bound to Basic at creation time. The binding is explicit,
+auditable and idempotent: creating the same project twice does not install a
+second binding or replace an existing one. Applying another workflow is a
+separate explicit operation, and unpinning a project falls back to generated
+default views without deleting the project or its tasks.
 
 ## Minimal overview
 
@@ -79,7 +103,7 @@ silently.
 Supported sources are `project`, `tasks`, `work_items`, `milestones`,
 `knowledge`, `habits`, `metrics`, `agent_jobs` and `schedule`. A source is not a
 SQL interface: it is a registered, read-only provider over existing application
-contracts. Blueprint manifests cannot request arbitrary files, shell commands,
+contracts. Workflow manifests cannot request arbitrary files, shell commands,
 SQL, scripts or executable code.
 
 ## Common component fields
@@ -108,7 +132,7 @@ numeric `field` such as `estimate` for tasks or `latest` for metrics.
 Filters are exact, case-insensitive matches. Unknown filters fail closed instead
 of broadening a query. A view cannot request a cross-project aggregate; project
 views resolve against the selected project. Global Home/Inbox/Agents screens
-are host-generated aggregations, not blueprint-controlled queries.
+are host-generated aggregations, not workflow-controlled queries.
 
 ## Contextual actions
 
@@ -116,7 +140,7 @@ Components may list actions as presentation metadata. A declaration does not
 enable an action and does not grant a capability. The renderer offers only
 actions that the application can authorize for the selected item. For example,
 a task action menu is derived from the current task status and the domain
-workflow; a blueprint cannot make an inapplicable transition appear.
+workflow; a workflow cannot make an inapplicable transition appear.
 
 ## Validation
 
@@ -136,23 +160,27 @@ component panel instead of a crash.
 
 ## Legacy fallback
 
-A project bound to a blueprint with no `views` gets a generated:
+A project with no workflow binding, or bound to a workflow version with no
+`views`, gets a generated:
 
 - **Overview** with live task, milestone and agent metrics, project details,
   task list and milestone progress;
-- **Work** with a task workflow board and blueprint work items when present;
+- **Work** with a task workflow board and workflow work items when present;
 - **Knowledge**, **Habits & metrics** and **Activity** views when that data
   exists.
 
 Generated views use real application data and are marked `generated default` in
-the UI. They do not require a manual migration to open the TUI.
+the UI. They do not require a manual migration to open the TUI. Unpinning a
+workflow returns a project to this state without deleting data.
 
 ## Versioning and pinning
 
-Blueprint versions are immutable. Publishing a new version does not rebind a
-project, and binding is an explicit command. Projects keep their pinned version
-and its view definitions until rebound. Existing work items are not migrated or
-reinterpreted by a view change.
+Workflow (blueprint) versions are immutable. Publishing a new version does not
+rebind a project, and binding is an explicit command. Projects keep their pinned
+version and its view definitions until an explicit apply/change operation or an
+unpin. Existing work items are not migrated or reinterpreted by a view change.
+The bundled manifests are Basic v1 plus Development, Research, Learning and
+Habits v2.
 
 See [Custom workflows](custom-blueprints.md) for the authoring workflow and the
 [UI view reference](../reference/ui-views.md) for the exact field list.

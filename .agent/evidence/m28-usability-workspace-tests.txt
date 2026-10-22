@@ -1,0 +1,1604 @@
+   Compiling orbit-runtime v0.1.0 (/home/xliu/dev/orbit/crates/orbit-runtime)
+   Compiling orbit-client v0.1.0 (/home/xliu/dev/orbit/crates/orbit-client)
+   Compiling orbit-cli v0.1.0 (/home/xliu/dev/orbit/crates/orbit-cli)
+   Compiling orbit-server v0.1.0 (/home/xliu/dev/orbit/crates/orbit-server)
+   Compiling orbit-mcp v0.1.0 (/home/xliu/dev/orbit/crates/orbit-mcp)
+   Compiling orbit-tui v0.1.0 (/home/xliu/dev/orbit/crates/orbit-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.14s
+     Running unittests src/lib.rs (target/debug/deps/orbit_ai-6406c0ffc97e988e)
+
+running 12 tests
+test privacy_and_transport_tests::category_helper_is_deterministic ... ok
+test privacy_and_transport_tests::anthropic_adapter_builds_direct_request_and_parses_response ... ok
+test privacy_and_transport_tests::local_only_project_never_discloses_context_to_remote_provider ... ok
+test privacy_and_transport_tests::plan_parser_produces_proposal_not_mutation ... ok
+test privacy_and_transport_tests::remote_disclosure_requires_confirmation_before_provider_invocation ... ok
+test privacy_and_transport_tests::selected_remote_provider_discloses_only_allowed_categories ... ok
+test project_agent_tests::completion_assessment_cannot_be_ready_without_required_evidence ... ok
+test tests::structured_output_requirement_is_capability_checked ... ok
+test project_agent_tests::learning_playbook_focuses_on_mastery_evidence ... ok
+test tests::cloud_byok_config_stores_only_secret_reference ... ok
+test tests::ollama_config_is_local_and_requires_no_secret ... ok
+test tests::local_only_provider_rejects_remote_endpoint ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/orbit_application-25cab09f46d63be2)
+
+running 16 tests
+test agent_runtime::capability_contract_tests::independent_capabilities_do_not_require_a_monolithic_runtime ... ok
+test project_evidence_queries::tests::equally_weights_only_evaluated_habits ... ok
+test agent_runtime::tests::rejects_blank_launch_claim ... ok
+test project_evidence_queries::tests::missing_evidence_does_not_turn_into_zero ... ok
+test project_health_queries::mode_aware_tests::averages_signal_families_without_overflow ... ok
+test project_health_queries::mode_aware_tests::no_observations_is_unknown_not_zero ... ok
+test task_detail_commands::tests::summaries_are_truncated_without_splitting_characters ... ok
+test project_health_queries::tests::project_health_query_rolls_up_canonical_entities_and_activity ... ok
+test tests::duplicate_task_ids_are_rejected_by_application_service ... ok
+test tests::habit_commands_keep_habits_independent_from_tasks ... ok
+test tests::create_task_persists_a_standalone_task ... ok
+test tests::project_and_milestone_commands_route_through_domain_lifecycles ... ok
+test tests::project_milestone_and_task_relationships_are_validated ... ok
+test tests::record_activity_uses_the_injected_clock ... ok
+test tests::task_status_queries_remain_application_queries ... ok
+test tests::schedule_targets_must_exist_and_fixed_blocks_remain_fixed ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/orbit_blueprint-1f069fc95bb2e57e)
+
+running 22 tests
+test bundled::tests::unknown_package_is_not_an_implicit_installation ... ok
+test actions::tests::undeclared_capability_fails_publication ... ok
+test capabilities::tests::capability_not_a_permission_grant ... ok
+test presentation::tests::component_requirements_and_actions_are_typed ... ok
+test presentation::tests::duplicate_view_and_component_ids_are_rejected ... ok
+test presentation::tests::legacy_manifests_without_views_remain_valid ... ok
+test presentation::tests::unsupported_component_and_source_are_rejected ... ok
+test registry_contract_tests::published_revisions_are_independent_and_explicitly_pinned ... ok
+test presentation::tests::bundled_views_use_only_registered_components_and_sources ... ok
+test templates::tests::builds_isolated_deterministic_plan ... ok
+test bundled::tests::every_bundled_manifest_is_valid_and_versioned ... ok
+test tests::rejects_bad_references_and_defaults ... ok
+test templates::tests::rejects_cycle_and_missing_reference ... ok
+test tests::work_items_may_be_empty_when_views_are_declared ... ok
+test tests::roundtrip_and_immutable_publish ... ok
+test workflow::declarative_guard_tests::invalid_guard_fields_are_rejected_at_publish_time ... ok
+test workflow::declarative_guard_tests::property_guards_are_deterministic_and_fail_closed ... ok
+test workflow::tests::validates_properties_and_revision ... ok
+test actions::tests::action_declaration_never_grants_execution ... ok
+test bundled::tests::basic_is_offline_and_declares_ordinary_task_views ... ok
+test workflow::tests::guards_are_authoritative_and_updates_are_versioned ... ok
+test yaml_tests::json_yaml_equivalence ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/orbit_cli-4f9cc954002ce135)
+
+running 119 tests
+test agent_worktree_evidence_tests::missing_repository_does_not_capture_evidence ... ok
+test authority_http::tests::server_response_is_strict_json ... ok
+test authority_http::tests::accepted_snapshot_cannot_masquerade_as_empty ... ok
+test authority_http::tests::strict_domain_commands_reject_wrong_family_and_envelope ... ok
+test authority_replica::convergence_cli_contract_tests::reviewed_resolution_is_not_confused_with_legacy_replacement ... ok
+test agent_worktree_evidence_tests::missing_branch_is_not_silently_replaced_with_main_checkout ... ok
+test authority_replica::convergence_cli_contract_tests::multi_domain_manifest_commands_remain_available_after_convergence ... ok
+test authority_replica::convergence_cli_contract_tests::online_convergence_is_an_explicit_network_operation ... ok
+test authority_replica::convergence_cli_contract_tests::offline_status_does_not_require_server_credentials ... ok
+test authority_replica::convergence_cli_contract_tests::reviewed_resolution_requires_explicit_review_file_and_identity ... ok
+test authority_replica::reconnect_cli_tests::reconnect_does_not_require_remote_identity_for_offline_parsing ... ok
+test authority_replica::reconnect_cli_tests::reconnect_is_single_explicit_online_operation ... ok
+test authority_replica::convergence_cli_contract_tests::unknown_server_families_remain_rejected_at_cli_boundary ... ok
+test authority_replica::reviewed_batch_contract_tests::file_conflict_families_cannot_be_injected_into_domain_manifest ... ok
+test authority_replica::reviewed_batch_contract_tests::malformed_late_step_cannot_produce_a_partial_decision_list ... ok
+test authority_replica::convergence_cli_contract_tests::conflict_review_offline_and_online_have_distinct_commands ... ok
+test authority_replica::reviewed_batch_contract_tests::valid_reviewed_manifest_preserves_requested_order ... ok
+test authority_replica::reviewed_batch_contract_tests::single_reviewed_step_is_accepted_for_downstream_runtime_validation ... ok
+test authority_replica::reviewed_batch_manifest_tests::reviewed_batch_rejects_unknown_domain_family_before_network ... ok
+test authority_replica::reviewed_batch_manifest_tests::missing_or_empty_resolution_manifest_is_rejected ... ok
+test authority_replica::reviewed_batch_contract_tests::missing_review_fields_reject_entire_manifest ... ok
+test authority_replica::sync_health_cli_contract_tests::no_implicit_online_observation_in_offline_report_name ... ok
+test authority_replica::sync_health_cli_contract_tests::online_observation_has_separate_explicit_subcommands ... ok
+test authority_replica::sync_health_cli_contract_tests::health_does_not_require_device_credentials_when_offline ... ok
+test authority_replica::sync_health_cli_contract_tests::health_commands_remain_part_of_the_canonical_sync_tree ... ok
+test authority_replica::sync_health_cli_contract_tests::local_health_is_a_read_only_cli_subcommand ... ok
+test authority_replica::reviewed_batch_contract_tests::huge_manifest_is_rejected_before_deserialization ... ok
+test authority_replica::sync_health_cli_contract_tests::typoed_unsafe_health_operations_do_not_route_as_a_command ... ok
+test authority_replica::tests::receipt_command_requires_identity ... ok
+test authority_replica::tests::accepted_markdown_sync_and_offline_search_have_cli_commands ... ok
+test authority_replica::workflow_cli_contract_tests::manifest_stage_is_exposed_as_offline_command ... ok
+test authority_replica::workflow_cli_contract_tests::manifest_preview_is_exposed_as_local_read_only_command ... ok
+test authority_replica::reviewed_batch_contract_tests::too_many_reviewed_steps_are_rejected_before_execution ... ok
+test authority_replica::workflow_cli_contract_tests::manifest_command_names_are_not_confused_with_single_command_queue ... ok
+test blueprint_commands::blueprint_authoring_tests::bundled_json_can_be_validated_without_authority ... ok
+test connected_agent::tests::connected_authority_rejects_insecure_remote_url ... ok
+test connected_blueprint::tests::maps_transition_to_authority_schema ... ok
+test authority_replica::tests::accepted_read_family_names_are_exposed ... ok
+test connected_blueprint::tests::rejects_insecure_server ... ok
+test blueprint_commands::blueprint_authoring_tests::json_and_yaml_are_equivalent_for_authoring ... ok
+test authority_replica::tests::every_remote_family_is_exposed_by_cli ... ok
+test init_command::tests::custom_config_location_keeps_runtime_directories_under_home ... ok
+test init_command::tests::create_layout_refuses_symlinked_orbit_directories ... ok
+test authority_replica::workflow_cli_contract_tests::existing_queue_and_flush_paths_remain_available ... ok
+test markdown_assets::tests::detects_embedded_links ... ok
+test markdown_assets::tests::preflight_can_resolve_valid_content_from_import_package ... ok
+test markdown_assets::tests::preflight_checks_missing_note_asset_refs ... ok
+test authority_replica::workflow_cli_contract_tests::replica_audit_requires_no_network_token ... ok
+test markdown_assets::tests::rejects_unsafe_asset_names ... ok
+test markdown_assets::tests::preflight_rejects_corrupted_package_without_destination_mutation ... ok
+test markdown_assets::tests::atomic_publication_never_overwrites_an_existing_asset ... ok
+test agent_worktree_evidence_tests::git_evidence_is_a_bounded_read_only_snapshot ... ok
+test markdown_cli::tests::import_rejects_duplicate_ids_before_modifying_vault ... ok
+test markdown_cli::tests::corrupt_import_assets_fail_before_creating_markdown_or_folders ... ok
+test markdown_cli::tests::export_rejects_corrupted_attachment_without_partial_folder ... ok
+test markdown_cli::tests::export_rejects_missing_attachment_before_creating_destination ... ok
+test markdown_cli::tests::imported_attachments_verify_hashes ... ok
+test markdown_discovery::tests::audit_is_read_only_by_construction ... ok
+test markdown_discovery::tests::exact_typed_reference_token_is_not_prefix_match ... ok
+test markdown_metadata::tests::links_handle_labeled_and_plain_references ... ok
+test markdown_metadata::tests::metadata_preserves_body_and_identity ... ok
+test markdown_metadata::tests::rejects_duplicate_metadata_fields ... ok
+test replica_workflow::tests::all_command_families_have_stable_names ... ok
+test replica_workflow::tests::duplicate_identity_is_rejected ... ok
+test replica_workflow::tests::empty_or_oversized_workflows_fail_before_database_open ... ok
+test replica_workflow::tests::every_family_is_serializable_in_manifest ... ok
+test replica_workflow::tests::invalid_ids_rejected ... ok
+test replica_workflow::tests::malformed_envelope_is_rejected ... ok
+test replica_workflow::tests::preview_redacts_arbitrary_fields ... ok
+test replica_workflow::tests::traversal_and_absolute_folder_paths_rejected ... ok
+test replica_workflow::tests::unsupported_versions_rejected ... ok
+test replica_workflow::tests::valid_cross_domain_plan_is_previewable ... ok
+test replica_workflow::workflow_acceptance::accepted_state_is_never_synthesized_from_offline_queue ... ok
+test replica_workflow::workflow_acceptance::action_payloads_over_64_kib_are_rejected ... ok
+test markdown_cli::tests::note_search_and_relations_use_physical_documents ... ok
+test replica_workflow::workflow_acceptance::conflicting_identity_rolls_back_all_new_staged_commands ... ok
+test markdown_cli::tests::unavailable_import_references_fail_before_creating_notes ... ok
+test markdown_cli::tests::import_export_round_trip_preserves_markdown_and_identity ... ok
+test replica_workflow::workflow_acceptance::existing_identity_with_different_family_is_not_a_retry ... ok
+test replica_workflow::workflow_acceptance::missing_required_fields_are_rejected ... ok
+test replica_workflow::workflow_acceptance::idempotent_repeated_manifest_does_not_add_more_commands ... ok
+test replica_workflow::workflow_acceptance::malformed_manifest_never_touches_replica ... ok
+test replica_workflow::workflow_acceptance::previews_never_claim_server_acceptance ... ok
+test replica_workflow::workflow_acceptance::read_rejects_unknown_command_fields ... ok
+test replica_workflow::workflow_acceptance::read_rejects_unknown_manifest_fields ... ok
+test replica_workflow::workflow_acceptance::read_validates_and_loads_regular_json_file ... ok
+test replica_workflow::workflow_acceptance::manifest_can_be_staged_offline_in_one_transaction ... ok
+test tests::dependency_preview_cli_has_explicit_time_and_optional_remove_switch ... ok
+test tests::dependency_preview_cli_requires_explicit_evaluation_time ... ok
+test tests::exit_code_contract_is_stable ... ok
+test tests::habit_json_contract_exposes_cadence_and_active_state ... ok
+test tests::json_error_contract_has_stable_type_and_code ... ok
+test tests::milestone_requires_project_at_cli_boundary ... ok
+test tests::parser_accepts_arbitrary_task_status_transition_command ... ok
+test tests::parser_accepts_global_json_after_subcommand ... ok
+test tests::parser_accepts_list_filters ... ok
+test tests::parser_accepts_project_health_command ... ok
+test replica_workflow::workflow_acceptance::offline_workflow_persists_across_replica_restarts ... ok
+test tests::parser_accepts_project_status_transition_command ... ok
+test replica_workflow::workflow_acceptance::preview_is_side_effect_free ... ok
+test tests::parser_rejects_removed_legacy_sync_commands ... ok
+test tests::schedule_json_contract_exposes_fixed_vs_movable ... ok
+test markdown_cli::tests::notes_and_folders_survive_process_reopens_and_idempotent_create ... ok
+test tests::schedule_parser_rejects_task_and_habit_target_together ... ok
+test tests::search_json_contract_is_typed_and_stable ... ok
+test tests::dependency_preview_cli_rejects_cycles_without_committing ... ok
+test tests::status_json_contract_exposes_workspace_diagnostics ... ok
+test tests::task_json_contract_uses_stable_fields ... ok
+test tests::today_human_output_is_explicit_when_empty ... ok
+test update_command::tests::checksum_parser_accepts_one_digest_and_rejects_noise ... ok
+test update_command::tests::semver_ordering_handles_prerelease_identifiers ... ok
+test update_command::tests::versions_parse_with_or_without_a_leading_v ... ok
+test tests::schedule_approval_cli_rejects_incomplete_approval_document ... ok
+test markdown_cli::tests::updates_use_explicit_expected_bytes_and_reject_conflicts ... ok
+test tests::schedule_approval_cli_requires_double_confirmation ... ok
+test tests::schedule_review_cli_never_creates_calendar_blocks ... ok
+test markdown_cli::tests::typed_references_and_immutable_attachments_survive_reopen ... ok
+test markdown_cli::tests::metadata_and_links_are_persisted_as_markdown_and_rebuild_backlinks ... ok
+test tests::source_level_acceptance_create_list_transition_search_json ... ok
+
+test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+     Running unittests src/main.rs (target/debug/deps/orbit-34abd859cce0c566)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/orbit_client-cf852db35ae4a0c6)
+
+running 314 tests
+test authority::conflict_batch_tests::a_late_invalid_intention_cannot_stage_a_valid_prefix ... ok
+test authority::canonical_outbox_admission_tests::invalid_late_intention_rolls_back_entire_workflow ... ok
+test authority::canonical_outbox_admission_tests::tampered_outbox_is_detectable_before_submission ... ok
+test authority::canonical_outbox_admission_tests::healthy_outbox_passes_preflight_without_network ... ok
+test authority::conflict_batch_tests::a_review_bound_to_another_server_fingerprint_cannot_stage_anything ... ok
+test authority::conflict_batch_tests::a_late_cross_family_attempt_cannot_stage_a_valid_prefix ... ok
+test authority::conflict_batch_tests::a_review_for_a_command_that_is_no_longer_conflicted_is_not_valid ... ok
+test authority::canonical_outbox_admission_tests::single_and_batch_command_admission_have_identical_rules ... ok
+test authority::conflict_batch_tests::a_stale_second_review_rejects_the_entire_batch ... ok
+test authority::conflict_batch_tests::conflict_review_rejects_pending_commands_and_absent_history ... ok
+test authority::conflict_batch_tests::changed_conflicted_action_invalidates_the_review ... ok
+test authority::conflict_batch_tests::altered_original_queue_position_invalidates_review ... ok
+test authority::conflict_batch_tests::duplicate_originals_are_rejected_even_when_replacements_differ ... ok
+test authority::conflict_batch_tests::duplicate_rejected_identity_rejects_all_decisions ... ok
+test authority::conflict_batch_tests::duplicate_replacement_identity_rejects_all_decisions ... ok
+test authority::conflict_batch_tests::existing_pending_identity_cannot_be_reused ... ok
+test authority::conflict_batch_tests::empty_replacement_id_and_invalid_characters_do_not_move_rejected_rows ... ok
+test authority::conflict_batch_tests::an_independent_replica_never_inherits_another_clients_resolution ... ok
+test authority::conflict_batch_tests::file_conflicts_must_be_resolved_using_file_revision_rules ... ok
+test authority::conflict_batch_tests::explicit_reviews_do_not_change_cached_markdown_or_accepted_domain_data ... ok
+test authority::conflict_batch_tests::invalid_id_and_embedded_revision_fields_are_forbidden ... ok
+test authority::conflict_batch_tests::failed_batch_preserves_accepted_revision_and_pending_queue ... ok
+test authority::conflict_batch_tests::malformed_action_cannot_mutate_original_audit_history ... ok
+test authority::conflict_batch_tests::no_conflicts_and_oversized_batch_are_rejected_without_writes ... ok
+test authority::conflict_batch_tests::no_implicit_cross_family_replacement ... ok
+test authority::conflict_batch_tests::null_action_and_empty_action_are_rejected_before_any_write ... ok
+test authority::conflict_batch_tests::original_rejected_id_cannot_be_used_as_its_own_replacement ... ok
+test authority::conflict_batch_tests::rejected_original_stays_queryable_after_successful_staging ... ok
+test authority::conflict_batch_tests::replacing_another_rejected_command_identity_is_forbidden ... ok
+test authority::conflict_batch_tests::reviewed_batch_never_marks_an_intention_accepted_without_server_receipt ... ok
+test authority::conflict_batch_tests::second_attempt_with_same_replacements_is_not_a_silent_duplicate ... ok
+test authority::conflict_batch_tests::outbox_is_healthy_after_multiple_snapshot_bound_replacements ... ok
+test authority::device_header_tests::remote_transport_requires_an_enrolled_device_identity ... ok
+test authority::conflict_batch_tests::prior_review_cannot_survive_an_accepted_history_change ... ok
+test authority::conflict_batch_tests::tampered_review_kind_is_not_sufficient_to_change_family ... ok
+test authority::conflict_batch_tests::two_reviewed_conflicts_are_staged_atomically_in_original_order ... ok
+test authority::conflict_batch_tests::two_sequential_batches_do_not_reuse_old_reviews ... ok
+test authority::full_markdown_mirror_tests::a_complete_refresh_replaces_removed_notes_and_moves ... ok
+test authority::folder_outbox_acceptance_tests::folder_conflict_cannot_be_rebased_using_domain_snapshot ... ok
+test authority::full_markdown_mirror_tests::duplicate_id_or_path_does_not_replace_cache ... ok
+test authority::full_markdown_mirror_tests::malformed_full_refresh_preserves_last_complete_mirror ... ok
+test authority::full_markdown_mirror_tests::pending_writes_survive_cache_replacement ... ok
+test authority::markdown_outbox_contract_tests::markdown_task_and_project_writes_share_one_global_order ... ok
+test authority::offline_accepted_markdown_tests::offline_search_is_limited_to_accepted_fetched_notes ... ok
+test authority::offline_accepted_markdown_tests::offline_search_rejects_malformed_queries_and_cache_records ... ok
+test authority::offline_accepted_markdown_tests::offline_search_treats_sql_metacharacters_literally ... ok
+test authority::reconnect_report_tests::blueprint_intentions_share_canonical_outbox_and_reject_conflicting_replay ... ok
+test authority::reconnect_report_tests::reconnect_report_never_conflates_accepted_and_unresolved ... ok
+test authority::database_mode_isolation_tests::replica_refuses_local_domain_tables_without_command_ledger ... ok
+test authority::database_mode_isolation_tests::replica_refuses_local_authoritative_database_without_adding_tables ... ok
+test authority::replacement_contract_tests::replacement_rejects_cross_family_and_reused_identity ... ok
+test authority::tests::agent_intentions_share_domain_global_order_and_reject_reused_ids ... ok
+test authority::tests::cache_rejects_incomplete_and_divergent_history_without_overwrite ... ok
+test authority::tests::conflict_requires_snapshot_bound_review_and_preserves_receipt ... ok
+test authority::tests::conflicted_requeue_does_not_clear_conflict_or_change_frozen_revision ... ok
+test authority::tests::domain_retries_preserve_one_ordinal_and_reject_payload_collisions ... ok
+test authority::tests::equal_revision_cannot_rewrite_accepted_projection ... ok
+test authority::tests::malformed_persisted_snapshot_fails_closed ... ok
+test authority::tests::rejects_insecure_or_cross_server_configuration ... ok
+test authority::tests::native_queue_project_payload_is_flat_and_task_payload_is_nested ... ok
+test authority::tests::reviewed_replacement_retains_original_queue_position ... ok
+test authority::transactional_workflow_staging_tests::batch_is_durable_ordered_and_idempotent ... ok
+test authority::transactional_workflow_staging_tests::invalid_or_duplicate_late_step_never_stages_prefix ... ok
+test authority::transactional_workflow_staging_tests::collision_at_end_rolls_back_entire_batch ... ok
+test authority::transactional_workflow_staging_tests::preexisting_identical_prefix_does_not_change_order ... ok
+test authority::full_markdown_mirror_tests::complete_mirror_is_persistent_across_restarts ... ok
+test authority::conflict_batch_tests::durable_batch_survives_restart_with_review_revision_frozen ... ok
+test authority::folder_outbox_acceptance_tests::folder_writes_share_global_order_and_survive_restart ... ok
+test client_facade_tests::tests::capabilities_make_mcp_mobile_exclusion_explicit ... ok
+test authority::markdown_outbox_contract_tests::markdown_outbox_is_durable_idempotent_and_conflicts_are_visible ... ok
+test authority::offline_accepted_markdown_tests::offline_cache_survives_process_restart_without_promoting_outbox ... ok
+test authority::tests::accepted_receipts_are_durable_and_requeue_never_replays ... ok
+test client_facade_tests::m18_accepted_client_workflow_tests::embedded_public_client_writes_join_one_accepted_revision_history ... ok
+test client_facade_tests::m14_client_evidence_tests::embedded_client_metric_and_binding_workflow ... ok
+test client_facade_tests::tests::platform_capabilities_keep_mcp_desktop_only ... ok
+test client_facade_tests::tests::bridge_contract_is_versioned_and_requires_refresh_after_sync_pull ... ok
+test client_facade_tests::tests::client_mutations_are_visible_through_durable_change_cursor ... ok
+test client_facade_tests::tests::habit_history_schedule_and_habit_plan_are_exposed_through_client ... ok
+test client_facade_tests::tests::secret_references_are_validated_without_storing_secret_material ... ok
+test config::tests::cli_then_environment_then_config_then_default_precedence ... ok
+test config::tests::connected_configuration_selects_replica_and_server ... ok
+test config::tests::connected_mode_requires_complete_settings ... ok
+test config::tests::connected_replica_yields_to_environment_database ... ok
+test config::tests::custom_config_file_does_not_relocate_runtime_directories ... ok
+test config::tests::default_configuration_is_valid_and_round_trips ... ok
+test config::tests::default_database_lives_in_the_orbit_directory ... ok
+test config::tests::invalid_configuration_is_an_error_and_never_defaults ... ok
+test config::tests::invalid_servers_and_providers_fail_closed ... ok
+test config::tests::missing_configuration_uses_defaults ... ok
+test config::tests::no_home_keeps_the_legacy_relative_database_fallback ... ok
+test config::tests::relative_and_tilde_paths_resolve_against_the_config_directory ... ok
+test config::tests::relative_paths_in_a_custom_config_resolve_against_its_parent ... ok
+test config::tests::unknown_fields_are_rejected ... ok
+test config::tests::unsupported_version_is_rejected_with_a_clear_message ... ok
+test client_facade_tests::local_markdown_knowledge_acceptance::legacy_local_client_knowledge_uses_real_markdown_without_sql_body_rows ... ok
+test connected::tests::connected_replica_refuses_other_server ... ok
+test connected::tests::connected_workspace_requires_complete_accepted_payload ... ok
+test client_facade_tests::tests::daily_workflow_client_can_preview_and_apply_task_plan ... ok
+test connected::tests::embedded_reads_only_accepted_state_and_queues_all_six_families ... ok
+test convergence_tests::accepted_history_advance_invalidates_review_without_mutating_queue ... ok
+test convergence_tests::changed_rejected_action_invalidates_review_without_mutation ... ok
+test client_facade_tests::tests::change_cursor_survives_reopening_the_workspace ... ok
+test convergence_tests::cycle_contract::blocked_outbox_keeps_conflict_even_if_accepted_snapshot_is_fresh ... ok
+test convergence_tests::cycle_contract::clean_reconnect_with_no_local_intentions_is_observed_converged ... ok
+test convergence_tests::cycle_contract::markdown_mirror_failure_cannot_be_reported_as_full_convergence ... ok
+test convergence_tests::cycle_contract::second_client_writes_between_refresh_and_observation ... ok
+test connected::tests::accepted_markdown_cache_survives_reopen_and_ignores_pending_edits ... ok
+test convergence_tests::cycle_contract::staged_task_can_be_accepted_then_observed_from_server ... ok
+test convergence_tests::domain_snapshot_review_does_not_pretend_to_protect_markdown_revisions ... ok
+test convergence_tests::network_contract::matching_revision_and_empty_outbox_is_converged_only_at_observation ... ok
+test convergence_tests::network_contract::observed_server_revision_newer_than_replica_is_not_converged ... ok
+test convergence_tests::network_contract::equal_revision_with_changed_fingerprint_never_counts_as_convergence ... ok
+test convergence_tests::offline_snapshot_status_is_never_marked_live_verified ... ok
+test convergence_tests::network_contract::online_review_and_replacement_freeze_the_reviewed_revision ... ok
+test convergence_tests::network_contract::remote_review_stale_after_second_client_writes_is_rejected ... ok
+test convergence_tests::previously_used_replacement_identity_is_never_recycled ... ok
+test convergence_tests::pending_intentions_do_not_increment_accepted_revision ... ok
+test convergence_tests::network_contract::two_replicas_observe_same_server_without_sharing_pending_intentions ... ok
+test client_facade_tests::tests::reviewed_plan_rejects_intervening_authoritative_change ... ok
+test convergence_tests::replacement_must_keep_original_command_family ... ok
+test convergence_tests::review_requires_a_conflict_and_accepted_snapshot ... ok
+test convergence_tests::replacement_rejects_embedded_envelope_and_malformed_identity ... ok
+test convergence_tests::reviewed_replacement_preserves_rejected_audit_and_global_position ... ok
+test convergence_tests::revision_and_fingerprint_both_required ... ok
+test client_facade_tests::tests::project_strategy_round_trips_through_client_v2 ... ok
+test convergence_tests::revision_guard_contract::a_second_review_after_refresh_succeeds_with_new_frozen_revision ... ok
+test deployment::tests::conflicting_endpoint_environment_is_rejected ... ok
+test deployment::tests::connected_mode_requires_both_replica_and_endpoint ... ok
+test convergence_tests::revision_guard_contract::stale_review_cannot_supersede_a_command_even_when_retry_id_is_valid ... ok
+test deployment::tests::deployment_reads_connected_settings_from_config ... ok
+test deployment::tests::cli_db_selects_the_replica_in_environment_connected_mode ... ok
+test deployment::tests::independent_replica_cannot_use_authority_file ... ok
+test deployment::tests::environment_server_overrides_connected_config ... ok
+test convergence_tests::revision_guard_contract::repeated_review_token_is_not_reusable_after_a_successful_replacement ... ok
+test convergence_tests::status_on_new_replica_cannot_claim_server_convergence ... ok
+test embedded_authority::tests::local_host_rejects_blank_actor ... ok
+test deployment::tests::invalid_configuration_never_falls_back ... ok
+test deployment::tests::offline_local_mode_needs_no_server ... ok
+test file_knowledge_bridge::tests::markdown_metadata_roundtrip_preserves_user_frontmatter ... ok
+test deployment::tests::resolves_endpoint_alias ... ok
+test mirror_consistency_tests::convergence_status_includes_explicit_mirror_provenance ... ok
+test mirror_consistency_tests::direct_replacement_remains_offline_cache_without_server_proof ... ok
+test mirror_consistency_tests::blank_replica_does_not_claim_complete_mirror ... ok
+test convergence_tests::two_clients_have_independent_pending_queues_but_share_accepted_revision ... ok
+test mirror_consistency_tests::disk_integrity::rejected_replacement_does_not_mutate_outbox_or_mirror_metadata ... ok
+test embedded_authority::tests::embedded_transport_executes_canonical_commands_and_replays_receipts ... ok
+test mirror_consistency_tests::empty_complete_mirror_is_distinct_from_uninitialized_cache ... ok
+test mirror_consistency_tests::failed_mirror_publish_preserves_previous_snapshot_and_provenance ... ok
+test mirror_consistency_tests::disk_integrity::cached_inventory_status_persists_across_independent_replicas ... ok
+test mirror_consistency_tests::incremental_network::all_matching_cached_bodies_are_reused_without_document_requests ... ok
+test client_facade_tests::tests::schedule_create_conflict_move_and_reopen_preserves_history ... ok
+test client_facade_tests::tests::reviewed_plan_requires_confirmation_and_creates_only_approved_blocks ... ok
+test mirror_consistency_tests::incremental_network::failed_second_manifest_does_not_delete_removed_notes ... ok
+test mirror_consistency_tests::incremental_network::only_changed_body_is_transferred_on_repeated_sync ... ok
+test mirror_consistency_tests::incremental_network::cache_corruption_is_not_reused_based_on_matching_metadata ... ok
+test mirror_consistency_tests::individual_point_cache_revokes_full_mirror_status ... ok
+test mirror_consistency_tests::incremental_network::server_deletion_discards_only_removed_note_on_successful_publication ... ok
+test mirror_consistency_tests::invalid_single_note_does_not_invalidate_existing_mirror ... ok
+test mirror_consistency_tests::manifest_admission::invalid_cached_frontmatter_is_never_admitted_as_a_point_read ... ok
+test mirror_consistency_tests::manifest_admission::manifest_digest_and_document_count_are_consistent_on_empty_refresh ... ok
+test mirror_consistency_tests::manifest_admission::conflicting_batch_intentions_cannot_modify_existing_mirror ... ok
+test mirror_consistency_tests::incremental_network::server_move_triggers_metadata_refresh_even_when_body_is_identical ... ok
+test mirror_consistency_tests::disk_integrity::point_read_invalidates_completeness_in_same_transaction ... ok
+test mirror_consistency_tests::manifest_admission::replacing_full_mirror_does_not_accept_pending_tasks ... ok
+test mirror_consistency_tests::disk_integrity::external_deleted_cached_row_invalidates_provenance ... ok
+test mirror_consistency_tests::disk_integrity::fail_closed_on_malformed_inventory_digest_metadata ... ok
+test mirror_consistency_tests::mirror_republication_invalidates_a_previous_point_read_without_losing_other_notes ... ok
+test mirror_consistency_tests::disk_integrity::tampered_document_count_is_detected_without_silent_repair ... ok
+test mirror_consistency_tests::network::body_changed_between_manifest_observations_rejects_publication ... ok
+test mirror_consistency_tests::network::duplicate_note_paths_abort_mirror_before_publication ... ok
+test mirror_consistency_tests::network::concurrent_metadata_change_preserves_old_accepted_mirror ... ok
+test mirror_consistency_tests::network::invalid_manifest_digest_is_rejected_before_any_note_download ... ok
+test mirror_consistency_tests::network::empty_server_vault_publishes_verifiably_complete_empty_mirror ... ok
+test mirror_consistency_tests::network::content_changed_during_download_is_detected_by_body_digest ... ok
+test mirror_consistency_tests::network::network_mirror_publishes_complete_manifest_after_two_identical_observations ... ok
+test mirror_consistency_tests::revision_checkpoint::stale_replica_rejects_transfer_before_downloading_bodies ... ok
+test mirror_consistency_tests::revision_checkpoint::verified_mirror_rejects_identity_substitution ... ok
+test mirror_consistency_tests::network::inventory_order_changes_are_not_treated_as_file_mutations ... ok
+test outbox_audit::audit_invariants::accepted_receipts_count_is_explicit ... ok
+test mirror_consistency_tests::revision_checkpoint::verified_mirror_rejects_silent_body_corruption ... ok
+test outbox_audit::audit_invariants::audit_is_read_only_even_on_corruption ... ok
+test outbox_audit::audit_invariants::audit_reports_all_canonical_families ... ok
+test outbox_audit::audit_invariants::empty_action_is_unparseable ... ok
+test outbox_audit::audit_invariants::invalid_accepted_snapshot_metadata_detected ... ok
+test outbox_audit::audit_invariants::frozen_revision_must_not_be_negative ... ok
+test outbox_audit::audit_invariants::invalid_identifier_is_reported_not_normalized ... ok
+test mirror_consistency_tests::revision_checkpoint::concurrent_server_revision_change_preserves_prior_cache ... ok
+test mirror_consistency_tests::two_client_contract::reconnecting_stale_client_updates_only_that_clients_cache ... ok
+test outbox_audit::audit_invariants::positive_frozen_revision_can_remain_pending ... ok
+test outbox_audit::audit_invariants::receipts_on_superseded_are_detected ... ok
+test outbox_audit::audit_invariants::orphaned_receipts_on_pending_are_detected ... ok
+test mirror_consistency_tests::revision_checkpoint::stable_checkpoint_publishes_with_explicit_source_revision ... ok
+test outbox_audit::audit_invariants::overlapping_ordinals_are_reported_without_panicking ... ok
+test outbox_audit::audit_invariants::superseded_record_stays_auditable ... ok
+test outbox_audit::audit_invariants::valid_accepted_snapshot_metadata_does_not_fail_audit ... ok
+test mirror_consistency_tests::revision_checkpoint::verified_mirror_rejects_corrupted_metadata ... ok
+test outbox_audit::tests::accepted_after_unresolved_is_detected ... ok
+test outbox_audit::tests::accepted_without_receipt_is_corruption ... ok
+test outbox_audit::tests::envelope_fields_cannot_be_embedded_in_staged_action ... ok
+test outbox_audit::tests::accepted_command_requires_matching_receipt ... ok
+test outbox_audit::tests::empty_replica_is_healthy ... ok
+test outbox_audit::tests::invalid_action_is_rejected_by_audit ... ok
+test outbox_audit::tests::conflicting_queue_blocks_later_intentions ... ok
+test outbox_audit::tests::invalid_family_detected ... ok
+test outbox_audit::tests::report_never_discloses_action_bodies ... ok
+test outbox_audit::tests::pending_commands_are_not_accepted ... ok
+test mirror_consistency_tests::two_client_contract::one_clients_newer_mirror_does_not_modify_other_offline_replica ... ok
+test rich_client_tests::connected_mode_fails_closed_for_attachments_and_rich_task_commands ... ok
+test mirror_consistency_tests::mirror_provenance_survives_sqlite_reopen ... ok
+test sync_health::domain_tests::an_accepted_older_command_does_not_block_newer_pending ... ok
+test sync_health::domain_tests::empty_queue_has_all_canonical_families ... ok
+test sync_health::domain_tests::every_supported_domain_is_reported ... ok
+test sync_health::domain_tests::global_ordering_does_not_prioritize_one_family ... ok
+test sync_health::domain_tests::idempotent_read_does_not_change_data ... ok
+test sync_health::domain_tests::malformed_unknown_family_fails_closed ... ok
+test sync_health::domain_tests::malformed_unknown_state_fails_closed ... ok
+test sync_health::domain_tests::matching_local_summary_is_accepted ... ok
+test sync_health::domain_tests::negative_ordinal_fails_closed ... ok
+test sync_health::domain_tests::online_observation_never_hides_pending ... ok
+test sync_health::domain_tests::read_only_report_can_be_reused_without_network ... ok
+test sync_health::domain_tests::report_disagrees_with_local_summary_fail_closed ... ok
+test sync_health::domain_tests::report_includes_agent_and_blueprint_transport_families ... ok
+test sync_health::domain_tests::serialized_report_preserves_remediation_sequence ... ok
+test sync_health::domain_tests::terminal_commands_not_treated_as_pending ... ok
+test sync_health::edge_case_tests::conflicting_command_cannot_be_hidden_by_clean_server_fingerprint ... ok
+test sync_health::edge_case_tests::contradictory_observation_does_not_panic_or_converge ... ok
+test sync_health::edge_case_tests::explicit_cycle_failure_is_distinct_from_markdown_incompleteness ... ok
+test sync_health::edge_case_tests::healthy_mirror_has_consistent_document_count ... ok
+test sync_health::edge_case_tests::mirror_provenance_without_verified_inventory_is_incomplete ... ok
+test sync_health::edge_case_tests::missing_accepted_snapshot_requires_refresh_even_when_mirror_looks_complete ... ok
+test sync_health::edge_case_tests::multiple_issues_have_stable_priority ... ok
+test sync_health::edge_case_tests::offline_status_never_records_observed_revision ... ok
+test sync_health::edge_case_tests::one_observation_does_not_override_corrupted_outbox ... ok
+test sync_health::edge_case_tests::online_status_encodes_current_server_revision ... ok
+test sync_health::protocol_compatibility_tests::machine_readable_action_variants_remain_stable ... ok
+test sync_health::protocol_compatibility_tests::machine_readable_condition_variants_remain_stable ... ok
+test sync_health::replica_integration_tests::all_command_families_remain_globally_ordered ... ok
+test sync_health::replica_integration_tests::batch_staging_and_per_family_report_have_identical_counts ... ok
+test sync_health::replica_integration_tests::mixed_domain_intentions_are_reported_as_pending_not_accepted ... ok
+test sync_health::replica_integration_tests::queued_markdown_does_not_make_accepted_mirror_complete ... ok
+test sync_health::replica_integration_tests::rejected_batch_does_not_affect_report ... ok
+test sync_health::replica_integration_tests::replay_of_idempotent_command_does_not_double_pending_count ... ok
+test sync_health::replica_integration_tests::report_never_mutates_queue_or_accepted_snapshot ... ok
+test sync_health::replica_integration_tests::serialization_has_no_command_body_or_note_content ... ok
+test sync_health::tests::cached_document_count_mismatch_is_not_complete ... ok
+test sync_health::tests::conflict_precedes_pending_and_preserves_both_actions ... ok
+test sync_health::tests::corrupted_outbox_precedes_pending ... ok
+test sync_health::tests::cycle_failure_does_not_claim_success ... ok
+test sync_health::tests::offline_is_never_converged ... ok
+test sync_health::tests::online_clean_is_observed_only ... ok
+test sync_health::tests::partial_mirror_blocks_convergence ... ok
+test sync_health::tests::pending_is_not_accepted ... ok
+test sync_health::tests::serializes_machine_readable_repair_instructions ... ok
+test sync_health::tests::stale_server_is_visible_even_if_local_queue_empty ... ok
+test unified::conflict_workflow_tests::unresolved_commands_are_visible_but_never_accepted ... ok
+test rich_client_tests::project_workflow_binding_roundtrips_through_the_client ... ok
+test rich_client_tests::attachment_import_rejects_symbolic_links ... ok
+test rich_client_tests::bundled_workflows_include_basic_as_default_offline ... ok
+test unified::m20_planning_session_tests::bad_second_window_prevents_any_remote_outbox_entries ... ok
+test rich_client_tests::task_activity_records_meaningful_changes_only ... ok
+test rich_client_tests::rich_details_roundtrip_trims_labels_and_rejects_unknown_priority ... ok
+test rich_client_tests::acceptance_criteria_check_reorder_and_remove_persist_in_order ... ok
+test unified::m20_planning_session_tests::repeated_id_and_impossible_duration_are_rejected ... ok
+test rich_client_tests::attachments_import_read_export_refuse_overwrite_and_share_content ... ok
+test unified::m20_planning_session_tests::offline_session_is_durable_and_does_not_mutate_accepted_state ... ok
+test unified::folder_client_parity_tests::embedded_creates_and_moves_real_folders_remote_only_queues ... ok
+test unified::m22_dependency_client_contracts::offline_readiness_requires_an_accepted_snapshot ... ok
+test unified::m22_dependency_preview_client_contracts::connected_preview_requires_accepted_snapshot ... ok
+test unified::m20_planning_session_tests::accepted_routine_and_milestone_snapshots_match_remote_projection ... ok
+test unified::m20_planning_session_tests::remote_routine_and_milestone_commands_are_only_pending_until_acknowledged ... ok
+test unified::m20_planning_session_tests::embedded_session_persists_both_windows_and_preserves_retry_receipts ... ok
+test unified::m22_dependency_client_contracts::embedded_client_does_not_publish_rejected_cycle ... ok
+test unified::m20_planning_session_tests::routine_and_milestone_domains_share_one_global_authority_revision ... ok
+test unified::m20_planning_client_acceptance::embedded_planning_changes_accepted_snapshot_and_remote_keeps_pending_separate ... ok
+test unified::m22_dependency_client_contracts::embedded_client_exposes_revisioned_graph_and_readiness ... ok
+test unified::project_bootstrap_tests::remote_launch_is_ordered_but_not_accepted ... ok
+test unified::renderer_contract_tests::remote_view_contract_reports_no_accepted_snapshot ... ok
+test unified::m22_dependency_preview_client_contracts::embedded_preview_reflects_accepted_edge_changes ... ok
+test unified::m22_dependency_preview_client_contracts::embedded_preview_is_read_only_and_revision_bound ... ok
+test unified::strategy_parity_tests::remote_retry_does_not_duplicate_outbox_intent ... ok
+test unified::strategy_parity_tests::remote_conflicting_reuse_of_identity_fails ... ok
+test unified::project_bootstrap_tests::failed_project_launch_reports_committed_prefix ... ok
+test unified::strategy_parity_tests::remote_strategy_is_pending_until_server_acceptance ... ok
+test unified::task_refinement_tests::preflight_rejects_all_invalid_edits_without_any_write ... ok
+test unified::project_bootstrap_tests::invalid_manifest_has_no_embedded_or_remote_side_effects ... ok
+test unified::task_refinement_tests::stable_ordered_commands_and_revision_fencing ... ok
+test unified::m22_dependency_preview_client_contracts::embedded_preview_rejects_a_cycle_without_staging_any_change ... ok
+test unified::task_refinement_tests::remote_refinement_queues_but_does_not_project_pending_changes ... ok
+test unified::renderer_contract_tests::embedded_and_connected_clients_expose_the_shared_view_contract ... ok
+test unified::project_bootstrap_tests::project_launch_commits_complete_project_in_revision_order ... ok
+test unified::strategy_parity_tests::accepted_local_retry_does_not_advance_revision ... ok
+test unified::tests::queued_writes_are_never_exposed_as_accepted_reads ... ok
+test unified::tests::remote_file_commands_use_one_ordered_outbox_and_never_commit_offline ... ok
+test unified::tests::remote_unified_commands_are_idempotent_before_and_after_reopen ... ok
+test unified::task_refinement_tests::embedded_partial_failure_is_explicit ... ok
+test unified::strategy_parity_tests::strategy_command_is_accepted_in_embedded_mode ... ok
+test unified::tests::embedded_and_remote_share_commands_but_not_acceptance_semantics ... ok
+test unified::tests::dashboard_is_one_accepted_revision_and_pending_is_separate ... ok
+test unified::tests::accepted_read_contract_is_the_same_for_embedded_and_refreshed_remote ... ok
+test unified::tests::file_authoritative_unified_create_and_edit ... ok
+test unified::unified_remote_atomic_workflow_tests::conflicting_last_step_does_not_stage_new_prefix ... ok
+test unified::unified_remote_atomic_workflow_tests::duplicate_ids_fail_without_any_queue_side_effects ... ok
+test unified::unified_remote_atomic_workflow_tests::remote_stages_entire_project_task_workflow_without_accepted_projection ... ok
+test unified::typed_workflow_tests::remote_workflow_queues_without_projecting_pending_writes ... ok
+test view_data::tests::civil_dates_render_utc_days_without_a_date_dependency ... ok
+test unified::tests::project_overview_and_status_counts_are_snapshot_consistent ... ok
+test unified::unified_remote_atomic_workflow_tests::retrying_same_workflow_does_not_duplicate_intentions ... ok
+test unified::typed_workflow_tests::embedded_workflow_commits_in_order ... ok
+test unified::tests::task_filters_have_embedded_remote_parity_and_exclude_pending ... ok
+test unified::typed_workflow_tests::failure_reports_accepted_prefix_without_rollback ... ok
+test unified::typed_workflow_tests::preflight_duplicate_ids_has_no_side_effects ... ok
+test view_data::tests::created_project_resolves_its_pinned_default_workflow_views ... ok
+test view_data::tests::task_rows_carry_application_owned_transition_offers ... ok
+test view_data::tests::blueprint_work_items_are_project_scoped_and_resolved ... ok
+
+test result: ok. 314 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+     Running unittests src/lib.rs (target/debug/deps/orbit_domain-82aa7495c4c5a46a)
+
+running 56 tests
+test acceptance::tests::blank_text_is_rejected ... ok
+test acceptance::tests::completion_is_independent_from_task_status ... ok
+test acceptance::tests::criteria_are_ordered_and_reorderable_with_stable_ids ... ok
+test acceptance::tests::duplicate_ids_and_unknown_criteria_are_rejected ... ok
+test attachment::tests::invalid_checksums_are_rejected ... ok
+test dependency::tests::blank_blocker_reason_is_rejected ... ok
+test dependency::tests::blocker_requires_reason_and_can_be_resolved ... ok
+test dependency::tests::dependency_preserves_direction ... ok
+test dependency::tests::dependency_rejects_self_reference ... ok
+test attachment::tests::attachments_reject_path_like_filenames ... ok
+test habit::tests::habit_can_be_paused_and_resumed_without_becoming_a_task_state ... ok
+test activity::tests::activity_records_are_semantic_and_timestamped ... ok
+test habit::tests::habit_is_not_modeled_as_a_task ... ok
+test habit::tests::habit_name_must_not_be_blank ... ok
+test ids::tests::typed_ids_are_distinct_and_preserve_their_value ... ok
+test ids::tests::typed_ids_reject_blank_values ... ok
+test agent_job::tests::job_completion_is_terminal_but_not_task_acceptance ... ok
+test habit::tests::weekly_cadence_requires_a_target_between_one_and_seven ... ok
+test knowledge::tests::knowledge_can_link_to_execution_and_other_knowledge ... ok
+test knowledge::tests::timestamps_are_monotonic ... ok
+test knowledge::tests::knowledge_rejects_self_links_and_blank_provenance_sources ... ok
+test activity::tests::activity_summary_must_be_non_blank ... ok
+test milestone::tests::completed_milestone_is_terminal ... ok
+test knowledge_resource::tests::resource_metadata_is_separate_from_device_local_path ... ok
+test attachment::tests::content_types_are_guessed_without_executing_content ... ok
+test knowledge::tests::knowledge_uses_preset_kind_and_structured_lifecycle ... ok
+test milestone::tests::milestone_always_belongs_to_exactly_one_project ... ok
+test milestone::tests::milestone_can_be_blocked_and_resumed ... ok
+test habit_tracking::tests::weekly_target_must_be_met_within_each_period ... ok
+test milestone::tests::milestone_name_must_not_be_blank ... ok
+test progress::tests::all_required_source_variants_normalize ... ok
+test progress::tests::basis_points_reject_values_above_one_hundred_percent ... ok
+test progress::tests::task_derived_progress_normalizes_deterministically ... ok
+test project::tests::project_mode_supplies_opinionated_default_signals ... ok
+test routine::tests::habit_can_be_removed_from_routine_without_touching_habit ... ok
+test project::tests::required_criteria_gate_completion ... ok
+test routine::tests::routine_preserves_habit_order_without_owning_habit_state ... ok
+test progress::tests::external_and_agent_sources_require_names ... ok
+test progress::tests::invalid_task_derived_progress_is_rejected ... ok
+test routine::tests::routine_rejects_duplicate_membership ... ok
+test progress::tests::numeric_progress_clamps_above_target ... ok
+test schedule::interval_regression_tests::overflow_is_rejected_on_create_and_move_without_mutating_block ... ok
+test schedule::tests::movable_blocks_can_be_rescheduled_but_fixed_blocks_cannot ... ok
+test task::tests::milestone_association_without_project_is_rejected ... ok
+test task::tests::planning_metadata_rejects_zero_estimates_and_inverted_windows ... ok
+test schedule::tests::schedule_block_requires_title_and_positive_duration ... ok
+test schedule::tests::standalone_schedule_blocks_are_first_class ... ok
+test task::tests::task_can_be_created_without_a_project ... ok
+test schedule::tests::task_and_habit_blocks_reference_entities_by_id ... ok
+test task::tests::task_can_belong_to_project_and_milestone ... ok
+test task::tests::task_planning_metadata_is_optional_and_replaceable ... ok
+test task::tests::valid_status_transition_is_applied ... ok
+test task::tests::terminal_task_cannot_be_reopened_implicitly ... ok
+test task::tests::blank_task_title_is_rejected ... ok
+test attachment::tests::attachment_metadata_preserves_display_name_and_object_identity ... ok
+test habit_tracking::tests::daily_streaks_are_computed_from_caller_supplied_periods ... ok
+
+test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/orbit_mcp-1b746ff0c63d9d7c)
+
+running 63 tests
+test connected_authority_mcp_tests::connected_dependency_commands_are_write_protected ... ok
+test connected_authority_mcp_tests::connected_dependency_commands_refuse_absent_tasks_before_queueing ... ok
+test connected_authority_mcp_tests::connected_graph_reads_require_unrestricted_visibility ... ok
+test connected_authority_mcp_tests::connected_mcp_tools_use_canonical_command_envelopes ... ok
+test connected_authority_mcp_tests::connected_graph_reads_do_not_promote_pending_tasks ... ok
+test connected_authority_mcp_tests::connected_mcp_refuses_legacy_local_mutations ... ok
+test connected_authority_mcp_tests::connected_project_task_and_evidence_queue_without_claiming_commit ... ok
+test connected_authority_mcp_tests::disconnected_mcp_never_claims_queued_command_is_accepted ... ok
+test connected_authority_mcp_tests::evidence_requires_explicit_unscoped_authorization ... ok
+test connected_authority_mcp_tests::connected_schedule_mutation_requires_explicit_unscoped_access ... ok
+test connected_authority_mcp_tests::dependency_tools_are_advertised_in_both_authority_modes ... ok
+test connected_authority_mcp_tests::readonly_agent_cannot_queue_offline_mutations ... ok
+test connected_authority_mcp_tests::scoped_agent_cannot_write_to_other_project_strategy ... ok
+test connected_authority_mcp_tests::scoped_mcp_checks_both_ends_of_task_mutations ... ok
+test connected_authority_mcp_tests::local_dependency_mcp_rejects_stale_revisions_without_a_partial_edge ... ok
+test connected_authority_mcp_tests::local_preview_is_safe_for_readonly_agents_but_scoped_agent_is_denied ... ok
+test connected_workflow_m20_tests::authorized_cross_domain_workflow_queues_ordered_intents_without_accepting ... ok
+test connected_workflow_m20_tests::connected_workflow_tools_are_discoverable ... ok
+test connected_workflow_m20_tests::conflict_replacement_rejects_unknown_and_pending_originals ... ok
+test connected_authority_mcp_tests::local_preview_and_mutation_observe_distinct_revision_boundaries ... ok
+test connected_workflow_m20_tests::duplicate_ids_fail_before_any_durable_side_effect ... ok
+test connected_workflow_m20_tests::entire_batch_is_authorized_before_submission ... ok
+test connected_workflow_m20_tests::readonly_agent_cannot_queue_cross_domain_workflow ... ok
+test connected_workflow_m20_tests::malformed_final_step_does_not_queue_valid_prefix ... ok
+test connected_workflow_m20_tests::replacement_scope_is_checked_before_touching_outbox ... ok
+test connected_authority_mcp_tests::project_scoped_dependency_writes_check_both_endpoints ... ok
+test connected_workflow_m20_tests::scoped_agent_cannot_batch_create_outside_allowlist ... ok
+test connected_authority_mcp_tests::local_dependency_mcp_mutations_are_idempotent_cycle_safe_and_readable ... ok
+test connected_authority_mcp_tests::shared_mcp_backend_validates_before_invocation_in_both_modes ... ok
+test planning_scenario_mcp_contract_tests::disconnected_connected_mode_cannot_approve_calendar_writes ... ok
+test canonical_markdown_mcp_tests::canonical_mcp_markdown_create_read_search_and_move ... ok
+test canonical_markdown_mcp_tests::markdown_permissions_fail_closed ... ok
+test planning_scenario_mcp_contract_tests::approval_requires_separate_confirmation ... ok
+test planning_scenario_mcp_contract_tests::restricted_agents_cannot_see_full_calendar ... ok
+test planning_scenario_mcp_contract_tests::approval_commits_and_idempotently_retries ... ok
+test planning_scenario_mcp_contract_tests::readonly_agents_cannot_apply_reviewed_schedules ... ok
+test planning_scenario_mcp_contract_tests::rejected_approval_does_not_mutate_calendar ... ok
+test planning_scenario_mcp_contract_tests::read_only_review_has_no_ledger_side_effect ... ok
+test reviewed_batch_mcp_tests::missing_batch_payload_fails_without_queueing ... ok
+test reviewed_batch_mcp_tests::malformed_review_token_is_rejected_before_network ... ok
+test reviewed_batch_mcp_tests::empty_reviewed_batch_cannot_be_submitted ... ok
+test reviewed_batch_mcp_tests::reviewed_batch_mcp_tool_is_discoverable ... ok
+test reviewed_batch_mcp_tests::one_bad_late_resolution_prevents_all_mutations ... ok
+test reviewed_batch_mcp_tests::readonly_agent_cannot_submit_reviewed_batch ... ok
+test reviewed_batch_mcp_tests::scoped_agent_cannot_replace_project_outside_allowlist ... ok
+test reviewed_batch_mcp_tests::scoped_agent_cannot_submit_unscoped_evidence_resolution ... ok
+test reviewed_batch_mcp_tests::unsafe_legacy_alias_requires_the_full_review_token ... ok
+test reviewed_batch_mcp_tests::unknown_command_family_is_denied_before_local_staging ... ok
+test planning_scenario_mcp_contract_tests::stale_review_cannot_be_approved_after_concurrent_write ... ok
+test rich_mcp_tests::rich_tools_advertise_object_schemas_in_local_mode_only ... ok
+test tests::developer_and_project_scope_are_orbit_owned ... ok
+test planning_scenario_mcp_contract_tests::tampered_approval_is_rejected_without_partial_reservations ... ok
+test tests::explicit_mcp_command_id_stabilizes_activity_and_generated_entity_ids ... ok
+test rich_mcp_tests::read_only_mode_denies_task_update_and_attachment_add ... ok
+test rich_mcp_tests::attachment_add_rejects_symlinks_and_directories ... ok
+test tests::evidence_endpoints_enforce_project_scope_and_read_only_mode ... ok
+test tests::read_only_policy_rejects_mutation ... ok
+test rich_mcp_tests::project_scope_denies_hidden_task_and_attachment_operations ... ok
+test rich_mcp_tests::project_create_binds_basic_and_task_details_roundtrip ... ok
+test rich_mcp_tests::attachment_add_list_inspect_read_associate_and_remove_roundtrip ... ok
+test rich_mcp_tests::acceptance_criteria_are_ordered_and_never_complete_the_task ... ok
+test tests::mcp_readonly_policy_blocks_canonical_command_admission ... ok
+test tests::mcp_retry_does_not_repeat_task_or_activity_and_rejects_payload_change ... ok
+
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+     Running unittests src/lib.rs (target/debug/deps/orbit_planner-407b203861889ff2)
+
+running 19 tests
+test habit_planning_tests::weekly_habit_need_tracks_remaining_completions_without_creating_tasks ... ok
+test habit_planning_tests::completed_habit_period_requires_no_additional_capacity ... ok
+test habit_schedule_proposal_tests::habits_are_scheduled_directly_without_task_conversion ... ok
+test habit_schedule_proposal_tests::external_habit_proposals_cannot_exceed_remaining_cadence ... ok
+test tests::availability_restricts_planning_even_when_calendar_is_empty ... ok
+test habit_schedule_proposal_tests::proposal_validity_changes_when_new_completion_reduces_remaining_demand ... ok
+test tests::fixed_commitment_buffers_reserve_time_without_fake_schedule_blocks ... ok
+test tests::free_slots_are_clipped_to_window_and_filter_by_minimum_size ... ok
+test tests::invalid_windows_and_zero_work_caps_fail_closed ... ok
+test tests::generated_proposal_passes_independent_validation ... ok
+test tests::overlapping_schedule_blocks_are_counted_once_for_capacity ... ok
+test tests::proposal_does_not_split_tasks_and_reports_reasons ... ok
+test tests::proposal_orders_deadlines_and_respects_earliest_start ... ok
+test tests::validator_rejects_task_inside_fixed_commitment_buffer ... ok
+test tests::week_requires_contiguous_caller_resolved_days ... ok
+test tests::proposal_respects_protected_capacity_budget ... ok
+test tests::protected_time_and_work_cap_limit_new_planning_without_fake_blocks ... ok
+test tests::validator_rejects_external_proposal_that_breaks_constraints ... ok
+test tests::weekly_availability_expands_against_explicit_day_boundaries ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/orbit_progress-14bf376ccf3aa6ed)
+
+running 19 tests
+test canonical_health_tests::completed_project_reports_complete_progress ... ok
+test mode_evidence_tests::habit_evidence_counts_fulfilled_periods_not_raw_occurrences ... ok
+test canonical_health_tests::canonical_milestone_rollup_excludes_cancelled_and_honors_estimates ... ok
+test canonical_health_tests::trend_and_recent_activity_are_quantitative ... ok
+test evidence_tests::project_evidence_does_not_require_plan_or_forecast ... ok
+test mode_evidence_tests::habit_evidence_is_unknown_without_evaluated_periods ... ok
+test canonical_health_tests::health_projection_returns_reasons_not_a_hidden_score ... ok
+test evidence_tests::project_evidence_preserves_each_independent_signal ... ok
+test mode_evidence_tests::metric_target_handles_full_i64_range_without_overflow ... ok
+test tests::completed_progress_forecasts_completion_at_latest_observation ... ok
+test tests::empty_or_zero_weight_rollups_fail_closed ... ok
+test tests::forecast_rejects_regression_or_no_progress ... ok
+test tests::forecast_uses_observed_progress_rate ... ok
+test tests::forecast_variance_reports_lateness_in_minutes ... ok
+test mode_evidence_tests::metric_targets_handle_both_directions_and_clamping ... ok
+test tests::blocker_exposure_is_transparent_not_a_health_label ... ok
+test tests::planned_vs_actual_preserves_signed_variance ... ok
+test tests::schedule_variance_reports_overrun_ratio ... ok
+test tests::weighted_rollup_supports_equal_and_explicit_weights ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/orbit_runtime-facf025f4e26227d)
+
+running 499 tests
+test accepted_application::tests::invalid_project_status_does_not_commit_activity_receipt_or_revision ... ok
+test accepted_application::tests::rich_habit_state_commands_share_receipts_and_global_revision ... ok
+test accepted_application::tests::rich_command_retries_return_original_receipts_without_duplicate_activities ... ok
+test accepted_application::tests::failed_rich_task_does_not_advance_global_revision_or_activity_history ... ok
+test accepted_application::tests::immutable_rich_payload_includes_activity_identity ... ok
+test accepted_application::tests::mixed_minimal_and_rich_commands_use_one_sequence_and_conflict_policy ... ok
+test agent_authority::tests::rejects_invalid_agent_identifiers ... ok
+test accepted_application::tests::repeated_project_status_changes_follow_semantic_field_versions ... ok
+test accepted_application::tests::failed_rich_habit_update_rolls_back_receipt_and_history ... ok
+test agent_dispatch::boundary_tests::ambiguous_outcome_is_not_relaunched ... ok
+test agent_dispatch::boundary_tests::duplicate_dispatch_does_not_invoke_runtime_twice ... ok
+test agent_monitor::boundary_tests::connection_failure_does_not_mark_session_absent ... ok
+test agent_monitor::boundary_tests::missing_claim_never_contacts_runtime ... ok
+test agent_monitor::boundary_tests::runtime_idle_preserves_review_boundary ... ok
+test agent_monitor::boundary_tests::stale_poll_does_not_contact_runtime ... ok
+test agent_monitor::tests::agent_idleness_is_not_acceptance ... ok
+test accepted_application::tests::rich_routine_create_and_retry_participates_in_global_revision ... ok
+test accepted_application::tests::stale_rich_create_does_not_commit_activity_or_advance_history ... ok
+test accepted_application::tests::rich_task_planning_preserves_application_rows_and_revision ... ok
+test agent_authority::tests::rejects_invalid_revisions_before_storage_access ... ok
+test application_services::tests::authority_batch_commits_all_project_and_activity_records ... ok
+test accepted_application::tests::rich_project_task_habit_share_revision_history_and_activity_commit ... ok
+test accepted_application::tests::task_start_and_status_transitions_share_canonical_revision ... ok
+test agent_authority::tests::unknown_job_does_not_create_runtime_session ... ok
+test application_services::tests::rich_command_application_error_preserves_revision_and_releases_transaction ... ok
+test application_services::tests::authority_batch_rejects_partial_project_and_activity_commit ... ok
+test application_services::tests::rich_command_receipt_and_activity_commit_with_canonical_history ... ok
+test attachment_store::tests::identical_content_is_deduplicated ... ok
+test attachment_store::tests::invalid_object_ids_are_rejected_on_every_operation ... ok
+test attachment_store::tests::oversize_content_is_rejected_before_writing ... ok
+test application_services::tests::rich_command_rejects_cross_domain_id_collision_without_mutation ... ok
+test attachment_store::tests::remove_deletes_only_the_regular_object ... ok
+test attachment_authority_tests::invalid_filename_is_rejected_without_writing_metadata ... ok
+test attachment_authority_tests::import_list_read_remove_and_content_gc ... ok
+test attachment_store::tests::store_and_read_roundtrip_is_content_addressed ... ok
+test attachment_store::tests::symlinked_objects_are_never_read_or_removed ... ok
+test application_services::tests::rich_project_and_task_use_cases_share_host_store_and_activity_transaction ... ok
+test attachment_authority_tests::association_shares_one_object_until_the_last_reference_is_removed ... ok
+test attachment_authority_tests::oversize_import_is_rejected_before_metadata_or_history ... ok
+test attachment_authority_tests::rich_task_detail_and_acceptance_commands_are_duplicate_safe ... ok
+test authority_milestones::tests::milestone_serialization_rejects_unknown_fields ... ok
+test authority_evidence::tests::habit_and_metric_evidence_are_authoritative_and_retry_safe ... ok
+test authority_milestones::tests::create_rename_move_finish_and_retry ... ok
+test authority_evidence::tests::invalid_cadence_does_not_advance_revision ... ok
+test authority_milestones::tests::delete_clears_live_projection_but_preserves_command_receipt ... ok
+test authority_milestones::tests::failed_missing_project_and_stale_revision_are_atomic ... ok
+test authority_milestones::tests::invalid_status_and_name_never_commit_an_authority_receipt ... ok
+test authority_milestones::tests::milestone_movement_and_delete_respect_linked_task_references ... ok
+test authority_routines::tests::failed_renames_and_cross_actor_retries_preserve_the_accepted_routine ... ok
+test authority_routines::tests::invalid_memberships_do_not_advance_revision_or_lose_existing_rows ... ok
+test authority_routines::tests::order_can_be_cleared_then_replaced_without_duplicate_memberships ... ok
+test authority_routines::tests::routine_create_rejects_unknown_habits_without_leaving_an_empty_routine ... ok
+test authority_milestones::tests::milestone_state_machine_matches_domain_transitions ... ok
+test authority_routines::tests::stale_revision_and_changed_retry_are_rejected ... ok
+test authority_routines::tests::full_routine_lifecycle_and_order_survive_reopening ... ok
+test authority_schedule::extended_acceptance::cannot_mutate_deleted_block_without_recreating_it ... ok
+test authority_schedule::extended_acceptance::enormous_positive_duration_cannot_wrap ... ok
+test authority_schedule::extended_acceptance::invalid_identity_is_rejected_before_database_mutation ... ok
+test authority_schedule::extended_acceptance::failed_mutation_does_not_consume_command_identity ... ok
+test authority_schedule::extended_acceptance::deleting_one_block_releases_its_previous_interval ... ok
+test authority_schedule::extended_acceptance::no_schedule_operation_is_allowed_to_reuse_an_id_from_a_different_actor ... ok
+test authority_schedule::extended_acceptance::negative_starts_are_allowed_if_interval_is_well_formed ... ok
+test authority_schedule::extended_acceptance::invalid_target_kind_and_target_pair_are_rejected ... ok
+test authority_schedule::extended_acceptance::rename_then_reschedule_then_delete_is_one_history_chain ... ok
+test authority_schedule::tests::containing_intervals_are_rejected ... ok
+test authority_schedule::extended_acceptance::schedule_conflict_query_rejects_invalid_duration ... ok
+test authority_schedule::tests::changing_actor_cannot_replay_another_users_receipt ... ok
+test authority_schedule::tests::create_with_missing_target_is_rejected ... ok
+test authority_schedule::tests::adjacent_intervals_are_valid ... ok
+test authority_schedule::tests::delete_removes_block_but_retains_receipt_and_history ... ok
+test authority_schedule::tests::creation_accepts_and_lists_a_block ... ok
+test authority_schedule::tests::deleting_missing_block_cannot_advance_revision ... ok
+test authority_schedule::tests::fixed_block_cannot_move ... ok
+test authority_schedule::tests::partially_overlapping_intervals_are_rejected ... ok
+test authority_schedule::tests::invalid_revision_cannot_mutate_schedule ... ok
+test authority_schedule::tests::read_conflicts_use_half_open_intervals ... ok
+test authority_schedule::tests::immutable_command_id_cannot_be_reused_for_another_action ... ok
+test authority_schedule::tests::rename_preserves_other_fields ... ok
+test authority_schedule::tests::reschedule_moves_block_and_rechecks_collision ... ok
+test authority_schedule::tests::retarget_to_standalone_is_supported ... ok
+test authority_schedule::tests::resize_checks_overlaps_without_mutating_on_failure ... ok
+test authority_schedule::tests::schedule_and_task_commands_share_one_revision_sequence ... ok
+test authority_schedule::tests::stored_snapshots_order_by_time_and_id ... ok
+test authority_schedule::tests::retry_with_same_id_returns_immutable_receipt ... ok
+test authority_schedule::tests::zero_duration_and_overflow_are_invalid ... ok
+test authority_schedule::tests::task_target_succeeds_only_after_task_commit ... ok
+test authority_strategy::strategy_matrix_tests::all_criterion_states_round_trip ... ok
+test authority_strategy::strategy_matrix_tests::empty_criteria_are_allowed_for_exploratory_projects ... ok
+test authority_strategy::strategy_matrix_tests::at_most_one_hundred_criteria_are_accepted ... ok
+test authority_strategy::strategy_matrix_tests::maximum_distinct_signals_fit_without_loss ... ok
+test authority_strategy::strategy_matrix_tests::objective_updates_do_not_reset_completed_criterion ... ok
+test authority_strategy::strategy_matrix_tests::missing_criterion_fails_even_when_other_criteria_exist ... ok
+test authority_strategy::strategy_matrix_tests::only_one_logical_command_can_own_a_command_id ... ok
+test authority_strategy::strategy_matrix_tests::setting_progress_signals_does_not_reset_completed_criterion ... ok
+test authority_strategy::strategy_matrix_tests::success_criteria_require_unique_key_not_unique_description ... ok
+test authority_strategy::strategy_matrix_tests::success_criteria_preserve_requested_order ... ok
+test authority_strategy::strategy_matrix_tests::too_many_criteria_rejected_atomically ... ok
+test authority_strategy::tests::clearing_objective_keeps_other_configuration_unchanged ... ok
+test authority_strategy::tests::command_id_cannot_be_reused_with_different_payload ... ok
+test authority_strategy::tests::configure_then_read_complete_strategy_snapshot ... ok
+test authority_strategy::strategy_matrix_tests::empty_and_unknown_signals_fail_without_receipt ... ok
+test authority_strategy::tests::duplicate_signals_cannot_be_committed ... ok
+test authority_strategy::tests::duplicated_success_criterion_keys_are_rejected ... ok
+test authority_strategy::tests::invalid_envelopes_rejected_before_transaction ... ok
+test authority_strategy::tests::invalid_modes_never_touch_history ... ok
+test authority_strategy::tests::long_objectives_and_empty_descriptions_fail_before_commit ... ok
+test authority_strategy::tests::missing_project_does_not_create_a_receipt ... ok
+test authority_strategy::tests::multiple_projects_keep_strategies_isolated ... ok
+test authority_strategy::tests::replacing_configuration_resets_criteria_only_as_explicit_action ... ok
+test authority_strategy::tests::unknown_serde_fields_and_action_types_fail_closed ... ok
+test blueprint_execution::composition_tests::opt_in_adapter_registers_with_generic_registry ... ok
+test blueprint_execution::tests::empty_capability_not_registered ... ok
+test blueprint_execution::tests::registry_rejects_duplicate_capabilities ... ok
+test authority_strategy::tests::replacing_signals_preserves_objective_and_criteria ... ok
+test canonical::tests::missing_predecessor_never_looks_complete ... ok
+test canonical::tests::out_of_order_history_becomes_complete ... ok
+test capabilities::advertised_contract_guards::every_advertised_tool_has_a_matching_capability_and_unique_name ... ok
+test capabilities::advertised_contract_guards::integer_bounds_are_preserved_through_machine_schema ... ok
+test capabilities::advertised_contract_guards::read_only_dependency_preview_never_advertises_write_authority ... ok
+test capabilities::call_validation_tests::all_mutation_arguments_are_required_and_typed ... ok
+test capabilities::call_validation_tests::invalid_read_limits_are_not_silently_replaced_by_defaults ... ok
+test capabilities::call_validation_tests::required_fields_do_not_accept_null_empty_strings_or_float ... ok
+test capabilities::call_validation_tests::schema_and_validator_agree_for_all_required_arguments ... ok
+test capabilities::call_validation_tests::unrelated_tools_keep_their_existing_validation_path ... ok
+test capabilities::planning_action_contract_tests::action_discovery_is_read_only_and_offline_capable ... ok
+test capabilities::planning_action_contract_tests::action_menu_inputs_do_not_contain_approval_or_command_identity ... ok
+test capabilities::planning_action_contract_tests::resolution_tools_require_structured_reviewed_selection ... ok
+test capabilities::planning_action_contract_tests::task_and_project_scope_are_distinct ... ok
+test capabilities::planning_focus_contract_tests::focus_schema_requires_accepted_planning_interval ... ok
+test authority_strategy::tests::retry_returns_original_receipt_without_advancing_history ... ok
+test capabilities::planning_focus_contract_tests::task_and_group_focus_are_read_only_accepted_capabilities ... ok
+test capabilities::schema_tests::advertised_mcp_schema_matches_registry_arguments ... ok
+test capabilities::schema_tests::unknown_tool_does_not_leak_schema ... ok
+test authority_strategy::tests::stale_revision_is_rejected_before_domain_updates ... ok
+test capabilities::tests::capabilities_have_unique_stable_ids_and_cli_paths ... ok
+test capabilities::tests::exact_discovery_and_accepted_filters_are_stable ... ok
+test capabilities::tests::machine_schema_remains_versioned ... ok
+test capabilities::tests::mutation_never_claims_offline_accepted_snapshot ... ok
+test authority_strategy::tests::unknown_criterion_and_bad_status_are_atomic_failures ... ok
+test authority_strategy::tests::success_criterion_status_is_independently_changeable ... ok
+test canonical::authoritative_gate_tests::strict_commit_rejects_stale_and_missing_predecessors_without_writes ... ok
+test authority_strategy::strategy_matrix_tests::all_supported_project_modes_round_trip ... ok
+test command_engine::tests::cross_domain_command_id_collision_is_rejected_without_mutation ... ok
+test command_engine::tests::an_immutable_receipt_is_bound_to_its_original_actor_and_payload ... ok
+test command_engine::tests::forged_projection_revision_rejects_new_commands ... ok
+test daily_planning::tests::chooses_fitting_tasks_without_discarding_later_options ... ok
+test daily_planning::tests::default_estimates_and_unsized_policy_are_explicit ... ok
+test daily_planning::tests::dependency_blocker_is_reported_and_not_allocated ... ok
+test daily_planning::tests::invalid_inputs_and_corrupted_edges_fail_closed ... ok
+test daily_planning::tests::overdue_remains_actionable_and_limited_count_is_visible ... ok
+test daily_planning::tests::project_filter_and_summary_are_deterministic ... ok
+test command_engine::tests::mixed_domains_have_one_monotonic_revision_and_one_atomic_receipt_log ... ok
+test command_engine::tests::missing_receipt_for_existing_history_fails_closed ... ok
+test command_engine::tests::missing_accepted_projection_rejects_new_commands ... ok
+test command_engine::tests::receipt_without_corresponding_history_fails_closed ... ok
+test command_engine::tests::retry_uses_original_receipt_regardless_of_current_revision ... ok
+test command_engine::tests::stale_and_failed_domain_updates_do_not_advance_shared_history ... ok
+test default_workflow::tests::default_binding_never_replaces_an_existing_binding ... ok
+test default_workflow::tests::minimal_creation_binds_basic_workflow_and_duplicate_is_idempotent ... ok
+test default_workflow::tests::minimal_creation_pins_an_explicit_bundled_workflow ... ok
+test default_workflow::tests::explicit_workflow_change_is_retriable_and_rejects_unknowns ... ok
+test herdr_runtime::tests::continuation_only_prompts_existing_orbit_agent ... ok
+test herdr_runtime::tests::continuation_routes_to_named_remote_machine_without_new_session ... ok
+test herdr_runtime::tests::launches_on_explicit_remote_machine_and_prompts ... ok
+test herdr_runtime::tests::rejects_unsupported_kind_before_side_effects ... ok
+test herdr_runtime::tests::transport_loss_does_not_trigger_relaunch ... ok
+test herdr_runtime::tests::worktree_uses_isolated_herdr_workspace_and_deterministic_branch ... ok
+test default_workflow::tests::minimal_creation_rejects_an_unknown_workflow ... ok
+test default_workflow::tests::rich_creation_binds_basic_workflow_and_views_resolve ... ok
+test folder_commands::folder_creation_acceptance_tests::empty_folder_is_visible_and_idempotent ... ok
+test authority_strategy::strategy_matrix_tests::all_supported_progress_signals_are_accepted ... ok
+test knowledge_files::tests::create_refuses_symlink_parent ... ok
+test folder_commands::folder_creation_acceptance_tests::interrupted_creation_is_replayed_before_new_commands ... ok
+test knowledge_files::tests::create_markdown_is_durable_no_clobber_and_nested ... ok
+test host_tests::authoritative_host_reads_one_empty_canonical_revision ... ok
+test host_tests::device_credentials_are_host_owned_and_revocable ... ok
+test knowledge_files::tests::symlinks_are_not_exposed_or_followed ... ok
+test knowledge_operations::tests::ambiguous_multiple_intents_for_one_note_fail_before_publication ... ok
+test knowledge_files::tests::folders_are_visible_and_markdown_is_read_from_disk ... ok
+test knowledge_operations::tests::conflicting_external_edit_preserves_intent ... ok
+test folder_commands::tests::folder_move_replays_post_rename_crash ... ok
+test knowledge_files::tests::markdown_read_follows_real_folder_tree_and_rejects_private_paths ... ok
+test knowledge_operations::tests::late_external_conflict_does_not_publish_earlier_entry ... ok
+test knowledge_operations::tests::rejects_create_ids_colliding_with_update_journal_namespace ... ok
+test knowledge_files::tests::replace_markdown_preserves_conflicting_edits_and_tree ... ok
+test knowledge_operations::tests::corrupt_later_entry_does_not_publish_earlier_valid_entry ... ok
+test knowledge_operations::tests::startup_rejects_ambiguous_create_intent_without_publishing ... ok
+test knowledge_files::tests::folder_and_note_moves_preserve_content_and_refuse_overwrite ... ok
+test host_tests::markdown_index_reconciles_moves_and_rejects_ambiguous_snapshots ... ok
+test knowledge_operations::tests::creates_real_markdown_and_clears_intent ... ok
+test folder_commands::tests::folder_rename_updates_paths_and_returns_repeat_receipt ... ok
+test knowledge_operations::tests::replays_interrupted_publication_without_overwrite ... ok
+test knowledge_operations::tests::rejected_nested_create_does_not_poison_later_authority_opens ... ok
+test knowledge_service::tests::malformed_or_missing_identity_is_not_inferred_from_filename ... ok
+test knowledge_operations::tests::update_recovery_refuses_conflicting_external_edit ... ok
+test knowledge_operations::tests::update_recovery_rolls_forward_and_clears_intent ... ok
+test knowledge_service::tests::identity_survives_folder_move_and_duplicate_identity_fails_closed ... ok
+test markdown_commands::acceptance_guards::never_accept_unverified_markdown_bytes ... ok
+test markdown_commands::acceptance_guards::rejected_publication_releases_the_note_reservation ... ok
+test planning_actions::action_selection_tests::add_dependency_never_selects_a_hidden_prerequisite_implicitly ... ok
+test planning_actions::action_selection_tests::cannot_resolve_action_from_stale_revision ... ok
+test planning_actions::action_selection_tests::cannot_resolve_mutation_while_offline ... ok
+test planning_actions::action_selection_tests::forged_action_kind_is_rejected ... ok
+test planning_actions::action_selection_tests::forged_task_id_is_rejected ... ok
+test markdown_commands::acceptance_guards::create_receipt_requires_matching_filesystem_path ... ok
+test planning_actions::action_selection_tests::group_resolution_does_not_follow_scope_change ... ok
+test planning_actions::action_selection_tests::group_actions_resolve_only_visible_project_task ... ok
+test planning_actions::action_selection_tests::mutation_selection_resolves_only_to_a_preview ... ok
+test planning_actions::action_selection_tests::hidden_prerequisite_cannot_be_injected_into_selection ... ok
+test planning_actions::action_selection_tests::serialized_resolution_cannot_be_a_write_receipt ... ok
+test planning_actions::action_selection_tests::stale_index_is_rejected ... ok
+test planning_actions::tests::completed_tasks_cannot_request_schedule ... ok
+test planning_actions::action_selection_tests::task_navigation_can_be_resolved_without_mutation ... ok
+test planning_actions::tests::duplicate_task_ids_fail_closed ... ok
+test planning_actions::tests::group_menu_deterministic_portfolio_order ... ok
+test planning_actions::tests::group_menu_rejects_unknown_project_and_milestone ... ok
+test planning_actions::tests::group_menu_is_project_scoped ... ok
+test planning_actions::tests::negative_revision_fails_closed ... ok
+test planning_actions::tests::hidden_prerequisites_are_counted_not_disclosed ... ok
+test planning_actions::tests::offline_mode_disables_write_intentions ... ok
+test planning_actions::tests::ready_task_has_preview_and_review_but_no_implicit_write ... ok
+test planning_actions::tests::self_dependency_fails_closed ... ok
+test planning_actions::tests::reject_unknown_task_even_if_a_prerequisite_names_it ... ok
+test planning_actions::tests::task_menu_does_not_mutate_input_snapshot ... ok
+test planning_actions::tests::serialization_contains_no_executable_approval_token ... ok
+test planning_actions::tests::unrelated_task_is_not_disclosed_in_task_menu ... ok
+test planning_approval::tests::approval_cannot_cross_actor_command_or_revision ... ok
+test planning_approval::tests::approval_document_round_trip_preserves_deny_by_default ... ok
+test planning_approval::tests::digest_is_stable_and_domain_separated ... ok
+test knowledge_service::tests::file_backed_read_search_and_relations_follow_moves ... ok
+test planning_approval::tests::a_review_binds_calendar_time_not_just_task_identity ... ok
+test planning_approval::tests::duplicate_schedule_and_activity_identities_are_rejected ... ok
+test planning_approval::tests::empty_calendar_review_does_not_generate_receipt ... ok
+test planning_approval::tests::explicit_approval_is_mandatory ... ok
+test planning_approval::tests::fingerprint_separates_actor_command_and_revision ... ok
+test planning_approval::tests::exact_slot_timestamps_are_visible_during_review ... ok
+test markdown_command_acceptance_tests::pending_create_is_replayed_and_accepted_at_startup ... ok
+test planning_approval::tests::existing_reservation_prevents_new_review_for_same_identity ... ok
+test planning_approval::tests::review_detects_mutated_identities ... ok
+test planning_approval::tests::review_rejects_empty_or_repeated_plan ... ok
+test planning_approval::tests::malformed_approval_json_cannot_bypass_confirmation ... ok
+test markdown_command_acceptance_tests::create_update_reopen_and_duplicate_receipts ... ok
+test planning_approval::tests::non_minute_and_empty_schedule_slots_are_rejected ... ok
+test planning_approval::tests::review_rejects_nonexistent_task_without_calendar_side_effect ... ok
+test planning_approval::tests::reviewed_plan_rejects_changed_command_id_even_on_same_slot ... ok
+test planning_approval::tests::multi_task_approval_creates_one_atomic_revision ... ok
+test markdown_move_command_acceptance_tests::move_preserves_identity_content_and_accepted_revision_across_restart ... ok
+test planning_approval::tests::unknown_json_fields_fail_closed_for_reviews_and_approvals ... ok
+test markdown_move_command_acceptance_tests::restart_completes_interrupted_hardlink_move_without_losing_note ... ok
+test markdown_workspace_workflow_tests::file_backed_create_edit_move_and_rebuild_index ... ok
+test planning_brief::milestone_tests::milestone_group_reports_only_its_own_waiting_tasks ... ok
+test planning_brief::milestone_tests::milestone_groups_are_separate_even_when_some_tasks_are_done ... ok
+test planning_brief::milestone_tests::reports_overdue_and_shared_blocker_with_stable_dependents ... ok
+test planning_brief::portfolio_today_tests::blocked_and_finished_tasks_are_not_false_portfolio_actions ... ok
+test planning_brief::portfolio_today_tests::portfolio_rank_is_available_in_the_same_today_snapshot ... ok
+test planning_brief::portfolio_today_tests::project_filter_omits_foreign_task_ids_even_in_portfolio_reasons ... ok
+test planning_brief::portfolio_today_tests::scheduled_task_still_has_portfolio_leverage ... ok
+test planning_brief::portfolio_today_tests::shuffled_accepted_input_does_not_change_portfolio_planning ... ok
+test planning_brief::portfolio_today_tests::zero_daily_slot_limit_preserves_actionable_portfolio_visibility ... ok
+test planning_brief::tests::distinguishes_scheduled_ready_blocked_deferred_and_done ... ok
+test planning_brief::tests::filters_projects_without_leaking_other_work ... ok
+test planning_brief::tests::limits_proposals_without_hiding_unscheduled_actions ... ok
+test planning_brief::tests::rejects_invalid_requests_and_duplicated_accepted_tasks ... ok
+test planning_brief::tests::stable_report_independent_of_input_row_order ... ok
+test planning_focus::group_tests::bottlenecks_are_deduplicated_and_bounded ... ok
+test planning_focus::group_tests::project_and_milestone_scope_never_mix_projects ... ok
+test planning_focus::group_tests::scoped_project_not_visible_is_rejected ... ok
+test planning_focus::path_and_context_tests::bounded_path_count_is_independent_of_unbounded_task_list ... ok
+test planning_focus::path_and_context_tests::diamonds_produce_two_deterministic_paths_without_foreign_lookups ... ok
+test planning_focus::path_and_context_tests::downstream_chain_is_ordered_focused_task_to_leaf ... ok
+test planning_focus::path_and_context_tests::group_bottlenecks_ignore_nonvisible_prerequisite_ids ... ok
+test planning_focus::path_and_context_tests::group_focus_is_deterministic_and_nonmutating ... ok
+test planning_focus::path_and_context_tests::malformed_dependency_cycle_is_bounded_and_does_not_loop ... ok
+test planning_focus::path_and_context_tests::malformed_project_filters_are_rejected ... ok
+test planning_focus::path_and_context_tests::missing_upstream_task_is_not_disclosed_in_a_path ... ok
+test planning_focus::path_and_context_tests::portfolio_rank_breaks_project_peer_order_before_identity ... ok
+test planning_focus::path_and_context_tests::same_milestone_name_does_not_merge_distinct_projects ... ok
+test planning_focus::path_and_context_tests::terminal_work_does_not_count_as_actionable_group_work ... ok
+test planning_focus::path_and_context_tests::upstream_chain_is_ordered_root_to_focused_task ... ok
+test planning_focus::tests::navigation_preserves_input_brief_and_order ... ok
+test planning_focus::tests::no_implicit_global_lookup_and_limits ... ok
+test planning_focus::tests::peers_are_scoped_to_project_and_milestone ... ok
+test planning_focus::tests::scoped_prerequisite_never_leaks_identity ... ok
+test planning_handoff::integration_regression_tests::group_scoping_cannot_be_changed_between_menu_and_handoff ... ok
+test planning_handoff::integration_regression_tests::hidden_tasks_never_become_navigation_targets ... ok
+test planning_handoff::integration_regression_tests::malformed_duplicate_visible_identity_fails_closed ... ok
+test planning_handoff::integration_regression_tests::offline_availability_is_enforced_by_recomputed_menu ... ok
+test planning_handoff::integration_regression_tests::selecting_every_available_action_never_returns_an_executable_result ... ok
+test planning_handoff::integration_regression_tests::spoofed_cross_project_prerequisite_is_rejected ... ok
+test planning_handoff::tests::adding_a_dependency_does_not_guess_prerequisite ... ok
+test planning_approval::tests::wire_request_rejects_duplicate_task_and_overflow ... ok
+test planning_handoff::tests::all_handoffs_serialize_as_explicit_nonexecuting_views ... ok
+test planning_handoff::tests::blocker_handoff_follows_only_visible_accepted_prerequisite ... ok
+test planning_handoff::tests::changed_visible_scope_rejects_hidden_destination ... ok
+test planning_handoff::tests::completion_action_is_never_a_completion_command ... ok
+test planning_handoff::tests::forged_kind_cannot_redirect_handoff ... ok
+test planning_handoff::tests::forged_task_identity_cannot_redirect_handoff ... ok
+test planning_handoff::tests::group_action_opens_visible_task ... ok
+test planning_handoff::tests::malformed_group_context_is_rejected ... ok
+test planning_handoff::tests::offline_schedule_review_is_unavailable ... ok
+test planning_handoff::tests::milestone_action_filters_to_accepted_milestone ... ok
+test planning_handoff::tests::old_revision_cannot_open_a_newer_accepted_view ... ok
+test planning_handoff::tests::removing_an_existing_dependency_is_only_a_preview ... ok
+test planning_handoff::tests::project_action_filters_to_accepted_project ... ok
+test planning_handoff::tests::schedule_review_requires_separate_explicit_approval ... ok
+test planning_handoff::tests::selected_task_opens_actual_accepted_focus ... ok
+test planning_handoff::tests::selection_is_bound_to_the_exact_rendered_index ... ok
+test planning_approval::tests::wire_approval_commits_atomically_and_retries_idempotently ... ok
+test planning_handoff::wire_contract_tests::invalid_index_never_defaults_to_the_first_available_action ... ok
+test planning_handoff::wire_contract_tests::typed_preview_roundtrips_without_gaining_execution_authority ... ok
+test planning_scenarios::tests::blocked_or_invisible_pin_rejected ... ok
+test planning_scenarios::tests::baseline_is_read_only_and_deterministic ... ok
+test planning_scenarios::tests::overlapping_and_duplicate_choices_rejected ... ok
+test planning_scenarios::tests::pin_displaces_lower_priority_work ... ok
+test planning_scenarios::tests::rejects_more_than_eight_alternatives ... ok
+test planning_scenarios::tests::pins_cannot_overbook ... ok
+test planning_scenarios::tests::stale_revision_rejected ... ok
+test planning_scenarios::tests::zero_capacity_is_allowed ... ok
+test portfolio_actions::portfolio_edge_cases::earliest_start_in_future_is_not_immediately_unblocked ... ok
+test portfolio_actions::portfolio_edge_cases::cancelled_descendants_are_not_pending_impact ... ok
+test portfolio_actions::portfolio_edge_cases::fail_closed_on_dangling_and_cyclic_dependencies ... ok
+test portfolio_actions::portfolio_edge_cases::inactive_tasks_are_never_returned_as_actionable_recommendations ... ok
+test portfolio_actions::portfolio_edge_cases::large_downstream_effort_uses_saturating_arithmetic ... ok
+test portfolio_actions::portfolio_edge_cases::missing_effort_is_reported_separately_from_known_minutes ... ok
+test portfolio_actions::portfolio_edge_cases::only_completed_other_prerequisites_make_an_immediate_unlock ... ok
+test portfolio_actions::portfolio_edge_cases::pending_prerequisites_take_precedence_over_ready_status_labels ... ok
+test portfolio_actions::portfolio_edge_cases::planned_downstream_is_long_term_impact_not_immediate_unlock ... ok
+test portfolio_actions::portfolio_edge_cases::project_filter_never_returns_foreign_actionable_tasks ... ok
+test portfolio_actions::portfolio_wire_contract::wire_request_defaults_are_documented_and_bounded ... ok
+test portfolio_actions::portfolio_edge_cases::scoped_outgoing_impact_is_stable_after_foreign_title_changes ... ok
+test portfolio_actions::portfolio_edge_cases::unassigned_tasks_are_explicitly_opt_in_for_global_views ... ok
+test portfolio_actions::tests::cannot_claim_immediate_unlock_if_another_prerequisite_is_open ... ok
+test portfolio_actions::tests::bound_and_zero_limit_return_consistent_total ... ok
+test portfolio_actions::tests::rejects_invalid_requests_and_limits ... ok
+test portfolio_actions::tests::completed_descendants_do_not_count_as_bottlenecks ... ok
+test portfolio_actions::tests::prioritizes_cross_project_unlocks_and_deduplicates_diamonds ... ok
+test portfolio_actions::tests::scoped_response_never_leaks_foreign_task_names_or_ids ... ok
+test portfolio_actions::tests::source_order_is_immaterial ... ok
+test portfolio_actions::tests::upcoming_deadline_and_stable_task_id_tiebreak ... ok
+test portfolio_capacity::portfolio_allocation_edges::invalid_stored_duration_is_an_explicit_exclusion ... ok
+test portfolio_capacity::portfolio_allocation_edges::blocked_tasks_never_consume_capacity ... ok
+test portfolio_capacity::portfolio_allocation_edges::cannot_exceed_task_count_even_with_zero_duration_budget ... ok
+test portfolio_capacity::portfolio_allocation_edges::overdue_task_is_preferred_unless_it_cannot_fit ... ok
+test portfolio_capacity::portfolio_allocation_edges::rejected_input_does_not_modify_provided_task_records ... ok
+test portfolio_capacity::portfolio_boundary_regressions::downstream_dependency_cycle_is_rejected_in_capacity_planning ... ok
+test portfolio_capacity::portfolio_allocation_edges::status_and_deadline_changes_affect_rank_deterministically ... ok
+test portfolio_capacity::portfolio_boundary_regressions::historical_revision_is_explicit_and_never_inferred_from_time ... ok
+test portfolio_capacity::portfolio_boundary_regressions::project_filter_excludes_foreign_tasks_even_when_ready ... ok
+test portfolio_capacity::portfolio_boundary_regressions::unused_capacity_does_not_imply_scheduled_work ... ok
+test portfolio_capacity::portfolio_boundary_regressions::request_and_plan_are_machine_readable_for_cli_and_mcp ... ok
+test portfolio_capacity::tests::explicit_task_limit_remains_an_explained_exclusion ... ok
+test portfolio_capacity::tests::fills_capacity_without_violating_global_precedence ... ok
+test portfolio_capacity::tests::limits_are_strict_even_at_zero_capacity ... ok
+test portfolio_capacity::tests::scoped_plan_has_no_foreign_identifiers_in_exclusions ... ok
+test portfolio_capacity::tests::selection_is_stable_under_input_permutation ... ok
+test portfolio_capacity::tests::unsized_work_requires_explicit_opt_in_and_positive_fallback ... ok
+test portfolio_schedule::tests::duplicate_identity_and_cycle_fail_closed ... ok
+test portfolio_schedule::tests::impossible_slot_is_reported_not_split ... ok
+test planning_approval::tests::wire_stale_review_preserves_accepted_schedule ... ok
+test portfolio_schedule::tests::missing_estimate_is_explicitly_excluded ... ok
+test portfolio_schedule::tests::input_order_does_not_affect_proposal ... ok
+test portfolio_schedule::tests::never_double_books_existing_meeting ... ok
+test project_dependency_planning::additional_contract_tests::already_completed_dependents_do_not_enter_bottleneck_effort ... ok
+test portfolio_schedule::tests::prioritizes_cross_project_unlock_over_alphabetical_order ... ok
+test project_dependency_planning::additional_contract_tests::completed_prerequisites_have_no_blocker_count ... ok
+test project_dependency_planning::additional_contract_tests::diamond_graph_counts_one_transitive_dependent_once ... ok
+test planning_approval::tests::wire_approval_rejects_tampering_and_foreign_actor ... ok
+test portfolio_schedule::tests::project_scoped_proposal_never_names_foreign_tasks ... ok
+test project_dependency_planning::additional_contract_tests::direct_blockers_are_not_replaced_by_transitive_ancestors ... ok
+test portfolio_schedule::tests::zero_task_limit_is_a_valid_empty_proposal ... ok
+test project_dependency_planning::additional_contract_tests::disconnected_unassigned_work_is_visible_only_on_request ... ok
+test project_dependency_planning::additional_contract_tests::duplicate_task_id_is_rejected_before_projection ... ok
+test project_dependency_planning::additional_contract_tests::no_edges_produces_no_bottlenecks ... ok
+test project_dependency_planning::additional_contract_tests::negative_estimates_are_treated_as_unknown_not_negative_effort ... ok
+test project_dependency_planning::additional_contract_tests::global_counts_are_not_leaked_into_scoped_report ... ok
+test project_dependency_planning::additional_contract_tests::sorted_bottlenecks_use_stable_tiebreaks ... ok
+test project_dependency_planning::additional_contract_tests::overdue_tasks_can_be_actionable_with_no_prerequisites ... ok
+test project_dependency_planning::tests::project_scope_does_not_disclose_foreign_task_titles_or_identifiers ... ok
+test project_dependency_planning::tests::accepted_completion_unblocks_project_without_mutations ... ok
+test planning_approval::tests::wire_review_has_no_calendar_side_effect ... ok
+test project_dependency_planning::tests::project_without_tasks_is_empty_but_does_not_fail ... ok
+test project_dependency_planning::tests::rejects_cycles_missing_tasks_duplicate_edges_and_bad_requests ... ok
+test project_dependency_planning::tests::reports_cross_project_dependencies_and_transitive_bottlenecks ... ok
+test project_handoffs::additional_handoff_contract_tests::chain_reaches_multiple_downstream_projects ... ok
+test project_handoffs::additional_handoff_contract_tests::completed_dependents_included_only_if_requested ... ok
+test project_dependency_planning::tests::stable_with_reordered_tasks_and_edges ... ok
+test planning_approval::tests::wire_rejection_does_not_consume_revision ... ok
+test project_dependency_planning::tests::unassigned_scope_is_opt_in_for_unfiltered_report ... ok
+test project_handoffs::additional_handoff_contract_tests::order_does_not_depend_on_sqlite_row_order ... ok
+test project_handoffs::additional_handoff_contract_tests::scoped_partner_is_redacted_in_both_directions ... ok
+test project_handoffs::additional_handoff_contract_tests::missing_estimates_do_not_cause_negative_total ... ok
+test project_handoffs::additional_handoff_contract_tests::unrelated_projects_do_not_leak_in_scoped_response ... ok
+test project_handoffs::additional_handoff_contract_tests::multiple_dependencies_on_one_task_count_one_blocked_task ... ok
+test project_handoffs::serialized_contract_tests::full_report_retains_task_ids_for_authorized_workspace_views ... ok
+test project_handoffs::serialized_contract_tests::read_only_contract_preserves_inputs ... ok
+test project_handoffs::serialized_contract_tests::scoped_round_trip_does_not_disclose_partner_project_identity ... ok
+test project_handoffs::tests::cross_project_handoff_tracks_unique_blocked_tasks_and_minutes ... ok
+test project_handoffs::tests::project_scoped_report_redacts_all_task_ids ... ok
+test project_handoffs::tests::completed_prerequisite_no_longer_blocks_handoff ... ok
+test project_handoffs::tests::invalid_graph_and_input_fail_closed ... ok
+test project_handoffs::tests::project_round_trip_is_not_task_cycle ... ok
+test scenario_execution::option_transport_contract_tests::option_result_json_distinguishes_rejected_and_reviewable_plans ... ok
+test planning_approval::tests::wrong_actor_cannot_replay_committed_plan ... ok
+test scenario_execution::authority_workflow_tests::cannot_execute_unapproved_scenario ... ok
+test scenario_execution::scenario_edge_tests::deterministic_first_fit_does_not_overlap ... ok
+test scenario_execution::authority_workflow_tests::rejects_unknown_selected_alternative ... ok
+test scenario_execution::scenario_edge_tests::no_identity_collision_across_one_review ... ok
+test scenario_execution::scenario_edge_tests::rejected_allocation_does_not_modify_original_windows ... ok
+test scenario_execution::scenario_edge_tests::rejects_inconsistent_free_window_metadata ... ok
+test scenario_execution::scenario_edge_tests::rejects_malformed_command_identity ... ok
+test scenario_execution::scenario_edge_tests::rejects_more_than_hundred_reservations ... ok
+test scenario_execution::scenario_edge_tests::rejects_window_outside_requested_bounds ... ok
+test scenario_execution::scenario_edge_tests::rejects_zero_or_negative_task_duration ... ok
+test scenario_execution::tests::deterministic_identities ... ok
+test scenario_execution::tests::places_tasks_into_separate_free_windows ... ok
+test scenario_execution::tests::refuses_duplicate_tasks ... ok
+test scenario_execution::tests::refuses_overlapping_windows ... ok
+test scenario_execution::tests::refuses_stale_revision ... ok
+test scenario_execution::tests::rejects_empty_plan ... ok
+test scenario_execution::tests::refuses_unsplittable_work ... ok
+test scenario_execution::tests::rejects_invalid_identity ... ok
+test schedule_planning::integration_contract_tests::blocked_task_is_never_scheduled ... ok
+test schedule_planning::integration_contract_tests::blocks_preexisting_task_reservations_too ... ok
+test schedule_planning::integration_contract_tests::default_estimate_places_unsized_task ... ok
+test schedule_planning::integration_contract_tests::disjoint_busy_intervals_preserve_exact_free_capacity ... ok
+test schedule_planning::integration_contract_tests::fully_busy_day_reports_no_capacity ... ok
+test schedule_planning::integration_contract_tests::rejects_cycle_even_when_calendar_has_no_free_slots ... ok
+test schedule_planning::integration_contract_tests::project_filter_is_respected ... ok
+test schedule_planning::integration_contract_tests::zero_task_limit_keeps_calendar_unmodified ... ok
+test schedule_planning::tests::invalid_busy_intervals_fail_closed ... ok
+test schedule_planning::tests::earliest_start_is_respected_in_real_time ... ok
+test schedule_planning::tests::overlapping_blocks_do_not_double_subtract_capacity ... ok
+test schedule_planning::tests::never_splits_a_task_across_busy_windows ... ok
+test schedule_planning::tests::rejects_invalid_intervals_and_week_long_horizons ... ok
+test schedule_planning::tests::results_do_not_depend_on_schedule_input_order ... ok
+test schedule_planning::tests::unsized_tasks_are_reported_but_not_placed ... ok
+test schedule_planning::tests::uses_free_intervals_in_priority_order_without_overlaps ... ok
+test scenario_execution::authority_workflow_tests::review_then_explicit_approval_creates_one_calendar_reservation ... ok
+test scenario_execution::authority_workflow_tests::rejects_stale_comparison_after_concurrent_revision ... ok
+test scenario_execution::authority_workflow_tests::no_silent_execution_when_window_is_too_short ... ok
+test scenario_execution::options_tests::reviews_baseline_and_alternative_without_writes ... ok
+test scenario_execution::options_tests::infeasible_baseline_does_not_hide_viable_alternative ... ok
+test scenario_execution::options_tests::all_options_reject_after_revision_advances ... ok
+test store::extracted_store_tests::database_mode_isolation_tests::local_authority_refuses_replica_without_changing_its_schema ... ok
+test store::extracted_store_tests::authoritative_project_tests::projects_and_tasks_share_revision_history_and_atomic_receipts ... ok
+test store::extracted_store_tests::atomic_projection_tests::authority_projection_is_atomic_and_invalidated_by_legacy_relay ... ok
+test store::extracted_store_tests::authoritative_task_tests::legacy_history_requires_migration_before_authority_activation ... ok
+test store::extracted_store_tests::authoritative_task_tests::task_rename_and_project_assignment_are_authoritative_and_retry_safe ... ok
+test store::extracted_store_tests::authoritative_task_tests::task_state_event_and_ack_commit_as_one_revision ... ok
+test store::extracted_store_tests::authority_snapshot_tests::snapshot_contains_both_domain_collections_at_one_revision ... ok
+test store::extracted_store_tests::authoritative_task_tests::task_milestone_link_is_transactional_and_revision_scoped ... ok
+test store::extracted_store_tests::m20_task_planning_acceptance::planning_is_atomic_queryable_retryable_and_history_backed ... ok
+test store::extracted_store_tests::markdown_only_schema_acceptance::fresh_authority_has_no_sql_knowledge_body_table ... ok
+test store::extracted_store_tests::markdown_only_schema_acceptance::retired_sql_body_database_is_not_opened_silently ... ok
+test store::extracted_store_tests::tests::fresh_database_uses_authority_history_not_legacy_relay_tables ... ok
+test store::extracted_store_tests::tests::durable_idempotent_and_immutable ... ok
+test store::extracted_store_tests::tests::out_of_order_cross_device_resolution_is_durable_and_idempotent ... ok
+test store::extracted_store_tests::verified_authority_snapshot_tests::legacy_relay_is_never_reported_as_accepted_canonical_history ... ok
+test store::extracted_store_tests::verified_authority_snapshot_tests::accepted_history_prefix_is_stable_as_new_commands_arrive ... ok
+test store::extracted_store_tests::verified_authority_snapshot_tests::fingerprint_is_stable_for_unchanged_accepted_history_and_advances_on_commits ... ok
+test task_dependencies::tests::readiness_fails_closed_for_corrupt_graphs ... ok
+test task_dependencies::tests::readiness_follows_prerequisite_completion_not_only_status ... ok
+test task_dependencies::tests::scheduled_and_overdue_tasks_are_explained ... ok
+test task_dependency_preview::tests::adding_completed_prerequisite_is_not_a_blocker ... ok
+test task_dependency_preview::tests::adding_unfinished_prerequisite_removes_actionable_task_without_mutation ... ok
+test task_dependency_preview::tests::duplicate_add_and_missing_remove_are_idempotent_previews ... ok
+test task_dependency_preview::tests::error_on_negative_clock_or_revision ... ok
+test task_dependency_preview::tests::invalid_accepted_graph_fails_closed ... ok
+test task_dependency_preview::tests::missing_nodes_and_self_edges_are_rejected ... ok
+test task_dependency_preview::tests::preview_is_deterministic_under_input_row_reordering ... ok
+test task_dependency_preview::tests::removing_an_unfinished_prerequisite_unblocks_dependent ... ok
+test task_dependency_preview::tests::transitive_cycles_are_rejected_without_changing_accepted_graph ... ok
+test task_graph::tests::diamond_graph_has_stable_order_and_transitive_impact ... ok
+test task_graph::tests::disconnected_tasks_are_topologically_stable ... ok
+test task_graph::tests::graph_is_order_independent ... ok
+test task_graph::tests::graph_rejects_cycles_and_dangling_edges ... ok
+test task_impact::tests::already_done_is_idempotent_and_reports_no_unlock ... ok
+test task_impact::tests::cancel_and_missing_tasks_fail_closed ... ok
+test task_impact::tests::deferred_dependent_does_not_become_immediately_actionable ... ok
+test task_impact::tests::dependent_with_additional_blocker_is_not_claimed_ready ... ok
+test task_impact::tests::graph_cycles_cannot_be_hidden_by_hypothetical_completion ... ok
+test task_impact::tests::next_action_limit_is_explicit_and_bounded ... ok
+test task_impact::tests::previews_immediate_unlock_without_mutating_accepted_tasks ... ok
+test task_next::tests::overdue_and_unblocking_are_explainable_and_deterministic ... ok
+test task_next::tests::pending_or_waiting_tasks_cannot_become_next_actions ... ok
+test task_next::tests::ranking_is_invariant_under_row_order ... ok
+test task_next::tests::zero_limit_returns_count_without_results ... ok
+test workload_insights::tests::duplicate_and_dangling_edges_are_rejected ... ok
+test workload_insights::tests::future_due_is_not_overdue ... ok
+test workload_insights::tests::horizon_cannot_overflow_or_roll_back ... ok
+test workload_insights::tests::project_summaries_explain_known_and_unknown_work ... ok
+test workload_insights::tests::stable_when_task_order_changes ... ok
+test store::extracted_store_tests::tests::legacy_relay_schema_fails_closed_before_authority_initialization ... ok
+test task_dependencies::authority_contract_tests::cyclic_mutations_are_rejected_without_receipts_or_partial_edges ... ok
+test task_dependencies::authority_contract_tests::malformed_dependency_commands_never_consume_revisions ... ok
+test task_dependencies::authority_contract_tests::readiness_considers_current_accepted_status_not_pending_intentions ... ok
+test task_dependencies::authority_contract_tests::edge_add_is_revisioned_atomic_and_retry_safe ... ok
+test task_dependencies::authority_contract_tests::removal_is_revisioned_and_does_not_change_other_edges ... ok
+test task_dependencies::authority_contract_tests::stale_concurrent_writes_require_a_fresh_revision ... ok
+
+test result: ok. 499 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.32s
+
+     Running tests/agent_execution_contract.rs (target/debug/deps/agent_execution_contract-2af29f3b02137ce6)
+
+running 2 tests
+test ambiguous_launch_is_fenced_and_never_automatically_relaunched ... ok
+test agent_lifecycle_requires_review_and_never_completes_the_task ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/main.rs (target/debug/deps/orbit_server-111b4500ccfba312)
+
+running 16 tests
+test automation::tests::expired_lease_is_reclaimed ... ok
+test automation::tests::requested_refresh_is_durable_coalesced_and_does_not_change_schedule ... ok
+test automation::tests::durable_schedule_claim_and_settle ... ok
+test automation::tests::failed_run_retries_then_preserves_audit ... ok
+test remote_mcp::rich_domain_mcp_contract::every_rich_domain_advertises_read_and_write_tools ... ok
+test proposals::tests::approval_is_explicit_and_audited ... ok
+test proposals::execution_tests::expired_mutation_remains_held_for_manual_reconciliation ... ok
+test proposals::execution_tests::approved_proposal_is_leased_once_and_settled_by_owner ... ok
+test remote_mcp::tests::canonical_tools_are_advertised ... ok
+test proposals::tests::disallow_unrecognized_actions ... ok
+test proposals::browser_proposal_tests::browser_task_proposals_are_pending_and_validate_worker_grammar ... ok
+test remote_mcp::rich_domain_mcp_contract::malformed_writes_do_not_mutate_accepted_state ... ok
+test remote_mcp::rich_domain_mcp_contract::rich_domain_reads_reject_nonempty_arguments ... ok
+test remote_mcp::tests::write_requires_device ... ok
+test remote_mcp::rich_domain_mcp_contract::routine_create_exposes_accepted_projection_and_stable_receipt ... ok
+test remote_mcp::rich_domain_mcp_contract::admin_can_read_but_cannot_mutate_rich_domains ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running unittests src/lib.rs (target/debug/deps/orbit_storage-6e450a43d1985699)
+
+running 89 tests
+test agent_jobs::m23_polling_tests::sweep_only_selects_claimed_nonterminal_jobs ... ok
+test agent_jobs::m23_execution_policy_tests::handoffs_require_a_known_job_and_structured_payload ... ok
+test agent_jobs::tests::changed_task_context_refuses_prepare_and_launch ... ok
+test agent_jobs::tests::cannot_launch_missing_or_nonready_tasks ... ok
+test agent_jobs::m23_catchup_tests::catchup_exposes_pending_review_and_changes_requested_without_completing_task ... ok
+test agent_jobs::m23_execution_policy_tests::execution_policy_is_persisted_and_conflicting_replay_is_refused ... ok
+test agent_jobs::tests::authenticated_owner_binding_is_atomic_and_replay_safe ... ok
+test agent_jobs::tests::accepted_commands_are_idempotent_revision_safe_and_audited ... ok
+test agent_jobs::tests::launch_claims_are_single_dispatch_and_recoverable ... ok
+test agent_jobs::tests::connected_start_is_atomic_and_replay_safe ... ok
+test agent_jobs::tests::prerequisite_gate_checks_reservation_prepare_and_claim ... ok
+test agent_jobs::tests::confirmed_missing_session_interrupts_without_completing_task ... ok
+test agent_jobs::tests::idempotent_reservations_and_task_ownership ... ok
+test agent_jobs::tests::resume_context_is_frozen_from_latest_handoff_and_replay_safe ... ok
+test agent_jobs::tests::connected_resume_is_atomic_and_preserves_frozen_handoff ... ok
+test agent_jobs::tests::reconciliation_preserves_owner_during_ambiguous_launch ... ok
+test agent_jobs::tests::resume_rejects_active_predecessor_and_missing_handoff ... ok
+test attachment_storage_tests::ordered_acceptance_criteria_round_trip_preserves_position_and_completion ... ok
+test database_backup_tests::backup_fails_for_a_non_database_source ... ok
+test attachment_storage_tests::task_details_and_labels_round_trip ... ok
+test blueprint_command_receipts::tests::invalid_mutation_leaves_no_receipt_or_partial_blueprint ... ok
+test readonly_inspection_tests::missing_database_is_an_error ... ok
+test blueprint_command_receipts::tests::accepted_install_replays_original_result_and_binds_device ... ok
+test blueprint_template_tests::collision_rolls_back_other_items_and_dependencies ... ok
+test readonly_inspection_tests::unreadable_database_is_an_error ... ok
+test blueprint_template_tests::distinct_namespaces_allow_repeated_instantiation ... ok
+test blueprint_template_tests::template_writes_items_and_edges_as_a_single_unit ... ok
+test readonly_inspection_tests::non_orbit_sqlite_database_is_readable_but_not_an_orbit_workspace ... ok
+test storage_tests::authority_transaction_tests::failing_rich_application_rolls_back_only_its_savepoint ... ok
+test storage_tests::authority_transaction_tests::deeply_nested_application_transactions_are_isolated ... ok
+test storage_tests::authority_transaction_tests::outer_failure_rolls_back_inner_success ... ok
+test storage_tests::authority_transaction_tests::rich_application_success_is_not_committed_before_authority_commit ... ok
+test storage_tests::authority_transaction_tests::standalone_application_failure_rolls_back ... ok
+test storage_tests::authority_transaction_tests::standalone_application_transaction_commits ... ok
+test storage_tests::inbound_sync_materialization_tests::next_local_edit_uses_imported_field_version_as_its_sync_base ... ok
+test storage_tests::inbound_sync_materialization_tests::inbound_project_materializes_without_outbound_echo ... ok
+test database_backup_tests::backup_refuses_to_overwrite_an_existing_destination ... ok
+test storage_tests::inbound_sync_materialization_tests::pending_local_field_is_not_overwritten_by_pull_materialization ... ok
+test readonly_inspection_tests::fresh_database_is_inspected_without_mutation ... ok
+test storage_tests::m19_retired_sql_knowledge_contract::existing_legacy_sql_knowledge_is_rejected_not_discarded ... ok
+test storage_tests::m19_retired_sql_knowledge_contract::explicit_workflow_replacement_requires_published_manifest ... ok
+test storage_tests::metric_evidence_v11_tests::metric_targets_and_as_of_observations_round_trip ... ok
+test storage_tests::m19_retired_sql_knowledge_contract::fresh_database_creates_no_sql_knowledge_body_or_asset_tables ... ok
+test storage_tests::metric_legacy_backfill_tests::legacy_metric_backfill_is_atomic_idempotent_and_requires_sync_identity ... ok
+test storage_tests::metric_semantic_sync_tests::semantic_resolution_can_replace_same_time_observation ... ok
+test storage_tests::project_evidence_binding_tests::bindings_are_unique_ordered_scoped_and_removable ... ok
+test storage_tests::project_evidence_binding_tests::bindings_require_existing_project_and_nonblank_metric ... ok
+test storage_tests::project_mode_storage_tests::inbound_project_strategy_materializes_without_echo ... ok
+test storage_tests::project_mode_storage_tests::strategy_change_emits_semantic_fields_not_opaque_blob ... ok
+test storage_tests::project_mode_storage_tests::project_mode_strategy_and_criteria_round_trip ... ok
+test storage_tests::metric_semantic_sync_tests::metric_target_and_observation_sync_to_other_replica ... ok
+test storage_tests::routine_storage_tests::routine_round_trips_ordered_habit_membership ... ok
+test storage_tests::sync_outbox_storage_tests::conflict_resolution_outbox_shares_the_authoritative_device_sequence ... ok
+test storage_tests::sync_outbox_storage_tests::failed_unit_of_work_rolls_back_outbox_and_sequence_reservation ... ok
+test storage_tests::sync_outbox_storage_tests::sync_outbox_reserves_contiguous_sequences_and_marks_exported ... ok
+test storage_tests::tests::active_flags_and_schedule_target_variants_round_trip ... ok
+test storage_tests::sync_outbox_storage_tests::synced_application_mutation_commits_state_activity_and_outbox_together ... ok
+test storage_tests::tests::activity_failure_rolls_back_task_mutation ... ok
+test storage_tests::tests::activity_journal_is_append_only_and_ordered ... ok
+test storage_tests::tests::application_create_and_start_commands_work_against_one_sqlite_unit_of_work ... ok
+test storage_tests::tests::corrupt_rows_are_reported_explicitly_and_never_repaired ... ok
+test database_backup_tests::backup_copies_an_open_database_without_touching_the_source ... ok
+test storage_tests::tests::habit_occurrence_and_activity_commit_atomically ... ok
+test storage_tests::tests::file_backed_connections_apply_shared_workspace_policy ... ok
+test storage_tests::tests::backup_operations_never_overwrite_existing_destinations ... ok
+test storage_tests::tests::habit_occurrence_round_trips_and_orders_by_time ... ok
+test storage_tests::tests::newer_schema_versions_fail_closed ... ok
+test storage_tests::tests::in_memory_connections_keep_timeout_and_foreign_keys_without_requiring_wal ... ok
+test storage_tests::tests::habits_and_overlapping_schedule_blocks_round_trip ... ok
+test storage_tests::tests::migrations_are_applied_on_open ... ok
+test storage_tests::tests::project_milestone_and_scoped_task_round_trip ... ok
+test storage_tests::tests::all_task_statuses_round_trip ... ok
+test storage_tests::tests::all_project_and_milestone_statuses_round_trip ... ok
+test storage_tests::tests::backup_export_and_restore_round_trip_without_mutating_source ... ok
+test storage_tests::tests::restore_rejects_future_schema_and_leaves_destination_absent ... ok
+test storage_tests::tests::standalone_task_round_trips_with_status ... ok
+test storage_tests::tests::task_planning_metadata_round_trips ... ok
+test storage_tests::tests::task_transition_and_activity_append_commit_atomically ... ok
+test storage_tests::tests::validated_plan_apply_rechecks_and_persists_schedule_and_activity_atomically ... ok
+test storage_tests::tests::validated_plan_apply_rejects_stale_proposal_after_schedule_changes ... ok
+test storage_tests::validated_project_evidence_commands_tests::commands_validate_references_and_support_idempotent_roundtrip ... ok
+test storage_tests::tests::schema_v2_migrates_habit_occurrence_table ... ok
+test storage_tests::validated_project_evidence_commands_tests::project_evidence_is_transactional_and_replays_to_other_replica ... ok
+test storage_tests::tests::schema_v1_migrates_task_planning_columns_without_changing_existing_task ... ok
+test storage_tests::tests::schema_v11_preserves_metric_evidence_and_installs_agent_jobs ... ok
+test storage_tests::tests::schema_v9_migrates_execution_history_and_adds_later_tables ... ok
+test storage_tests::tests::schema_v12_execution_state_migrates_without_touching_tasks ... ok
+test storage_tests::tests::schema_v10_preserves_evidence_bindings_and_installs_metric_tables ... ok
+test storage_tests::tests::concurrent_writer_waits_for_bounded_timeout_instead_of_spinning ... ok
+
+test result: ok. 89 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.60s
+
+     Running unittests src/lib.rs (target/debug/deps/orbit_sync-c684658f479871d0)
+
+running 13 tests
+test tests::different_fields_merge_without_conflict ... ok
+test tests::per_device_sequence_gaps_fail_closed ... ok
+test tests::repeated_import_is_idempotent ... ok
+test tests::resolution_is_a_new_version_and_is_auditable ... ok
+test tests::same_conflict_cannot_be_resolved_twice ... ok
+test tests::concurrent_same_field_write_is_explicit_conflict ... ok
+test tests::future_wire_versions_fail_closed ... ok
+test tests::attachment_entity_kind_serializes_and_round_trips ... ok
+test tests::conflict_resolution_wire_round_trip_is_versioned ... ok
+test tests::canonical_wire_serialization_is_stable_and_round_trips ... ok
+test tests::version_two_serializes_knowledge_entity_kind ... ok
+test tests::version_one_envelopes_remain_readable_after_knowledge_extension ... ok
+test tests::snapshot_round_trip_preserves_conflict_and_checkpoint_state ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/orbit_tui-294497ca5d23d6d2)
+
+running 136 tests
+test connected::scenario_approval_tui_tests::approval_without_review_fails_closed ... ok
+test connected::scenario_approval_tui_tests::no_offline_calendar_review ... ok
+test connected::scenario_approval_tui_tests::implicit_approval_is_rejected ... ok
+test connected::m28_connected_view_tests::connected_views_without_an_accepted_snapshot_do_not_invent_state ... ok
+test connected::m28_connected_quit_tests::connected_closed_editor_q_quits_and_footer_shows_shortcut ... ok
+test connected::m28_connected_quit_tests::connected_quit_confirmation_quits_only_on_confirm ... ok
+test connected::m28_connected_view_tests::connected_project_views_use_accepted_snapshot_not_pending_commands ... ok
+test connected::m28_connected_quit_tests::command_and_filter_text_require_connected_quit_confirmation ... ok
+test connected::tests::cancel_leaves_outbox_empty ... ok
+test connected::tests::group_focus_requires_accepted_snapshot_and_never_queues ... ok
+test connected::tests::can_switch_all_sections_without_network ... ok
+test connected::tests::batch_preview_does_not_commit_until_confirmed ... ok
+test connected::tests::impact_requires_an_accepted_planning_selection ... ok
+test connected::tests::invalid_batch_stays_unqueued ... ok
+test connected::tests::offline_flush_does_not_consume_pending_intent ... ok
+test connected::tests::planning_modal_is_read_only ... ok
+test connected::tests::task_context_arguments_are_bounded_by_usage_contract ... ok
+test connected_actions::tests::batch_parsing_is_side_effect_free_and_ordered ... ok
+test connected::tests::invalid_command_is_never_queued ... ok
+test connected_actions::tests::batch_rejects_duplicate_creation_ids ... ok
+test connected_actions::tests::physical_vault_batches_preserve_order_without_side_effects ... ok
+test connected_actions::tests::physical_vault_commands_reject_traversal_and_invalid_moves ... ok
+test connected_actions::tests::physical_vault_commands_use_canonical_wire_types ... ok
+test connected_actions::tests::project_and_evidence_lifecycle ... ok
+test connected_actions::tests::routines_and_milestones ... ok
+test connected_actions::tests::schedule_lifecycle ... ok
+test connected::tests::project_context_rejects_malformed_milestone_switch ... ok
+test connected_actions::tests::snapshots_are_accepted_only ... ok
+test connected_actions::tests::tokenize_quoted_arguments ... ok
+test connected_actions::tests::task_intents_are_canonical ... ok
+test connected::tests::queued_intent_never_changes_accepted_state ... ok
+test connected_actions::tests::strategies_support_criteria_and_signals ... ok
+test connected::tests::task_focus_requires_accepted_snapshot_and_never_queues ... ok
+test connected::tests::today_requires_an_accepted_snapshot ... ok
+test connected::tests::today_argument_errors_do_not_change_commands ... ok
+test m28_focus_scroll_tests::tab_cycles_sidebar_and_workspace_below_wide_breakpoint ... ok
+test m28_form_tests::dependency_forms_add_and_remove_prerequisites ... ok
+test m28_form_tests::invalid_form_preserves_values_and_reports_the_field ... ok
+test m28_focus_scroll_tests::timeline_selection_stays_visible_at_60x18 ... ok
+test m28_form_tests::edit_project_form_preserves_criteria_and_updates_supported_settings ... ok
+test m28_form_tests::task_form_closes_through_the_key_handler ... ok
+test m28_form_tests::edit_task_form_renames_and_updates_planning_fields ... ok
+test m28_form_tests::project_and_task_forms_persist_across_restart ... ok
+test m28_form_tests::work_item_forms_use_declared_fields_and_persist_edits ... ok
+test m28_gate2_fix_tests::estimate_upper_bound_is_rejected_before_creation ... ok
+test m28_gate2_fix_tests::form_errors_are_rendered_above_the_fields ... ok
+test m28_gate2_fix_tests::unchanged_work_item_edit_does_not_bump_revision ... ok
+test m28_gate2_fix_tests::duplicate_enter_keeps_the_invalid_form_open ... ok
+test m28_navigation_tests::back_navigation_restores_the_previous_screen_and_selection ... ok
+test m28_navigation_tests::back_restores_the_same_project_view_by_stable_id ... ok
+test m28_layout_tests::common_terminal_sizes_remain_readable_and_keep_quit_visible ... ok
+test m28_layout_tests::kanban_uses_a_readable_window_instead_of_nine_slivers ... ok
+test m28_navigation_tests::quit_confirmation_renders_and_can_be_cancelled ... ok
+test m28_oracle_remediation_tests::metric_form_allows_first_metric_target_by_id ... ok
+test m28_oracle_remediation_tests::work_item_edit_only_patches_changed_values ... ok
+test m28_oracle_remediation_tests::project_edit_preserves_satisfied_criterion_status ... ok
+test m28_navigation_tests::switching_components_restores_each_components_selection ... ok
+test m28_oracle_remediation_tests::zero_estimate_never_creates_or_renames ... ok
+test m28_navigation_tests::switching_views_restores_each_views_component_and_selection ... ok
+test m28_planning_tests::today_tasks_are_selectable_and_offer_revision_checked_destinations ... ok
+test m28_oracle_remediation_tests::project_objective_uses_default_signals_and_opens ... ok
+test m28_post_gate_tests::q_is_text_inside_forms_and_never_quits_or_discards ... ok
+test m28_quit_tests::q_quits_non_text_modals_and_enters_text_in_text_fields ... ok
+test m28_quit_tests::quit_is_independent_of_selection_and_focus ... ok
+test m28_quit_tests::quit_confirmation_appears_for_unsaved_text_and_exposes_both_choices ... ok
+test m28_render_tests::loading_component_keeps_context_and_never_looks_authoritative ... ok
+test m28_render_tests::tui_sources_do_not_open_storage_or_spawn_commands ... ok
+test m28_render_tests::board_renders_workflow_columns_and_selection ... ok
+test m28_render_tests::overview_renders_live_metric_cards_and_task_rows ... ok
+test m28_render_tests::project_switch_reloads_views_without_reusing_previous_project_data ... ok
+test m28_scroll_quit_edges::palette_quit_with_query_uses_the_single_confirmation_path ... ok
+test m28_render_tests::tab_focus_and_key_prefix_do_not_collide ... ok
+test m28_scroll_quit_edges::text_component_scroll_survives_navigation_and_refresh ... ok
+test m28_scroll_tests::detail_focus_resets_its_own_scroll ... ok
+test m28_render_tests::table_renderer_handles_narrow_and_wide_terminals ... ok
+test m28_render_tests::stale_and_error_states_are_visible ... ok
+test m28_scroll_tests::help_modal_scrolls_to_later_lines ... ok
+test m28_unified_connected_tests::connected_project_objective_is_rejected_before_queueing_anything ... ok
+test m28_unified_connected_tests::connected_mode_uses_the_shared_shell_and_never_claims_pending_acceptance ... ok
+test m28_scroll_tests::palette_selection_stays_visible_at_60x18 ... ok
+test m28_task_scope_tests::task_edit_moves_project_without_renaming_on_invalid_milestone ... ok
+test m28_usability_recovery_tests::attachments_can_be_added_listed_and_removed_from_the_tui ... ok
+test m28_usability_recovery_tests::acceptance_criteria_are_checkable_without_completing_the_task ... ok
+test planning_ui::action_handoff_terminal_tests::calendar_approval_handoff_is_visibly_non_executing ... ok
+test planning_ui::action_handoff_terminal_tests::dependency_creation_does_not_choose_a_hidden_prerequisite ... ok
+test planning_ui::action_handoff_terminal_tests::menus_display_stable_one_based_indices ... ok
+test planning_ui::action_handoff_terminal_tests::read_only_completion_preview_does_not_claim_approval ... ok
+test planning_ui::m22_229_handoff_preview_tests::adding_dependency_requires_separate_prerequisite_selection ... ok
+test planning_ui::m22_229_handoff_preview_tests::calendar_request_reuses_reviewed_window_without_mutation ... ok
+test planning_ui::m22_229_handoff_preview_tests::calendar_review_is_not_automatically_executed ... ok
+test planning_ui::m22_229_handoff_preview_tests::calendar_view_only_shows_the_selected_task ... ok
+test planning_ui::m22_229_handoff_preview_tests::dependency_preview_presents_before_and_after_without_claiming_commit ... ok
+test planning_ui::m22_229_handoff_preview_tests::missing_or_self_prerequisite_fails_closed ... ok
+test planning_ui::m22_229_handoff_preview_tests::missing_slot_reports_only_its_own_exclusion ... ok
+test planning_ui::m22_229_handoff_preview_tests::mutated_handoff_revision_is_rejected ... ok
+test planning_ui::m22_229_handoff_preview_tests::removal_dispatches_only_a_specific_reviewed_prerequisite ... ok
+test planning_ui::m22_229_handoff_preview_tests::schedule_revision_change_must_reject_preview ... ok
+test planning_ui::m22_229_handoff_preview_tests::task_revision_change_must_reject_preview ... ok
+test planning_ui::portfolio_display_tests::document_renders_leverage_without_reclassifying_task_status ... ok
+test planning_ui::portfolio_tests::parses_bounded_project_portfolio_requests ... ok
+test planning_ui::scenario_execution_ui_tests::parser_can_select_unchanged_baseline ... ok
+test planning_ui::scenario_execution_ui_tests::parser_reuses_comparison_flags_and_selects_alternative ... ok
+test planning_ui::scenario_execution_ui_tests::rejects_unbounded_review_horizon ... ok
+test planning_ui::scenario_execution_ui_tests::rejects_unknown_option ... ok
+test planning_ui::scenario_execution_ui_tests::review_command_requires_nonempty_stable_identity ... ok
+test planning_ui::scenario_terminal_tests::parses_revision_bound_scenario ... ok
+test planning_ui::scenario_terminal_tests::rejects_invalid_scenario_arguments ... ok
+test planning_ui::tests::compact_removes_newlines_without_truncating_unicode_mid_byte ... ok
+test planning_ui::tests::impact_requires_exactly_one_task_id ... ok
+test planning_ui::tests::labels_cover_every_planner_state ... ok
+test planning_ui::tests::navigation_handles_zero_tasks ... ok
+test planning_ui::tests::navigation_indexes_only_real_task_headers ... ok
+test planning_ui::tests::parsing_is_bounded_and_explicit ... ok
+test m28_usability_recovery_tests::editing_details_marks_priority_and_labels_without_touching_status ... ok
+test m28_usability_recovery_tests::first_run_banner_and_action_bar_are_visible ... ok
+test m28_usability_recovery_tests::new_project_form_defaults_to_the_basic_workflow ... ok
+test m28_scroll_tests::sidebar_selection_scrolls_into_view ... ok
+test m28_usability_recovery_tests::session_state_round_trips_active_project_and_view ... ok
+test tests::ctrl_quit_keeps_unsaved_prompt_until_confirmed ... ok
+test m28_quit_tests::q_quits_from_every_global_screen ... ok
+test tests::focus_cycles_between_three_panes_on_wide_terminals ... ok
+test tests::duplicate_record_submission_is_ignored_until_refresh ... ok
+test tests::fresh_workspace_renders_home_without_querying_storage_in_renderer ... ok
+test m28_usability_recovery_tests::task_details_form_edits_multiline_text_and_saves_with_ctrl_s ... ok
+test tests::missing_component_keeps_the_rest_of_the_view ... ok
+test tests::narrow_terminals_render_a_single_readable_pane ... ok
+test ui_state::tests::screen_and_focus_names_round_trip ... ok
+test viewer::tests::configured_viewer_is_preferred ... ok
+test viewer::tests::viewer_candidates_never_use_a_shell ... ok
+test tests::palette_actions_share_the_contextual_catalogue ... ok
+test tests::palette_and_search_filter_without_losing_modal_cancel ... ok
+test tests::unbound_project_falls_back_to_generated_views ... ok
+test tests::project_selection_enter_opens_project ... ok
+test tests::project_creation_pins_the_basic_workflow_by_default ... ok
+test tests::research_blueprint_work_item_offers_authorized_transition ... ok
+test tests::q_quits_from_any_non_text_screen ... ok
+
+test result: ok. 136 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.18s
+
+     Running unittests src/lib.rs (target/debug/deps/orbit_ui-783c94cba7b9e3b0)
+
+running 28 tests
+test actions::tests::agent_jobs_are_inspectable_and_review_is_explicitly_disabled ... ok
+test actions::tests::blueprint_declarations_never_add_actions ... ok
+test actions::tests::every_catalogue_action_is_unique_and_has_a_scope ... ok
+test actions::tests::disabled_actions_carry_a_reason ... ok
+test actions::tests::new_action_descriptors_use_the_agreed_ids_and_labels ... ok
+test actions::tests::task_offers_task_detail_attachment_and_activity_actions ... ok
+test actions::tests::work_item_offers_attachments_but_not_task_only_actions ... ok
+test actions::tests::project_scope_offers_workflow_and_attachment_actions ... ok
+test binder::tests::deadline_falls_back_to_the_epoch_label_when_no_due_date_is_supplied ... ok
+test binder::tests::existing_task_fields_keep_working ... ok
+test binder::tests::task_priority_is_not_the_status ... ok
+test binder::tests::task_due_aliases_return_the_preformatted_date ... ok
+test registry::tests::registration_is_explicit_and_duplicate_free ... ok
+test binder::tests::unset_priority_and_due_are_empty ... ok
+test registry::tests::schema_and_registry_cannot_drift ... ok
+test data::tests::acceptance_progress_is_bounded ... ok
+test registry::tests::unknown_components_and_incompatible_sources_fail_closed ... ok
+test data::tests::task_row_new_defaults_rich_fields ... ok
+test data::tests::new_fields_deserialize_when_absent ... ok
+test resolve::tests::task_table_exposes_priority_and_due_columns ... ok
+test resolve::tests::filters_sorting_and_limits_are_bounded ... ok
+test resolve::tests::unsupported_component_fails_safe ... ok
+test snapshot::tests::absent_connected_snapshot_is_not_accepted_state ... ok
+test resolve::tests::generated_default_view_uses_real_data ... ok
+test resolve::tests::work_items_use_workflow_terminology_in_rendered_text ... ok
+test resolve::tests::kanban_keeps_workflow_columns_for_empty_states ... ok
+test snapshot::tests::accepted_snapshot_maps_to_shared_workspace_contract ... ok
+test snapshot::tests::project_projection_is_scoped_and_never_invents_work_items ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_ai
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_application
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_blueprint
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_cli
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_client
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_domain
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_planner
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_progress
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_runtime
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_storage
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_sync
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_ui
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

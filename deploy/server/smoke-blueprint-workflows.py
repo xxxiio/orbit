@@ -143,7 +143,7 @@ def main():
 
         project = local('project', 'add', 'Blueprint acceptance')['project']
         project_id = project['id']
-        binding = local('blueprint', 'bind', project_id, 'acceptance', '1')['result']
+        binding = local('blueprint', 'apply', project_id, 'acceptance', '--version', '1')['result']
         assert binding['version'] == 1
         assert local('blueprint', 'binding', project_id)['result']['version'] == 1
 
@@ -175,7 +175,7 @@ def main():
               '--properties', str(bad), fail=True)
 
         learning_project = local('project', 'add', 'Template acceptance')['project']['id']
-        local('blueprint', 'bind', learning_project, 'learning', str(learning_version))
+        local('blueprint', 'apply', learning_project, 'learning', '--version', str(learning_version))
         template = local('blueprint', 'apply-template', learning_project,
                          'first_course', 'course')['result']
         assert len(template['items']) == 3
@@ -255,7 +255,8 @@ def main():
                 [orbit, '--json', 'sync', 'authority', '--server', base,
                  '--device', device, '--token', token, 'project-create',
                  '--command-id', 'connected-project', '--revision', '0',
-                 '--id', 'connected-project', '--name', 'Connected project'],
+                 '--id', 'connected-project', '--name', 'Connected project',
+                 '--workflow', 'development'],
                 text=True, capture_output=True, timeout=60)
             assert direct.returncode == 0, direct.stderr
             assert json.loads(direct.stdout)['result']['revision'] == 1
@@ -266,8 +267,8 @@ def main():
             development_version = next(
                 version for name, version in versions if name == 'development')
             assert ['development', development_version] in versions
-            binding = connected('bind', 'connected-project', 'development', str(development_version))
-            assert binding['accepted'] is True, binding
+            # The workflow was pinned atomically at project creation; the
+            # binding matches the installed development version.
             assert connected('binding', 'connected-project')['version'] == development_version
             item = connected('create-item', 'connected-project', 'connected-item', 'feature')
             assert item['accepted'] is True, item

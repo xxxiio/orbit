@@ -1,0 +1,178 @@
+{
+  "id": "basic",
+  "version": 1,
+  "name": "Basic",
+  "description": "Ordinary task management with overview, task list, board and timeline views.",
+  "required_capabilities": [],
+  "work_items": [],
+  "templates": [],
+  "views": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "description": "Project summary, recent activity and next actions.",
+      "layout": {
+        "type": "grid",
+        "columns": 2
+      },
+      "components": [
+        {
+          "id": "all_tasks",
+          "type": "metric",
+          "source": "tasks",
+          "aggregate": "count",
+          "title": "Tasks"
+        },
+        {
+          "id": "in_progress",
+          "type": "metric",
+          "source": "tasks",
+          "aggregate": "count",
+          "filter": {
+            "status": "in_progress"
+          },
+          "title": "In progress"
+        },
+        {
+          "id": "completed",
+          "type": "metric",
+          "source": "tasks",
+          "aggregate": "count",
+          "filter": {
+            "status": "done"
+          },
+          "title": "Completed"
+        },
+        {
+          "id": "milestones",
+          "type": "metric",
+          "source": "milestones",
+          "aggregate": "count",
+          "title": "Milestones"
+        },
+        {
+          "id": "project",
+          "type": "detail",
+          "source": "project",
+          "title": "Project",
+          "actions": [
+            "open"
+          ]
+        },
+        {
+          "id": "recent_activity",
+          "type": "list",
+          "source": "tasks",
+          "sort": "updated",
+          "descending": true,
+          "limit": 6,
+          "title": "Recent activity",
+          "actions": [
+            "open"
+          ]
+        },
+        {
+          "id": "next_actions",
+          "type": "task_list",
+          "source": "tasks",
+          "filter": {
+            "actionable": "true"
+          },
+          "sort": "deadline",
+          "limit": 6,
+          "title": "Next actions",
+          "actions": [
+            "open",
+            "create_task",
+            "set_task_status",
+            "inspect_dependencies"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tasks",
+      "title": "Tasks",
+      "description": "Every task with status, priority, deadline and title.",
+      "layout": {
+        "type": "vertical"
+      },
+      "components": [
+        {
+          "id": "task_table",
+          "type": "table",
+          "source": "tasks",
+          "columns": [
+            "title",
+            "status",
+            "priority",
+            "deadline"
+          ],
+          "sort": "deadline",
+          "limit": 100,
+          "title": "Tasks",
+          "actions": [
+            "open"
+          ],
+          "options": {
+            "empty_text": "No tasks yet. Press c to capture one."
+          }
+        }
+      ]
+    },
+    {
+      "id": "board",
+      "title": "Board",
+      "description": "Tasks grouped by status with authorized status changes.",
+      "layout": {
+        "type": "vertical"
+      },
+      "components": [
+        {
+          "id": "task_board",
+          "type": "kanban",
+          "source": "tasks",
+          "group_by": "status",
+          "limit": 100,
+          "title": "Task board",
+          "actions": [
+            "open",
+            "set_task_status"
+          ],
+          "options": {
+            "empty_text": "No tasks yet."
+          }
+        }
+      ]
+    },
+    {
+      "id": "timeline",
+      "title": "Timeline",
+      "description": "Milestones and scheduled work in chronological order.",
+      "layout": {
+        "type": "grid",
+        "columns": 2
+      },
+      "components": [
+        {
+          "id": "milestones",
+          "type": "timeline",
+          "source": "milestones",
+          "title": "Milestones",
+          "actions": [
+            "open"
+          ]
+        },
+        {
+          "id": "schedule",
+          "type": "timeline",
+          "source": "schedule",
+          "title": "Schedule",
+          "actions": [
+            "open"
+          ]
+        }
+      ]
+    }
+  ]
+}

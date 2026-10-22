@@ -85,6 +85,7 @@ pub enum EntityKind {
     ScheduleBlock,
     PlanApplication,
     Metric,
+    Attachment,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -774,6 +775,22 @@ mod tests {
         let json = envelope.to_wire_json().unwrap();
         assert!(json.contains("\"version\":3"));
         assert!(json.contains("\"kind\":\"knowledge_item\""));
+        assert_eq!(ChangeEnvelope::from_wire_json(&json).unwrap(), envelope);
+    }
+
+    #[test]
+    fn attachment_entity_kind_serializes_and_round_trips() {
+        let envelope = ChangeEnvelope::new(
+            cid("a", 1),
+            10,
+            SemanticChange::new(
+                EntityRef::new(EntityKind::Attachment, "attachment-1").unwrap(),
+                vec![FieldMutation::new("rich_state", Some("state".into()), None).unwrap()],
+            )
+            .unwrap(),
+        );
+        let json = envelope.to_wire_json().unwrap();
+        assert!(json.contains("\"kind\":\"attachment\""));
         assert_eq!(ChangeEnvelope::from_wire_json(&json).unwrap(), envelope);
     }
 

@@ -13,33 +13,43 @@ impl From<&ActivityRecord> for ClientChangeDto {
             ActivitySubject::Routine(id) => ("routine", id.to_string()),
             ActivitySubject::ScheduleBlock(id) => ("schedule_block", id.to_string()),
         };
-        let change_kind = match activity.kind() {
-            ActivityKind::Created => "created".to_owned(),
-            ActivityKind::Updated => "updated".to_owned(),
-            ActivityKind::StatusChanged => "status_changed".to_owned(),
-            ActivityKind::ProgressUpdated => "progress_updated".to_owned(),
-            ActivityKind::BlockerOpened => "blocker_opened".to_owned(),
-            ActivityKind::BlockerResolved => "blocker_resolved".to_owned(),
-            ActivityKind::Scheduled => "scheduled".to_owned(),
-            ActivityKind::Rescheduled => "rescheduled".to_owned(),
-            ActivityKind::Completed => "completed".to_owned(),
-            ActivityKind::Custom(value) => format!("custom:{value}"),
-        };
-        let origin = match activity.origin() {
-            ActivityOrigin::Human => "human".to_owned(),
-            ActivityOrigin::System => "system".to_owned(),
-            ActivityOrigin::Agent(value) => format!("agent:{value}"),
-            ActivityOrigin::External(value) => format!("external:{value}"),
-        };
         Self {
             activity_id: activity.id().to_string(),
             subject_kind: subject_kind.to_owned(),
             subject_id,
-            change_kind,
-            origin,
+            change_kind: activity_kind_label(activity.kind()),
+            origin: activity_origin_label(activity.origin()),
             occurred_at_ms: activity.occurred_at_ms(),
             summary: activity.summary().to_owned(),
         }
+    }
+}
+
+/// Wire-neutral label for one semantic activity kind.
+pub(super) fn activity_kind_label(kind: &ActivityKind) -> String {
+    match kind {
+        ActivityKind::Created => "created".to_owned(),
+        ActivityKind::Updated => "updated".to_owned(),
+        ActivityKind::StatusChanged => "status_changed".to_owned(),
+        ActivityKind::ProgressUpdated => "progress_updated".to_owned(),
+        ActivityKind::BlockerOpened => "blocker_opened".to_owned(),
+        ActivityKind::BlockerResolved => "blocker_resolved".to_owned(),
+        ActivityKind::Scheduled => "scheduled".to_owned(),
+        ActivityKind::Rescheduled => "rescheduled".to_owned(),
+        ActivityKind::Completed => "completed".to_owned(),
+        ActivityKind::AttachmentAdded => "attachment_added".to_owned(),
+        ActivityKind::AttachmentRemoved => "attachment_removed".to_owned(),
+        ActivityKind::Custom(value) => format!("custom:{value}"),
+    }
+}
+
+/// Wire-neutral label for one activity origin.
+pub(super) fn activity_origin_label(origin: &ActivityOrigin) -> String {
+    match origin {
+        ActivityOrigin::Human => "human".to_owned(),
+        ActivityOrigin::System => "system".to_owned(),
+        ActivityOrigin::Agent(value) => format!("agent:{value}"),
+        ActivityOrigin::External(value) => format!("external:{value}"),
     }
 }
 

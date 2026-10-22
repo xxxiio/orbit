@@ -22,7 +22,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Length(1),
             Constraint::Min(3),
-            Constraint::Length(1),
+            Constraint::Length(2),
         ])
         .split(area);
     draw_header(frame, root[0], app);
@@ -98,6 +98,27 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_body(frame: &mut Frame, area: Rect, app: &App) {
+    // First-run guidance: never present an unexplained empty dashboard.
+    if app.projects.is_empty() {
+        let banner = Line::from(vec![
+            Span::styled(" Getting started: ", app.theme.title()),
+            Span::styled(
+                "press c to create your first project. Basic is the default workflow; every project ships with Overview, Tasks, Board and Timeline views.",
+                app.theme.text(),
+            ),
+        ]);
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(2), Constraint::Min(3)])
+            .split(area);
+        frame.render_widget(Paragraph::new(banner).wrap(Wrap { trim: false }), rows[0]);
+        draw_body_regions(frame, rows[1], app);
+        return;
+    }
+    draw_body_regions(frame, area, app);
+}
+
+fn draw_body_regions(frame: &mut Frame, area: Rect, app: &App) {
     if area.width < MEDIUM_BREAKPOINT {
         if app.focus == FocusPane::Sidebar {
             draw_sidebar(frame, area, app);
@@ -1108,6 +1129,61 @@ fn draw_detail(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+/// Keys that directly execute a contextual action. Only actions with a real
+/// binding appear with a key hint; everything else is reachable from the
+/// action menu.
+fn action_hotkey(id: &str) -> Option<&'static str> {
+    match id {
+        "open" | "open_knowledge" => Some("Enter"),
+        "create_task" => Some("c"),
+        "edit_task" | "edit_project" | "edit_work_item" | "edit_task_details" => Some("e"),
+        "set_task_status" | "complete_task" => Some("s"),
+        "manage_acceptance_criteria" => Some("K"),
+        "task_activity" => Some("H"),
+        "attach_file" => Some("i"),
+        "open_attachments" => Some("F"),
+        "change_workflow" | "apply_basic_workflow" => Some("W"),
+        "add_dependency" => Some("d"),
+        "remove_dependency" => Some("D"),
+        "refresh" => Some("r"),
+        "search" => Some("/"),
+        "command_palette" => Some("Ctrl+P"),
+        "help" => Some("?"),
+        _ => None,
+    }
+}
+
+/// Bottom action bar: the most useful executable operations for the current
+/// selection, each with a real key binding when one exists.
+fn draw_action_bar(frame: &mut Frame, area: Rect, app: &App) {
+    let actions = app.available_actions();
+    let mut spans = vec![Span::styled(" Actions: ", app.theme.title())];
+    let mut shown = 0;
+    for action in actions.iter().filter(|action| action.enabled) {
+        let Some(key) = action_hotkey(&action.id) else {
+            continue;
+        };
+        if shown == 4 {
+            break;
+        }
+        if shown > 0 {
+            spans.push(Span::styled(" · ", app.theme.muted()));
+        }
+        spans.push(Span::styled(format!("{key} "), app.theme.accent()));
+        spans.push(Span::styled(action.label.clone(), app.theme.text()));
+        shown += 1;
+    }
+    if shown == 0 {
+        spans.push(Span::styled(
+            "Enter open · a actions · / search · ? help",
+            app.theme.muted(),
+        ));
+    } else {
+        spans.push(Span::styled(" · a more actions", app.theme.muted()));
+    }
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
 fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
     let style = match app.status.kind {
         StatusKind::Success => app.theme.success(),
@@ -1116,18 +1192,23 @@ fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
         StatusKind::Info => app.theme.muted(),
     };
     let hint = match app.screen {
-        Screen::Home => "j/k select · Tab focus · Enter detail · a actions · Esc back",
-        Screen::Inbox => "j/k select · a actions · Enter detail · c capture · Esc back",
+        Screen::Home => "j/k select · Tab focus · Enter detail · Esc back",
+        Screen::Inbox => "j/k select · Enter detail · c capture · Esc back",
         Screen::Projects => "j/k select · Enter open · c new project · Esc back",
         Screen::Agents => "j/k select · Enter detail · r refresh · Esc back",
-        Screen::Project => "j/k select · h/l component · [ ] view · a actions · Esc back",
+        Screen::Project => "j/k select · h/l component · [ ] view · Esc back",
     };
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(area);
+    draw_action_bar(frame, rows[0], app);
     let line = Line::from(vec![
         Span::styled(" Ctrl+Q quit · q quit (not typing) ", style),
         Span::styled(format!(" {} ", app.status.text), style),
         Span::styled(format!("   {hint}"), app.theme.muted()),
     ]);
-    frame.render_widget(Paragraph::new(line), area);
+    frame.render_widget(Paragraph::new(line), rows[1]);
 }
 
 fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
@@ -1251,10 +1332,19 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                 Line::from(""),
             ];
             for (key, value) in &detail.fields {
-                lines.push(Line::from(vec![
-                    Span::styled(format!("{key}: "), app.theme.muted()),
-                    Span::styled(value.clone(), app.theme.text()),
-                ]));
+                for (index, line) in value.lines().enumerate() {
+                    if index == 0 {
+                        lines.push(Line::from(vec![
+                            Span::styled(format!("{key}: "), app.theme.muted()),
+                            Span::styled(line.to_owned(), app.theme.text()),
+                        ]));
+                    } else {
+                        lines.push(Line::from(vec![
+                            Span::styled(format!("{}  ", " ".repeat(key.len())), app.theme.muted()),
+                            Span::styled(line.to_owned(), app.theme.text()),
+                        ]));
+                    }
+                }
             }
             if !detail.note.is_empty() {
                 lines.push(Line::from(""));
@@ -1263,7 +1353,7 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
             if !detail.actions.is_empty() {
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled(
-                    "Available actions",
+                    "Actions (press a to run)",
                     app.theme.title(),
                 )));
                 for action in &detail.actions {
@@ -1292,6 +1382,131 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                 Paragraph::new(lines)
                     .wrap(Wrap { trim: false })
                     .scroll((app.modal_scroll.min(u16::MAX as usize) as u16, 0)),
+                inner,
+            );
+        }
+        Modal::Criteria(state) => {
+            let block = modal_block(&format!("Acceptance criteria · {}", state.task_title), app);
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+            let mut lines = vec![Line::from(Span::styled(
+                "Ordered criteria. Checking them never completes the task by itself.",
+                app.theme.muted(),
+            ))];
+            lines.push(Line::from(""));
+            if state.items.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "No acceptance criteria yet. Press c to add the first one.",
+                    app.theme.muted(),
+                )));
+            }
+            for (index, item) in state.items.iter().enumerate() {
+                let selected = index == state.selected;
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        if selected { "▸ " } else { "  " },
+                        if selected {
+                            app.theme.accent()
+                        } else {
+                            app.theme.muted()
+                        },
+                    ),
+                    Span::styled(
+                        if item.completed { "[x] " } else { "[ ] " },
+                        if item.completed {
+                            app.theme.success()
+                        } else {
+                            app.theme.warning()
+                        },
+                    ),
+                    Span::styled(item.text.clone(), app.theme.text()),
+                ]));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "↑/↓ select · Space check/uncheck · c add · r rename · J/K move · x remove · Esc close",
+                app.theme.muted(),
+            )));
+            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+        }
+        Modal::Attachments(state) => {
+            let block = modal_block(&format!("Attachments · {}", state.title), app);
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+            let mut lines = Vec::new();
+            if state.items.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "No attachments yet. Press A to attach a file.",
+                    app.theme.muted(),
+                )));
+            }
+            for (index, item) in state.items.iter().enumerate() {
+                let selected = index == state.selected;
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        if selected { "▸ " } else { "  " },
+                        if selected {
+                            app.theme.accent()
+                        } else {
+                            app.theme.muted()
+                        },
+                    ),
+                    Span::styled(
+                        format!("{:<28}", item.filename),
+                        if selected {
+                            app.theme.selected()
+                        } else {
+                            app.theme.text()
+                        },
+                    ),
+                    Span::styled(format!("{:<20}", item.content_type), app.theme.muted()),
+                    Span::styled(human_bytes(item.size_bytes), app.theme.muted()),
+                    Span::styled(
+                        if item.is_image { "  image" } else { "" },
+                        app.theme.warning(),
+                    ),
+                ]));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "↑/↓ select · A attach · o open with viewer · E export · x remove · Esc close",
+                app.theme.muted(),
+            )));
+            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+        }
+        Modal::Activity(state) => {
+            let block = modal_block(&format!("Activity · {}", state.title), app);
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+            let mut lines = Vec::new();
+            if state.items.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "No recorded activity for this item yet.",
+                    app.theme.muted(),
+                )));
+            }
+            for item in &state.items {
+                lines.push(Line::from(vec![
+                    Span::styled(format!("{:<18}", item.kind), app.theme.muted()),
+                    Span::styled(item.summary.clone(), app.theme.text()),
+                ]));
+                lines.push(Line::from(vec![
+                    Span::styled("  ", app.theme.muted()),
+                    Span::styled(
+                        format!("{} · {}", item.origin, item.occurred_at_ms),
+                        app.theme.muted(),
+                    ),
+                ]));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "↑/↓/PgUp/PgDn scroll · Esc close",
+                app.theme.muted(),
+            )));
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .wrap(Wrap { trim: false })
+                    .scroll((state.scroll, 0)),
                 inner,
             );
         }
@@ -1510,6 +1725,36 @@ fn draw_form(frame: &mut Frame, area: Rect, app: &App, form: &FormState) {
                     spans.push(Span::styled("_", app.theme.muted()));
                 }
             }
+            FormFieldKind::Multiline => {
+                let first_line = field.value.lines().next().unwrap_or("");
+                let shown = if field.value.is_empty() {
+                    field.hint.clone()
+                } else if first_line.is_empty() {
+                    "⏎".to_owned()
+                } else {
+                    first_line.to_owned()
+                };
+                let mut text = shown;
+                if field.value.contains('\n') {
+                    text.push_str(&format!(
+                        "  (+{} more line(s))",
+                        field.value.lines().count().saturating_sub(1)
+                    ));
+                }
+                spans.push(Span::styled(
+                    text,
+                    if field.value.is_empty() {
+                        app.theme.muted()
+                    } else if focused {
+                        app.theme.selected()
+                    } else {
+                        app.theme.text()
+                    },
+                ));
+                if focused {
+                    spans.push(Span::styled("_", app.theme.muted()));
+                }
+            }
         }
         if field.required {
             spans.push(Span::styled(" *", app.theme.warning()));
@@ -1518,7 +1763,7 @@ fn draw_form(frame: &mut Frame, area: Rect, app: &App, form: &FormState) {
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Tab/Shift+Tab field · ←/→ or Space choose/toggle · Enter submit · Esc cancel",
+        "Tab/Shift+Tab field · ←/→ or Space choose/toggle · Enter next/submit · Ctrl+S save · Esc cancel",
         app.theme.muted(),
     )));
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
@@ -1528,7 +1773,23 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
     let block = modal_block("Keyboard help", app);
     let inner = block.inner(area);
     frame.render_widget(block, area);
+    let context = match app.screen {
+        Screen::Home => {
+            "Home/Today: j/k or arrows select · Enter detail · [/] horizon · d impact · v focus"
+        }
+        Screen::Inbox => "Inbox: j/k or arrows select · Enter detail · c capture · s actions",
+        Screen::Projects => {
+            "Projects: j/k or arrows select · Enter open · c new project · W workflow"
+        }
+        Screen::Agents => "Agents: j/k or arrows select · Enter inspect · r refresh",
+        Screen::Project => {
+            "Project: arrows select · h/l or arrows component · [/] view · a actions · K criteria"
+        }
+    };
     let lines = vec![
+        Line::from(Span::styled("This screen", app.theme.title())),
+        Line::from(context),
+        Line::from(""),
         Line::from(Span::styled("Navigation", app.theme.title())),
         Line::from("j / k, ↓ / ↑     move selection"),
         Line::from("h / l            move between components"),
@@ -1540,8 +1801,12 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
         Line::from(Span::styled("Actions", app.theme.title())),
         Line::from("Enter             open selected item / project"),
         Line::from("a or s            contextual action menu"),
-        Line::from("c / C             new task / blueprint work item"),
-        Line::from("e                 edit selected task, project or work item"),
+        Line::from("c / C             new task / workflow item"),
+        Line::from("e                 edit selected task, project or workflow item"),
+        Line::from("K                 acceptance criteria for the selected task"),
+        Line::from("H                 activity history for the selected task"),
+        Line::from("i / F             attach a file / list attachments"),
+        Line::from("W                 change the project workflow (Basic is the default)"),
         Line::from("n                 new knowledge note"),
         Line::from("space             record selected habit occurrence"),
         Line::from("p / P             preview / apply plan"),
@@ -1673,6 +1938,15 @@ fn modal_size(area: Rect, modal: &Modal) -> (u16, u16) {
         Modal::Search { hits, .. } => (hits.len() as u16 + 5)
             .min(area.height.saturating_sub(4))
             .max(8),
+        Modal::Criteria(state) => (state.items.len() as u16 + 8)
+            .min(area.height.saturating_sub(4))
+            .max(10),
+        Modal::Attachments(state) => (state.items.len() as u16 + 8)
+            .min(area.height.saturating_sub(4))
+            .max(10),
+        Modal::Activity(state) => (state.items.len() as u16 + 8)
+            .min(area.height.saturating_sub(4))
+            .max(10),
         _ => 18,
     };
     (width, height)
@@ -1734,4 +2008,17 @@ fn truncate(value: &str, width: usize) -> String {
         output.push(character);
     }
     output
+}
+
+/// Compact human-readable byte size for attachment rows.
+fn human_bytes(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{bytes} B")
+    }
 }

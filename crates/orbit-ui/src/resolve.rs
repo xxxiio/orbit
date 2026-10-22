@@ -167,7 +167,7 @@ fn empty_text(component: &ViewComponent, data: &ProjectData, source: &str) -> St
 fn source_label(source: &str) -> &'static str {
     match source {
         "tasks" => "tasks",
-        "work_items" => "blueprint work items",
+        "work_items" => "workflow items",
         "milestones" => "milestones",
         "knowledge" => "knowledge notes",
         "habits" => "habits",
@@ -499,7 +499,14 @@ fn metric_progress(row: &crate::data::MetricRow) -> Option<u16> {
 
 fn default_columns(source: &str) -> &'static [&'static str] {
     match source {
-        "tasks" => &["title", "status", "readiness", "estimate"],
+        "tasks" => &[
+            "title",
+            "status",
+            "priority",
+            "due",
+            "readiness",
+            "estimate",
+        ],
         "work_items" => &["title", "kind", "state"],
         "milestones" => &["name", "status", "progress"],
         "knowledge" => &["title", "kind", "status"],
@@ -524,6 +531,16 @@ pub fn task_workflow_states() -> &'static [&'static str] {
         "deferred",
         "done",
     ]
+}
+
+/// User-facing table header for a column identifier. Renderers keep the raw
+/// identifier for layout/status decisions and use this only for header text.
+pub fn column_label(column: &str) -> &str {
+    match column {
+        "priority" => "Priority",
+        "due" | "due_date" => "Due",
+        other => other,
+    }
 }
 
 fn humanize(value: &str) -> String {
@@ -651,7 +668,7 @@ pub fn default_views(data: &ProjectData, registry: &ComponentRegistry) -> Vec<Re
                 )];
                 if !data.work_items.is_empty() {
                     components.push(with_limit(
-                        component("work_items", "kanban", Some("work_items"), "Blueprint work"),
+                        component("work_items", "kanban", Some("work_items"), "Workflow items"),
                         100,
                     ));
                 }
@@ -878,6 +895,10 @@ mod tests {
                     status: "ready".into(),
                     actionable: true,
                     readiness: "ready".into(),
+                    priority: "high".into(),
+                    due_date: "2026-11-03".into(),
+                    acceptance_total: 3,
+                    acceptance_completed: 2,
                     ..Default::default()
                 },
                 TaskRow {
@@ -962,5 +983,41 @@ mod tests {
             panic!("expected kanban");
         };
         assert!(columns.iter().any(|column| column.key == "review"));
+    }
+
+    #[test]
+    fn task_table_exposes_priority_and_due_columns() {
+        let registry = ComponentRegistry::builtin();
+        let component = component("tasks", "table", Some("tasks"), "Tasks");
+        let resolved = resolve_component(&component, &project(), &registry, None);
+        let ComponentBody::Table { columns, rows } = resolved.body else {
+            panic!("expected table");
+        };
+        assert!(columns.contains(&"priority".to_string()));
+        assert!(columns.contains(&"due".to_string()));
+        let priority = columns
+            .iter()
+            .position(|column| column == "priority")
+            .unwrap();
+        let due = columns.iter().position(|column| column == "due").unwrap();
+        assert_eq!(rows[0].cells[priority], "high");
+        assert_eq!(rows[0].cells[due], "2026-11-03");
+        // An unset due date renders empty rather than inventing a date.
+        assert_eq!(rows[1].cells[due], "");
+        assert_eq!(column_label("priority"), "Priority");
+        assert_eq!(column_label("due_date"), "Due");
+    }
+
+    #[test]
+    fn work_items_use_workflow_terminology_in_rendered_text() {
+        assert_eq!(source_label("work_items"), "workflow items");
+        let registry = ComponentRegistry::builtin();
+        let views = default_views(&project(), &registry);
+        let work = views.iter().find(|view| view.id == "work").unwrap();
+        assert!(
+            work.components
+                .iter()
+                .any(|component| component.title == "Workflow items")
+        );
     }
 }

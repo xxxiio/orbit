@@ -205,8 +205,9 @@ break local CLI use.
 orbit init --force --authority local
 ```
 
-Back up the database and vault before changing authority mode or database
-paths. See [backup and recovery](../guides/backup-and-recovery.md).
+Back up the database, the Markdown vault and the attachment object store before
+changing authority mode or database paths. See
+[backup and recovery](../guides/backup-and-recovery.md).
 
 ## Common initialization failures
 

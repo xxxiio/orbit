@@ -10,6 +10,8 @@ mod planning_ui;
 mod render;
 mod terminal;
 mod theme;
+mod ui_state;
+mod viewer;
 
 use app::{App, FormFieldKind, Modal, Screen, StatusKind};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
@@ -32,16 +34,39 @@ fn run() -> Result<(), String> {
         return connected::run(replica.to_string_lossy().into_owned(), server.to_string());
     }
     let mut app = App::open_deployment(deployment)?;
+    ui_state::restore(&mut app);
     let mut session = terminal::TerminalSession::enter()?;
     let result = event_loop(session.terminal(), &mut app);
+    let _ = ui_state::save(&app);
     session.restore();
     result
+}
+
+/// Compact navigation signature used to avoid writing session state on every
+/// keypress while still persisting the moment navigation actually changes.
+fn navigation_signature(app: &App) -> String {
+    format!(
+        "{:?}|{}|{}|{:?}|{}",
+        app.screen,
+        app.project
+            .as_ref()
+            .map(|project| project.id.as_str())
+            .unwrap_or(""),
+        app.project
+            .as_ref()
+            .and_then(|project| project.views.get(project.active_view))
+            .map(|view| view.id.as_str())
+            .unwrap_or(""),
+        app.focus,
+        app.sidebar_selection
+    )
 }
 
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
 ) -> Result<(), String> {
+    let mut last_signature = navigation_signature(app);
     loop {
         terminal
             .draw(|frame| render::draw(frame, app))
@@ -66,8 +91,56 @@ fn event_loop(
         if handle_key(app, key.code, key.modifiers)? {
             break;
         }
+        let signature = navigation_signature(app);
+        if signature != last_signature {
+            last_signature = signature;
+            if let Err(error) = ui_state::save(app) {
+                app.notify(
+                    format!("Session state not saved: {error}"),
+                    StatusKind::Warning,
+                );
+            }
+        }
     }
     Ok(())
+}
+
+/// Byte offset for a character index, clamped to the value length.
+fn byte_offset(value: &str, char_index: usize) -> usize {
+    value
+        .char_indices()
+        .nth(char_index)
+        .map(|(offset, _)| offset)
+        .unwrap_or(value.len())
+}
+
+/// Insert a character at the caret.
+fn text_insert(field: &mut app::FormField, character: char) {
+    let offset = byte_offset(&field.value, field.cursor);
+    field.value.insert(offset, character);
+    field.cursor += 1;
+}
+
+/// Delete the character before the caret.
+fn text_backspace(field: &mut app::FormField) {
+    if field.cursor == 0 {
+        return;
+    }
+    let end = byte_offset(&field.value, field.cursor);
+    let start = byte_offset(&field.value, field.cursor - 1);
+    field.value.replace_range(start..end, "");
+    field.cursor -= 1;
+}
+
+/// Delete the character at the caret.
+fn text_delete(field: &mut app::FormField) {
+    let len = field.value.chars().count();
+    if field.cursor >= len {
+        return;
+    }
+    let start = byte_offset(&field.value, field.cursor);
+    let end = byte_offset(&field.value, field.cursor + 1);
+    field.value.replace_range(start..end, "");
 }
 
 fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool, String> {
@@ -85,6 +158,10 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
                     return Ok(false);
                 }
                 KeyCode::Char('i') => {
+                    if app.client.is_connected() {
+                        app.notify("Attachments are local-authoritative in this build; connected mode does not accept uploads yet.", StatusKind::Warning);
+                        return Ok(false);
+                    }
                     app.go_screen(Screen::Inbox);
                     return Ok(false);
                 }
@@ -163,6 +240,64 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
         },
         KeyCode::Char('a') | KeyCode::Char('s') => app.open_action_menu(),
         KeyCode::Char('e') => app.edit_selected(),
+        KeyCode::Char('K') => {
+            if app.client.is_connected() {
+                app.notify("Acceptance criteria are local-authoritative in this build; connected mode does not support them yet.", StatusKind::Warning);
+                return Ok(false);
+            }
+            if let Some(item) = app.selected_item()
+                && item.kind == orbit_ui::model::ItemKind::Task
+            {
+                let task_id = item.id.clone();
+                let title = item.title.clone();
+                app.open_criteria(task_id, title);
+            } else {
+                app.notify(
+                    "Select a task to manage acceptance criteria",
+                    StatusKind::Warning,
+                );
+            }
+        }
+        KeyCode::Char('H') => {
+            if app.client.is_connected() {
+                app.notify("Task activity history is local-authoritative in this build; connected mode does not project it yet.", StatusKind::Warning);
+                return Ok(false);
+            }
+            if let Some(item) = app.selected_item()
+                && item.kind == orbit_ui::model::ItemKind::Task
+            {
+                let task_id = item.id.clone();
+                let title = item.title.clone();
+                app.open_activity(task_id, title);
+            } else {
+                app.notify("Select a task to inspect activity", StatusKind::Warning);
+            }
+        }
+        KeyCode::Char('i') => {
+            let action = orbit_ui::AvailableAction::enabled("attach_file", "Attach file", None);
+            app.execute_action(action);
+        }
+        KeyCode::Char('F') => {
+            if app.client.is_connected() {
+                app.notify("Attachments are local-authoritative in this build; connected mode does not serve them yet.", StatusKind::Warning);
+                return Ok(false);
+            }
+            let action =
+                orbit_ui::AvailableAction::enabled("open_attachments", "Attachments", None);
+            app.execute_action(action);
+        }
+        KeyCode::Char('W') => {
+            if app.client.is_connected() {
+                app.notify(
+                    "Changing a workflow requires the local authoritative workspace.",
+                    StatusKind::Warning,
+                );
+                return Ok(false);
+            }
+            let action =
+                orbit_ui::AvailableAction::enabled("change_workflow", "Change workflow", None);
+            app.execute_action(action);
+        }
         KeyCode::Char('c') => {
             if app.screen == Screen::Projects {
                 app.start_form(app::FormMode::NewProject);
@@ -258,7 +393,7 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
     Ok(false)
 }
 
-fn handle_modal(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Result<bool, String> {
+fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool, String> {
     let Some(mut modal) = app.modal.take() else {
         return Ok(false);
     };
@@ -269,8 +404,14 @@ fn handle_modal(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Resul
                 | Modal::Search { .. }
                 | Modal::Form(_)
                 | Modal::QuitConfirm { .. }
+                | Modal::Criteria(_)
+                | Modal::Attachments(_)
         )
     {
+        if matches!(modal, Modal::Help) {
+            app.modal = None;
+            return Ok(false);
+        }
         return Ok(app.request_quit());
     }
     let mut keep = true;
@@ -286,105 +427,184 @@ fn handle_modal(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Resul
             }
             _ => {}
         },
-        Modal::Form(form) => match code {
-            KeyCode::Esc => {
-                keep = false;
-                app.notify("Form cancelled", StatusKind::Info);
-            }
-            KeyCode::Enter => {
+        Modal::Form(form) => {
+            // Ctrl+S saves from any field, including multi-line text where
+            // Enter inserts a newline instead of submitting.
+            if modifiers.contains(KeyModifiers::CONTROL) && matches!(code, KeyCode::Char('s')) {
                 let form = form.clone();
-                keep = false;
                 app.submit_form(form);
+                return Ok(false);
             }
-            KeyCode::Tab => {
-                if !form.fields.is_empty() {
-                    form.focused = (form.focused + 1) % form.fields.len();
-                }
+            // Never type control chords into a field: only Ctrl+S is a form
+            // command, everything else is ignored so shortcuts cannot corrupt
+            // ordinary text entry.
+            if modifiers.contains(KeyModifiers::CONTROL) {
+                return Ok(false);
             }
-            KeyCode::BackTab => {
-                if !form.fields.is_empty() {
-                    form.focused = (form.focused + form.fields.len() - 1) % form.fields.len();
-                }
-            }
-            KeyCode::Down => {
-                if !form.fields.is_empty() {
-                    form.focused = (form.focused + 1).min(form.fields.len() - 1);
-                }
-            }
-            KeyCode::Up => {
-                form.focused = form.focused.saturating_sub(1);
-            }
-            KeyCode::Left | KeyCode::Right => {
-                form.error = None;
-                let delta = if matches!(code, KeyCode::Right) {
-                    1
-                } else {
-                    -1
-                };
-                if let Some(field) = form.fields.get_mut(form.focused) {
-                    match &field.kind {
-                        FormFieldKind::Choice(choices) if !choices.is_empty() => {
-                            let current = choices
-                                .iter()
-                                .position(|choice| choice.value == field.value)
-                                .unwrap_or(0) as isize;
-                            let next =
-                                (current + delta).clamp(0, choices.len() as isize - 1) as usize;
-                            field.value = choices[next].value.clone();
-                            form.dirty = true;
-                        }
-                        FormFieldKind::Boolean => {
-                            field.value = if field.value == "true" {
-                                "false".into()
-                            } else {
-                                "true".into()
-                            };
-                            form.dirty = true;
-                        }
-                        _ => {}
+            match code {
+                KeyCode::Esc => {
+                    if form.dirty {
+                        let form = form.clone();
+                        keep = false;
+                        app.modal = Some(Modal::Confirm {
+                            title: "Discard unsaved changes?".into(),
+                            body: "The form has unsaved edits.".into(),
+                            pending: app::PendingAction::DiscardFormChanges {
+                                form: Box::new(form),
+                            },
+                        });
+                    } else {
+                        keep = false;
+                        app.notify("Form cancelled", StatusKind::Info);
                     }
                 }
-            }
-            KeyCode::Char(' ') => {
-                form.error = None;
-                if let Some(field) = form.fields.get_mut(form.focused) {
-                    match field.kind {
-                        FormFieldKind::Boolean => {
-                            field.value = if field.value == "true" {
-                                "false".into()
-                            } else {
-                                "true".into()
-                            };
-                            form.dirty = true;
+                KeyCode::Enter => {
+                    let multiline = form
+                        .fields
+                        .get(form.focused)
+                        .is_some_and(|field| matches!(field.kind, FormFieldKind::Multiline));
+                    if multiline {
+                        form.error = None;
+                        if let Some(field) = form.fields.get_mut(form.focused) {
+                            text_insert(field, '\n');
                         }
-                        FormFieldKind::Text => {
-                            field.value.push(' ');
-                            form.dirty = true;
-                        }
-                        _ => {}
+                        form.dirty = true;
+                    } else {
+                        let form = form.clone();
+                        keep = false;
+                        app.submit_form(form);
                     }
                 }
-            }
-            KeyCode::Backspace => {
-                form.error = None;
-                if let Some(field) = form.fields.get_mut(form.focused)
-                    && matches!(field.kind, FormFieldKind::Text | FormFieldKind::Integer)
-                {
-                    field.value.pop();
-                    form.dirty = true;
+                KeyCode::Tab => {
+                    if !form.fields.is_empty() {
+                        form.focused = (form.focused + 1) % form.fields.len();
+                    }
                 }
-            }
-            KeyCode::Char(character) => {
-                form.error = None;
-                if let Some(field) = form.fields.get_mut(form.focused)
-                    && matches!(field.kind, FormFieldKind::Text | FormFieldKind::Integer)
-                {
-                    field.value.push(character);
-                    form.dirty = true;
+                KeyCode::BackTab => {
+                    if !form.fields.is_empty() {
+                        form.focused = (form.focused + form.fields.len() - 1) % form.fields.len();
+                    }
                 }
+                KeyCode::Down => {
+                    if !form.fields.is_empty() {
+                        form.focused = (form.focused + 1).min(form.fields.len() - 1);
+                    }
+                }
+                KeyCode::Up => {
+                    form.focused = form.focused.saturating_sub(1);
+                }
+                KeyCode::Left | KeyCode::Right => {
+                    form.error = None;
+                    let delta = if matches!(code, KeyCode::Right) {
+                        1
+                    } else {
+                        -1
+                    };
+                    if let Some(field) = form.fields.get_mut(form.focused) {
+                        match &field.kind {
+                            FormFieldKind::Choice(choices) if !choices.is_empty() => {
+                                let current = choices
+                                    .iter()
+                                    .position(|choice| choice.value == field.value)
+                                    .unwrap_or(0)
+                                    as isize;
+                                let next =
+                                    (current + delta).clamp(0, choices.len() as isize - 1) as usize;
+                                field.value = choices[next].value.clone();
+                                form.dirty = true;
+                            }
+                            FormFieldKind::Boolean => {
+                                field.value = if field.value == "true" {
+                                    "false".into()
+                                } else {
+                                    "true".into()
+                                };
+                                form.dirty = true;
+                            }
+                            FormFieldKind::Text
+                            | FormFieldKind::Multiline
+                            | FormFieldKind::Integer => {
+                                let len = field.value.chars().count();
+                                let next = (field.cursor as isize + delta).clamp(0, len as isize);
+                                field.cursor = next as usize;
+                            }
+                            FormFieldKind::Choice(_) => {}
+                        }
+                    }
+                }
+                KeyCode::Home | KeyCode::End => {
+                    form.error = None;
+                    let end = matches!(code, KeyCode::End);
+                    if let Some(field) = form.fields.get_mut(form.focused)
+                        && matches!(
+                            field.kind,
+                            FormFieldKind::Text | FormFieldKind::Multiline | FormFieldKind::Integer
+                        )
+                    {
+                        field.cursor = if end { field.value.chars().count() } else { 0 };
+                    }
+                }
+                KeyCode::Delete => {
+                    form.error = None;
+                    if let Some(field) = form.fields.get_mut(form.focused)
+                        && matches!(
+                            field.kind,
+                            FormFieldKind::Text | FormFieldKind::Multiline | FormFieldKind::Integer
+                        )
+                    {
+                        text_delete(field);
+                        form.dirty = true;
+                    }
+                }
+                KeyCode::Char(' ') => {
+                    form.error = None;
+                    if let Some(field) = form.fields.get_mut(form.focused) {
+                        match field.kind {
+                            FormFieldKind::Boolean => {
+                                field.value = if field.value == "true" {
+                                    "false".into()
+                                } else {
+                                    "true".into()
+                                };
+                                form.dirty = true;
+                            }
+                            FormFieldKind::Text
+                            | FormFieldKind::Multiline
+                            | FormFieldKind::Integer => {
+                                text_insert(field, ' ');
+                                form.dirty = true;
+                            }
+                            FormFieldKind::Choice(_) => {}
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    form.error = None;
+                    if let Some(field) = form.fields.get_mut(form.focused)
+                        && matches!(
+                            field.kind,
+                            FormFieldKind::Text | FormFieldKind::Multiline | FormFieldKind::Integer
+                        )
+                    {
+                        text_backspace(field);
+                        form.dirty = true;
+                    }
+                }
+                KeyCode::Char(character) => {
+                    form.error = None;
+                    if let Some(field) = form.fields.get_mut(form.focused)
+                        && matches!(
+                            field.kind,
+                            FormFieldKind::Text | FormFieldKind::Multiline | FormFieldKind::Integer
+                        )
+                    {
+                        text_insert(field, character);
+                        form.dirty = true;
+                    }
+                }
+                _ => {}
             }
-            _ => {}
-        },
+        }
         Modal::Confirm {
             title,
             body,
@@ -399,7 +619,12 @@ fn handle_modal(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Resul
             }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                 keep = false;
-                app.notify("Cancelled; no change was submitted", StatusKind::Info);
+                if let app::PendingAction::DiscardFormChanges { form } = pending.clone() {
+                    app.modal = Some(Modal::Form(*form));
+                    app.notify("Form restored; unsaved changes preserved", StatusKind::Info);
+                } else {
+                    app.notify("Cancelled; no change was submitted", StatusKind::Info);
+                }
             }
             _ => {
                 let _ = body;
@@ -473,6 +698,194 @@ fn handle_modal(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Resul
             }
             KeyCode::PageDown => app.modal_scroll = app.modal_scroll.saturating_add(10),
             KeyCode::PageUp => app.modal_scroll = app.modal_scroll.saturating_sub(10),
+            _ => {}
+        },
+        Modal::Criteria(state) => match code {
+            KeyCode::Esc | KeyCode::Enter => keep = false,
+            KeyCode::Down | KeyCode::Char('j') => {
+                state.selected = (state.selected + 1).min(state.items.len().saturating_sub(1));
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                state.selected = state.selected.saturating_sub(1);
+            }
+            KeyCode::Char(' ') => {
+                if let Some(item) = state.items.get(state.selected).cloned() {
+                    match app.client.set_acceptance_criterion_completed(
+                        state.task_id.clone(),
+                        item.id,
+                        !item.completed,
+                    ) {
+                        Ok(items) => {
+                            state.items = items;
+                            state.selected =
+                                state.selected.min(state.items.len().saturating_sub(1));
+                            app.notify(
+                                if item.completed {
+                                    "Acceptance criterion reopened"
+                                } else {
+                                    "Acceptance criterion checked"
+                                },
+                                StatusKind::Success,
+                            );
+                        }
+                        Err(error) => app.notify(
+                            format!("Updating the criterion failed: {}", error.message),
+                            StatusKind::Error,
+                        ),
+                    }
+                }
+            }
+            KeyCode::Char('c') => {
+                let task_id = state.task_id.clone();
+                keep = false;
+                app.start_form(app::FormMode::AddCriterion { task_id });
+            }
+            KeyCode::Char('r') => {
+                if let Some(item) = state.items.get(state.selected) {
+                    let task_id = state.task_id.clone();
+                    let criterion_id = item.id.clone();
+                    keep = false;
+                    app.start_form(app::FormMode::EditCriterion {
+                        task_id,
+                        criterion_id,
+                    });
+                }
+            }
+            KeyCode::Char('J') => {
+                if let Some(item) = state.items.get(state.selected).cloned() {
+                    let position = (state.selected + 1).min(state.items.len().saturating_sub(1));
+                    match app.client.move_acceptance_criterion(
+                        state.task_id.clone(),
+                        item.id,
+                        position,
+                    ) {
+                        Ok(items) => {
+                            state.items = items;
+                            state.selected = position;
+                        }
+                        Err(error) => app.notify(
+                            format!("Reordering the criterion failed: {}", error.message),
+                            StatusKind::Error,
+                        ),
+                    }
+                }
+            }
+            KeyCode::Char('K') => {
+                if let Some(item) = state.items.get(state.selected).cloned() {
+                    let position = state.selected.saturating_sub(1);
+                    match app.client.move_acceptance_criterion(
+                        state.task_id.clone(),
+                        item.id,
+                        position,
+                    ) {
+                        Ok(items) => {
+                            state.items = items;
+                            state.selected = position;
+                        }
+                        Err(error) => app.notify(
+                            format!("Reordering the criterion failed: {}", error.message),
+                            StatusKind::Error,
+                        ),
+                    }
+                }
+            }
+            KeyCode::Char('x') => {
+                if let Some(item) = state.items.get(state.selected) {
+                    let task_id = state.task_id.clone();
+                    let criterion_id = item.id.clone();
+                    let text = item.text.clone();
+                    keep = false;
+                    app.modal = Some(Modal::Confirm {
+                        title: "Remove acceptance criterion".into(),
+                        body: format!("Remove '{text}'?"),
+                        pending: app::PendingAction::RemoveCriterion {
+                            task_id,
+                            criterion_id,
+                            task_title: state.task_title.clone(),
+                        },
+                    });
+                }
+            }
+            _ => {}
+        },
+        Modal::Attachments(state) => match code {
+            KeyCode::Esc => keep = false,
+            KeyCode::Enter => {
+                if let Some(item) = state.items.get(state.selected) {
+                    let attachment_id = item.id.clone();
+                    keep = false;
+                    app.preview_attachment(attachment_id);
+                } else {
+                    keep = false;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                state.selected = (state.selected + 1).min(state.items.len().saturating_sub(1));
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                state.selected = state.selected.saturating_sub(1);
+            }
+            KeyCode::Char('A') => {
+                let owner_kind = state.owner_kind.clone();
+                let owner_id = state.owner_id.clone();
+                keep = false;
+                app.start_form(app::FormMode::AttachFile {
+                    owner_kind,
+                    owner_id,
+                });
+            }
+            KeyCode::Char('o') => {
+                if let Some(item) = state.items.get(state.selected) {
+                    let attachment_id = item.id.clone();
+                    let filename = item.filename.clone();
+                    keep = false;
+                    app.modal = Some(Modal::Confirm {
+                        title: "Open attachment".into(),
+                        body: format!(
+                            "Export '{}' and hand it to your configured external viewer? Orbit never executes file content.",
+                            item.filename
+                        ),
+                        pending: app::PendingAction::OpenAttachment {
+                            attachment_id,
+                            filename,
+                        },
+                    });
+                }
+            }
+            KeyCode::Char('E') => {
+                if let Some(item) = state.items.get(state.selected) {
+                    let attachment_id = item.id.clone();
+                    keep = false;
+                    app.start_form(app::FormMode::ExportAttachment { attachment_id });
+                }
+            }
+            KeyCode::Char('x') => {
+                if let Some(item) = state.items.get(state.selected) {
+                    let attachment_id = item.id.clone();
+                    let filename = item.filename.clone();
+                    keep = false;
+                    app.modal = Some(Modal::Confirm {
+                        title: "Remove attachment".into(),
+                        body: format!(
+                            "Remove the association for '{filename}'? Content is deleted only when nothing else references it."
+                        ),
+                        pending: app::PendingAction::RemoveAttachment {
+                            attachment_id,
+                            owner_kind: state.owner_kind.clone(),
+                            owner_id: state.owner_id.clone(),
+                            title: state.title.clone(),
+                        },
+                    });
+                }
+            }
+            _ => {}
+        },
+        Modal::Activity(state) => match code {
+            KeyCode::Esc | KeyCode::Enter => keep = false,
+            KeyCode::Down | KeyCode::Char('j') => state.scroll = state.scroll.saturating_add(1),
+            KeyCode::Up | KeyCode::Char('k') => state.scroll = state.scroll.saturating_sub(1),
+            KeyCode::PageDown => state.scroll = state.scroll.saturating_add(10),
+            KeyCode::PageUp => state.scroll = state.scroll.saturating_sub(10),
             _ => {}
         },
         Modal::Detail(_) => match code {
@@ -606,12 +1019,41 @@ mod tests {
     }
 
     #[test]
-    fn project_creation_opens_generated_legacy_views() {
+    fn project_creation_pins_the_basic_workflow_by_default() {
         let mut app = app();
         submit_project(&mut app, "Apollo");
         assert_eq!(app.screen, Screen::Project);
         let project = app.project.as_ref().unwrap();
         assert_eq!(project.name, "Apollo");
+        assert!(
+            !project.generated,
+            "a new project should carry the pinned Basic workflow, not generated defaults"
+        );
+        assert!(
+            project.views.iter().any(|view| view.id == "overview"),
+            "Basic declares an overview view"
+        );
+        assert!(
+            project.blueprint_label.to_lowercase().contains("basic"),
+            "label was {}",
+            project.blueprint_label
+        );
+        let text = buffer_text(&mut app, 120, 30);
+        assert!(text.contains("Basic"), "{text}");
+    }
+
+    #[test]
+    fn unbound_project_falls_back_to_generated_views() {
+        let mut app = app();
+        submit_project(&mut app, "Legacy");
+        let project_id = app.project.as_ref().unwrap().id.clone();
+        // Simulate a legacy workspace: the binding is removed while the project
+        // stays fully usable through generated default views.
+        app.client
+            .remove_project_workflow(project_id.clone())
+            .unwrap();
+        app.refresh_project();
+        let project = app.project.as_ref().unwrap();
         assert!(project.generated);
         assert!(project.views.iter().any(|view| view.id == "overview"));
         let text = buffer_text(&mut app, 120, 30);
@@ -625,7 +1067,7 @@ mod tests {
         let project_id = app.project.as_ref().unwrap().id.clone();
         app.client.install_bundled_blueprint("research").unwrap();
         app.client
-            .bind_project_blueprint(&project_id, "research", 2)
+            .apply_workflow(project_id.clone(), "research".to_owned(), None)
             .unwrap();
         app.refresh_project();
         let item = app
@@ -865,7 +1307,7 @@ mod m28_render_tests {
             .unwrap();
         app.client.install_bundled_blueprint("development").unwrap();
         app.client
-            .bind_project_blueprint(&project.id, "development", 2)
+            .apply_workflow(project.id.clone(), "development".to_owned(), None)
             .unwrap();
         app.refresh_workspace();
         app.open_project(&project.id);
@@ -1223,7 +1665,7 @@ mod m28_navigation_tests {
         let project = add_project(&mut app, "Work");
         app.client.install_bundled_blueprint("development").unwrap();
         app.client
-            .bind_project_blueprint(&project, "development", 2)
+            .apply_workflow(project.clone(), "development".to_owned(), None)
             .unwrap();
         for title in ["One", "Two", "Three"] {
             add_task(&mut app, &project, title);
@@ -1277,7 +1719,7 @@ mod m28_navigation_tests {
         let project = add_project(&mut app, "View restore");
         app.client.install_bundled_blueprint("development").unwrap();
         app.client
-            .bind_project_blueprint(&project, "development", 2)
+            .apply_workflow(project.clone(), "development".to_owned(), None)
             .unwrap();
         app.open_project(&project);
         let board = app
@@ -1304,7 +1746,7 @@ mod m28_navigation_tests {
         let project = add_project(&mut app, "Work");
         app.client.install_bundled_blueprint("research").unwrap();
         app.client
-            .bind_project_blueprint(&project, "research", 2)
+            .apply_workflow(project.clone(), "research".to_owned(), None)
             .unwrap();
         for question in ["One?", "Two?", "Three?"] {
             app.client
@@ -1449,7 +1891,9 @@ mod m28_quit_tests {
         assert_eq!(query, "qqq");
 
         app.modal = Some(Modal::Help);
-        assert!(handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
+        // `q` closes help instead of quitting so the user cannot lose context.
+        assert!(!handle_key(&mut app, KeyCode::Char('q'), KeyModifiers::NONE).unwrap());
+        assert!(app.modal.is_none());
 
         app.modal = Some(Modal::Message {
             title: "Notice".into(),
@@ -1672,7 +2116,7 @@ mod m28_form_tests {
         let project = create_project(&mut app, "Research");
         app.client.install_bundled_blueprint("research").unwrap();
         app.client
-            .bind_project_blueprint(&project, "research", 2)
+            .apply_workflow(project.clone(), "research".to_owned(), None)
             .unwrap();
         app.refresh_project();
         app.start_form(FormMode::NewWorkItemKind {
@@ -2057,7 +2501,7 @@ mod m28_oracle_remediation_tests {
         let project_id = project(&mut app, "Patch");
         app.client.install_bundled_blueprint("research").unwrap();
         app.client
-            .bind_project_blueprint(&project_id, "research", 2)
+            .apply_workflow(project_id.clone(), "research".to_owned(), None)
             .unwrap();
         let item = app
             .client
@@ -2197,7 +2641,7 @@ mod m28_gate2_fix_tests {
         let project = app.projects[0].id.clone();
         app.client.install_bundled_blueprint("research").unwrap();
         app.client
-            .bind_project_blueprint(&project, "research", 2)
+            .apply_workflow(project.clone(), "research".to_owned(), None)
             .unwrap();
         let item = app
             .client
@@ -2465,7 +2909,7 @@ mod m28_layout_tests {
             .unwrap();
         app.client.install_bundled_blueprint("development").unwrap();
         app.client
-            .bind_project_blueprint(&project.id, "development", 2)
+            .apply_workflow(project.id.clone(), "development".to_owned(), None)
             .unwrap();
         for (title, statuses) in [
             ("Inbox task", vec![]),
@@ -2749,5 +3193,282 @@ mod m28_focus_scroll_tests {
                 .any(|line| line.contains("▸") && line.contains("event 11")),
             "{rendered}"
         );
+    }
+}
+
+#[cfg(test)]
+mod m28_usability_recovery_tests {
+    use super::*;
+    use app::{FormMode, Modal};
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn app() -> App {
+        let filename = std::env::temp_dir().join(format!(
+            "orbit-tui-usability-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&filename);
+        App::open(filename.to_string_lossy().into_owned()).unwrap()
+    }
+
+    fn submit_project(app: &mut App, name: &str) -> String {
+        app.start_form(FormMode::NewProject);
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("expected project form");
+        };
+        form.fields[0].value = name.into();
+        form.dirty = true;
+        app.submit_form(form);
+        app.project.as_ref().expect("project opened").id.clone()
+    }
+
+    fn submit_task(app: &mut App, project_id: &str, title: &str) -> String {
+        app.start_form(FormMode::NewTask {
+            project_id: Some(project_id.to_owned()),
+        });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("expected task form");
+        };
+        form.fields[0].value = title.into();
+        form.dirty = true;
+        app.submit_form(form);
+        app.client
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|task| task.title == title)
+            .expect("task created")
+            .id
+    }
+
+    fn buffer_text(app: &mut App, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render::draw(frame, app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn new_project_form_defaults_to_the_basic_workflow() {
+        let mut app = app();
+        app.start_form(FormMode::NewProject);
+        let Some(Modal::Form(form)) = &app.modal else {
+            panic!("form");
+        };
+        let workflow = form
+            .fields
+            .iter()
+            .find(|field| field.key == "workflow")
+            .expect("workflow picker");
+        assert_eq!(workflow.value, "basic");
+        let FormFieldKind::Choice(choices) = &workflow.kind else {
+            panic!("workflow must be a choice");
+        };
+        assert!(choices.iter().any(|choice| choice.value == "basic"));
+    }
+
+    #[test]
+    fn task_details_form_edits_multiline_text_and_saves_with_ctrl_s() {
+        let mut app = app();
+        let project_id = submit_project(&mut app, "Details");
+        let task_id = submit_task(&mut app, &project_id, "Write docs");
+        app.start_form(FormMode::EditTaskDetails {
+            task_id: task_id.clone(),
+        });
+        for code in [
+            KeyCode::Char('L'),
+            KeyCode::Char('i'),
+            KeyCode::Char('n'),
+            KeyCode::Char('e'),
+        ] {
+            handle_key(&mut app, code, KeyModifiers::NONE).unwrap();
+        }
+        // Enter inserts a newline in a multi-line field instead of submitting.
+        handle_key(&mut app, KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        assert!(matches!(app.modal, Some(Modal::Form(_))));
+        handle_key(&mut app, KeyCode::Char('2'), KeyModifiers::NONE).unwrap();
+        handle_key(&mut app, KeyCode::Char(' '), KeyModifiers::NONE).unwrap();
+        handle_key(&mut app, KeyCode::Char('!'), KeyModifiers::NONE).unwrap();
+        handle_key(&mut app, KeyCode::Char('s'), KeyModifiers::CONTROL).unwrap();
+
+        let task = app
+            .client
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|task| task.id == task_id)
+            .expect("task");
+        assert_eq!(task.description, "Line\n2 !");
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn editing_details_marks_priority_and_labels_without_touching_status() {
+        let mut app = app();
+        let project_id = submit_project(&mut app, "Rich");
+        let task_id = submit_task(&mut app, &project_id, "Ship it");
+        app.start_form(FormMode::EditTaskDetails {
+            task_id: task_id.clone(),
+        });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("form");
+        };
+        form.fields[1].value = "high".into();
+        form.fields[2].value = "api, docs".into();
+        app.submit_form(form);
+        let task = app
+            .client
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|task| task.id == task_id)
+            .expect("task");
+        assert_eq!(task.priority.as_deref(), Some("high"));
+        assert_eq!(task.labels, vec!["api".to_owned(), "docs".to_owned()]);
+        assert_eq!(task.status, "inbox");
+    }
+
+    #[test]
+    fn acceptance_criteria_are_checkable_without_completing_the_task() {
+        let mut app = app();
+        let project_id = submit_project(&mut app, "Criteria");
+        let task_id = submit_task(&mut app, &project_id, "Acceptance");
+        app.start_form(FormMode::AddCriterion {
+            task_id: task_id.clone(),
+        });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("form");
+        };
+        form.fields[0].value = "Works offline".into();
+        form.dirty = true;
+        app.submit_form(form);
+        assert!(matches!(app.modal, Some(Modal::Criteria(_))));
+        handle_key(&mut app, KeyCode::Char(' '), KeyModifiers::NONE).unwrap();
+        let criteria = app.client.acceptance_criteria(&task_id).unwrap();
+        assert_eq!(criteria.len(), 1);
+        assert!(criteria[0].completed);
+        let task = app
+            .client
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|task| task.id == task_id)
+            .expect("task");
+        assert_eq!(
+            task.status, "inbox",
+            "checking every criterion must not complete the task"
+        );
+    }
+
+    #[test]
+    fn attachments_can_be_added_listed_and_removed_from_the_tui() {
+        let mut app = app();
+        let project_id = submit_project(&mut app, "Files");
+        let task_id = submit_task(&mut app, &project_id, "Attach");
+        let source = std::env::temp_dir().join(format!(
+            "orbit-attach-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&source, b"evidence").unwrap();
+
+        app.start_form(FormMode::AttachFile {
+            owner_kind: "task".into(),
+            owner_id: task_id.clone(),
+        });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("form");
+        };
+        form.fields[0].value = source.to_string_lossy().into_owned();
+        form.dirty = true;
+        app.submit_form(form);
+        assert!(matches!(app.modal, Some(Modal::Attachments(_))));
+        let attachments = app.client.list_attachments("task", &task_id).unwrap();
+        assert_eq!(attachments.len(), 1);
+
+        handle_key(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).unwrap();
+        assert!(matches!(app.modal, Some(Modal::Confirm { .. })));
+        handle_key(&mut app, KeyCode::Char('y'), KeyModifiers::NONE).unwrap();
+        app.open_attachments("task".into(), task_id.clone(), "Attach".into());
+        let Some(Modal::Attachments(state)) = &app.modal else {
+            panic!("attachments modal");
+        };
+        assert!(state.items.is_empty());
+        let _ = std::fs::remove_file(&source);
+    }
+
+    #[test]
+    fn first_run_banner_and_action_bar_are_visible() {
+        let mut app = app();
+        let text = buffer_text(&mut app, 120, 30);
+        assert!(text.contains("Getting started"), "{text}");
+        assert!(text.contains("Basic is the default workflow"), "{text}");
+        submit_project(&mut app, "Guided");
+        let text = buffer_text(&mut app, 120, 30);
+        assert!(text.contains("Actions:"), "{text}");
+        assert!(text.contains("more actions"), "{text}");
+    }
+
+    #[test]
+    fn session_state_round_trips_active_project_and_view() {
+        let state_file = std::env::temp_dir().join(format!(
+            "orbit-tui-state-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        // SAFETY: this test owns the variable for its own duration.
+        unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
+        let filename = std::env::temp_dir().join(format!(
+            "orbit-tui-session-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&filename);
+        let mut app = App::open(filename.to_string_lossy().into_owned()).unwrap();
+        let project_id = submit_project(&mut app, "Session");
+        if let Some(project) = app.project.as_mut()
+            && project.views.len() > 1
+        {
+            project.active_view = 1;
+        }
+        let expected_view = app
+            .project
+            .as_ref()
+            .and_then(|project| project.views.get(project.active_view))
+            .map(|view| view.id.clone());
+        ui_state::save(&app).unwrap();
+        let loaded = ui_state::load().expect("state file");
+        assert_eq!(loaded.project_id.as_deref(), Some(project_id.as_str()));
+        assert_eq!(loaded.view_id, expected_view);
+
+        let mut restored = App::open(filename.to_string_lossy().into_owned()).unwrap();
+        ui_state::restore(&mut restored);
+        assert_eq!(
+            restored.project.as_ref().map(|project| project.id.clone()),
+            Some(project_id)
+        );
+        unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
+        let _ = std::fs::remove_file(&state_file);
     }
 }

@@ -88,10 +88,17 @@ or launches processes.
 
 ## Capture acceptance criteria
 
-This build has no task-level acceptance-criteria field. Use one of these two
-supported approaches and say which one your project uses.
+Tasks now have first-class, ordered acceptance criteria with stable IDs and
+per-criterion completion. In the TUI select the task and press `K`; over MCP use
+`task.acceptance.add`, `task.acceptance.check` and the other explicit
+operations. They are local-authoritative in this build. Checking every criterion
+does not complete the task; completion remains explicit. See
+[task details and attachments](../guides/task-details-and-attachments.md).
 
-**Approach A — a linked Markdown note.** Create a note, then add a typed
+For longer prose, use a linked Markdown note and say which source is
+authoritative.
+
+**Option A — a linked Markdown note.** Create a note, then add a typed
 reference to the task:
 
 ```sh
@@ -109,7 +116,7 @@ orbit folder create docs
 orbit note create docs/api-acceptance.md --id note-api-acceptance --body "..."
 ```
 
-**Approach B — a project success criterion.** Set it with
+**Option B — a project success criterion.** Set it with
 `project configure --criterion key=description` and mark it satisfied only after
 review:
 

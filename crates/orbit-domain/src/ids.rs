@@ -42,6 +42,8 @@ typed_id!(ScheduleBlockId, "schedule_block");
 typed_id!(ActivityId, "activity");
 typed_id!(KnowledgeItemId, "knowledge_item");
 typed_id!(KnowledgeResourceId, "knowledge_resource");
+typed_id!(AcceptanceCriterionId, "acceptance_criterion");
+typed_id!(AttachmentId, "attachment");
 
 #[cfg(test)]
 mod tests {

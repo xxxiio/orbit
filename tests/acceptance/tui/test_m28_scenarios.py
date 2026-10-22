@@ -156,8 +156,10 @@ def open_projects(session: TuiSession) -> int:
 def open_first_project(session: TuiSession) -> int:
     mark = session.mark()
     session.send(ENTER, note="open first project")
+    # New projects are pinned to the Basic workflow by the authority, so the
+    # workspace opens with declared Overview/Tasks/Board/Timeline views.
     session.wait_for_screen_text(
-        "generated default", timeout=8.0, description="first project workspace"
+        "Basic", timeout=8.0, description="first project workspace"
     )
     return mark
 
@@ -458,13 +460,14 @@ def test_project_task_lifecycle_persists_after_restart(tui_factory):
     session.send_text("First task")
     session.send(ENTER, note="submit task")
     session.wait_until_screen(
-        lambda view: "New task" not in view,
+        lambda view: "Create a task in the selected project" not in view,
         timeout=10.0,
         description="task form to close",
     )
-    session.wait_for_screen_text("1 tasks", timeout=10.0, description="project refresh")
-    session.send(b"]", note="switch to Work view")
-    session.wait_for_screen_text("Task board", timeout=8.0, description="Work view")
+    session.wait_for_screen_text("First task", timeout=10.0, description="task in overview")
+    session.send(b"]", note="switch to Tasks view")
+    session.send(b"]", note="switch to Board view")
+    session.wait_for_screen_text("Task board", timeout=8.0, description="Board view")
     session.wait_for_screen_text("First task", timeout=8.0, description="task card")
     session.send(b"e", note="edit selected task")
     session.wait_for_screen_text("Edit task", timeout=8.0, description="edit task form")
@@ -473,14 +476,14 @@ def test_project_task_lifecycle_persists_after_restart(tui_factory):
     session.send_text("Edited task")
     session.send(ENTER, note="submit task edit")
     session.wait_until_screen(
-        lambda view: "Edit task" not in view,
+        lambda view: "Rename and set supported planning fields" not in view,
         timeout=10.0,
         description="edit form to close",
     )
     session.wait_for_screen_text("Edited task", timeout=10.0, description="renamed task")
 
     session.send(b":", note="open palette")
-    session.wait_for_screen_text("New project", timeout=8.0, description="palette")
+    session.wait_for_screen_text("Command palette", timeout=8.0, description="palette")
     session.send_text("Move to ready")
     session.wait_for_screen_text("Move to ready", timeout=8.0, description="status action")
     session.send(ENTER, note="set task ready")
@@ -508,8 +511,9 @@ def test_project_task_lifecycle_persists_after_restart(tui_factory):
         restarted.wait_for_screen_regex(
             r"ORBIT › Lifecycle Project", timeout=10.0, description="persisted project opens"
         )
-        restarted.send(b"]", note="switch to Work view after restart")
-        restarted.wait_for_screen_text("Task board", timeout=8.0, description="persisted Work view")
+        restarted.send(b"]", note="switch to Tasks view after restart")
+        restarted.send(b"]", note="switch to Board view after restart")
+        restarted.wait_for_screen_text("Task board", timeout=8.0, description="persisted Board view")
         restarted.wait_for_screen_text(
             "Edited task", timeout=10.0, description="persisted task title"
         )
@@ -558,32 +562,22 @@ def test_blueprint_bind_work_item_edit_and_transition_persist(tui_factory):
         r"ORBIT › Blueprint Project", timeout=10.0, description="project opened"
     )
 
-    session.send(b":", note="palette install blueprint")
-    session.wait_for_screen_text("New project", timeout=8.0, description="palette")
-    session.send_text("Install bundled blueprint")
-    session.wait_for_screen_text("Install bundled blueprint", timeout=8.0, description="install action")
-    session.send(ENTER, note="open install form")
-    session.wait_for_screen_text("Install bundled blueprint", timeout=8.0, description="install form")
-    session.send(ENTER, note="install default bundled blueprint")
+    # New projects are pinned to Basic by the authority; change the workflow
+    # explicitly to the bundled Development workflow.
+    session.send(b":", note="palette change workflow")
+    session.wait_for_screen_text("Command palette", timeout=8.0, description="palette")
+    session.send_text("Change workflow")
+    session.wait_for_screen_text("Change workflow", timeout=8.0, description="change workflow action")
+    session.send(ENTER, note="open workflow form")
+    session.wait_for_screen_text("Change workflow", timeout=8.0, description="workflow form")
+    session.send(b"\x1b[C", note="select the next workflow (Development)")
+    session.send(ENTER, note="apply the selected workflow")
     session.wait_until_screen(
-        lambda view: "Install bundled blueprint" not in view,
+        lambda view: "Basic is the default" not in view,
         timeout=10.0,
-        description="install form closes",
+        description="workflow form closes",
     )
-
-    session.send(b":", note="palette bind blueprint")
-    session.wait_for_screen_text("New project", timeout=8.0, description="palette")
-    session.send_text("Bind blueprint version")
-    session.wait_for_screen_text("Bind blueprint version", timeout=8.0, description="bind action")
-    session.send(ENTER, note="open bind form")
-    session.wait_for_screen_text("Bind blueprint version", timeout=8.0, description="bind form")
-    session.send(ENTER, note="bind default installed version")
-    session.wait_until_screen(
-        lambda view: "Bind blueprint version" not in view,
-        timeout=10.0,
-        description="bind form closes",
-    )
-    session.wait_for_screen_text("development@2", timeout=10.0, description="pinned blueprint header")
+    session.wait_for_screen_text("Development v2", timeout=10.0, description="pinned workflow header")
 
     session.send(b"C", note="new work item")
     session.wait_for_screen_text("New work item", timeout=8.0, description="kind form")
@@ -606,13 +600,13 @@ def test_blueprint_bind_work_item_edit_and_transition_persist(tui_factory):
     session.send(b"\x1b[C", note="select next priority")
     session.send(ENTER, note="submit work-item edit")
     session.wait_until_screen(
-        lambda view: "Edit work item" not in view,
+        lambda view: "Only declared properties are editable" not in view,
         timeout=10.0,
         description="work-item edit form closes",
     )
 
     session.send(b":", note="palette transition")
-    session.wait_for_screen_text("New project", timeout=8.0, description="palette")
+    session.wait_for_screen_text("Command palette", timeout=8.0, description="palette")
     session.send_text("Move to ready")
     session.wait_for_screen_text("Move to ready", timeout=8.0, description="transition action")
     session.send(ENTER, note="transition work item")
@@ -641,7 +635,7 @@ def test_blueprint_bind_work_item_edit_and_transition_persist(tui_factory):
         restarted.wait_for_screen_regex(
             r"ORBIT › Blueprint Project", timeout=10.0, description="persisted project opens"
         )
-        restarted.wait_for_screen_text("development@2", timeout=8.0, description="pinned blueprint")
+        restarted.wait_for_screen_text("Development v2", timeout=8.0, description="pinned workflow")
         restarted.send(b"]", note="Board after restart")
         restarted.wait_for_screen_text("Task board", timeout=8.0, description="Board after restart")
         restarted.send(b"l", note="focus persisted work-item board")
@@ -750,7 +744,7 @@ def test_project_settings_preserve_satisfied_criterion(tui_factory):
     session.send(ENTER, note="open settings project")
     session.wait_for_screen_regex(r"ORBIT › Settings Project", timeout=10.0, description="settings project opens")
     session.send(b":", note="palette project settings")
-    session.wait_for_screen_text("New project", timeout=8.0, description="palette")
+    session.wait_for_screen_text("Command palette", timeout=8.0, description="palette")
     session.send_text("Project settings")
     session.wait_for_screen_text("Project settings", timeout=8.0, description="settings action")
     session.send(ENTER, note="open project settings form")
@@ -759,10 +753,8 @@ def test_project_settings_preserve_satisfied_criterion(tui_factory):
     session.send(b"\t", note="focus objective")
     session.send_text("Updated objective")
     session.send(ENTER, note="save settings")
-    session.wait_until_screen(
-        lambda view: "Project settings" not in view,
-        timeout=10.0,
-        description="settings form closes",
+    session.wait_for_screen_text(
+        "Project updated", timeout=10.0, description="settings saved"
     )
     session.quit_via(CTRL_Q)
     session.assert_clean_exit()
@@ -829,7 +821,8 @@ def test_responsive_layout_navigation_detail_and_exit(tui_factory, cols, rows):
     assert QUIT_SHORTCUT_RE.search(session.screen_text), session.screen_text
 
     session.send(b"r", note="refresh seeded tasks")
-    session.send(b"]", note="switch view")
+    session.send(b"]", note="switch to Tasks view")
+    session.send(b"]", note="switch to Board view")
     session.wait_for_screen_text("Task board", timeout=8.0, description="board view")
     session.wait_until_screen(
         lambda view: any(

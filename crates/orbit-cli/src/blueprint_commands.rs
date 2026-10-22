@@ -21,37 +21,48 @@ pub enum BlueprintSubcommand {
     Pending,
     /// Replay the canonical global outbox (including earlier non-blueprint commands).
     Flush,
-    /// List available bundled blueprint packages.
+    /// List available bundled workflow packages (Basic is the default).
     Bundled,
-    /// List installed, immutable blueprint versions.
+    /// List installed, immutable workflow versions.
     List {
         #[arg(long)]
         id: Option<String>,
     },
-    /// Inspect a published blueprint definition.
+    /// Inspect a published workflow definition.
     Show { id: String, version: u32 },
-    /// Install a bundled blueprint without changing existing projects.
+    /// Install a bundled workflow without changing existing projects.
     Install { id: String },
-    /// Validate a blueprint file locally without publishing it or contacting the server.
+    /// Validate a workflow file locally without publishing it or contacting the server.
     Validate { file: PathBuf },
-    /// Publish a blueprint document in JSON or YAML format.
+    /// Publish a workflow document in JSON or YAML format.
     Import { file: PathBuf },
-    /// Export a published blueprint as JSON or YAML (inferred from destination extension).
+    /// Export a published workflow as JSON or YAML (inferred from destination extension).
     Export {
         id: String,
         version: u32,
         #[arg(long)]
         file: Option<PathBuf>,
     },
-    /// Explicitly pin a project to an installed blueprint version.
+    /// Explicitly pin a project to an installed workflow version. Fails if the
+    /// project is already bound; use `apply` to change an existing binding.
     Bind {
         project: String,
         id: String,
         version: u32,
     },
-    /// Show a project's pinned blueprint (if any).
+    /// Change a project's workflow, replacing the current binding.
+    Apply {
+        project: String,
+        id: String,
+        /// Omit to use the bundled descriptor or latest published version.
+        #[arg(long)]
+        version: Option<u32>,
+    },
+    /// Remove a project's workflow binding so generated default views are used.
+    Unbind { project: String },
+    /// Show a project's pinned workflow (if any).
     Binding { project: String },
-    /// Create a typed work item using the project's pinned blueprint.
+    /// Create a typed work item using the project's pinned workflow.
     CreateItem {
         project: String,
         id: String,
@@ -59,9 +70,9 @@ pub enum BlueprintSubcommand {
         #[arg(long)]
         properties: Option<PathBuf>,
     },
-    /// Inspect a blueprint-defined work item.
+    /// Inspect a workflow-defined work item.
     Item { id: String },
-    /// Transition an item using its blueprint-defined workflow.
+    /// Transition an item using its workflow-defined states.
     Transition {
         id: String,
         state: String,
@@ -76,7 +87,7 @@ pub enum BlueprintSubcommand {
         #[arg(long)]
         file: PathBuf,
     },
-    /// Instantiate a reusable blueprint template atomically.
+    /// Instantiate a reusable workflow template atomically.
     ApplyTemplate {
         project: String,
         template: String,
@@ -198,6 +209,42 @@ pub(super) fn run_blueprint(
             host.activate_project_blueprint(&project, &id, version)
                 .map_err(CliError::repository)?,
         ),
+        BlueprintSubcommand::Apply {
+            project,
+            id,
+            version,
+        } => {
+            let project_id = orbit_domain::ProjectId::new(project).map_err(CliError::domain)?;
+            let revision = host.snapshot().map_err(CliError::repository)?.0;
+            let (_, _, project_id) = host
+                .set_project_workflow_accepted(
+                    "orbit-cli",
+                    &generate_id("command"),
+                    revision,
+                    project_id,
+                    id,
+                    version,
+                )
+                .map_err(CliError::repository)?;
+            value(
+                host.active_project_blueprint(&project_id)
+                    .map_err(CliError::repository)?,
+            )
+        }
+        BlueprintSubcommand::Unbind { project } => {
+            let project_id = orbit_domain::ProjectId::new(project).map_err(CliError::domain)?;
+            let project_label = project_id.to_string();
+            let revision = host.snapshot().map_err(CliError::repository)?.0;
+            let (_, _, removed) = host
+                .remove_project_workflow_accepted(
+                    "orbit-cli",
+                    &generate_id("command"),
+                    revision,
+                    project_id,
+                )
+                .map_err(CliError::repository)?;
+            value(serde_json::json!({"project_id": project_label, "removed": removed}))
+        }
         BlueprintSubcommand::Binding { project } => value(
             host.active_project_blueprint(&project)
                 .map_err(CliError::repository)?,

@@ -738,6 +738,40 @@ impl AuthorityStore {
         {
             return Err(AuthorityError::ImmutableConflict);
         }
+        // Same transaction as the project row: the default or explicitly
+        // selected workflow manifest and binding commit with the command or roll
+        // back with it.
+        match command.workflow_id.as_deref() {
+            None | Some("basic") => {
+                crate::default_workflow::ensure_basic_workflow(&tx, &record.id)?;
+            }
+            Some(workflow_id) => {
+                let version =
+                    match crate::default_workflow::install_bundled_workflow(&tx, workflow_id) {
+                        Ok(blueprint) => blueprint.version,
+                        Err(_) => {
+                            let published: Option<i64> = tx
+                                .query_row(
+                                    "SELECT MAX(version) FROM orbit_blueprints WHERE id=?1",
+                                    [workflow_id],
+                                    |row| row.get(0),
+                                )
+                                .optional()?
+                                .flatten();
+                            match published {
+                                Some(version) => u32::try_from(version)
+                                    .map_err(|_| AuthorityError::Invalid("unknown workflow"))?,
+                                None => return Err(AuthorityError::Invalid("unknown workflow")),
+                            }
+                        }
+                    };
+                tx.execute(
+                    "INSERT OR IGNORE INTO orbit_project_blueprints\
+                     (project_id, blueprint_id, blueprint_version) VALUES(?1,?2,?3)",
+                    params![record.id, workflow_id, version],
+                )?;
+            }
+        }
         let change = SemanticChange::new(
             EntityRef::new(EntityKind::Project, record.id.clone())
                 .map_err(|_| AuthorityError::Invalid("invalid project reference"))?,

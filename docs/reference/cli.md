@@ -31,7 +31,7 @@ Global options may appear before or after the subcommand where clap permits it.
 | `orbit capabilities` | Discover deterministic planning capability contracts |
 | `orbit project` | Projects, strategy, criteria, health and evidence |
 | `orbit task` | Tasks, dependencies and planning |
-| `orbit blueprint` | Versioned project blueprints and typed work items |
+| `orbit blueprint` | Versioned project workflows (compatibility command group) and typed work items |
 | `orbit habit` | Habits and occurrences |
 | `orbit routine` | Ordered groups of habits |
 | `orbit note` | Markdown notes in the file-authoritative vault |
@@ -170,7 +170,13 @@ Planning-review commands that take `--input FILE` are read-only until
 `apply-reviewed-schedule` writes. That command also needs `--confirm` and a
 file with `approved=true`; a preview is not approval.
 
-## Blueprint commands
+## Blueprint (workflow) commands
+
+Orbit calls these manifests **workflows** in the TUI and in prose. The compiled
+command group, crate names and persisted identifiers keep the `blueprint` name
+for compatibility; the commands below are unchanged. Every new project is bound
+to the bundled **Basic** workflow (version 1) automatically. The other bundled
+workflows are Development, Research, Learning and Habits (version 2).
 
 | Command | Purpose / important flags |
 | --- | --- |
@@ -183,7 +189,9 @@ file with `approved=true`; a preview is not approval.
 | `orbit blueprint validate` | `FILE` |
 | `orbit blueprint import` | `FILE` (JSON or YAML) |
 | `orbit blueprint export` | `ID VERSION [--file DEST]` |
-| `orbit blueprint bind` | `PROJECT ID VERSION` |
+| `orbit blueprint bind` | `PROJECT ID VERSION` (fails if the project is already bound) |
+| `orbit blueprint apply` | `PROJECT ID [--version N]` (replace the current workflow; omitted version uses the bundled/latest published revision) |
+| `orbit blueprint unbind` | `PROJECT` (remove the binding; generated default views apply) |
 | `orbit blueprint binding` | `PROJECT` |
 | `orbit blueprint create-item` | `PROJECT ID KIND [--properties JSON]` |
 | `orbit blueprint item` | `ID` |
@@ -192,8 +200,14 @@ file with `approved=true`; a preview is not approval.
 | `orbit blueprint apply-template` | `PROJECT TEMPLATE NAMESPACE` |
 
 `--offline` and `--require-online` are group-level options for connected
-behavior. A blueprint cannot authorize its own capabilities; action execution
-is not exposed in this build.
+behavior. `workflow` is accepted as a user-facing alias for `blueprint`, for
+example `orbit workflow apply PROJECT basic`. A workflow cannot authorize its
+own capabilities; action execution is not exposed in this build. Every new
+project is already bound to `basic` (version 1) by the authority, so use
+`blueprint apply` to change it and `blueprint bind` only for an unbound
+project. Binding a new version does not migrate existing work items. Changing
+or unpinning a workflow is local-authoritative only in this build; connected
+mode reports that clearly instead of queueing an unsupported mutation.
 
 ## Habit, routine, note, folder and schedule commands
 
@@ -288,6 +302,8 @@ Replica subcommands include `status`, `snapshot`, `refresh`, `reconnect`,
 
 Authority subcommands include `snapshot`, `domain-command`, `domain-read`,
 `tasks`, `projects`, `project-create`, `create` and `status`.
+`project-create` accepts `--workflow ID` to pin a workflow atomically at
+creation; omitting it binds the Basic default.
 
 Pending commands are not accepted state. See
 [connected mode](../getting-started/connected-mode.md).
@@ -317,11 +333,13 @@ Runtime errors in JSON mode carry a `type` and `message`; exit classes are:
 
 ## Not available in this build
 
-- No core task priority field.
+- No CLI subcommand for task descriptions, priority, labels, acceptance
+  criteria or attachments; use the TUI or MCP tools. The domain stores these
+  values and they remain local-authoritative.
 - No standalone milestone create/list/status command.
 - No project-switch command and no global active project.
 - No dedicated backup subcommand.
-- No executable blueprint capability actions.
+- No executable workflow/blueprint capability actions.
 - No knowledge command group; notes and folders replace it.
 
 See [configuration](configuration.md), [release assets](release-assets.md) and

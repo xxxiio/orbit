@@ -44,7 +44,7 @@ def main():
         status = invoke('status')
         assert status['type'] == 'workspace_status'
         assert status['healthy'] is True
-        assert status['schema_version'] == 19, status
+        assert status['schema_version'] == 20, status
         assert (status['projects'], status['tasks']) == (0, 0)
 
         project = invoke('project', 'add', 'Local acceptance')['project']

@@ -12,38 +12,40 @@ status: current
 
 ## Current state
 
-Orbit has a functionally accepted project-centric TUI. One shell and renderer
-serve local and connected deployments through a shared backend, with structured
-project/task/work-item forms, predictable quit/back/navigation, RAII terminal
-restoration, readable responsive layouts, connected pending/accepted separation
-and real PTY acceptance. M28 is complete; M27's real public-release verification
-remains blocked on external authorization.
+Orbit is usable as a local project manager. A new project is pinned to the Basic
+workflow offline and opens Overview/Tasks/Board/Timeline without setup. Tasks
+carry Markdown descriptions, priority, labels, planning metadata and ordered
+acceptance criteria, and can own content-addressed file attachments managed by
+the workspace. The TUI works with arrows/Enter/Esc/Tab plus a discoverable action
+bar, and restores the active project/view after restart. An external agent can
+create a Basic project, create and edit tasks, add criteria, attach evidence,
+update progress and complete tasks through MCP without launching an agent job.
+M28 is complete for the verified local scope; connected attachment parity is the
+next deterministic step.
 
 ## Current milestone
 
-MILESTONE-0028 — M28 Project-Centric TUI and Blueprint UI Composition, completed.
-All eight source-level exit criteria and the functional acceptance scenarios are
-met, with documented residual limitations.
+MILESTONE-0028 — M28 Project-Centric TUI and Blueprint UI Composition, completed
+with usability recovery. EC-001..EC-009 are satisfied; connected attachments,
+live Herdr acceptance and public release verification remain documented gaps.
 
 ## Recently completed
 
-- Critical interaction recovery: centralized q/Ctrl+Q/Ctrl+C quit, unsaved-input
-  confirmation, Esc history, per-view/component/id selection, RAII terminal guard.
-- Structured forms for project/task/work-item/blueprint/metric/evidence workflows,
-  validation, persistence and restart tests.
-- Shared local/connected shell over `orbit-tui/src/backend.rs`; connected project
-  and task intents remain pending until `f` flush/server acceptance.
-- Responsive content-aware layout, readable Kanban window, table/list sizing,
-  detail scrolling, forced `Ctrl+Q` footer.
-- Agent job inspection with handoff/review state; review/resume disabled without
-  an authorized runtime.
-- Maintained stdlib PTY harness: 37 scenarios, disposable local databases and a
-  real connected server.
+- Basic v1 bundled workflow and authority-owned default binding (rich + minimal
+  creation paths), plus explicit change/unpin operations.
+- Task description, priority, labels and ordered acceptance criteria with stable
+  ids and completion timestamps (schema 20).
+- First-class local attachments: metadata, object store, limits, symlink
+  rejection, dedup, integrity verification, GC, TUI attach/list/preview/export
+  and MCP metadata/content tools.
+- TUI multiline editor, criteria/attachment/activity modals, action bar, session
+  restore, first-run guidance and workflow terminology; `orbit workflow` alias.
+- External stdio MCP acceptance scenario and 40 real-terminal/MCP acceptance
+  items; 1,421 workspace tests; clippy/fmt clean; 34 documentation tests.
 
 ## In progress
 
-- None. Connected multi-command atomicity and agent review/resume are documented
-  follow-ups, not active work.
+- None. NEXT-0009 defines connected attachment authority as the next step.
 
 ## Blocked
 

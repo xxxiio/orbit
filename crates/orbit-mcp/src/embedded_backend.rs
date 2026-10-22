@@ -27,6 +27,9 @@ impl Server {
         if name.starts_with("blueprint.") {
             return self.blueprint_dispatch(name, args);
         }
+        if let Some(result) = self.dispatch_rich(name, args) {
+            return result;
+        }
         match name {
             "planning.capabilities" => {
                 let id = args.get("id").and_then(Value::as_str);
@@ -1396,7 +1399,7 @@ impl Server {
         Ok(json!({"id":h.id().as_str(),"active":h.is_active()}))
     }
 
-    fn ensure_task_visible(&self, t: &orbit_domain::Task) -> Result<(), String> {
+    pub(super) fn ensure_task_visible(&self, t: &orbit_domain::Task) -> Result<(), String> {
         match t.scope().project_id() {
             Some(p) if self.policy.project_allowed(p) => Ok(()),
             None if self.policy.allow_unscoped_execution => Ok(()),

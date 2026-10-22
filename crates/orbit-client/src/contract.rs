@@ -40,6 +40,9 @@ impl From<ApplicationError> for ClientError {
             | ApplicationError::PlanRejected { .. }
             | ApplicationError::HabitPlanRejected { .. }
             | ApplicationError::Progress(_) => ClientErrorCode::InvalidInput,
+            ApplicationError::AttachmentTooLarge { .. } => ClientErrorCode::InvalidInput,
+            ApplicationError::AttachmentContentUnavailable { .. }
+            | ApplicationError::AttachmentStore(_) => ClientErrorCode::Unavailable,
             ApplicationError::Repository(repository) => {
                 return ClientError::from(repository.clone());
             }
@@ -160,6 +163,10 @@ impl From<&Project> for ProjectDto {
     }
 }
 
+/// Renderer-neutral task projection.
+///
+/// Rich details are exposed alongside the lifecycle fields so a client never
+/// has to reach into the domain aggregate or a second query for a task form.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskDto {
     pub id: String,
@@ -170,10 +177,17 @@ pub struct TaskDto {
     pub estimated_minutes: Option<u32>,
     pub earliest_start_at_ms: Option<i64>,
     pub deadline_at_ms: Option<i64>,
+    /// Markdown-compatible description. Never interpreted as executable input.
+    pub description: String,
+    /// Validated priority label (`low`, `medium`, `high`, `urgent`) or `None`.
+    pub priority: Option<String>,
+    /// Normalised labels in caller order, without duplicates.
+    pub labels: Vec<String>,
 }
 
 impl From<&Task> for TaskDto {
     fn from(task: &Task) -> Self {
+        let details = task.details();
         Self {
             id: task.id().to_string(),
             title: task.title().to_owned(),
@@ -183,8 +197,132 @@ impl From<&Task> for TaskDto {
             estimated_minutes: task.planning().estimated_minutes(),
             earliest_start_at_ms: task.planning().earliest_start_at_ms(),
             deadline_at_ms: task.planning().deadline_at_ms(),
+            description: details.description().to_owned(),
+            priority: details
+                .priority()
+                .map(|priority| priority.as_str().to_owned()),
+            labels: details.labels().to_vec(),
         }
     }
+}
+
+/// One ordered, independently checkable acceptance criterion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcceptanceCriterionDto {
+    pub id: String,
+    pub text: String,
+    pub completed: bool,
+    /// Completion timestamp; `None` while the criterion is open.
+    pub completed_at_ms: Option<i64>,
+    /// Zero-based position in the task's ordered criteria.
+    pub position: u32,
+}
+
+impl AcceptanceCriterionDto {
+    /// Project one criterion at its position in the ordered collection.
+    pub fn from_criterion(criterion: &orbit_domain::AcceptanceCriterion, position: usize) -> Self {
+        Self {
+            id: criterion.id().as_str().to_owned(),
+            text: criterion.text().to_owned(),
+            completed: criterion.is_completed(),
+            completed_at_ms: criterion.completed_at_ms(),
+            position: u32::try_from(position).unwrap_or(u32::MAX),
+        }
+    }
+}
+
+/// Project an ordered acceptance-criteria collection for display.
+pub fn acceptance_criteria_dtos(
+    criteria: &orbit_domain::AcceptanceCriteria,
+) -> Vec<AcceptanceCriterionDto> {
+    criteria
+        .items()
+        .iter()
+        .enumerate()
+        .map(|(position, criterion)| AcceptanceCriterionDto::from_criterion(criterion, position))
+        .collect()
+}
+
+/// One attachment association plus its immutable content metadata.
+///
+/// `checksum` identifies the content object; clients must never treat the
+/// filename as a path and must never execute attached content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachmentDto {
+    pub id: String,
+    /// Owner kind (`task`, `project`, `work_item`, `knowledge`, `agent_job`).
+    pub owner_kind: String,
+    pub owner_id: String,
+    pub filename: String,
+    pub content_type: String,
+    pub size_bytes: u64,
+    pub checksum: String,
+    pub created_at_ms: i64,
+    pub description: Option<String>,
+    /// True for `image/*` media types so clients can preview without sniffing.
+    pub is_image: bool,
+}
+
+impl From<&orbit_domain::Attachment> for AttachmentDto {
+    fn from(attachment: &orbit_domain::Attachment) -> Self {
+        Self {
+            id: attachment.id().as_str().to_owned(),
+            owner_kind: attachment.owner().kind().as_str().to_owned(),
+            owner_id: attachment.owner().id().to_owned(),
+            filename: attachment.filename().to_owned(),
+            content_type: attachment.content_type().to_owned(),
+            size_bytes: attachment.size_bytes(),
+            checksum: attachment.checksum().to_owned(),
+            created_at_ms: attachment.created_at_ms(),
+            description: attachment.description().map(ToOwned::to_owned),
+            is_image: attachment.is_image(),
+        }
+    }
+}
+
+/// One durable semantic activity entry for an entity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivityDto {
+    pub id: String,
+    /// Stable semantic category, e.g. `created`, `updated`, `attachment_added`.
+    pub kind: String,
+    /// Origin label, e.g. `human`, `system`, `agent:<name>`.
+    pub origin: String,
+    pub occurred_at_ms: i64,
+    pub summary: String,
+}
+
+impl From<&ActivityRecord> for ActivityDto {
+    fn from(activity: &ActivityRecord) -> Self {
+        Self {
+            id: activity.id().to_string(),
+            kind: activity_kind_label(activity.kind()),
+            origin: activity_origin_label(activity.origin()),
+            occurred_at_ms: activity.occurred_at_ms(),
+            summary: activity.summary().to_owned(),
+        }
+    }
+}
+
+/// One installed workflow (blueprint package) offered to a project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowDescriptorDto {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub version: u32,
+    /// True when the workflow ships with Orbit instead of a user manifest.
+    pub bundled: bool,
+    /// True for the workflow new projects use when none is chosen.
+    pub is_default: bool,
+}
+
+/// The workflow currently bound to one project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectWorkflowDto {
+    pub project_id: String,
+    pub workflow_id: String,
+    pub version: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

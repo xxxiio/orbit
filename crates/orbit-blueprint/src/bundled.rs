@@ -36,6 +36,12 @@ pub const BUNDLED_BLUEPRINTS: &[BundledBlueprintDescriptor] = &[
         name: "Research",
         description: "Hypotheses and experiments",
     },
+    BundledBlueprintDescriptor {
+        id: "basic",
+        version: 1,
+        name: "Basic",
+        description: "Ordinary task management without specialized work items",
+    },
 ];
 
 pub fn bundled_manifest(id: &str) -> Result<&'static str, BlueprintError> {
@@ -44,6 +50,7 @@ pub fn bundled_manifest(id: &str) -> Result<&'static str, BlueprintError> {
         "learning" => Ok(include_str!("../../../blueprints/learning.json")),
         "habits" => Ok(include_str!("../../../blueprints/habits.json")),
         "research" => Ok(include_str!("../../../blueprints/research.json")),
+        "basic" => Ok(include_str!("../../../blueprints/basic.json")),
         _ => Err(BlueprintError::NotFound(format!(
             "unknown bundled blueprint: {id}"
         ))),
@@ -63,7 +70,23 @@ mod tests {
             let blueprint = bundled_blueprint(descriptor.id).unwrap();
             assert_eq!(blueprint.id, descriptor.id);
             assert_eq!(blueprint.version, descriptor.version);
-            assert!(!blueprint.work_items.is_empty());
+            assert!(
+                !blueprint.views.is_empty(),
+                "{} should demonstrate views",
+                descriptor.id
+            );
+            if descriptor.id == "basic" {
+                assert!(
+                    blueprint.work_items.is_empty(),
+                    "basic extends ordinary tasks only"
+                );
+            } else {
+                assert!(
+                    !blueprint.work_items.is_empty(),
+                    "{} should declare a specialized work item",
+                    descriptor.id
+                );
+            }
             for template in &blueprint.templates {
                 let first = blueprint
                     .plan_template(&template.id, "example", "example")
@@ -77,6 +100,28 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn basic_is_offline_and_declares_ordinary_task_views() {
+        let blueprint = bundled_blueprint("basic").unwrap();
+        assert_eq!(blueprint.id, "basic");
+        assert_eq!(blueprint.version, 1);
+        assert_eq!(blueprint.name, "Basic");
+        assert!(blueprint.required_capabilities.is_empty());
+        assert!(blueprint.work_items.is_empty());
+        assert!(blueprint.templates.is_empty());
+        let view_ids: Vec<&str> = blueprint
+            .views
+            .iter()
+            .map(|view| view.id.as_str())
+            .collect();
+        assert_eq!(view_ids, ["overview", "tasks", "board", "timeline"]);
+
+        let serialized = blueprint.to_json().unwrap();
+        let reparsed = Blueprint::from_json(&serialized, &BTreeSet::new()).unwrap();
+        assert_eq!(reparsed, blueprint);
+        assert_eq!(reparsed.to_json().unwrap(), serialized);
+    }
+
     #[test]
     fn unknown_package_is_not_an_implicit_installation() {
         assert!(bundled_blueprint("unknown").is_err());

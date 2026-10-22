@@ -37,7 +37,11 @@ pub enum Command {
     /// Manage agent jobs through the Orbit CLI (local-authoritative mode).
     Agent(AgentCommand),
     Project(ProjectCommand),
-    /// Manage versioned, declarative project blueprints (local authority).
+    /// Manage versioned, declarative project workflows (local authority).
+    ///
+    /// "workflow" is accepted as a user-facing alias; "blueprint" remains the
+    /// stable command name for existing scripts and automation.
+    #[command(visible_alias = "workflow")]
     Blueprint(BlueprintCommand),
     Habit(HabitCommand),
     Routine(RoutineCommand),
@@ -1156,7 +1160,7 @@ pub enum AuthorityTaskAction {
     Tasks,
     /// List server-owned projects and their authoritative revision.
     Projects,
-    /// Create a canonical project.
+    /// Create a canonical project, optionally pinning a workflow at creation.
     ProjectCreate {
         #[arg(long)]
         command_id: String,
@@ -1166,6 +1170,9 @@ pub enum AuthorityTaskAction {
         id: String,
         #[arg(long)]
         name: String,
+        /// Workflow id to pin at creation (defaults to Basic).
+        #[arg(long)]
+        workflow: Option<String>,
     },
     /// Create a task using the expected server revision.
     Create {

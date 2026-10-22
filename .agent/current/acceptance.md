@@ -6,58 +6,78 @@ project_owned: true
 record_contract: acceptance-report
 record_schema_version: 1
 status: passed
-task_id: TASK-0004
+task_id: TASK-0005
 ---
 
 # Current Acceptance Report
 
 ## Task
 
-TASK-0004 — M28 project-centric TUI and blueprint UI composition.
+TASK-0005 — M28 usability recovery and core workflow completion.
 
 ## Gate results
 
 | Gate ID | Gate | Status | Evidence |
 |---|---|---|---|
-| G-0001 | Blueprint view schema and validation | pass | `orbit-blueprint` 20 tests; legacy, duplicate, unknown, binding and bundled-view cases |
-| G-0002 | Shared registry, resolution and forms | pass | `orbit-ui` 14 tests; schema drift, registration, sorting/limits, missing components, form/action contracts |
-| G-0003 | Application view data and shared backend | pass | `orbit-client` 305 tests; local/connected project/workspace data, blueprint work items, pending/outbox separation |
-| G-0004 | Project-centric shell/responsive rendering | pass | `orbit-tui` 125 tests; 60×18/80×24/100×30/120×35/160×45, readable Kanban window, table/list/detail sizing |
-| G-0005 | Interactions and duplicate safety | pass | Project/task/work-item forms, status/dependency/blueprint actions, palette/search cancel, duplicate submission suppression |
-| G-0006 | Authorization and architecture boundary | pass | Blueprint declarations do not grant actions; no SQL/process in TUI; all mutations through client/backend services |
-| G-0007 | Workspace regression | pass | `cargo test --workspace --offline`: 1,350 passed, 0 failed |
-| G-0008 | Format and lint | pass | `cargo fmt --all -- --check`; clippy `-D warnings` on affected crates |
-| G-0009 | Documentation contract | pass | `python3 -m unittest discover -s tests/documentation`: 29 passed |
-| G-0010 | M15 full local profile | pass | `./scripts/m15-full-automated.sh --profile full`: 42 passed, 0 failed, 0 not_run; `.agent/evidence/m28-m15-final.zip` |
-| G-0011 | Local PTY acceptance | pass | 36 local PTY items: quit/confirm/restoration, help/history, project/task lifecycle + restart, blueprint bind/work-item edit/transition + restart, responsive sizes |
-| G-0012 | Connected PTY acceptance | pass | Disposable server: pending project/task → `f` flush → server acceptance/refresh; earliest+estimate verified; Agents explicitly marks jobs not projected |
-| G-0013 | Local/connected shared shell | pass | Same `App`/renderer over `backend.rs`; legacy connected surface opt-in `ORBIT_TUI_LEGACY_CONNECTED=1`; unsupported connected surfaces fail closed |
+| G-0001 | Basic workflow and default binding | pass | `orbit-blueprint` 22 tests; `basic.json` validates offline; runtime/storage tests prove rich + minimal creation bind `basic` v1 and explicit changes replace it |
+| G-0002 | Task details and acceptance criteria | pass | domain/application/storage/client tests; details no-op silence; ordered criteria roundtrip; checking all leaves status `inbox` |
+| G-0003 | Local attachments | pass | runtime attachment store tests (dedup, size, symlink, GC), storage metadata tests, client tests, MCP tool tests; real PTY attach/read/export path |
+| G-0004 | TUI task experience | pass | `orbit-tui` 136 tests; multiline description, priority/labels, criteria modal, attachment modal, activity modal, action bar, session restore |
+| G-0005 | Navigation and discoverability | pass | PTY scenario F: arrows/Enter/Esc/Tab, `/` search, `?` help, `K`/`H`/`i`/`F`/`W`, action bar, narrow terminal 60×18 |
+| G-0006 | Workflow terminology | pass | TUI labels, help, action bar, CLI help and `orbit workflow` alias; docs updated with compatibility notes; `blueprint.*`/`orbit blueprint` preserved |
+| G-0007 | MCP parity | pass | external stdio MCP scenario: project/create → task → details → criteria → attachment → status → activity; TUI inspection; zero `agent_jobs` rows |
+| G-0008 | Focused Rust tests | pass | 1,238 passed, 0 failed (`.agent/evidence/m28-usability-focused-tests.txt`) |
+| G-0009 | Workspace regression | pass | 1,423 passed, 0 failed (`cargo test --workspace --offline`) |
+| G-0010 | Lint and format | pass | clippy `-D warnings` on 12 affected crates; `cargo fmt --all -- --check` clean |
+| G-0011 | Documentation contract | pass | `python3 -m unittest discover -s tests/documentation`: 34 passed |
+| G-0012 | Real-terminal acceptance | pass | `python3 -m pytest -q tests/acceptance/tui tests/acceptance/mcp`: 40 passed (39 PTY + 1 MCP stdio) |
 
 ## Commands run
 
 ```text
-cargo test -p orbit-blueprint -p orbit-ui -p orbit-client -p orbit-tui --offline
+cargo test --offline -p orbit-domain -p orbit-application -p orbit-storage \
+  -p orbit-runtime -p orbit-blueprint -p orbit-client -p orbit-ui -p orbit-tui \
+  -p orbit-mcp -p orbit-sync
 cargo test --workspace --offline
-cargo clippy -p orbit-tui -p orbit-client -p orbit-ui --all-targets --offline -- -D warnings
+cargo clippy --offline -p orbit-domain -p orbit-application -p orbit-storage \
+  -p orbit-runtime -p orbit-sync -p orbit-blueprint -p orbit-client -p orbit-ui \
+  -p orbit-tui -p orbit-mcp -p orbit-cli -p orbit-server --all-targets -- -D warnings
 cargo fmt --all -- --check
-cargo build -p orbit-tui -p orbit-server --offline
-python3 -m pytest -q tests/acceptance/tui
 python3 -m unittest discover -s tests/documentation
+python3 -m pytest -q tests/acceptance/tui tests/acceptance/mcp
 ./scripts/m15-full-automated.sh --profile full
 ```
 
+### M15 profile observation
+
+`./scripts/m15-full-automated.sh --profile full` ran 42 checks: 40 passed,
+including every product, CLI, server, blueprint, offline-authority and agent
+contract smoke. The two failures are release-workflow contract tests that read
+`.github/workflows/release.yml`, which is intentionally withheld from this
+repository pending an OAuth workflow-scope fix; they are not M28 product
+failures. Evidence: `.agent/evidence/m28-usability-m15.zip`.
+
 ## Checks not run
 
-- Live Herdr/agent review/resume: inspectable jobs are supported, but review/resume remains disabled without an explicitly configured runtime or connected review service.
-- Connected multi-command atomicity is best-effort; a later rejected intent can leave earlier intents queued (documented outbox/CLI recovery).
-- Real public release installation/update (M27 external gate).
+- Connected attachment upload/retrieval (scenario D): the server has no
+  attachment endpoints; all connected attachment operations fail closed with an
+  explicit Unavailable message instead of a false success.
+- Agent Development scenario C with a live Herdr runtime: no authorized runtime
+  is configured in this environment; agent job inspection and disabled review
+  reasons remain covered by tests.
+- The two M15 release-workflow contract checks cannot pass while
+  `.github/workflows/release.yml` is withheld from the repository; all other 40
+  M15 checks pass. Broad public release acceptance remains M15/M27 scope.
 
 ## Waivers
 
-- None. Remaining connected atomicity and agent review/resume are documented limitations, not silently accepted defects.
+- None. Unsupported connected attachment behaviour is explicitly refused and
+  documented rather than silently accepted.
 
 ## Residual risk
 
-- Connected blueprint/work-item, habit, metric and note editing remain on the explicitly available legacy command surface.
-- PTY evidence covers real local and connected project/task workflows, not an external agent runtime.
-- Terminal-buffer/PTY tests cover representative emulators, not every terminal.
+- Connected mode remains local-authoritative only for task details, acceptance
+  criteria and attachments.
+- Attachment object storage is local to the workspace; backups must include the
+  `attachments/objects` directory.
+- PTY evidence covers representative terminal sizes, not every emulator.

@@ -27,6 +27,8 @@ pub enum ActivityKind {
     Scheduled,
     Rescheduled,
     Completed,
+    AttachmentAdded,
+    AttachmentRemoved,
     Custom(String),
 }
 

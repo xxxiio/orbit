@@ -163,6 +163,7 @@ mod tests {
 
     fn project(id: &str, revision: i64, entity: &str) -> ProjectCommand {
         ProjectCommand {
+            workflow_id: None,
             command_id: id.into(),
             expected_revision: revision,
             project_id: entity.into(),
