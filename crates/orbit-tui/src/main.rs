@@ -4994,3 +4994,446 @@ mod m28_usability_recovery_tests {
         let _ = std::fs::remove_file(&state_file);
     }
 }
+
+#[cfg(test)]
+mod m29_layout_presentation_tests {
+    use super::*;
+    use app::FocusPane;
+    use orbit_ui::model::{KanbanColumnModel, ListItemModel, SelectionItem, TableRowModel};
+    use orbit_ui::{ComponentBody, LoadStatus, ResolvedComponent};
+    use ratatui::style::Modifier;
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
+
+    fn base_app(stem: &str) -> App {
+        let path = std::env::temp_dir().join(format!(
+            "orbit-tui-{stem}-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&path);
+        App::open(path.to_string_lossy().into_owned()).unwrap()
+    }
+
+    /// A project on the Basic workflow with three tasks and the Board view
+    /// active - the same shape the M28/M29 acceptance scenarios drive.
+    fn project_app(stem: &str) -> App {
+        let mut app = base_app(stem);
+        let project = app
+            .client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: "Layout Project With A Long Name".into(),
+            })
+            .unwrap();
+        app.client.install_bundled_blueprint("basic").unwrap();
+        app.client
+            .apply_workflow(project.id.clone(), "basic".to_owned(), None)
+            .unwrap();
+        for (title, statuses) in [
+            ("Alpha task with a long title", vec!["ready"]),
+            ("Beta task with a long title", vec!["ready"]),
+            ("Gamma task with a long title", vec!["ready", "in_progress"]),
+        ] {
+            let task = app
+                .client
+                .create_task(orbit_client::CreateTaskRequest {
+                    id: None,
+                    title: title.into(),
+                    project_id: Some(project.id.clone()),
+                    milestone_id: None,
+                })
+                .unwrap();
+            for status in statuses {
+                app.client
+                    .set_task_status(orbit_client::SetTaskStatusRequest {
+                        id: task.id.clone(),
+                        status: status.into(),
+                    })
+                    .unwrap();
+            }
+        }
+        app.refresh_workspace();
+        app.open_project(&project.id);
+        app
+    }
+
+    fn switch_to(app: &mut App, view_id: &str) {
+        let index = app
+            .project
+            .as_ref()
+            .unwrap()
+            .views
+            .iter()
+            .position(|view| view.id == view_id)
+            .unwrap_or_else(|| panic!("view {view_id} missing"));
+        app.switch_view_by_index(index);
+        app.active_component = 0;
+    }
+
+    fn buffer(app: &mut App, width: u16, height: u16) -> Buffer {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render::draw(frame, app)).unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    fn text(buffer: &Buffer) -> String {
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn render(app: &mut App, width: u16, height: u16) -> String {
+        text(&buffer(app, width, height))
+    }
+
+    fn selection_of(items: impl IntoIterator<Item = (String, String)>) -> Vec<SelectionItem> {
+        items
+            .into_iter()
+            .map(|(id, title)| SelectionItem {
+                id,
+                kind: orbit_ui::ItemKind::Task,
+                title,
+                subtitle: String::new(),
+                status: "ready".into(),
+                fields: Vec::new(),
+                allowed_statuses: Vec::new(),
+                allowed_transitions: Vec::new(),
+                revision: None,
+            })
+            .collect()
+    }
+
+    fn show_only(app: &mut App, component: ResolvedComponent) {
+        app.screen = Screen::Home;
+        app.focus = FocusPane::Workspace;
+        app.active_component = 0;
+        app.home.components = vec![component];
+    }
+
+    fn long_kanban() -> ResolvedComponent {
+        let columns: Vec<KanbanColumnModel> = (0..7)
+            .map(|column| KanbanColumnModel {
+                key: format!("state-{column}"),
+                title: format!("Column {column}"),
+                items: (0..2)
+                    .map(|row| ListItemModel {
+                        id: format!("card-{column}-{row}"),
+                        kind: orbit_ui::ItemKind::Task,
+                        title: format!(
+                            "Card {row} in column {column} with a title far too long for a column"
+                        ),
+                        subtitle: "ready".into(),
+                        status: "ready".into(),
+                        group: format!("state-{column}"),
+                        meta: Vec::new(),
+                    })
+                    .collect(),
+            })
+            .collect();
+        let selection = selection_of(
+            columns
+                .iter()
+                .flat_map(|column| column.items.iter())
+                .map(|item| (item.id.clone(), item.title.clone())),
+        );
+        ResolvedComponent {
+            id: "board".into(),
+            title: "Task board".into(),
+            component_type: "kanban".into(),
+            status: LoadStatus::Ready,
+            body: ComponentBody::Kanban { columns },
+            selection,
+        }
+    }
+
+    fn wide_table() -> ResolvedComponent {
+        let columns = ["title", "status", "priority", "due", "estimate", "owner"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let rows = (0..3)
+            .map(|index| TableRowModel {
+                id: format!("t{index}"),
+                kind: orbit_ui::ItemKind::Task,
+                status: "ready".into(),
+                cells: vec![
+                    format!(
+                        "{} long task title that should be truncated",
+                        ["Alpha", "Bravo", "Charlie"][index]
+                    ),
+                    "ready".into(),
+                    "high".into(),
+                    "2026-11-01".into(),
+                    "30m".into(),
+                    "Dana".into(),
+                ],
+            })
+            .collect::<Vec<_>>();
+        let selection = selection_of(
+            rows.iter()
+                .map(|row| (row.id.clone(), row.cells[0].clone())),
+        );
+        ResolvedComponent {
+            id: "tasks".into(),
+            title: "Tasks".into(),
+            component_type: "table".into(),
+            status: LoadStatus::Ready,
+            body: ComponentBody::Table { columns, rows },
+            selection,
+        }
+    }
+
+    #[test]
+    fn five_terminal_sizes_keep_a_closed_frame_focus_and_action_bar() {
+        let mut app = project_app("m29-sizes");
+        switch_to(&mut app, "board");
+        for (width, height) in [(60, 18), (80, 24), (100, 30), (120, 35), (160, 45)] {
+            let text = render(&mut app, width, height);
+            let label = format!("{width}x{height}");
+            assert_eq!(text.lines().count(), usize::from(height), "{label}: {text}");
+            assert!(text.contains("Task board"), "{label}: {text}");
+            assert!(text.contains("Actions:"), "{label}: {text}");
+            assert!(
+                text.contains("Ctrl+Q quit") && text.contains("q quit"),
+                "{label}: {text}"
+            );
+            // The focused component draws the heavy border set, so focus is
+            // visible without colour.
+            assert!(text.contains("┏ Task board"), "{label}: {text}");
+            assert!(text.contains("┗"), "{label}: {text}");
+            // The last body row before the action bar closes on a border cell.
+            let lines = text.lines().collect::<Vec<_>>();
+            let actions = lines
+                .iter()
+                .position(|line| line.contains("Actions:"))
+                .unwrap_or_else(|| panic!("{label}: no action bar\n{text}"));
+            let last_body = lines[actions - 1].trim_end();
+            assert!(
+                last_body.ends_with('│')
+                    || last_body.ends_with('┃')
+                    || last_body.ends_with('╯')
+                    || last_body.ends_with('╮')
+                    || last_body.ends_with('┛'),
+                "{label}: body frame is not closed: {last_body:?}\n{text}"
+            );
+            let ink = text.chars().filter(|c| !c.is_whitespace()).count();
+            assert!(
+                ink > usize::from(width) * usize::from(height) / 8,
+                "{label}: frame looks empty ({ink} non-blank cells)\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn very_small_terminals_still_render_a_closed_frame() {
+        let mut app = project_app("m29-tiny");
+        switch_to(&mut app, "board");
+        for (width, height) in [(20, 6), (24, 8), (40, 10)] {
+            let rendered = render(&mut app, width, height);
+            let label = format!("{width}x{height}");
+            assert_eq!(
+                rendered.lines().count(),
+                usize::from(height),
+                "{label}: {rendered}"
+            );
+            for line in rendered.lines() {
+                assert_eq!(
+                    line.chars().count(),
+                    usize::from(width),
+                    "{label}: row width changed: {line:?}"
+                );
+            }
+            assert!(rendered.contains("Task board"), "{label}: {rendered}");
+            assert!(rendered.contains("┏"), "{label}: {rendered}");
+            assert!(rendered.contains("Ctrl+Q quit"), "{label}: {rendered}");
+        }
+    }
+
+    #[test]
+    fn compact_layout_names_both_panes_and_keeps_a_way_back() {
+        let mut app = project_app("m29-compact");
+        switch_to(&mut app, "board");
+        app.focus = FocusPane::Workspace;
+        let workspace = render(&mut app, 60, 18);
+        assert!(workspace.contains("▸ Workspace"), "{workspace}");
+        assert!(workspace.contains("Sidebar"), "{workspace}");
+        assert!(workspace.contains("Tab switch"), "{workspace}");
+        assert!(workspace.contains("D details"), "{workspace}");
+        assert!(!workspace.contains("Details ─"), "{workspace}");
+
+        app.focus = FocusPane::Sidebar;
+        let sidebar = render(&mut app, 60, 18);
+        assert!(sidebar.contains("▸ Sidebar"), "{sidebar}");
+        assert!(sidebar.contains("┏ Orbit"), "{sidebar}");
+        assert!(sidebar.contains("Layout Project"), "{sidebar}");
+        // Focus state survives the pane switch.
+        assert_eq!(app.focus, FocusPane::Sidebar);
+    }
+
+    #[test]
+    fn kanban_windows_columns_and_follows_the_selection() {
+        let mut app = base_app("m29-kanban");
+        show_only(&mut app, long_kanban());
+        let first = render(&mut app, 80, 24);
+        assert!(first.contains("columns 1-2 of 7"), "{first}");
+        assert!(first.contains("▾ Column 0"), "{first}");
+        assert!(first.contains("j/k card"), "{first}");
+        assert!(first.contains("h/l panel"), "{first}");
+        assert!(
+            first.contains("…"),
+            "long card titles must be ellipsized: {first}"
+        );
+        assert!(
+            first
+                .lines()
+                .any(|line| line.contains("▸") && line.contains("Card 0")),
+            "{first}"
+        );
+
+        app.selected = 13;
+        let last = render(&mut app, 80, 24);
+        assert!(last.contains("columns 6-7 of 7"), "{last}");
+        assert!(last.contains("▾ Column 6"), "{last}");
+        assert!(
+            last.lines()
+                .any(|line| line.contains("▸") && line.contains("column 6")),
+            "selected card must stay in the window: {last}"
+        );
+        assert!(!last.contains("Column 0"), "{last}");
+
+        // A narrow workspace still shows readable columns, never slivers.
+        let narrow = render(&mut app, 60, 18);
+        assert!(narrow.contains("columns 6-7 of 7"), "{narrow}");
+        assert!(
+            narrow
+                .lines()
+                .any(|line| line.contains("▸") && line.contains("column 6")),
+            "{narrow}"
+        );
+    }
+
+    #[test]
+    fn table_columns_prioritise_title_then_status() {
+        let mut app = base_app("m29-table");
+        show_only(&mut app, wide_table());
+        app.selected = 1;
+
+        let narrow = render(&mut app, 60, 18);
+        assert!(narrow.contains("TITLE"), "{narrow}");
+        assert!(narrow.contains("STATUS"), "{narrow}");
+        assert!(narrow.contains("PRIORITY"), "{narrow}");
+        assert!(!narrow.contains("OWNER"), "{narrow}");
+        assert!(!narrow.contains("ESTIMATE"), "{narrow}");
+        assert!(
+            narrow.contains("Bravo long task title"),
+            "the title column keeps a readable share: {narrow}"
+        );
+        assert!(
+            narrow
+                .lines()
+                .any(|line| line.contains("▸") && line.contains("Bravo")),
+            "the selected row keeps its marker at 60 columns: {narrow}"
+        );
+
+        let wide = render(&mut app, 160, 45);
+        for header in ["TITLE", "STATUS", "PRIORITY", "DUE", "ESTIMATE", "OWNER"] {
+            assert!(wide.contains(header), "missing {header}: {wide}");
+        }
+        assert!(
+            wide.lines()
+                .any(|line| line.contains("▸") && line.contains("Bravo")),
+            "{wide}"
+        );
+    }
+
+    #[test]
+    fn detail_pane_clamps_scroll_and_shows_a_position_indicator() {
+        let mut app = project_app("m29-detail");
+        switch_to(&mut app, "tasks");
+        app.focus = FocusPane::Detail;
+        app.detail_scroll = 0;
+        let top = render(&mut app, 120, 12);
+        assert!(top.contains("Alpha task"), "{top}");
+        assert!(top.contains("PROPERTIES"), "{top}");
+        assert!(top.contains("↑↓ scroll"), "no overflow indicator: {top}");
+        assert!(top.lines().any(|line| line.contains(" 1-")), "{top}");
+
+        app.detail_scroll = 9_999;
+        let bottom = render(&mut app, 120, 12);
+        assert!(!bottom.trim().is_empty(), "{bottom}");
+        assert!(
+            bottom.contains("ACTIONS"),
+            "clamped scroll must land on the last page: {bottom}"
+        );
+        assert!(
+            !bottom.lines().any(|line| line.contains(" 1-")),
+            "scroll did not move: {bottom}"
+        );
+        assert!(bottom.contains("↑↓ scroll"), "{bottom}");
+    }
+
+    #[test]
+    fn board_selection_stays_visible_after_a_data_refresh() {
+        let mut app = project_app("m29-refresh");
+        switch_to(&mut app, "board");
+        let selected = app
+            .current_component()
+            .unwrap()
+            .selection
+            .iter()
+            .position(|item| item.title.starts_with("Gamma"))
+            .expect("gamma card");
+        app.selected = selected;
+        let before = render(&mut app, 120, 35);
+        assert!(
+            before
+                .lines()
+                .any(|line| line.contains("▸") && line.contains("Gamma")),
+            "{before}"
+        );
+
+        app.refresh_project();
+        let after = render(&mut app, 120, 35);
+        assert!(
+            after
+                .lines()
+                .any(|line| line.contains("▸") && line.contains("Gamma")),
+            "selection lost after refresh: {after}"
+        );
+        assert!(after.contains("columns 2-4 of 9"), "{after}");
+    }
+
+    #[test]
+    fn selection_and_focus_survive_without_colour() {
+        let mut app = project_app("m29-mono");
+        switch_to(&mut app, "board");
+        app.theme = theme::Theme { color: false };
+        let buffer = buffer(&mut app, 80, 24);
+        let text = text(&buffer);
+        assert!(text.contains("┏ Task board"), "{text}");
+        let mut found = false;
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                let cell = &buffer[(x, y)];
+                if cell.symbol() == "▸" {
+                    found = true;
+                    assert!(
+                        cell.modifier.contains(Modifier::REVERSED)
+                            || cell.modifier.contains(Modifier::BOLD),
+                        "selection marker carries no non-colour signal at ({x},{y})"
+                    );
+                }
+            }
+        }
+        assert!(found, "no selection marker rendered:\n{text}");
+    }
+}
