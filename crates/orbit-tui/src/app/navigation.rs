@@ -148,6 +148,9 @@ impl App {
                 );
             }
         }
+        // Seed here rather than lazily in render: the detail pane must stay a
+        // cache hit on the first frame after a refresh.
+        self.seed_detail_cache();
     }
 
     fn rebuild_global_views(&mut self) {
@@ -344,18 +347,22 @@ impl App {
 
     /// Refresh after a quick edit changed only one task's title.
     ///
-    /// The open project is re-resolved (one scoped read) and the one task row in
-    /// the already-loaded workspace snapshot is patched in place. Re-reading the
-    /// whole workspace here would repeat per-project evidence, habit history,
-    /// knowledge and agent-job reads that a title edit cannot change. Priority
-    /// changes can reorder Today/Next and deliberately keep the full refresh.
+    /// This is a *project-screen* fast path: the open project is re-resolved
+    /// with one scoped read and the one task row in the already-loaded
+    /// workspace snapshot is patched in place. Re-reading the whole workspace
+    /// here would repeat per-project evidence, habit history, knowledge and
+    /// agent-job reads that a title edit cannot change.
+    ///
+    /// On Home/Inbox/Agents/Projects there is no scoped read to fall back on:
+    /// `refresh_current` is the full workspace read, so the fast path would be
+    /// a lie. Those screens use the ordinary refresh instead.
     pub fn refresh_after_task_title(&mut self, task_id: &str, title: &str) {
         self.invalidate_detail_cache();
-        if self.screen == Screen::Project {
-            self.refresh_project();
-        } else {
+        if self.screen != Screen::Project {
             self.refresh_current();
+            return;
         }
+        self.refresh_project();
         let Some(workspace) = &mut self.workspace else {
             return;
         };
@@ -421,6 +428,7 @@ impl App {
             .cloned()
         else {
             self.notify(format!("Unknown project: {project_id}"), StatusKind::Error);
+            self.seed_detail_cache();
             return;
         };
         self.sync_cursor();
@@ -456,6 +464,7 @@ impl App {
     pub fn refresh_project(&mut self) {
         self.invalidate_detail_cache();
         let Some(state) = &self.project else {
+            self.seed_detail_cache();
             return;
         };
         let project_id = state.id.clone();
@@ -524,6 +533,7 @@ impl App {
                 }
             }
         }
+        self.seed_detail_cache();
     }
 
     pub fn current_view(&self) -> Option<&ResolvedView> {
@@ -564,16 +574,73 @@ impl App {
         }
     }
 
+    /// Build the detail model for the current subject, seeding the render
+    /// cache when the docked pane is visible.
+    ///
+    /// Explicit consumers (`open_detail`, overlays) must work even when the
+    /// pane is hidden, so an invisible pane builds directly instead of
+    /// touching the cache.
     pub fn detail_model(&self) -> Option<DetailModel> {
+        if !self.detail_visible() {
+            return self.build_detail_model();
+        }
+        self.seed_detail_cache();
+        self.detail_cache
+            .borrow()
+            .as_ref()
+            .and_then(|(_, detail)| detail.clone())
+    }
+
+    /// Cache-only read used by the renderer.
+    ///
+    /// Rendering must never issue backend reads: in connected mode
+    /// `task_detail`, `acceptance_criteria` and `list_attachments` are HTTP
+    /// calls. Input paths seed the cache (see [`Self::seed_detail_cache`]); a
+    /// miss paints a neutral placeholder for one frame instead.
+    ///
+    /// Only a visible pane is seeded, so after a selection made while the pane
+    /// was hidden (or below the wide breakpoint) the first wide frame shows
+    /// the placeholder until the next input or refresh seeds the cache.
+    pub fn cached_detail_model(&self) -> Option<DetailModel> {
         let key = self.detail_cache_key();
-        if let Some((cached_key, cached)) = self.detail_cache.borrow().as_ref()
-            && *cached_key == key
-        {
-            return cached.clone();
+        let cache = self.detail_cache.borrow();
+        match cache.as_ref() {
+            Some((cached_key, detail)) if *cached_key == key => detail.clone(),
+            _ => None,
+        }
+    }
+
+    /// True when a frame would actually paint the docked detail pane.
+    ///
+    /// Mirrors the renderer's condition: the pane is docked only while the
+    /// user keeps it shown and the terminal is at the wide breakpoint.
+    pub(crate) fn detail_visible(&self) -> bool {
+        self.show_detail && self.viewport_width >= crate::theme::WIDE_BREAKPOINT
+    }
+
+    /// Build and store the detail model for the current subject when the cache
+    /// does not already describe it.
+    ///
+    /// Every path that changes the pane's subject or its accepted data
+    /// (selection, component, cursor restore, navigation, refresh, mutations)
+    /// calls this once, outside render, so the next frame is a cache hit.
+    /// A hidden pane returns immediately: building for a pane that is not
+    /// drawn would issue connected-mode HTTP reads for nothing.
+    pub(crate) fn seed_detail_cache(&self) {
+        if !self.detail_visible() {
+            return;
+        }
+        let key = self.detail_cache_key();
+        let cached = self
+            .detail_cache
+            .borrow()
+            .as_ref()
+            .is_some_and(|(cached_key, _)| *cached_key == key);
+        if cached {
+            return;
         }
         let detail = self.build_detail_model();
-        *self.detail_cache.borrow_mut() = Some((key, detail.clone()));
-        detail
+        *self.detail_cache.borrow_mut() = Some((key, detail));
     }
 
     fn build_detail_model(&self) -> Option<DetailModel> {
@@ -631,10 +698,12 @@ impl App {
 
     pub fn switch_view(&mut self, delta: isize) {
         self.invalidate_detail_cache();
-        let Some(state) = &mut self.project else {
+        let Some(state) = &self.project else {
+            self.seed_detail_cache();
             return;
         };
         if state.views.is_empty() {
+            self.seed_detail_cache();
             return;
         }
         let next = state
@@ -648,11 +717,15 @@ impl App {
             }
             self.restore_cursor();
         }
+        // `restore_cursor` reseeds on a real switch; a clamped no-op switch
+        // still needs a warm cache for the next frame.
+        self.seed_detail_cache();
     }
 
     pub fn switch_view_by_index(&mut self, index: usize) {
         self.invalidate_detail_cache();
-        let Some(state) = &mut self.project else {
+        let Some(state) = &self.project else {
+            self.seed_detail_cache();
             return;
         };
         if index < state.views.len() {
@@ -662,6 +735,7 @@ impl App {
             }
             self.restore_cursor();
         }
+        self.seed_detail_cache();
     }
 
     pub fn activate_sidebar(&mut self) {
@@ -763,6 +837,19 @@ impl App {
         if width < crate::theme::WIDE_BREAKPOINT && self.focus == FocusPane::Detail {
             self.focus = FocusPane::Workspace;
         }
+    }
+
+    /// Toggle the docked detail pane.
+    ///
+    /// Hiding the pane while it owns the keyboard would strand focus on a pane
+    /// the user can no longer see, so focus returns to the workspace. `Tab`
+    /// then cycles only the visible panes.
+    pub fn toggle_detail(&mut self) {
+        self.show_detail = !self.show_detail;
+        if !self.show_detail && self.focus == FocusPane::Detail {
+            self.focus = FocusPane::Workspace;
+        }
+        self.seed_detail_cache();
     }
 }
 

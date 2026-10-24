@@ -42,6 +42,7 @@ pub(crate) mod diagnostics {
 
     thread_local! {
         static PENDING_COUNT_READS: Cell<u64> = const { Cell::new(0) };
+        static DETAIL_READS: Cell<u64> = const { Cell::new(0) };
     }
 
     pub(crate) fn pending_count_reads() -> u64 {
@@ -54,6 +55,21 @@ pub(crate) mod diagnostics {
 
     pub(crate) fn record_pending_count_read() {
         PENDING_COUNT_READS.with(|reads| reads.set(reads.get() + 1));
+    }
+
+    /// Detail-pane backend reads (`task_detail`, `acceptance_criteria`,
+    /// `list_attachments`). Rendering must read the cached model only, so the
+    /// render tests assert this counter never moves during a frame.
+    pub(crate) fn detail_reads() -> u64 {
+        DETAIL_READS.with(Cell::get)
+    }
+
+    pub(crate) fn reset_detail_reads() {
+        DETAIL_READS.with(|reads| reads.set(0));
+    }
+
+    pub(crate) fn record_detail_read() {
+        DETAIL_READS.with(|reads| reads.set(reads.get() + 1));
     }
 }
 
@@ -2032,6 +2048,8 @@ impl Backend {
     /// authoritative task-detail route so the details editor sees description,
     /// priority and labels instead of the thin accepted snapshot.
     pub fn task_detail(&self, id: &str) -> Result<TaskDto, ClientError> {
+        #[cfg(test)]
+        diagnostics::record_detail_read();
         match self {
             Self::Local(client) => client.task_detail(id),
             Self::Connected { connection, .. } => {
@@ -2073,6 +2091,8 @@ impl Backend {
         &self,
         task_id: &str,
     ) -> Result<Vec<AcceptanceCriterionDto>, ClientError> {
+        #[cfg(test)]
+        diagnostics::record_detail_read();
         match self {
             Self::Local(client) => client.acceptance_criteria(task_id),
             Self::Connected { connection, .. } => connection
@@ -2204,6 +2224,8 @@ impl Backend {
         owner_kind: &str,
         owner_id: &str,
     ) -> Result<Vec<AttachmentDto>, ClientError> {
+        #[cfg(test)]
+        diagnostics::record_detail_read();
         match self {
             Self::Local(client) => client.list_attachments(owner_kind, owner_id),
             Self::Connected { connection, .. } => connection

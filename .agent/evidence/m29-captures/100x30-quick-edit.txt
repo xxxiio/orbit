@@ -4,8 +4,8 @@
 │    Inbox           │┃  TITLE                                     STATUS      PRIORITY DEADLINE   ┃
 │    Projects        │┃  Trim the board cards                      ~ deferred                      ┃
 │    Agents          │┃  Cancel the old export path                ! cancelled                     ┃
-│▸ ● Atlas Console ○ │┃▸ Map the command palette                   ▶ in_progre…         2026-10-25 ┃
-│    Beacon Sync ○   │┃  Wire the task table                       ◐ ready              2026-10-26 ┃
+│▸ » Atlas Console ○ │┃▸ Map the command palette                   ▶ in_progre…         2026-10-25 ┃
+│    Beacon Sync ●   │┃  Wire the task table                       ◐ ready              2026-10-26 ┃
 │    Cipher Notes ○  │┃  Audit sync retries                        ◐ review             2026-10-27 ┃
 │ ╔ Quick edit · Map the command palette ═════════════════════════════Save Ctrl+S  ·  Cancel Esc ╗ ┃
 │ ║Title and priority; status changes stay in the S menu                                         ║ ┃

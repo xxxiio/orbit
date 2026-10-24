@@ -4,7 +4,7 @@ Projects  Enter open · c new project · : palette · q quit …
 
 ┏ 3 project(s) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃▸ ○ Atlas Console  standard · criteria 0/0 · ready        ┃
-┃  ○ Beacon Sync  standard · criteria 0/0 · ready          ┃
+┃  ● Beacon Sync  standard · criteria 0/0 · ready          ┃
 ┃  ○ Cipher Notes  standard · criteria 0/0 · ready         ┃
 ┃                                                          ┃
 ┃                                                          ┃

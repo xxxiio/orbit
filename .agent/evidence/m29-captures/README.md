@@ -31,7 +31,7 @@ when `orbit-server` cannot be built or started.
 | `100x30-home.txt` | 100x30 | home | Sidebar + workspace (details dock only from 120 columns), the Today/Next planning component and the compact action bar. | `launch at 100x30` |
 | `160x45-home.txt` | 160x45 | home | Full three-region shell: the sidebar sizes to its labels, the workspace keeps every Home component and the detail pane is docked on the right. | `launch at 160x45` |
 | `60x18-projects.txt` | 60x18 | projects | Projects list at the smallest supported size, with the seeded project and its status glyph. | `g p` |
-| `100x30-projects.txt` | 100x30 | projects | Projects list with keyboard selection, project status glyph and the contextual action bar. | `g p` |
+| `100x30-projects.txt` | 100x30 | projects | Projects list with keyboard selection, the project status glyph (`○` proposed, `●` active) and the contextual action bar. | `g p` |
 | `160x45-projects.txt` | 160x45 | projects | Projects list with the docked detail pane for the selected project. | `g p` |
 | `60x18-tasks.txt` | 60x18 | tasks | The Tasks table in compact mode: one pane, the title column plus the status and priority columns that fit. The deadline column is dropped rather than squashed; open the row's detail for every field. | `g p, Enter, ], j j` |
 | `100x30-tasks.txt` | 100x30 | tasks | The Tasks table with a selected row (`▸` rail and filled row), the status glyph and priority; details are not docked at this width, so Enter/D opens them. | `g p, Enter, ], j j` |
@@ -52,17 +52,24 @@ when `orbit-server` cannot be built or started.
 ## Reading a capture
 
 - The header row is `ORBIT › <screen>`. A project screen adds its pinned workflow
-  (`Basic v1`) and a summary; the summary is dropped when the row is too narrow, so it is
-  absent at 60 columns.
+  (`Basic v1`). A short summary (counts, or `CONNECTED … N pending`) follows when the row
+  can fit it and is dropped only when it does not; the 60x18 Home capture still shows
+  `3 projects · 1 inbox` because that text fits.
 - The focused pane has a thick border and an accent title. The selected row has a `▸` rail
   and a filled style; the status glyph (`✓ ! ◐ ▶ ○ ~`) repeats the state without colour.
+- In the sidebar `»` marks the current destination and `●` is the project status `active`;
+  the selected row still uses the `▸` rail.
 - Below 76 columns only one pane is visible; the row above it reads
   `▸ Workspace │ Sidebar │ Tab switch · D details`.
-- From 76 columns the sidebar is shown. Details dock from 120 columns only while the active
-  component still gets its readable minimum width; otherwise `D`/`Enter` opens the detail
-  overlay instead of squeezing the workspace.
+- From 76 columns the sidebar is shown. At 120 columns and wider the detail pane is always
+  docked and `D` toggles it (hiding it returns focus to the workspace); below 120 there is
+  no room to dock, so `D`/`Enter` opens the detail overlay instead.
+- Detail models are built only while the pane is visible. After widening from a narrow
+  terminal, the first frame after a selection may show a placeholder until the next
+  input or refresh.
 - The action bar is the second-to-last row; the status line is the last row.
-- Connected captures show `CONNECTED … N pending · ! inspect` in the header when it fits.
-  Every queued row is labelled `[pending]` or `[conflict]`; none of it is accepted data.
+- Connected captures show `CONNECTED … N pending · ! inspect` when the header can fit it;
+  the 60x18 connected capture is the narrow case where it is dropped. Every queued row is
+  labelled `[pending]` or `[conflict]`; none of it is accepted data.
 - Dates and command ids are generated at run time; project names, task titles, statuses and
   the capture sequence are fixed by the script.

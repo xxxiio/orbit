@@ -71,7 +71,7 @@ pub(crate) fn handle_key(
             if app.viewport_width < theme::WIDE_BREAKPOINT {
                 app.open_detail();
             } else {
-                app.show_detail = !app.show_detail;
+                app.toggle_detail();
             }
         }
         KeyCode::Tab => app.focus_next(false),

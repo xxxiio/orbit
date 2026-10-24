@@ -6,49 +6,55 @@ project_owned: true
 record_contract: change-impact
 record_schema_version: 1
 status: current
-task_id: TASK-0006
+task_id: TASK-0007
 ---
 
 # Change Impact Declaration
 
 ## Task
 
-TASK-0006 — M28 connected completion and agent lifecycle acceptance.
+TASK-0007 — M29 TUI product experience, interaction quality and maintainability.
 
 ## Impact classification
 
 | Impact | Value | Reason | Activated gate |
 |---|---|---|---|
-| public_api | yes | Additive `TaskAction::SetDetails`/`AcceptanceCriteria`, new server task/attachment routes, `orbit attachment` commands, `agent complete`/`interrupt`, and client APIs for per-command state and staging. | workspace compile, wire-compatibility and acceptance suites |
-| persisted_data | yes | Replica schema v2 adds `attachment_uploads`, `replica_metadata` and accepted-attachment metadata; server ledger remains metadata-only for imports; no change to authoritative entity tables. | replica migration, idempotency and retry tests |
-| configuration | yes | `ORBIT_REQUIRE_CONNECTED_TUI_EVIDENCE`, `ORBIT_REQUIRE_MCP_EVIDENCE`, `ORBIT_REQUIRE_AGENT_EVIDENCE` gate required evidence checks. | configuration and evidence-flag tests |
-| dependencies | yes | No new external crates; `serde`/`sha2`/`reqwest` were already present. | dependency review, locked offline build and clippy |
-| security_boundary | yes | Attachment routes authenticate before reading the body, validate owner existence, enforce limits, reject path-like filenames, verify checksums and never execute content; agent resume refuses ambiguous launch claims. | security path/scope, auth-before-body and no-execution tests |
-| concurrency | yes | Ordered outbox flush continues after permanent domain rejection, records revision fences as reviewable conflicts, and uploads attachments only after the owning intents are accepted. | concurrency/ordering outbox audit and staging-order tests |
-| performance_sensitive | yes | Import ledger payloads are checksum/metadata-only; JSON reads keep a short timeout while binary transfers use a longer one; no new per-frame queries. | performance-sensitive ledger-size, bounded-query and transfer tests |
-| user_interface | yes | Connected details/criteria/activity, attachment pending markers, header pending count, blocked-flush recovery and agent job commands. | Ratatui buffer tests and PTY/connected acceptance |
-| deployment | yes | Connected server-authoritative rich writes and attachments, with explicit single-tenant authorization semantics and offline staging. | deployment-mode connected server, MCP and scenario D acceptance tests |
+| public_api | yes | `AuthorityConnection` gains thin queue/notes/snapshot passthroughs; TUI state gains persisted navigation fields and new modal types. No domain or server wire change. | compatibility: workspace compile, client tests, contract tests |
+| persisted_data | yes | `tui-state.json` schema v1 adds component, selected id/index, scroll and detail scroll; older files load with defaults, newer versions are ignored. No authoritative entity schema change. | migration: state round-trip, corrupt/partial/newer-file tests and PTY Scenario A |
+| configuration | yes | `ORBIT_TUI_LEGACY_CONNECTED` is removed; `ORBIT_TUI_STATE` remains for isolated state; `ORBIT_TUI_FULL_FIXTURE` opts into the 20/200 fixture. | compatibility: configuration and contract guards |
+| dependencies | no | No new crates; Ratatui/Crossterm versions unchanged. | compatibility: locked offline build and clippy |
+| security_boundary | yes | The shared shell must never open an embedded authority or local store in connected mode; connected writes remain client-queued and pending; conflict replacement fails closed. | security: authority-boundary and deployment-boundary contract tests |
+| concurrency | yes | Pending flush still runs ordered through the replica; the inspector and console never treat queued work as accepted and report per-command outcomes. | concurrency: connected recovery PTY scenario, outcome tests |
+| performance_sensitive | yes | Detail-pane backend reads were removed per frame and title-only quick edits avoid a whole-workspace reload; both are measured before/after. | performance: perf probe and cache-invalidation regression tests |
+| user_interface | yes | Navigation/selection persistence, ranked actions, palette ranking, quick edit, forms, responsive layout, Kanban, theme, pending/conflict inspector and connected console. | ui: Rust buffer tests and PTY scenarios A–G |
+| deployment | yes | One shell for local and connected operation; the legacy connected presentation and its event loop are deleted. | deployment: connected server PTY scenario, contract tests, M15 profile |
 
 ## Assumptions and unknowns
 
-- The authority is a single-tenant workspace: all enrolled devices share access to
-  every project/entity, consistent with existing commands. Per-device project
-  ACLs are a tracked follow-up (TODO-0013).
-- Live Herdr/model execution requires explicit authorization and is not part of
-  automated evidence; Scenario C uses a scripted Herdr CLI.
-- The release workflow file is intentionally withheld; M15 release-contract
-  checks cannot pass until it is restored.
+- The authority remains single-tenant; no per-device ACL was added
+  (TODO-0013).
+- The connected console preserves the record command grammar for families with
+  no structured form; it is a deliberate capability-preserving surface, not a
+  second shell.
+- Interaction measurements are PTY wall-clock medians and are compared
+  baseline-to-after on the same machine; they are not microbenchmarks.
+- The release workflow file remains withheld; two M15 checks stay red for that
+  documented reason.
 
 ## Required outputs
 
-- Additive task/attachment wire and server routes with tests.
-- Replica staging and ordered flush with idempotency/integrity tests.
-- CLI/TUI surface with honest pending/conflict state.
-- Agent lifecycle commands and scripted acceptance.
-- Documentation, evidence wiring and records.
+- Durable, id-based navigation restoration with safe fallback.
+- Contextual action bar, ranked palette, quick edit and predictable forms.
+- Responsive layout, windowed Kanban, readable tables/detail and no-colour theme.
+- Shared-shell pending/conflict inspection and connected console with the legacy
+  presentation removed.
+- Cohesive module extraction, measured performance improvements and a realistic
+  fixture.
+- PTY Scenarios A–G, documentation, captures and updated records.
 
 ## Test tier
 
-- Tier 3: user-facing UI, server-authoritative writes, file content handling and
-  agent lifecycle. Workspace tests, clippy, fmt, documentation, real PTY,
-  connected-server, MCP and agent suites were run, plus the M15 product profile.
+- Tier 3: user-facing interaction, persisted navigation, connected authority
+  semantics and layout across terminal sizes. Workspace tests, clippy, fmt,
+  documentation, architecture contracts, real-PTY scenarios A–G, the full
+  fixture probe and the M15 product profile were run.

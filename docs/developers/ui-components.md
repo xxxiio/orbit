@@ -82,16 +82,22 @@ surfaces own printable keys; only `Ctrl+S` (forms) and `Ctrl+U`
 
 ### Detail-cache contract
 
-The docked detail pane is drawn every frame at the wide breakpoint. Its model is
-cached in `App`:
+The docked detail pane is drawn every frame at the wide breakpoint, so the draw
+path is cache-only:
 
+- `App::cached_detail_model()` is the only detail read the renderer may make. It
+  returns the model for the current key or `None`; it never builds a model and
+  never touches the backend. A miss paints a neutral placeholder for one frame.
+- `App::seed_detail_cache()` builds and stores the model outside render. Input
+  and lifecycle paths seed it after any subject/data change: selection and
+  component movement, cursor restore, screen/project/view navigation, refresh
+  and mutations, so the first frame after the change is a hit.
 - the key covers screen, project id, view id, project-list selection, active
   component, selected index, selected entity id and the detail revision;
-- `App::detail_model()` clones the cached model on a hit and builds it once on a
-  miss (including task detail, criteria count and attachment count reads);
 - every refresh, mutation, navigation, selection or restore change calls
   `invalidate_detail_cache()`, which bumps the revision; in-place refresh keeps
-  identity, so the revision is what forces a rebuild;
+  identity, so the revision is what makes the next seed rebuild (including task
+  detail, criteria count and attachment count reads);
 - the renderer records the last painted maximum scroll so over-scrolled values
   recover immediately, and restored detail scroll is clamped.
 

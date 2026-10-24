@@ -189,5 +189,8 @@ mod m29_layout_presentation_tests;
 #[path = "tests/m29_perf_render_tests.rs"]
 mod m29_perf_render_tests;
 #[cfg(test)]
+#[path = "tests/m29_readiness_tests.rs"]
+mod m29_readiness_tests;
+#[cfg(test)]
 #[path = "tests/tests.rs"]
 mod tests;

@@ -995,6 +995,53 @@ impl App {
             .unwrap_or("")
     }
 
+    /// Identity of one form submission for the duplicate guard.
+    ///
+    /// The mode alone is too coarse: a corrected value submitted immediately
+    /// after a validation error is a different intent. Including the field
+    /// values keeps a genuine double-submit (same mode, same values) refused
+    /// while a corrected one goes through.
+    fn submission_key(form: &FormState) -> String {
+        let values = form
+            .fields
+            .iter()
+            .map(|field| format!("{}={}", field.key, field.value))
+            .collect::<Vec<_>>()
+            .join("\u{1f}");
+        format!("form:{:?}\u{1e}{values}", form.mode)
+    }
+
+    /// True when the connected replica already holds an unaccepted
+    /// `SetDetails` command for this task.
+    ///
+    /// Quick edit and the details editor rebuild their payload from *accepted*
+    /// state. Submitting a second details change while the first is still
+    /// queued would silently revert it, so the TUI refuses instead of trying to
+    /// merge the two forms. Local mode has no outbox and therefore never
+    /// refuses. In connected mode an unreadable outbox fails closed: the edit
+    /// is refused rather than risking a silent revert.
+    pub(crate) fn detail_change_pending(&self, task_id: &str) -> bool {
+        pending_detail_change_blocks(
+            self.client.is_connected(),
+            self.client.pending_commands(),
+            task_id,
+        )
+    }
+
+    /// Refuse a second details mutation for a task while one is pending.
+    ///
+    /// Returns the user-facing warning so the caller keeps its form (with the
+    /// typed input) open and fails the submission loudly instead of silently
+    /// dropping either edit.
+    fn refuse_pending_detail_change(&mut self, task_id: &str) -> Result<(), String> {
+        const MESSAGE: &str = "A detail change for this task is already pending; close this form with Esc, then press f to flush before editing again";
+        if !self.detail_change_pending(task_id) {
+            return Ok(());
+        }
+        self.notify(MESSAGE, StatusKind::Warning);
+        Err(MESSAGE.to_owned())
+    }
+
     fn form_int(form: &FormState, key: &str, required: bool) -> Result<Option<i64>, String> {
         let value = Self::form_value(form, key).trim();
         if value.is_empty() {
@@ -1039,7 +1086,7 @@ impl App {
     }
 
     pub fn submit_form(&mut self, form: FormState) {
-        let key = format!("form:{:?}", form.mode);
+        let key = Self::submission_key(&form);
         if let Some((last, at)) = &self.last_submission
             && last == &key
             && at.elapsed() < Duration::from_millis(250)
@@ -1048,7 +1095,6 @@ impl App {
             self.modal = Some(Modal::Form(form));
             return;
         }
-        self.last_submission = Some((key, Instant::now()));
         let mut validation_error: Option<(usize, String)> = None;
         for (index, field) in form.fields.iter().enumerate() {
             if field.required && field.value.trim().is_empty() {
@@ -1203,6 +1249,10 @@ impl App {
         };
         match result {
             Ok(()) => {
+                // Arm the duplicate guard only after a successful submit. A
+                // validation error keeps the form editable, and a corrected
+                // submit moments later is a new intent, not a double submit.
+                self.last_submission = Some((Self::submission_key(&form), Instant::now()));
                 if self.status.kind != StatusKind::Pending {
                     match &form.mode {
                         // A quick edit only changes one task's title/priority. It
@@ -1264,6 +1314,7 @@ impl App {
     /// Quick edit deliberately reuses the same commands as the full forms:
     /// rename and rich-detail update. No new mutation API.
     fn submit_quick_edit_task(&mut self, form: &FormState, task_id: &str) -> Result<(), String> {
+        self.refuse_pending_detail_change(task_id)?;
         let current = self
             .task_dto(task_id)
             .ok_or_else(|| "task no longer exists".to_owned())?;
@@ -1298,6 +1349,7 @@ impl App {
     }
 
     fn submit_edit_task_details(&mut self, form: &FormState, task_id: &str) -> Result<(), String> {
+        self.refuse_pending_detail_change(task_id)?;
         let description = Self::form_value(form, "description").to_owned();
         let priority_raw = Self::form_value(form, "priority").trim().to_owned();
         let priority = (!priority_raw.is_empty()).then_some(priority_raw);
@@ -1591,6 +1643,10 @@ impl App {
     }
 
     fn submit_edit_task(&mut self, form: &FormState, task_id: &str) -> Result<(), FormError> {
+        // The full form also rewrites rich details from accepted state, so the
+        // same pending-details guard applies as for the quick/detail forms.
+        self.refuse_pending_detail_change(task_id)
+            .map_err(FormError::new)?;
         let title = Self::form_value(form, "title").trim().to_owned();
         let current = self
             .client
@@ -1957,4 +2013,35 @@ impl App {
         );
         Ok(())
     }
+}
+
+/// Decision behind [`App::detail_change_pending`].
+///
+/// Local mode has no outbox and therefore never refuses. Connected mode refuses
+/// when the outbox already targets this task *and* when the outbox cannot be
+/// read at all: silently allowing the edit on an unreadable outbox could revert
+/// an unobserved pending `SetDetails` command.
+pub(crate) fn pending_detail_change_blocks(
+    connected: bool,
+    outbox: Result<Vec<PendingCommand>, String>,
+    task_id: &str,
+) -> bool {
+    if !connected {
+        return false;
+    }
+    match outbox {
+        Ok(rows) => rows.iter().any(|row| pending_details_targets(row, task_id)),
+        Err(_) => true,
+    }
+}
+
+/// True when one outbox row is a queued `SetDetails` command for `task_id`.
+fn pending_details_targets(row: &PendingCommand, task_id: &str) -> bool {
+    row.kind == "task"
+        && serde_json::from_str::<serde_json::Value>(&row.payload)
+            .ok()
+            .is_some_and(|action| {
+                action.get("type").and_then(serde_json::Value::as_str) == Some("set_details")
+                    && action.get("task_id").and_then(serde_json::Value::as_str) == Some(task_id)
+            })
 }

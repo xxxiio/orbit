@@ -1073,6 +1073,15 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
     let block = modal_block("Keyboard help", app);
     let inner = block.inner(area);
     frame.render_widget(block, area);
+    // Keys the connected deployment refuses are marked instead of advertised
+    // as working everywhere. The local authority keeps the plain wording.
+    let action_help = |text: &str| -> String {
+        if app.client.is_connected() {
+            format!("{text}  [local authority only — unavailable in connected mode]")
+        } else {
+            text.to_owned()
+        }
+    };
     let context = match app.screen {
         Screen::Home => {
             "Home/Today: j/k or arrows select · Enter detail · [/] horizon · d impact · v focus"
@@ -1108,8 +1117,10 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
         Line::from("K                 acceptance criteria for the selected task"),
         Line::from("H                 activity history for the selected task"),
         Line::from("i / F             attach a file / list attachments"),
-        Line::from("W                 change the project workflow (Basic is the default)"),
-        Line::from("n                 new knowledge note"),
+        Line::from(action_help(
+            "W                 change the project workflow (Basic is the default)",
+        )),
+        Line::from(action_help("n                 new knowledge note")),
         Line::from("space             record selected habit occurrence"),
         Line::from("p / P             preview / apply plan"),
         Line::from("d / v             completion impact / task focus (Home)"),

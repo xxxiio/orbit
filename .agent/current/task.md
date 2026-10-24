@@ -5,108 +5,129 @@ template_digest: "179af91e65608fbfd07b28126ed729856e6524410956892a698b3f40e902e6
 project_owned: true
 record_contract: current-task
 record_schema_version: 1
-id: TASK-0006
+id: TASK-0007
 status: completed
-milestone_id: MILESTONE-0028
+milestone_id: MILESTONE-0029
 ---
 
-# Task: M28 connected completion and agent lifecycle acceptance
+# Task: M29 TUI product experience, interaction quality and maintainability
 
 ## Objective
 
-Finish the remaining M28 acceptance scope: server-authoritative task details,
-acceptance criteria, activity and attachments in connected mode; an explicit
-agent job completion/interruption lifecycle with resume guards; and required
-scenario evidence, without weakening local authority or claiming unverified
-live-agent behaviour.
+Turn the already-functional Orbit TUI into a coherent daily-use terminal
+application: restore the working context, make actions discoverable, make forms
+safe and efficient, keep boards/tables/details readable at every supported
+terminal size, serve local and connected authority from one shell, and split the
+oversized modules with measured interaction improvements.
 
 ## Current behaviour
 
-Local Basic project management, rich task details, acceptance criteria and
-attachments were complete. Connected mode could queue project/task commands but
-rejected descriptions, criteria, activity and attachments; server routes did not
-exist for attachments; agent jobs could be launched/reviewed but not explicitly
-completed locally, so `agent resume` could not be exercised end-to-end. Oracle
-reviews then found ledger-payload, retry, pending-accuracy and evidence-wiring
-defects in the new code.
+M28 completed project-centric navigation, declarative blueprint views, rich task
+editing, acceptance criteria, attachments, agent-job inspection, contextual
+actions, the command palette, search and connected command durability. Daily use
+still exposed interaction defects: `ui_state` persisted `selected_id` as `None`;
+`main.rs` (148 KB) and `render.rs` (78 KB) concentrated unrelated
+responsibilities; the legacy connected TUI remained reachable through
+`ORBIT_TUI_LEGACY_CONNECTED`; the action bar repeated keys and omitted status; the
+palette had no ranking, recents or disabled guard; forms buried priority behind
+planning fields and reported validation only as a banner; the shell used fixed
+sidebar/detail widths and boxed Kanban columns; and the 20-project interaction
+path was unmeasured.
 
 ## Desired behaviour
 
-Connected clients can read and edit rich task fields through the accepted
-command ledger, stage attachment uploads offline and synchronise them exactly
-once, retrieve attachments from another authorized client, and see pending vs
-accepted state honestly. Operators can complete or interrupt a local agent job,
-resume from a terminal predecessor with a durable handoff, and exercise the
-documented lifecycle with a scripted Herdr CLI. Evidence for connected TUI, MCP
-and agent scenarios is required, not silently skipped.
+A restart or view switch returns to the same project, view, component, selected
+entity and scroll position, with safe fallback when the entity or view is gone.
+The focused region, selected item and available high-value actions are obvious.
+Quick edits avoid advanced fields; forms preserve input and point at the failing
+field. Layout adapts from 60x18 to 160x45 with component-aware minimums and a
+horizontally windowed board. One shell handles local and connected operation;
+pending commands and conflicts are inspectable, recoverable and never presented
+as accepted; the legacy connected presentation is gone without losing the
+command capability. The event loop, keyboard dispatch, form/modal ownership and
+render layout are separated, and measured interaction latency improves.
 
 ## Scope
 
-- Additive `TaskAction::SetDetails`/`AcceptanceCriteria` and server task
-  detail/criteria/activity read routes.
-- Connected client rich reads/writes, per-command pending/conflict state,
-  read-first-then-queue, snapshot-first detail reads.
-- Server attachment import/list/download/remove/associate routes with owner
-  validation, auth-before-body, metadata-only ledger payloads and idempotent
-  retry/removal.
-- Replica attachment staging, ordered flush, checksum verification, CLI
-  `orbit attachment` commands, TUI pending markers.
-- Local `agent complete`/`agent interrupt`, resume launch-claim guard and
-  scripted Scenario C acceptance.
-- Oracle remediation (outbox 4xx handling, error propagation, docs accuracy),
-  evidence wiring and records.
+- Durable navigation state: project/view/focus/component, stable selected id,
+  index and scroll offsets, with id-to-row resolution, clamping, corrupt-file
+  tolerance and a restore-skipped marker.
+- Ranked compact action bar, grouped action menu with disabled reasons,
+  context-aware hotkeys, ranked palette with MRU destinations and disabled
+  refusal, `E` quick edit, reordered task forms, field-level validation and
+  multiline caret presentation.
+- Component-aware responsive layout, Kanban header/rule/card presentation with
+  windowing and ownership-aware selection, table column priority, clamped detail
+  scroll, colour-independent theme with complete status glyphs.
+- Shared-shell connected pending inspector (`!`), conflict review with
+  fail-closed replacement, connected console covering the legacy record grammar,
+  accepted routine/strategy/milestone/schedule reads; deletion of the legacy
+  connected TUI and event loop.
+- Module extraction into `app/`, `input/`, `render/`, `connected_ops.rs`,
+  `local_backend.rs`; detail-model cache; title-only quick-edit refresh.
+- Deterministic 20-project/200-task/1,017-activity fixture, PTY perf probe,
+  before/after measurements, PTY scenarios A–G, documentation and captures.
 
 ## Out of scope
 
-- Live Herdr/model execution (requires explicit authorization/token spend).
-- Per-device project ACLs; the authority remains intentionally single-tenant.
-- Server-side attachment garbage collection.
-- Connected MCP attachment tools.
+- Rebuilding M28 blueprint presentation, Basic workflow, attachments, criteria,
+  backend abstractions, quit handling or the PTY harness.
+- Domain models for visual concerns; direct SQL in the TUI; asynchronous runtime.
+- Flutter renderer, plugin marketplace or dynamic blueprint code execution.
+- Per-device project ACLs and server-side attachment GC (unchanged follow-ups).
 - Public release verification (M27 external gate).
 
 ## Dependencies
 
-- MILESTONE-0015 Linux executable baseline and the existing authority ledger.
-- MILESTONE-0022/0023 planning and agent read contracts.
-- MILESTONE-0025 implemented blueprint/work-item surfaces.
-- M28 local task-detail/attachment work (TASK-0005).
+- MILESTONE-0028 completed product capabilities and regression tests.
+- Local `orbit-server` binary for connected recovery acceptance.
+- Existing `orbit-client` typed connected command/record APIs.
 
 ## Risks
 
-- Connected writes could be reported as accepted while queued; mitigated with
-  per-command state and fail-closed pending.
-- Lost acknowledgements could duplicate attachments/criteria; mitigated with
-  deterministic identities and metadata-only command payloads.
-- Attachment content could bloat the ledger; mitigated by checksum metadata.
-- Unauthenticated uploads could exhaust memory; authenticated before buffering.
-- Agent completion could resume an ambiguous launch; guarded with a launch-claim
-  check.
-- Single-tenant authorization could be mistaken for per-project scoping;
-  documented explicitly and tracked as TODO-0013.
+- Module extraction could change privacy or ordering semantics; mitigated by
+  verbatim moves and the full M28/M29 test suite after each move.
+- Removing the legacy connected TUI could drop operations; mitigated by porting
+  the record grammar, accepted reads and planning analyses before deletion.
+- Cache optimisations could show stale accepted data; mitigated by invalidating
+  at navigation/refresh/mutation chokepoints with regression tests.
+- Layout changes could break narrow terminals; mitigated by PTY checks at every
+  supported size.
+- Performance claims could outrun evidence; mitigated by recorded before/after
+  fixtures and honest treatment of PTY-dominated operations.
 
 ## Acceptance criteria
 
-- [x] AC-001: Connected clients can read task detail, ordered acceptance
-  criteria and activity, and queue details/criteria changes through the accepted
-  ledger with exactly-once receipts.
-- [x] AC-002: Queued connected mutations are never reported as accepted; TUI/MCP
-  use per-command pending/conflict state and fail closed when it is unavailable.
-- [x] AC-003: Server attachment import/list/download/remove/associate are
-  device-authenticated, validate owners, enforce limits before buffering, store
-  metadata-only ledger payloads and return actionable 400/401/404/409/413.
-- [x] AC-004: Attachments can be staged offline, flushed exactly once after
-  reconnect, retrieved by another client with checksum verification, retried
-  after lost acknowledgements/truncated uploads, and removed idempotently.
-- [x] AC-005: CLI and TUI expose attachment add/list/inspect/export/remove/flush
-  with explicit pending and conflict markers; TUI header counts staged uploads.
-- [x] AC-006: `orbit agent complete|interrupt` record job-only terminal states;
-  resume requires a terminal predecessor with a durable handoff and refuses
-  ambiguous/claimed launches; scripted Scenario C passes.
-- [x] AC-007: Connected TUI, connected MCP and agent scenario checks run after
-  the build with required-evidence envs; docs match connected behaviour.
-- [x] AC-008: Oracle findings are remediated; workspace tests, clippy, fmt,
-  documentation, PTY/MCP/connected/agent suites and the M15 product profile pass
-  (apart from the withheld release-workflow contract).
+- [x] AC-001: Selected item, component, scroll and focus restore across view
+  changes and restart; deleted/reordered items fall back safely; corrupt or
+  newer-version state does not block startup.
+- [x] AC-002: Focus, selection and context are preserved across modal open/close,
+  resize, view switches and Esc; the focused region and selected row are
+  unmistakable.
+- [x] AC-003: The compact bar exposes at most three context-ranked actions with
+  keys that actually run them; the menu and palette explain disabled actions;
+  the palette ranks deterministically, remembers destinations and refuses
+  disabled execution.
+- [x] AC-004: `E` quick edit changes title and priority through existing
+  commands; full task forms lead with everyday fields, keep input on error, mark
+  and focus the failing field, and confirm unsaved changes.
+- [x] AC-005: Layout adapts at 60x18, 80x24, 100x30, 120x35 and 160x45;
+  Kanban windows columns, keeps the selected card visible and uses real
+  workflow transitions; tables prioritise title/status/priority.
+- [x] AC-006: The theme stays legible without colour; status glyphs are complete
+  and distinct; empty states and action hints are accurate.
+- [x] AC-007: One shell serves local and connected operation; `!` inspects
+  pending commands, conflicts are reviewable and replaceable fail-closed, the
+  console covers the legacy grammar and accepted record reads, and the legacy
+  entry point/presentation is deleted.
+- [x] AC-008: `main.rs` is a simple event loop, keyboard dispatch has one
+  location, forms/modals/render have explicit owners, and prior tests pass.
+- [x] AC-009: The 20/200/1,017 fixture exercises switching, editing, search,
+  scrolling and detail inspection with recorded measurements; quick edit dropped
+  from ~173 ms to ~83 ms and render performs no backend reads for the detail pane.
+- [x] AC-010: PTY Scenarios A–G pass, documentation matches behaviour, captures
+  exist, and no known blocking data-loss/authorization/everyday-use defect
+  remains.
 
 ## Validation
 
@@ -117,17 +138,10 @@ cargo clippy --offline -p orbit-domain -p orbit-application -p orbit-storage \
   -p orbit-tui -p orbit-mcp -p orbit-cli -p orbit-server --all-targets -- -D warnings
 cargo fmt --all -- --check
 python3 -m unittest discover -s tests/documentation
-python3 -m pytest -q tests/acceptance/tui tests/acceptance/mcp \
-  tests/acceptance/connected
-ORBIT_REQUIRE_AGENT_EVIDENCE=1 python3 -m pytest -q tests/acceptance/agent
-./scripts/m15-full-automated.sh --profile full
+python3 -m pytest -q tests/contracts
+python3 -m pytest -q tests/acceptance/tui
+ORBIT_TUI_FULL_FIXTURE=1 python3 -m pytest -q tests/acceptance/tui/test_m29_fixture.py
+python3 scripts/tui-fixture.py --out /tmp/opencode/m29-fixture --json
+python3 tests/acceptance/tui/perf_probe.py --workspace /tmp/opencode/m29-fixture --repeat 5
+python3 scripts/tui-captures.py
 ```
-
-### Evidence
-
-- Workspace 1,489 passed, 0 failed.
-- TUI 39, MCP 2, connected 6, agent 1.
-- Documentation 39; clippy/fmt clean.
-- M15 45 passed, 2 failed (release-workflow contract only; workflow file
-  intentionally withheld). `.agent/evidence/m28-connected-final-m15.zip`.
-- Oracle gate reports and remediation are recorded in the journal.

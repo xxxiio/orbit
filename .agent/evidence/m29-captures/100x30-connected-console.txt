@@ -1,6 +1,6 @@
  ORBIT › Home / Today   CONNECTED · 0 projects · 0 pending · ! inspect
- Getting started: press c to create your first project. Basic is the default workflow; every project
-sh╔ Connected commands · queued intents are PENDING ═════════════════════════════════════════════╗
+ Getting started: press g p, then c, to create your first project. Basic is the default workflow;
+ev╔ Connected commands · queued intents are PENDING ═════════════════════════════════════════════╗
 ╭ ║> _                                                                                           ║─╮
 │▸║Enter validates · Tab fills a suggestion                                                      ║ │
 │ ║Connected commands queue PENDING intentions; nothing is accepted until the server acknowledges║ │

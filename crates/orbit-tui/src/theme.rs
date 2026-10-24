@@ -6,6 +6,7 @@
 //!
 //! * status always carries a glyph (`✓ ! ⊘ ◐ ◔ ◑ ◉ ▶ ○ ~`);
 //! * selection always carries a `▸` rail and a filled row;
+//! * the current destination carries a `»` marker, so `●` stays a status glyph;
 //! * focus always carries a heavy border and a bright title.
 use ratatui::style::{Color, Modifier, Style};
 

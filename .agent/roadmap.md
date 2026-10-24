@@ -377,8 +377,61 @@ MILESTONE-0028
 - Authorization is single-tenant; per-device project ACLs are not implemented (TODO-0013).
 - No server-side attachment GC endpoint (TODO-0014); connected MCP keeps attachments local-only.
 - Connected multi-command edits are not atomic; inspect/recover the outbox.
-- Connected blueprint/work-item, habit, metric and note editing remains on the legacy command surface.
+- Connected blueprint/work-item binding and project-status editing remain local-only or limited to specific console commands; see M29.
 - Live Herdr Agent Development launch/review acceptance is unavailable without an authorized runtime.
+
+#### Next milestone
+
+MILESTONE-0029
+
+### MILESTONE-0029 — M29 TUI Product Experience, Interaction Quality and Maintainability
+
+- **Status:** completed
+- **Outcome:** Working context, discoverable actions, safe forms, responsive layout, one local/connected shell and maintainable modules with measured interaction improvements.
+- **Why now:** M28 completed the product surfaces; daily use exposed interaction defects and maintenance concentration that block confident internal testing.
+- **Depends on:** MILESTONE-0028
+
+#### Scope
+
+- Stable selection, component, focus and scroll restoration with safe fallback.
+- Ranked compact action bar, grouped menu, ranked palette with recents and disabled reasons.
+- Quick edit, reordered task forms, field-level validation, multiline editing and discard safety.
+- Component-aware layout 60x18–160x45, windowed Kanban, priority tables, refined no-colour-safe theme.
+- Shared-shell connected pending inspector, conflict review and command console; legacy connected TUI deleted.
+- `app/`, `input/`, `render/` extraction, realistic fixture and measured performance work.
+- PTY scenarios A–G, documentation upgrade and real terminal captures.
+
+#### Non-goals
+
+- New domain capabilities, a Flutter renderer or dynamic blueprint execution.
+- Asynchronous runtime, direct SQL in the TUI or a second persistence model.
+- Per-device ACLs, server attachment GC or public release verification.
+
+#### Exit criteria
+
+- [x] EC-001: Selected item, component, scroll and focus restore across view changes and restart, with safe fallback and corrupt-state tolerance.
+- [x] EC-002: Focus, selection and back-context are preserved across modals, resize and view switches; Esc recovers context.
+- [x] EC-003: Contextual actions are discoverable with honest keys; the palette ranks deterministically, remembers destinations and refuses disabled entries.
+- [x] EC-004: Quick edit and forms are predictable, preserve input, mark failing fields and confirm discards.
+- [x] EC-005: Layout adapts at five sizes; the board windows columns and keeps selection visible; tables and details prioritise information.
+- [x] EC-006: The theme is restrained, colour-independent and uses complete status glyphs with useful empty states.
+- [x] EC-007: One shell serves local and connected operation; pending/conflict recovery is inspectable and the legacy presentation is retired without capability loss.
+- [x] EC-008: The event loop is simple, dispatch has one owner, forms/modals/render have explicit owners and prior tests pass.
+- [x] EC-009: The 20/200/1,017 fixture is measured before and after; quick edit and render hot paths improved where the data justified it.
+- [x] EC-010: PTY scenarios A–G pass, documentation matches behaviour and captures exist.
+
+#### Evidence
+
+- EC-001: `ui_state` schema v1 + 18 state tests; PTY Scenario A (3 passed).
+- EC-002: navigation/focus tests; PTY Scenarios A/C/F.
+- EC-003: action/palette tests; captures `100x30-action-menu.txt`, `100x30-palette-query.txt`.
+- EC-004: quick-edit/form tests; PTY Scenario B.
+- EC-005: five-size layout/kanban/table tests; PTY Scenario D; board captures at 60x18/100x30/160x45.
+- EC-006: theme glyph tests; `60x18-home.txt` under `NO_COLOR`.
+- EC-007: `connected.rs` deleted; inspector/conflict/console tests; PTY Scenario E; contract guards.
+- EC-008: `main.rs` 196 lines; `input/`, `app/`, `render/` trees; workspace 1,563 tests.
+- EC-009: `scripts/tui-fixture.py`; `.agent/evidence/m29-perf-{baseline,after}.{md,json}`.
+- EC-010: TUI suite 54 passed/1 skipped; full fixture 2 passed; 21 captures; docs rewritten; M15 45/47 (withheld release workflow).
 
 #### Next milestone
 

@@ -1,21 +1,21 @@
  ORBIT › Home / Today   3 projects · 1 inbox
 ╭ Orbit ────────────╮┏ Today / Next • 12h • [/] horizon ━━━━━━━━━━━━━━┓╭ Today / Next tasks ─────────────────────────────────╮╭ Details ───────────────────────╮
-│▸ ● Home / Today   │┃Today / Next                                    ┃│  ○ Wire the task table  planned                     ││Select an item to see           │
-│    Inbox          │┃TODAY / NEXT  •  accepted revision 49  •        ┃│  ○ Reconnect the replica  planned                   ││properties, dependencies and    │
-│    Projects       │┃evaluated 1792845062644                         ┃│  ~ Map the command palette  deferred                ││actions.                        │
+│▸ » Home / Today   │┃Today / Next                                    ┃│  ○ Wire the task table  planned                     ││Select an item to see           │
+│    Inbox          │┃TODAY / NEXT  •  accepted revision 50  •        ┃│  ○ Reconnect the replica  planned                   ││properties, dependencies and    │
+│    Projects       │┃evaluated 1792848419827                         ┃│  ~ Map the command palette  deferred                ││actions.                        │
 │    Agents         │┃Capacity 720min  •  proposed 75min  •  schedule ┃│  ~ Audit sync retries  deferred                     ││                                │
 │    Atlas Console ○│┃2  ready 0  blocked 0  deferred 7  completed 2  ┃│  ~ Harden the offline queue  deferred               ││                                │
-│    Beacon Sync ○  │┃PORTFOLIO • 2 actionable accepted task(s) • 0   ┃│  ~ Review attachment staging  deferred              ││                                │
+│    Beacon Sync ●  │┃PORTFOLIO • 2 actionable accepted task(s) • 0   ┃│  ~ Review attachment staging  deferred              ││                                │
 │    Cipher Notes ○ │┃visible task(s) with cross-project leverage     ┃│  ~ Trim the board cards  deferred                   ││                                │
 │                   │┃READ-ONLY PROPOSAL • pending offline commands   ┃│  ~ Verify the conflict review  deferred             ││                                │
 │                   │┃are not included • times shown as epoch         ┃│  ~ Collect note search examples  deferred           ││                                │
 │                   │┃milliseconds                                    ┃│  ✓ Document the connected console  done             ││                                │
 │                   │┃                                                ┃│  ✓ Cancel the old export path  done                 ││                                │
 │                   │┃SCHEDULED  task-capture-02  Wire the task table ┃│                                                     ││                                │
-│                   │┃Proposed slot: 1792845062644 → 1792847762644    ┃│                                                     ││                                │
+│                   │┃Proposed slot: 1792848419827 → 1792851119827    ┃│                                                     ││                                │
 │                   │┃(milliseconds UTC)                              ┃│                                                     ││                                │
-│                   │┃    Project: project-1792845061466-3784475-0    ┃│                                                     ││                                │
-│                   │┃    Deadline: 1793017861445                     ┃│                                                     ││                                │
+│                   │┃    Project: project-1792848418704-3862692-0    ┃│                                                     ││                                │
+│                   │┃    Deadline: 1793021218686                     ┃│                                                     ││                                │
 │                   │┃Portfolio #1 • immediately unlocks 0 •          ┃│                                                     ││                                │
 │                   │┃same-project downstream 0 • cross-project       ┃│                                                     ││                                │
 │                   │┃downstream 0                                    ┃│                                                     ││                                │

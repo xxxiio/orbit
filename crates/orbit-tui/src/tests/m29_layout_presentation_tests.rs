@@ -1172,19 +1172,57 @@ fn sidebar_marks_only_the_open_project_and_sizes_for_its_label() {
     let rendered = render(&mut app, 120, 35);
     let alpha_line = rendered
         .lines()
-        .find(|line| line.contains("● Alpha"))
+        .find(|line| line.contains("» Alpha"))
         .expect("marked alpha row");
     assert!(
-        alpha_line.contains('▸') || alpha_line.contains("  ●"),
+        alpha_line.contains('▸') || alpha_line.contains("  »"),
         "{alpha_line:?}"
     );
     assert!(
-        !rendered.lines().any(|line| line.contains("● Beta")),
+        !rendered.lines().any(|line| line.contains("» Beta")),
         "only the open project is marked:\n{rendered}"
     );
     assert!(
         rendered.lines().any(|line| line.contains("  Beta")),
         "the other project should still be listed:\n{rendered}"
+    );
+
+    // `●` is the `active` project-status glyph. It stays a status signal: the
+    // current destination uses `»`, so a row can carry both meanings.
+    let beta = app
+        .client
+        .list_projects()
+        .unwrap()
+        .into_iter()
+        .find(|project| project.name == "Beta")
+        .expect("beta project");
+    app.client
+        .set_project_status(orbit_client::SetProjectStatusRequest {
+            id: beta.id,
+            status: "active".into(),
+        })
+        .unwrap();
+    app.refresh_workspace();
+    let rendered = render(&mut app, 120, 35);
+    let beta_line = rendered
+        .lines()
+        .find(|line| line.contains("Beta"))
+        .expect("beta row");
+    assert!(
+        beta_line.contains('●'),
+        "the active status glyph must still render: {beta_line:?}"
+    );
+    assert!(
+        !beta_line.contains('»'),
+        "a status glyph is not a current-destination marker: {beta_line:?}"
+    );
+    let alpha_line = rendered
+        .lines()
+        .find(|line| line.contains("» Alpha"))
+        .expect("alpha row");
+    assert!(
+        alpha_line.contains('»') && !alpha_line.contains('●'),
+        "the open project keeps the distinct current marker: {alpha_line:?}"
     );
 
     let long = "ProjectName12345";

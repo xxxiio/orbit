@@ -39,43 +39,44 @@ impl App {
     }
 
     pub(crate) fn restore_cursor(&mut self) {
-        let Some(key) = self.cursor_key() else {
-            return;
-        };
-        let count = self.component_count();
-        let state = self.cursors.get(&key).cloned().unwrap_or_default();
-        self.active_component = state.active_component.min(count.saturating_sub(1));
-        let selected = state
-            .selected
-            .get(self.active_component)
-            .copied()
-            .unwrap_or(0);
-        let selected_id = state
-            .selected_id
-            .get(self.active_component)
-            .cloned()
-            .flatten();
-        let scroll = state
-            .scroll
-            .get(self.active_component)
-            .copied()
-            .unwrap_or(0);
-        let len = self
-            .current_component()
-            .map(|component| component.selection.len())
-            .unwrap_or(0);
-        let selected = selected_id
-            .and_then(|id| {
-                self.current_component()
-                    .and_then(|component| component.selection.iter().position(|item| item.id == id))
-            })
-            .unwrap_or(selected);
-        self.selected = selected.min(len.saturating_sub(1));
-        self.scroll = if len == 0 {
-            scroll
-        } else {
-            scroll.min(self.selected)
-        };
+        if let Some(key) = self.cursor_key() {
+            let count = self.component_count();
+            let state = self.cursors.get(&key).cloned().unwrap_or_default();
+            self.active_component = state.active_component.min(count.saturating_sub(1));
+            let selected = state
+                .selected
+                .get(self.active_component)
+                .copied()
+                .unwrap_or(0);
+            let selected_id = state
+                .selected_id
+                .get(self.active_component)
+                .cloned()
+                .flatten();
+            let scroll = state
+                .scroll
+                .get(self.active_component)
+                .copied()
+                .unwrap_or(0);
+            let len = self
+                .current_component()
+                .map(|component| component.selection.len())
+                .unwrap_or(0);
+            let selected = selected_id
+                .and_then(|id| {
+                    self.current_component().and_then(|component| {
+                        component.selection.iter().position(|item| item.id == id)
+                    })
+                })
+                .unwrap_or(selected);
+            self.selected = selected.min(len.saturating_sub(1));
+            self.scroll = if len == 0 {
+                scroll
+            } else {
+                scroll.min(self.selected)
+            };
+        }
+        self.seed_detail_cache();
     }
 
     pub fn current_component(&self) -> Option<&ResolvedComponent> {
@@ -187,6 +188,7 @@ impl App {
         if count > 0 {
             self.sync_cursor();
         }
+        self.seed_detail_cache();
     }
 
     pub fn move_selection(&mut self, delta: isize) {
@@ -196,6 +198,7 @@ impl App {
                 .projects_selection
                 .saturating_add_signed(delta)
                 .min(max);
+            self.seed_detail_cache();
             return;
         }
         match self.focus {
@@ -216,6 +219,8 @@ impl App {
                     self.selected = self.selected.saturating_add_signed(delta).min(len - 1);
                     self.detail_scroll = 0;
                 }
+                // The pane's subject changed: rebuild it here, never in render.
+                self.seed_detail_cache();
             }
             FocusPane::Detail => {
                 let max = self.detail_max_scroll.get();
@@ -282,5 +287,7 @@ impl App {
         } else {
             self.scroll.min(self.selected)
         };
+        // Clamping can change the subject after a restore; keep the pane warm.
+        self.seed_detail_cache();
     }
 }

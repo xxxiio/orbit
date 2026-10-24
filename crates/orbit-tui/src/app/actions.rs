@@ -223,12 +223,17 @@ impl App {
             "change_workflow" => (!self.client.is_connected()).then_some("W"),
             "record_habit" => (selected_kind == Some(ItemKind::Habit) && payload_matches_selection)
                 .then_some("Space"),
+            // Metric forms are local-authority only; connected mode routes them
+            // through the connected console, so the bar must not advertise a
+            // key that cannot complete.
             "record_metric" => (selected_kind == Some(ItemKind::Metric)
-                && payload_matches_selection)
-                .then_some("o"),
+                && payload_matches_selection
+                && !self.client.is_connected())
+            .then_some("o"),
             "set_metric_target" => (selected_kind == Some(ItemKind::Metric)
-                && payload_matches_selection)
-                .then_some("t"),
+                && payload_matches_selection
+                && !self.client.is_connected())
+            .then_some("t"),
             "flush_pending" => self.client.is_connected().then_some("f"),
             "toggle_detail" => Some("D"),
             "preview_plan" => (self.screen == Screen::Project).then_some("p"),
@@ -622,6 +627,11 @@ impl App {
         }
         let mut seen = std::collections::BTreeSet::new();
         for action in self.available_actions() {
+            // The palette owns a single "New task" row below; it carries the
+            // contextual project, so the plain action would be a duplicate.
+            if action.id == "create_task" {
+                continue;
+            }
             if !seen.insert((action.id.clone(), action.payload.clone())) {
                 continue;
             }
@@ -1397,7 +1407,7 @@ impl App {
                 ),
             },
             "refresh" => self.refresh_current(),
-            "toggle_detail" => self.show_detail = !self.show_detail,
+            "toggle_detail" => self.toggle_detail(),
             "command_palette" => self.open_palette(),
             "search" => self.open_search(),
             "help" => self.modal = Some(Modal::Help),
@@ -1985,6 +1995,9 @@ impl App {
             format!("Today horizon set to {}h", self.planning_hours),
             StatusKind::Info,
         );
+        // Replacing the Home components can change which row is selected, so
+        // the detail pane is reseeded here instead of on the next frame.
+        self.seed_detail_cache();
     }
 
     /// Attachment owner kind for an item, when the entity supports attachments.
@@ -2032,6 +2045,7 @@ impl App {
                 .set_acceptance_criterion_completed(task_id, criterion_id, completed);
         if result.is_ok() {
             self.invalidate_detail_cache();
+            self.seed_detail_cache();
         }
         result
     }
@@ -2048,6 +2062,7 @@ impl App {
             .move_acceptance_criterion(task_id, criterion_id, position);
         if result.is_ok() {
             self.invalidate_detail_cache();
+            self.seed_detail_cache();
         }
         result
     }
@@ -2064,6 +2079,7 @@ impl App {
             .remove_acceptance_criterion(task_id, criterion_id);
         if result.is_ok() {
             self.invalidate_detail_cache();
+            self.seed_detail_cache();
         }
         result
     }
@@ -2077,6 +2093,7 @@ impl App {
         let result = self.client.remove_attachment(attachment_id);
         if result.is_ok() {
             self.invalidate_detail_cache();
+            self.seed_detail_cache();
             self.refresh_pending_count();
         }
         result
@@ -2098,6 +2115,7 @@ impl App {
             .import_attachment(owner_kind, owner_id, path, description);
         if result.is_ok() {
             self.invalidate_detail_cache();
+            self.seed_detail_cache();
             self.refresh_pending_count();
         }
         result

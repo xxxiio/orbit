@@ -1014,7 +1014,10 @@ pub(super) fn draw_detail(frame: &mut Frame, area: Rect, app: &App) {
     }
     let width = usize::from(inner.width);
     let mut lines: Vec<Line> = Vec::new();
-    if let Some(detail) = app.detail_model() {
+    // Cache-only: rendering must never issue a backend read. The cache is
+    // seeded by every input path that changes the subject; a miss shows the
+    // neutral placeholder below for one frame.
+    if let Some(detail) = app.cached_detail_model() {
         for row in wrap_text(&detail.title, width) {
             lines.push(Line::from(Span::styled(row, app.theme.title())));
         }

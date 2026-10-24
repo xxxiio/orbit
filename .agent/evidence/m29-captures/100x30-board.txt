@@ -4,8 +4,8 @@
 │    Inbox           │┃  Planned 0               ▾ Ready 1                  In progress 2          ┃
 │    Projects        │┃───────────────────────── ━━━━━━━━━━━━━━━━━━━━━━━━ ──────────────────────── ┃
 │    Agents          │┃— empty                   ▸ ◐ Wire the task table    ▶ Map the command pal… ┃
-│▸ ● Atlas Console ○ │┃                                                     ▶ Harden the offline … ┃
-│    Beacon Sync ○   │┃                                                                            ┃
+│▸ » Atlas Console ○ │┃                                                     ▶ Harden the offline … ┃
+│    Beacon Sync ●   │┃                                                                            ┃
 │    Cipher Notes ○  │┃                                                                            ┃
 │                    │┃                                                                            ┃
 │                    │┃                                                                            ┃

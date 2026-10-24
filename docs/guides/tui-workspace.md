@@ -7,11 +7,12 @@ project model or write SQLite directly.
 The shell has three regions:
 
 - **Sidebar** — Home/Today, Inbox, Projects, Agents and then the project list.
-  Each project row carries a status glyph; `●` marks the destination you are on.
+  `»` marks the current destination, `▸` marks the selected row, and a project
+  row's status glyph is separate (`●` means the project status is `active`).
 - **Workspace** — the selected global aggregation or the active project view.
 - **Details** — the selected item's properties, dependencies and available
-  actions. The pane is docked when there is room and opens as an overlay when
-  there is not.
+  actions. The pane docks at the wide breakpoint and opens as an overlay below
+  it.
 
 The header is a breadcrumb (`ORBIT › Atlas Console`). A project screen adds the
 pinned workflow (`Basic v1` or `generated default`) and `[stale]` when its last
@@ -26,16 +27,23 @@ The layout adapts to the terminal width and to what the active component needs:
 
 | Width | Layout |
 |---|---|
-| 120 columns or wider | Sidebar, workspace and a docked details pane |
+| 120 columns or wider | Sidebar, workspace and the docked details pane; `D` toggles it |
 | 76–119 columns | Sidebar and workspace; details open with `D` or `Enter` |
 | narrower than 76 columns | One pane at a time; `Tab` switches sidebar and workspace |
 
-The details pane docks only while the workspace still gets the active
-component's readable minimum (a board needs about 56 columns, a table about 34).
-If docking would squeeze the workspace, Orbit keeps the pane closed and `D`
-opens the detail overlay instead. From 160 columns the sidebar may widen to fit
-longer project names; below that it stays a fixed width so the workspace does
-not jump when you switch projects.
+At 120 columns or wider the details pane is always docked: the widest sidebar
+and detail panes still leave the workspace more than the largest component
+minimum (a board needs 56 columns), so docking is never refused there. `D`
+toggles the pane; hiding it returns focus to the workspace, and `Tab` then
+cycles only the visible panes. Below 120 columns there is no room to dock, so
+`D` or `Enter` opens the detail overlay instead. From 160 columns the sidebar
+may widen to fit longer project names; below that it stays a fixed width so the
+workspace does not jump when you switch projects.
+
+Selection changes build the detail model only while the pane is visible. After
+widening from a narrow terminal, or after showing the pane again, the first
+frame after a selection may show a placeholder until the next input or refresh
+rebuilds it; rendering itself never reads detail data.
 
 Below 76 columns a pane bar replaces the hidden region:
 
@@ -137,15 +145,18 @@ or opens the selected item's detail.
 | `:` then *Connected commands…* | Connected command console |
 | `D` | Toggle the docked details pane, or open details as an overlay |
 | `?` | Keyboard help |
-| `q` | Quit from a normal screen |
+| `q` | Quit a normal screen or a non-text overlay |
 | `Ctrl+Q` / `Ctrl+C` | Quit from anywhere, including text inputs and overlays |
 
 Text entry wins over shortcuts: while a form field, palette query, search box,
 conflict replacement or console prompt is focused, printable keys including `q`
-are entered as text. Use `Ctrl+Q` or `Ctrl+C` to quit from that state. `q` quits
-normal screens and the pending/conflict overlays; inside the other overlays use
-`Ctrl+Q`/`Ctrl+C`. If typed text is unsaved, Orbit asks for confirmation before
-discarding it.
+are entered as text. Use `Ctrl+Q` or `Ctrl+C` to quit from that state.
+
+Outside those text surfaces, `q` quits normal screens, the action menu, the
+detail, message and generic confirmation overlays, and the pending/conflict
+inspector; Help closes. It is ignored in the criteria and attachments lists.
+`Ctrl+Q`/`Ctrl+C` always work, including at the quit confirmation. If typed text
+is unsaved, Orbit asks for confirmation before discarding it.
 
 ## Projects and workflow views
 
@@ -225,7 +236,10 @@ the quick edit.
 
 - **Quick edit (`E`)** — title and priority only. It exists so a typo fix does
   not walk through planning and scope fields. Status changes are deliberately
-  not part of quick edit; press `S` for those.
+  not part of quick edit; press `S` for those. On a project screen a title-only
+  save re-resolves that project and patches the one row instead of re-reading
+  the whole workspace; from Home or Inbox the same save takes the ordinary
+  refresh, and a priority change always does.
 - **Full edit (`e`)** — title, priority, description (multi-line Markdown),
   labels, project, milestone, estimate, earliest start and deadline. Everyday
   fields come first and scope/planning follow, so `Tab` through the common case
@@ -277,8 +291,10 @@ structured form rather than a single encoded string.
   printed under it, focus moves there, and every entered value is kept. Required
   fields, integer fields, invalid choices and an earliest start after the
   deadline are all refused before anything is submitted.
-- An identical submission within 250 ms is ignored, so a double `Enter` cannot
-  create two records.
+- The guard against double submission is armed only after a successful submit
+  and compares the form's values: the same values submitted again within 250 ms
+  are refused, while a corrected re-submit after a validation error goes
+  through.
 
 ## Action bar, action menu and command palette
 
@@ -310,7 +326,8 @@ The palette includes:
 - the current project's views;
 - contextual item actions, including acceptance criteria, activity history,
   attachments and workflow changes;
-- new project and new task, plus new knowledge note on the local authority;
+- new project and exactly one **New task** entry (it carries the contextual
+  project), plus new knowledge note on the local authority;
 - **Install bundled blueprint** and **Bind blueprint version**;
 - refresh, help and quit.
 
@@ -483,6 +500,11 @@ the workspace. Invalid input queues nothing and reports why.
 A `resolve <id> <replacement>` in the console opens the same conflict review as
 `!`; it does not bypass the review.
 
+The legacy connected section browser is gone. Its `/` record filter and `e`
+command-prefill shortcuts were not ported into the shared shell; `/` is search,
+`!` is the pending inspector and `:` opens the console. Reads and writes are
+preserved; only the discoverability of those two shortcuts differs.
+
 ### Rich task details in connected mode
 
 Rich task details work in connected mode:
@@ -495,6 +517,15 @@ Rich task details work in connected mode:
 - `H` reads the task's authoritative semantic activity from the server.
 - `i` stages a file, `F` opens the attachment modal, `o`/`E` export accepted
   content and `x` removes an association.
+
+While a queued `SetDetails` change for a task is still pending, another rich
+detail save (full `e` or `E` quick edit) for that task is refused with
+`A detail change for this task is already pending; close this form with Esc, then press f to flush before editing again`.
+This stops one queued edit from silently reverting the other. Flush (`f`) and
+refresh, then edit again.
+
+`W` (workflow) and `n` (knowledge note) are local-authority only; the connected
+help overlay marks them `[local authority only — unavailable in connected mode]`.
 
 Project status/mode edits, workflow binding, work-item configuration, habit and
 metric recording, and note authoring are not key-driven connected surfaces:
@@ -549,8 +580,9 @@ A pending command is never shown as accepted state.
 
 ## Quit and terminal recovery
 
-`q` quits normal screens; `Ctrl+Q` and `Ctrl+C` quit from anywhere, including
-text fields and overlays. If typed input is unsaved, Orbit asks before quitting:
+`q` quits normal screens and the non-text overlays described under
+[Keyboard](#keyboard); `Ctrl+Q` and `Ctrl+C` quit from anywhere, including text
+fields and confirmations. If typed input is unsaved, Orbit asks before quitting:
 `Enter`/`y` quits and discards it, `Esc`/`n` returns to the editor with the text
 intact, and a second `Ctrl+Q`/`Ctrl+C` forces the quit.
 
@@ -580,14 +612,14 @@ terminal is left in an unusual state by an external kill, run `stty sane` and
 - **The workspace is stale** — press `r`. If refresh still fails, the last
   accepted view remains labelled `stale`; check `orbit doctor` and the database
   path.
-- **The connected header has no `CONNECTED` label** — on a very narrow terminal
-  the header drops its summary so the breadcrumb stays readable. The session is
-  still connected; `!` shows queued work.
+- **The connected header has no `CONNECTED` label** — the header drops its
+  summary only when the row cannot fit it, so the breadcrumb stays readable. The
+  session is still connected; `!` shows queued work.
 - **Narrow terminal** — use `Tab` to switch panes, `h`/`l` for components and
   `D`/`Enter` for the detail overlay. Details are never silently truncated; they
   open over the workspace instead.
-- **`q` does nothing inside an overlay** — use `Ctrl+Q` or `Ctrl+C`; `q` only
-  quits normal screens and the pending/conflict overlays.
+- **`q` does nothing in a text prompt, criteria or attachments list** — use
+  `Ctrl+Q` or `Ctrl+C`; elsewhere `q` leaves the screen or overlay.
 - **Nothing renders** — confirm the terminal is interactive and at least a few
   rows tall. `orbit-tui` is not a non-interactive command; use CLI commands for
   scripts and pipes.

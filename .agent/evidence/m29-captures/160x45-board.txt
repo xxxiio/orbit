@@ -4,12 +4,12 @@
 │    Inbox          │┃  Inbox 0              Planned 0          ▾ Ready 1              In progress 2       Waiting 0         ┃│◐ ready                         │
 │    Projects       │┃──────────────────── ──────────────────── ━━━━━━━━━━━━━━━━━━━━ ─────────────────── ─────────────────── ┃│                                │
 │    Agents         │┃— empty              — empty              ▸ ◐ Wire the task t…   ▶ Map the comman… — empty             ┃│PROPERTIES                      │
-│▸ ● Atlas Console ○│┃                                                                 ▶ Harden the off…                     ┃│status       ready              │
-│    Beacon Sync ○  │┃                                                                                                       ┃│readiness    ready              │
+│▸ » Atlas Console ○│┃                                                                 ▶ Harden the off…                     ┃│status       ready              │
+│    Beacon Sync ●  │┃                                                                                                       ┃│readiness    ready              │
 │    Cipher Notes ○ │┃                                                                                                       ┃│actionable   true               │
 │                   │┃                                                                                                       ┃│estimate     45m                │
 │                   │┃                                                                                                       ┃│due          2026-10-26         │
-│                   │┃                                                                                                       ┃│deadline     2026-10-26 12:31Z  │
+│                   │┃                                                                                                       ┃│deadline     2026-10-26 13:26Z  │
 │                   │┃                                                                                                       ┃│Attachments  none               │
 │                   │┃                                                                                                       ┃│                                │
 │                   │┃                                                                                                       ┃│ACTIONS 17 · press a            │

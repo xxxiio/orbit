@@ -13,8 +13,7 @@ application services.
   kanban, task list, timeline, habit tracker, metric history, knowledge
   references, agent jobs, milestone progress).
 - **Details** — selected-item properties, dependencies and contextual actions;
-  docked from 120 columns when the workspace keeps its readable minimum,
-  otherwise an overlay.
+  docked at 120 columns and wider (`D` toggles it), otherwise an overlay.
 - **Overlays** — prompts, confirmations, action menus, command palette, search,
   help, details, criteria, attachments, activity, pending/conflict review and the
   connected console.
@@ -89,9 +88,10 @@ scroll and detail scroll. It never stores form text, queries, overlay state,
 domain records or credentials. The palette's recent-destination list is
 in-memory by design.
 
-Rendering is a function of `App`: it may read the cached connection flag
-(`Backend::is_connected`) and the cached pending count, but it must not ask the
-backend for data, build detail models or read the outbox on a frame.
+Rendering is a cache-only function of `App`: it may read the cached connection
+flag (`Backend::is_connected`), the cached pending count and the cached detail
+model. It does not ask the backend for data, build detail models or read the
+outbox on a frame — including the first frame after a selection change.
 
 ### The mutation-status chokepoint
 
@@ -157,30 +157,45 @@ Rules for changes:
 
 ### Detail-cache contract
 
-The docked detail pane is repainted every frame at the wide breakpoint, so its
-model is cached rather than rebuilt:
+The docked detail pane is painted every frame at the wide breakpoint while it
+is shown, so the frame path is **cache-only**:
 
+- `App::cached_detail_model()` returns the cached model for the current key, or
+  `None`. It never builds a model and never reads the backend. A miss paints a
+  neutral placeholder for that frame (the project name, or a “select an item”
+  hint), then the next frame is a hit.
+- The model is built once, outside render, by `App::seed_detail_cache()`. Every
+  input or lifecycle path that changes the pane's subject or accepted data calls
+  it: selection and component movement, cursor restore, screen/project/view
+  navigation, refresh and mutations. Seeding is what makes the first frame after
+  a change a cache hit. An invisible pane (hidden with `D`, or below 120
+  columns) returns without a build, so a selection made there performs no detail
+  reads; an explicit request (`open_detail`/overlays) still builds the model.
+  After widening or re-showing the pane, a selection made while it was hidden
+  shows the placeholder until the next input or refresh seeds the cache.
 - The key is (`screen`, project id, view id, projects selection, active
   component, selected index, selected entity id, detail revision).
-- `App::detail_model()` returns the cached clone on a key hit; a miss builds the
-  model once, including backend reads for task description/priority/labels,
-  acceptance-criteria counts and attachment counts.
 - Any refresh, mutation, screen/project/view/component change, selection change
   or restore calls `invalidate_detail_cache()`, which bumps the revision. The
-  revision exists because an in-place refresh can keep the same identity.
-- A single title-only quick edit patches one row and re-resolves the project
-  instead of re-reading the whole workspace; priority changes deliberately keep
-  the full refresh because ranking can change.
+  revision exists because an in-place refresh can keep the same identity, and
+  the next seed rebuilds the model (including task detail, criteria count and
+  attachment count reads).
+- A title-only quick edit is a **project-screen** fast path: it re-resolves that
+  project and patches the one row instead of re-reading the whole workspace.
+  From Home/Inbox the same save takes the ordinary refresh, and a priority
+  change always does because ranking can change.
 - Stale detail scroll is clamped (`MAX_DETAIL_SCROLL`) so a restored offset can
   never scroll the pane out of view. The renderer records the last painted
   maximum in `detail_max_scroll` so scrolling up from an over-scrolled value
   moves immediately.
+- Tests count cache builds: repeated wide renders must add none, selection and
+  refresh must rebuild exactly once, and render must never seed.
 
 ## Responsive behaviour
 
 | Width | Layout |
 |---|---|
-| ≥ 120 columns | Sidebar, workspace and docked details (if the active component keeps its minimum width) |
+| ≥ 120 columns | Sidebar, workspace and the docked detail pane (`D` toggles it) |
 | 76–119 columns | Sidebar and workspace; details are an overlay |
 | < 76 columns | One primary pane selected by focus, with a pane bar |
 

@@ -323,7 +323,8 @@ CAPTURES: list[Capture] = [
             "Projects list at the smallest supported size, with the seeded project and its status glyph.",
             "g p"),
     Capture("projects", 100, 30, False, _projects,
-            "Projects list with keyboard selection, project status glyph and the contextual action bar.",
+            "Projects list with keyboard selection, the project status glyph (`○` proposed, `●` active) "
+            "and the contextual action bar.",
             "g p"),
     Capture("projects", 160, 45, False, _projects,
             "Projects list with the docked detail pane for the selected project.",
@@ -431,6 +432,10 @@ def seed_workspace(base: Path, *, verbose: bool = False) -> Workspace:
         project_ids[name] = _project_id(workspace, name)
         if verbose:
             print(f"  seeded project {name}", file=sys.stderr)
+
+    # One active project so the sidebar shows the status glyph `●` alongside the
+    # current-destination marker `»` instead of conflating the two.
+    _cli(workspace, "project", "status", project_ids["Beacon Sync"], "active")
 
     for index, (project, title, transitions, estimate) in enumerate(TASKS):
         payload = _cli(
@@ -723,18 +728,22 @@ def _readme(written: list[Path], skipped: list[tuple[Capture, str]]) -> str:
             "## Reading a capture",
             "",
             "- The header row is `ORBIT › <screen>`. A project screen adds its pinned workflow",
-            "  (`Basic v1`) and a summary; the summary is dropped when the row is too narrow, so it is",
-            "  absent at 60 columns.",
+            "  (`Basic v1`). A short summary (counts, or `CONNECTED … N pending`) follows when the row",
+            "  can fit it and is dropped only when it does not; the 60x18 Home capture still shows",
+            "  `3 projects · 1 inbox` because that text fits.",
             "- The focused pane has a thick border and an accent title. The selected row has a `▸` rail",
             "  and a filled style; the status glyph (`✓ ! ◐ ▶ ○ ~`) repeats the state without colour.",
+            "- In the sidebar `»` marks the current destination and `●` is the project status `active`;",
+            "  the selected row still uses the `▸` rail.",
             "- Below 76 columns only one pane is visible; the row above it reads",
             "  `▸ Workspace │ Sidebar │ Tab switch · D details`.",
             "- From 76 columns the sidebar is shown. Details dock from 120 columns only while the active",
-            "  component still gets its readable minimum width; otherwise `D`/`Enter` opens the detail",
-            "  overlay instead of squeezing the workspace.",
+            "  component still gets its readable minimum width; if docking would squeeze it the pane is",
+            "  refused (unless the detail pane owns focus), and `D`/`Enter` opens the detail overlay.",
             "- The action bar is the second-to-last row; the status line is the last row.",
-            "- Connected captures show `CONNECTED … N pending · ! inspect` in the header when it fits.",
-            "  Every queued row is labelled `[pending]` or `[conflict]`; none of it is accepted data.",
+            "- Connected captures show `CONNECTED … N pending · ! inspect` when the header can fit it;",
+            "  the 60x18 connected capture is the narrow case where it is dropped. Every queued row is",
+            "  labelled `[pending]` or `[conflict]`; none of it is accepted data.",
             "- Dates and command ids are generated at run time; project names, task titles, statuses and",
             "  the capture sequence are fixed by the script.",
             "",

@@ -125,7 +125,7 @@ real binary driven by the PTY probe.
 
 `crates/orbit-tui/src/tests/m29_perf_render_tests.rs`:
 
-- `detail_pane_model_is_cached_across_frames_and_invalidated_on_change` counts
+- `detail_pane_model_is_seeded_by_input_paths_and_never_rebuilt_in_render` counts
   model builds and asserts that repeated 160x45 renders do not rebuild, while
   selection, view, screen and refresh all invalidate the cache.
 - `quick_edit_refreshes_the_project_without_rereading_the_workspace` counts
@@ -135,9 +135,11 @@ real binary driven by the PTY probe.
 
 ## Honest notes
 
-- `cold_start_first_frame` is flat within noise: same-era 100.0/102.2 →
-  101.2/101.7 ms. The recorded baseline's 95.9 ms at 160x45 is not reproducible
-  on the current machine state even with the unmodified binary, so it is not a
+- `cold_start_first_frame` is flat within noise: same-era medians 100.0 →
+  101.2 ms at 100x30 and 102.2 → 101.7 ms at 160x45. The recorded 227edbe
+  baseline shows 96.3/95.9 ms, but the recorded **after** medians are
+  101.2/101.7 ms (not 96 ms). The 96 ms figures did not reproduce on the current
+  machine state even with the unmodified binary, so they are not evidence of a
   regression from this change. Cold start is dominated by `App::open` →
   `refresh_workspace` (~90 ms in this fixture) plus process launch, which this
   change deliberately does not touch.

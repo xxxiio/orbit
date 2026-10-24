@@ -94,7 +94,7 @@ pub(super) fn draw_body(frame: &mut Frame, area: Rect, app: &App) {
         let banner = Line::from(vec![
             Span::styled(" Getting started: ", app.theme.title()),
             Span::styled(
-                "press c to create your first project. Basic is the default workflow; every project ships with Overview, Tasks, Board and Timeline views.",
+                "press g p, then c, to create your first project. Basic is the default workflow; every project ships with Overview, Tasks, Board and Timeline views.",
                 app.theme.text(),
             ),
         ]);
@@ -177,7 +177,9 @@ fn draw_sidebar(frame: &mut Frame, area: Rect, app: &App) {
     if inner.width < 6 || inner.height == 0 {
         return;
     }
-    // `▸ ` marker + `● ` current-screen dot.
+    // `▸ ` selection rail + `» ` current-destination marker. `●` is reserved
+    // for the project's `active` status glyph, so "you are here" never depends
+    // on colour and never reuses a status symbol.
     let label_width = usize::from(inner.width).saturating_sub(4);
     let mut items = Vec::new();
     for index in 0..app.sidebar_len() {
@@ -197,7 +199,7 @@ fn draw_sidebar(frame: &mut Frame, area: Rect, app: &App) {
                 }),
         };
         let marker = if selected { "▸ " } else { "  " };
-        let current_marker = if current { "● " } else { "  " };
+        let current_marker = if current { "» " } else { "  " };
         let style = if selected {
             app.theme.selected()
         } else {

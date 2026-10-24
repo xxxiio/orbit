@@ -2,10 +2,10 @@
 ╭ Orbit ────────────╮Projects  Enter open · c new project · : palette · q quit · ? help                                       ╭ Details ───────────────────────╮
 │    Home / Today   │                                                                                                         │Atlas Console                   │
 │    Inbox          │┏ 3 project(s) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓│○ standard                      │
-│▸ ● Projects       │┃▸ ○ Atlas Console  standard · criteria 0/0 · ready                                                     ┃│                                │
-│    Agents         │┃  ○ Beacon Sync  standard · criteria 0/0 · ready                                                       ┃│PROPERTIES                      │
+│▸ » Projects       │┃▸ ○ Atlas Console  standard · criteria 0/0 · ready                                                     ┃│                                │
+│    Agents         │┃  ● Beacon Sync  standard · criteria 0/0 · ready                                                       ┃│PROPERTIES                      │
 │    Atlas Console ○│┃  ○ Cipher Notes  standard · criteria 0/0 · ready                                                      ┃│status    proposed              │
-│    Beacon Sync ○  │┃                                                                                                       ┃│mode      standard              │
+│    Beacon Sync ●  │┃                                                                                                       ┃│mode      standard              │
 │    Cipher Notes ○ │┃                                                                                                       ┃│criteria  0/0                   │
 │                   │┃                                                                                                       ┃│evidence  task:14%              │
 │                   │┃                                                                                                       ┃│          evidence:unknown      │

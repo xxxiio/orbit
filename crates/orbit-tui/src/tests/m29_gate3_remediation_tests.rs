@@ -95,6 +95,9 @@ fn toggling_a_criterion_updates_the_docked_and_opened_detail_counts() {
     app.client
         .add_acceptance_criterion(task_id.clone(), "Syncs".into())
         .unwrap();
+    // The direct backend writes above bypass the App cache invalidation that
+    // every user-facing mutation performs.
+    app.invalidate_detail_cache();
     assert_eq!(
         detail_field(&app, "Acceptance").as_deref(),
         Some("0/2 checked")
@@ -165,6 +168,8 @@ fn removing_an_attachment_updates_the_detail_count() {
             None,
         )
         .unwrap();
+    // Direct backend write: invalidate as a user-facing import would.
+    app.invalidate_detail_cache();
     assert_eq!(
         detail_field(&app, "Attachments").as_deref(),
         Some("1 file(s)")

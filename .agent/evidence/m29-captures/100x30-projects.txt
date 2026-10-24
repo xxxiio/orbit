@@ -2,10 +2,10 @@
 ╭ Orbit ─────────────╮Projects  Enter open · c new project · : palette · q quit · ? help
 │    Home / Today    │
 │    Inbox           │┏ 3 project(s) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-│▸ ● Projects        │┃▸ ○ Atlas Console  standard · criteria 0/0 · ready                          ┃
-│    Agents          │┃  ○ Beacon Sync  standard · criteria 0/0 · ready                            ┃
+│▸ » Projects        │┃▸ ○ Atlas Console  standard · criteria 0/0 · ready                          ┃
+│    Agents          │┃  ● Beacon Sync  standard · criteria 0/0 · ready                            ┃
 │    Atlas Console ○ │┃  ○ Cipher Notes  standard · criteria 0/0 · ready                           ┃
-│    Beacon Sync ○   │┃                                                                            ┃
+│    Beacon Sync ●   │┃                                                                            ┃
 │    Cipher Notes ○  │┃                                                                            ┃
 │                    │┃                                                                            ┃
 │                    │┃                                                                            ┃

@@ -93,8 +93,11 @@ pub struct App {
     /// from an over-scrolled value moves immediately instead of looking dead.
     pub detail_max_scroll: std::cell::Cell<usize>,
     /// Detail pane model cache. The docked pane is redrawn every frame at the
-    /// wide breakpoint; its backend reads only rerun when the subject or the
-    /// accepted data changes.
+    /// wide breakpoint while it is shown, so it must be a pure cache read:
+    /// every input path that changes the subject or its accepted data seeds
+    /// this cache outside render (`seed_detail_cache`), and a miss paints a
+    /// neutral placeholder. Input paths skip seeding while the pane is hidden
+    /// or below the breakpoint, because nothing would paint it.
     pub(crate) detail_cache: std::cell::RefCell<Option<(DetailCacheKey, Option<DetailModel>)>>,
     pub(crate) detail_revision: std::cell::Cell<u64>,
     #[cfg(test)]

@@ -680,9 +680,9 @@ pub(crate) fn handle_modal(
                         // Manual inspector refresh re-reads accepted state as
                         // well as the outbox, exactly like acknowledging with
                         // `f`: the server may have advanced since the last
-                        // accepted read.
+                        // accepted read. `refresh_after_mutation` invalidates
+                        // and reseeds the detail cache.
                         app.refresh_after_mutation();
-                        app.invalidate_detail_cache();
                         app.refresh_pending_count();
                         match app.client.pending_commands() {
                             Ok(fresh) => {

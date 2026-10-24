@@ -77,8 +77,8 @@ impl App {
         if before > 0 && kind != StatusKind::Error {
             // A flush can accept commands and staged uploads; the accepted view
             // and the detail counts are stale until they are re-read.
+            // `refresh_after_mutation` invalidates and reseeds the detail cache.
             self.refresh_after_mutation();
-            self.invalidate_detail_cache();
         }
         self.refresh_pending_count();
         let outcomes: Vec<(String, MutationOutcome)> = ids
