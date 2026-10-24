@@ -130,6 +130,9 @@ domain models for visual concerns, or weakening authority boundaries.
 
 ## Remaining work
 
+Internal-testing readiness: yes for local-first use, and for single-tenant
+connected testing within the documented limits.
+
 - Per-device project ACLs (TODO-0013) and server-side attachment GC (TODO-0014)
   remain documented product follow-ups, unchanged by M29.
 - Live Herdr/model acceptance remains opt-in and unverified in automation.

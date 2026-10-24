@@ -89,7 +89,10 @@ and public release verification.
 - Format/lint: fmt clean; clippy `-D warnings` on 12 crates.
 - Acceptance: `./scripts/m15-full-automated.sh --profile full` 45 passed, 2
   failed (release-workflow contract and its 12 packaging tests only; workflow
-  file withheld); `orbit-m15-evidence-20261024T123449Z.zip`.
+  file withheld); `orbit-m15-evidence-20261024T135239Z.zip`.
+- Internal-testing readiness: yes for local-first use; connected mode is ready for
+  single-tenant testing with the documented limits (per-device ACLs, server
+  attachment GC, live Herdr acceptance).
 - Interactive evidence: 21 captures in `.agent/evidence/m29-captures/`;
   before/after measurements in `.agent/evidence/m29-perf-*.{md,json}`; PTY
   evidence under `target/tui-evidence/`.

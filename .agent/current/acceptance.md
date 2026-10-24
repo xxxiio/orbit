@@ -57,7 +57,7 @@ intentionally withheld pending the OAuth workflow-scope fix recorded in M27/M28.
 `python-contract-tests` reports 103 passed and 12 errors, all in
 `tests/packaging/test_release_workflow.py`. Every product, server, blueprint,
 offline-authority, connected and agent check passed. Evidence:
-`orbit-m15-evidence-20261024T123449Z.zip`.
+`orbit-m15-evidence-20261024T135239Z.zip`.
 
 ## Checks not run
 
