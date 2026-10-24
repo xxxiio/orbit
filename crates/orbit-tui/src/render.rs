@@ -204,11 +204,21 @@ fn sidebar_width(width: u16, app: &App) -> u16 {
         return SIDEBAR_WIDTH;
     }
     let widest = (0..app.sidebar_len())
-        .map(|index| app.sidebar_label(index).chars().count())
+        .map(|index| {
+            match index
+                .checked_sub(4)
+                .and_then(|position| app.projects.get(position))
+            {
+                // The renderer draws the project name plus a status glyph.
+                Some(project) => project.name.chars().count(),
+                None => app.sidebar_label(index).chars().count(),
+            }
+        })
         .max()
         .unwrap_or(0);
-    // 2 columns of marker/dot, 2 columns of block padding.
-    let wanted = u16::try_from(widest).unwrap_or(u16::MAX).saturating_add(4);
+    // 2 columns marker + 2 columns current-screen dot + 2 columns project
+    // status glyph + 2 border columns.
+    let wanted = u16::try_from(widest).unwrap_or(u16::MAX).saturating_add(8);
     wanted.clamp(SIDEBAR_MIN, SIDEBAR_MAX)
 }
 
@@ -285,7 +295,14 @@ fn draw_sidebar(frame: &mut Frame, area: Rect, app: &App) {
             Screen::Inbox => index == 1,
             Screen::Projects => index == 2,
             Screen::Agents => index == 3,
-            Screen::Project => index >= 4,
+            Screen::Project => index
+                .checked_sub(4)
+                .and_then(|position| app.projects.get(position))
+                .is_some_and(|row| {
+                    app.project
+                        .as_ref()
+                        .is_some_and(|project| project.id == row.id)
+                }),
         };
         let marker = if selected { "▸ " } else { "  " };
         let current_marker = if current { "● " } else { "  " };
@@ -472,7 +489,10 @@ fn draw_components(frame: &mut Frame, area: Rect, app: &App, view: &ResolvedView
     let rects = component_rects(area, &view.layout, &view.components);
     for (index, (component, rect)) in view.components.iter().zip(rects).enumerate() {
         let active = app.focus == FocusPane::Workspace && index == app.active_component;
-        draw_component(frame, rect, app, component, active);
+        // Selection belongs to the active component even when another pane
+        // owns the keyboard; siblings must not paint a phantom cursor.
+        let owns_selection = index == app.active_component;
+        draw_component(frame, rect, app, component, active, owns_selection);
     }
 }
 
@@ -504,7 +524,7 @@ fn draw_component_rail(
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), rows[0]);
     let active = app.focus == FocusPane::Workspace;
-    draw_component(frame, rows[1], app, &view.components[index], active);
+    draw_component(frame, rows[1], app, &view.components[index], active, true);
 }
 
 /// Rows/columns a component needs before it stops being readable. A board needs
@@ -749,6 +769,7 @@ fn draw_component(
     app: &App,
     component: &ResolvedComponent,
     active: bool,
+    owns_selection: bool,
 ) {
     if area.height == 0 || area.width == 0 {
         return;
@@ -850,7 +871,15 @@ fn draw_component(
             frame.render_widget(Paragraph::new(lines).scroll((scroll, 0)), inner);
         }
         ComponentBody::Kanban { columns } => {
-            draw_kanban(frame, inner, app, component, active, columns);
+            draw_kanban(
+                frame,
+                inner,
+                app,
+                component,
+                active,
+                owns_selection,
+                columns,
+            );
         }
         ComponentBody::Timeline { events } => {
             let height = usize::from(inner.height);
@@ -1382,6 +1411,7 @@ fn draw_kanban(
     app: &App,
     _component: &ResolvedComponent,
     active: bool,
+    owns_selection: bool,
     columns: &[KanbanColumnModel],
 ) {
     if area.width == 0 || area.height == 0 {
@@ -1398,7 +1428,11 @@ fn draw_kanban(
         return;
     }
     let total: usize = columns.iter().map(|column| column.items.len()).sum();
-    let selected = (total > 0).then(|| app.selected.min(total - 1));
+    let selected = if owns_selection && total > 0 {
+        Some(app.selected.min(total - 1))
+    } else {
+        None
+    };
     let mut selected_column = None;
     let mut selected_row = 0usize;
     let mut counted = 0usize;
@@ -1539,7 +1573,8 @@ fn draw_kanban(
         } else {
             hints.push("j/k card".into());
             hints.push("h/l panel".into());
-            hints.push("s status".into());
+            hints.push("S status".into());
+            hints.push("E quick edit".into());
             hints.push("Enter open".into());
         }
         frame.render_widget(Paragraph::new(fitted_hints(app, &hints, area.width)), area);
@@ -1772,9 +1807,15 @@ fn render_scrolled(
     }
     let height = usize::from(area.height);
     let total = lines.len();
+    let max = if total <= height || height < 2 {
+        total.saturating_sub(height)
+    } else {
+        total.saturating_sub(height - 1)
+    };
+    app.detail_max_scroll.set(max);
     if total <= height || height < 2 {
         let scroll = if scrollable {
-            u16::try_from(requested.min(total.saturating_sub(height))).unwrap_or(u16::MAX)
+            u16::try_from(requested.min(max)).unwrap_or(u16::MAX)
         } else {
             0
         };
@@ -1782,7 +1823,7 @@ fn render_scrolled(
         return;
     }
     let visible = height - 1;
-    let max_scroll = total.saturating_sub(visible);
+    let max_scroll = max;
     let scroll = if scrollable {
         requested.min(max_scroll)
     } else {
@@ -1854,11 +1895,17 @@ fn property_lines<'a>(
 fn draw_action_bar(frame: &mut Frame, area: Rect, app: &App) {
     let width = usize::from(area.width);
     let actions = app.compact_actions();
-    let suffix = " · a more actions · q quit";
+    // Narrow terminals need the space for a third real action; the suffix
+    // stays honest (`a` still opens the full menu).
+    let suffix = if width < 70 {
+        " · a more · q quit"
+    } else {
+        " · a more actions · q quit"
+    };
     let mut spans = vec![Span::styled(" Actions: ", app.theme.title())];
     let mut used = " Actions: ".chars().count();
     for (shown, entry) in actions.iter().enumerate() {
-        let rendered = format!("{} {} ", entry.key, entry.label);
+        let rendered = format!("{} {}", entry.key, entry.label);
         let separator = if shown > 0 { 3 } else { 0 };
         if used + separator + rendered.chars().count() + suffix.chars().count() > width {
             break;
@@ -2009,10 +2056,10 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                     app.theme.text()
                 };
                 // Only advertise a key when it identifies this row uniquely.
-                let hotkey = crate::app::App::action_hotkey(&action.id).filter(|key| {
+                let hotkey = app.action_key(action).filter(|key| {
                     actions
                         .iter()
-                        .filter(|other| crate::app::App::action_hotkey(&other.id) == Some(*key))
+                        .filter(|other| app.action_key(other) == Some(*key))
                         .count()
                         == 1
                 });
@@ -2744,8 +2791,17 @@ fn multiline_preview(
     } else {
         (caret_column / width).min(line_rows - 1)
     };
-    let caret_row = row_of_line.get(caret_line).copied().unwrap_or(0) + row_in_line;
-    let caret_row_column = caret_column.saturating_sub(row_in_line * width);
+    let mut caret_row = row_of_line.get(caret_line).copied().unwrap_or(0) + row_in_line;
+    let mut caret_row_column = caret_column.saturating_sub(row_in_line * width);
+    // A caret at the end of an exactly full wrapped row belongs on the next
+    // (empty) row, not past the value column where it would be clipped.
+    if caret_column > 0 && caret_column == line_length && caret_column.is_multiple_of(width) {
+        let insert_at = row_of_line.get(caret_line).copied().unwrap_or(0) + line_rows;
+        let insert_at = insert_at.min(rows.len());
+        rows.insert(insert_at, String::new());
+        caret_row = insert_at;
+        caret_row_column = 0;
+    }
     let start = caret_row
         .saturating_sub(max_rows.saturating_sub(2))
         .min(rows.len().saturating_sub(max_rows));
@@ -3113,5 +3169,28 @@ fn human_bytes(bytes: u64) -> String {
         format!("{:.1} KiB", bytes as f64 / KIB as f64)
     } else {
         format!("{bytes} B")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::multiline_preview;
+
+    #[test]
+    fn caret_at_a_full_wrap_boundary_moves_to_the_next_row() {
+        let value = "0123456789";
+        let (rows, caret_row, caret_column) = multiline_preview(value, value.len(), 10, 4);
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        assert_eq!(rows[0], "0123456789");
+        assert_eq!(rows[1], "");
+        assert_eq!((caret_row, caret_column), (1, 0));
+    }
+
+    #[test]
+    fn caret_inside_a_wrapped_row_stays_on_that_row() {
+        let value = "0123456789";
+        let (rows, caret_row, caret_column) = multiline_preview(value, 4, 10, 4);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!((caret_row, caret_column), (0, 4));
     }
 }

@@ -124,7 +124,7 @@ pinned workflow version or says `generated default`.
 | `c` | New task (or new project on the Projects screen) |
 | `C` | New workflow work item (choose kind, then declared fields) |
 | `e` | Edit the selected task, project or work item |
-| `E` | Quick edit the selected task: title, priority and the next status when there is only one |
+| `E` | Quick edit the selected task: title and priority |
 | `S` | Status transitions for the selected task |
 | `K` | Acceptance criteria for the selected task |
 | `H` | Activity history for the selected task |

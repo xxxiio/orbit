@@ -133,9 +133,8 @@ pub enum FormMode {
     EditTask {
         task_id: String,
     },
-    /// Compact everyday task edit: title, priority and (when the workflow
-    /// offers exactly one next step) status. Advanced planning stays in
-    /// `EditTask`.
+    /// Compact everyday task edit: title and priority only. Status stays in the
+    /// `S` status menu, where terminal transitions get their confirmation.
     QuickEditTask {
         task_id: String,
     },
@@ -221,6 +220,42 @@ impl FormState {
             self.invalid = None;
             self.error = None;
         }
+    }
+}
+
+/// Submission failure with an optional field key so the form can point at the
+/// row that has to change, not only show a banner.
+#[derive(Debug)]
+struct FormError {
+    message: String,
+    field: Option<String>,
+}
+
+impl FormError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            field: None,
+        }
+    }
+
+    fn field(key: &str, message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            field: Some(key.to_owned()),
+        }
+    }
+}
+
+impl From<String> for FormError {
+    fn from(message: String) -> Self {
+        Self::new(message)
+    }
+}
+
+impl From<&str> for FormError {
+    fn from(message: &str) -> Self {
+        Self::new(message)
     }
 }
 
@@ -436,6 +471,9 @@ pub struct App {
     pub selected: usize,
     pub scroll: usize,
     pub detail_scroll: usize,
+    /// Last painted maximum detail scroll. Kept in the app so upward scrolling
+    /// from an over-scrolled value moves immediately instead of looking dead.
+    pub detail_max_scroll: std::cell::Cell<usize>,
     pub modal_scroll: usize,
     pub sidebar_selection: usize,
     pub modal: Option<Modal>,
@@ -504,6 +542,7 @@ impl App {
             selected: 0,
             scroll: 0,
             detail_scroll: 0,
+            detail_max_scroll: std::cell::Cell::new(0),
             modal_scroll: 0,
             sidebar_selection: 0,
             modal: None,
@@ -731,6 +770,9 @@ impl App {
     }
 
     pub fn refresh_workspace(&mut self) {
+        // Capture the cursor before the accepted data is replaced, otherwise
+        // restore_cursor has nothing stable to resolve the selected id against.
+        self.sync_cursor();
         let connected_refresh_error = self.client.refresh_accepted().err();
         match self.client.workspace_view_data() {
             Ok(workspace) => {
@@ -1057,6 +1099,9 @@ impl App {
             .views
             .get(state.active_view)
             .map(|view| view.id.clone());
+        // The old view is still in place here: capture the selected row before
+        // the resolved components replace it.
+        self.sync_cursor();
         match self
             .client
             .resolve_project_views(&project_id, &self.registry, now_ms())
@@ -1302,8 +1347,7 @@ impl App {
         {
             let mut quick =
                 AvailableAction::enabled("quick_edit_task", "Quick edit", Some(item.id.clone()));
-            quick.description =
-                "Edit the title and priority, plus the next status when there is only one".into();
+            quick.description = "Edit the title and priority in one compact form".into();
             push_unique_action(&mut actions, quick);
         }
         if self.client.is_connected() {
@@ -1439,30 +1483,93 @@ impl App {
         actions
     }
 
-    /// Real key bindings for actions. Only keys the shell actually handles are
-    /// listed, so a bar or menu hint can always be pressed. Actions without a
-    /// direct key stay reachable from the action menu and palette.
-    pub fn action_hotkey(id: &str) -> Option<&'static str> {
-        match id {
-            "open" | "open_knowledge" => Some("Enter"),
-            "create_task" => Some("c"),
-            "create_work_item" => Some("C"),
-            "edit_task" | "edit_project" | "edit_work_item" => Some("e"),
-            "quick_edit_task" => Some("E"),
-            "manage_acceptance_criteria" => Some("K"),
-            "task_activity" => Some("H"),
-            "attach_file" => Some("i"),
-            "open_attachments" => Some("F"),
-            "change_workflow" | "apply_basic_workflow" => Some("W"),
-            "record_habit" => Some("Space"),
-            "record_metric" => Some("o"),
-            "set_metric_target" => Some("t"),
-            "refresh" => Some("r"),
+    /// Context-aware key hints. A key is advertised only when pressing it in
+    /// the current focus/screen actually performs this action (or opens its
+    /// menu). Actions without a reachable direct key stay menu/palette-only.
+    pub fn action_key(&self, action: &AvailableAction) -> Option<&'static str> {
+        // In compact mode the sidebar may own the only visible pane. Do not
+        // advertise keys for a workspace selection the user cannot see.
+        if self.viewport_width < crate::theme::MEDIUM_BREAKPOINT && self.focus == FocusPane::Sidebar
+        {
+            return None;
+        }
+        let selected = self.selected_item();
+        let selected_kind = selected.map(|item| item.kind);
+        let payload_matches_selection = action
+            .payload
+            .as_deref()
+            .is_none_or(|payload| selected.is_some_and(|item| item.id == payload));
+        match action.id.as_str() {
+            "open" => {
+                if self.screen == Screen::Projects {
+                    let project = self.selected_project()?;
+                    let payload = action.payload.as_deref();
+                    return (payload.is_none() || payload == Some(project.id.as_str()))
+                        .then_some("Enter");
+                }
+                // With sidebar focus Enter activates the sidebar row, not the
+                // selected workspace item.
+                if self.focus == FocusPane::Sidebar {
+                    return None;
+                }
+                selected
+                    .filter(|_| payload_matches_selection)
+                    .map(|_| "Enter")
+            }
+            "edit_task" => {
+                (selected_kind == Some(ItemKind::Task) && payload_matches_selection).then_some("e")
+            }
+            "edit_work_item" => (selected_kind == Some(ItemKind::WorkItem)
+                && payload_matches_selection)
+                .then_some("e"),
+            "quick_edit_task" => {
+                (selected_kind == Some(ItemKind::Task) && payload_matches_selection).then_some("E")
+            }
+            // `e` opens the selected entity's edit form. Project settings only
+            // owns that key when the project itself is the selected entity.
+            "edit_project" => {
+                if self.screen == Screen::Projects || selected_kind == Some(ItemKind::Project) {
+                    Some("e")
+                } else {
+                    None
+                }
+            }
+            // `S` opens the status menu, whose entries are exactly these
+            // model-allowed transitions.
+            "set_task_status" | "complete_task" => {
+                (selected_kind == Some(ItemKind::Task)).then_some("S")
+            }
+            // `c` creates a project on the Projects screen, not a task.
+            "create_task" => (self.screen != Screen::Projects).then_some("c"),
+            "create_work_item" => self.project.is_some().then_some("C"),
             "search" => Some("/"),
+            "refresh" => Some("r"),
             "command_palette" => Some("Ctrl+P"),
             "help" => Some("?"),
-            "flush_pending" => Some("f"),
+            "attach_file" => (selected.is_some() && payload_matches_selection).then_some("i"),
+            "open_attachments" => (selected.is_some() && payload_matches_selection).then_some("F"),
+            "manage_acceptance_criteria" => {
+                (selected_kind == Some(ItemKind::Task) && payload_matches_selection).then_some("K")
+            }
+            "task_activity" => {
+                (selected_kind == Some(ItemKind::Task) && payload_matches_selection).then_some("H")
+            }
+            "change_workflow" => (!self.client.is_connected()).then_some("W"),
+            "record_habit" => (selected_kind == Some(ItemKind::Habit) && payload_matches_selection)
+                .then_some("Space"),
+            "record_metric" => (selected_kind == Some(ItemKind::Metric)
+                && payload_matches_selection)
+                .then_some("o"),
+            "set_metric_target" => (selected_kind == Some(ItemKind::Metric)
+                && payload_matches_selection)
+                .then_some("t"),
+            "flush_pending" => self.client.is_connected().then_some("f"),
             "toggle_detail" => Some("D"),
+            "preview_plan" => (self.screen == Screen::Project).then_some("p"),
+            "apply_plan" => {
+                (self.screen == Screen::Project && self.pending_plan.is_some()).then_some("P")
+            }
+            "bind_evidence" => (self.screen == Screen::Project).then_some("b"),
             _ => None,
         }
     }
@@ -1550,7 +1657,20 @@ impl App {
         vec!["create_task", "search", "refresh"]
     }
 
+    /// Session MRU keys, most recent first. Test/diagnostic accessor; the list
+    /// is never persisted.
+    #[cfg(test)]
+    pub fn recent_destinations(&self) -> &[String] {
+        &self.recent_destinations
+    }
+
     pub fn compact_actions(&self) -> Vec<CompactAction> {
+        // In compact mode the sidebar can own the only visible pane; actions on
+        // the hidden workspace selection must not be advertised as reachable.
+        if self.viewport_width < crate::theme::MEDIUM_BREAKPOINT && self.focus == FocusPane::Sidebar
+        {
+            return Vec::new();
+        }
         let actions = self.available_actions();
         let mut out: Vec<CompactAction> = Vec::new();
         let mut keys: Vec<String> = Vec::new();
@@ -1567,13 +1687,14 @@ impl App {
             let Some(action) = action.cloned() else {
                 continue;
             };
-            let (key, label) = if id == "status" {
-                ("S".to_owned(), "Status".to_owned())
+            let Some(key) = self.action_key(&action) else {
+                continue;
+            };
+            let key = key.to_owned();
+            let label = if id == "status" {
+                "Status".to_owned()
             } else {
-                let Some(key) = Self::action_hotkey(&action.id) else {
-                    continue;
-                };
-                (key.to_owned(), Self::short_label(&action.id).to_owned())
+                Self::short_label(&action.id).to_owned()
             };
             if keys.contains(&key) {
                 continue;
@@ -1586,7 +1707,7 @@ impl App {
         }
         if out.is_empty() {
             for action in actions.iter().filter(|action| action.enabled) {
-                let Some(key) = Self::action_hotkey(&action.id) else {
+                let Some(key) = self.action_key(action) else {
                     continue;
                 };
                 if keys.contains(&key.to_owned()) {
@@ -1650,7 +1771,8 @@ impl App {
                 }
             }
             FocusPane::Detail => {
-                self.detail_scroll = self.detail_scroll.saturating_add_signed(delta);
+                let max = self.detail_max_scroll.get();
+                self.detail_scroll = self.detail_scroll.saturating_add_signed(delta).min(max);
             }
         }
     }
@@ -2020,7 +2142,9 @@ impl App {
                 true,
             ));
         }
-        if let Some(state) = &self.project {
+        if let Some(state) = &self.project
+            && self.screen == Screen::Project
+        {
             for (index, view) in state.views.iter().enumerate() {
                 entries.push(entry(
                     format!("View: {}", view.title),
@@ -2276,7 +2400,7 @@ impl App {
             );
             return false;
         }
-        let destination = self.palette_destination_key(&action);
+        let mut destination = self.palette_destination_key(&action);
         let result = match action {
             PaletteAction::Go(screen) => {
                 self.go_screen(screen);
@@ -2284,6 +2408,14 @@ impl App {
             }
             PaletteAction::OpenProject(id) => {
                 self.open_project(&id);
+                if !self
+                    .project
+                    .as_ref()
+                    .is_some_and(|project| project.id == id)
+                {
+                    // A rejected/unknown project must not enter the MRU.
+                    destination = None;
+                }
                 false
             }
             PaletteAction::OpenView(index) => {
@@ -2304,6 +2436,9 @@ impl App {
                 self.selected = index;
                 self.focus = FocusPane::Workspace;
                 self.open_detail();
+                // Record the row that was actually selected, not just rows
+                // that were already active when the palette opened.
+                destination = self.selected_item().map(|item| format!("item:{}", item.id));
                 false
             }
             PaletteAction::OpenKnowledge(id) => {
@@ -3910,12 +4045,7 @@ impl App {
             }
             FormMode::QuickEditTask { task_id } => {
                 let task = self.task_dto(&task_id)?;
-                let next_status = self
-                    .selected_item()
-                    .filter(|item| item.id == task_id)
-                    .map(|item| item.allowed_statuses.clone())
-                    .unwrap_or_default();
-                let mut fields = vec![
+                let fields = vec![
                     Self::text_field("title", "Title", task.title.clone(), true, "required"),
                     Self::choice_field(
                         "priority",
@@ -3931,25 +4061,9 @@ impl App {
                         false,
                     ),
                 ];
-                // Offer a status field only when the workflow leaves exactly
-                // one next step; otherwise the full action menu is the honest
-                // place to choose.
-                if next_status.len() == 1 && next_status[0] != task.status {
-                    let next = next_status[0].clone();
-                    fields.push(Self::choice_field(
-                        "status",
-                        "Status",
-                        "",
-                        vec![
-                            Self::form_choice("", format!("keep {}", task.status)),
-                            Self::form_choice(next.clone(), format!("move to {next}")),
-                        ],
-                        false,
-                    ));
-                }
                 Some(FormState {
                     title: format!("Quick edit · {}", task.title),
-                    hint: "Title and priority; Ctrl+S saves and Esc cancels".into(),
+                    hint: "Title and priority; status changes stay in the S menu".into(),
                     mode: FormMode::QuickEditTask {
                         task_id: task_id.clone(),
                     },
@@ -4547,6 +4661,20 @@ impl App {
         self.modal = Some(Modal::Form(form));
     }
 
+    /// Show a submission failure on the field it belongs to and move focus
+    /// there, preserving every typed value.
+    fn form_error_with_field(&mut self, mut form: FormState, error: FormError) {
+        let field = error
+            .field
+            .and_then(|key| form.fields.iter().position(|field| field.key == key));
+        form.invalid = field;
+        if let Some(index) = field {
+            form.focused = index;
+        }
+        form.error = Some(error.message);
+        self.modal = Some(Modal::Form(form));
+    }
+
     pub fn submit_form(&mut self, form: FormState) {
         let key = format!("form:{:?}", form.mode);
         if let Some((last, at)) = &self.last_submission
@@ -4619,31 +4747,45 @@ impl App {
             return;
         }
         let result = match form.mode.clone() {
-            FormMode::NewProject => self.submit_new_project(&form),
+            FormMode::NewProject => self.submit_new_project(&form).map_err(FormError::from),
             FormMode::NewTask { .. } => self.submit_new_task(&form),
             FormMode::EditTask { task_id } => self.submit_edit_task(&form, &task_id),
-            FormMode::QuickEditTask { task_id } => self.submit_quick_edit_task(&form, &task_id),
-            FormMode::EditTaskDetails { task_id } => self.submit_edit_task_details(&form, &task_id),
-            FormMode::AddCriterion { task_id } => self.submit_add_criterion(&form, &task_id),
+            FormMode::QuickEditTask { task_id } => self
+                .submit_quick_edit_task(&form, &task_id)
+                .map_err(FormError::from),
+            FormMode::EditTaskDetails { task_id } => self
+                .submit_edit_task_details(&form, &task_id)
+                .map_err(FormError::from),
+            FormMode::AddCriterion { task_id } => self
+                .submit_add_criterion(&form, &task_id)
+                .map_err(FormError::from),
             FormMode::EditCriterion {
                 task_id,
                 criterion_id,
-            } => self.submit_edit_criterion(&form, &task_id, &criterion_id),
+            } => self
+                .submit_edit_criterion(&form, &task_id, &criterion_id)
+                .map_err(FormError::from),
             FormMode::AttachFile {
                 owner_kind,
                 owner_id,
-            } => self.submit_attach_file(&form, &owner_kind, &owner_id),
-            FormMode::ExportAttachment { attachment_id } => {
-                self.submit_export_attachment(&form, &attachment_id)
-            }
-            FormMode::ChangeWorkflow { project_id } => {
-                self.submit_change_workflow(&form, &project_id)
-            }
-            FormMode::AddDependency { task_id } => self.submit_add_dependency(&form, &task_id),
-            FormMode::RemoveDependency { task_id } => {
-                self.submit_remove_dependency(&form, &task_id)
-            }
-            FormMode::EditProject { project_id } => self.submit_edit_project(&form, &project_id),
+            } => self
+                .submit_attach_file(&form, &owner_kind, &owner_id)
+                .map_err(FormError::from),
+            FormMode::ExportAttachment { attachment_id } => self
+                .submit_export_attachment(&form, &attachment_id)
+                .map_err(FormError::from),
+            FormMode::ChangeWorkflow { project_id } => self
+                .submit_change_workflow(&form, &project_id)
+                .map_err(FormError::from),
+            FormMode::AddDependency { task_id } => self
+                .submit_add_dependency(&form, &task_id)
+                .map_err(FormError::from),
+            FormMode::RemoveDependency { task_id } => self
+                .submit_remove_dependency(&form, &task_id)
+                .map_err(FormError::from),
+            FormMode::EditProject { project_id } => self
+                .submit_edit_project(&form, &project_id)
+                .map_err(FormError::from),
             FormMode::NewWorkItemKind { project_id } => {
                 let Some(blueprint) = self
                     .client
@@ -4668,23 +4810,33 @@ impl App {
                 project_id,
                 blueprint,
                 kind,
-            } => self.submit_new_work_item(&form, &project_id, &blueprint, &kind),
+            } => self
+                .submit_new_work_item(&form, &project_id, &blueprint, &kind)
+                .map_err(FormError::from),
             FormMode::EditWorkItem {
                 item_id,
                 revision,
                 blueprint,
                 kind,
-            } => self.submit_edit_work_item(&form, &item_id, revision, &blueprint, &kind),
-            FormMode::NewKnowledge => self.submit_new_knowledge(&form),
-            FormMode::InstallBlueprint => self.submit_install_blueprint(&form),
-            FormMode::BindBlueprint { project_id } => {
-                self.submit_bind_blueprint(&form, &project_id)
+            } => self
+                .submit_edit_work_item(&form, &item_id, revision, &blueprint, &kind)
+                .map_err(FormError::from),
+            FormMode::NewKnowledge => self.submit_new_knowledge(&form).map_err(FormError::from),
+            FormMode::InstallBlueprint => self
+                .submit_install_blueprint(&form)
+                .map_err(FormError::from),
+            FormMode::BindBlueprint { project_id } => self
+                .submit_bind_blueprint(&form, &project_id)
+                .map_err(FormError::from),
+            FormMode::MetricTarget { .. } => {
+                self.submit_metric_target(&form).map_err(FormError::from)
             }
-            FormMode::MetricTarget { .. } => self.submit_metric_target(&form),
-            FormMode::MetricObservation { .. } => self.submit_metric_observation(&form),
-            FormMode::BindEvidence { project_id, unbind } => {
-                self.submit_bind_evidence(&form, &project_id, unbind)
-            }
+            FormMode::MetricObservation { .. } => self
+                .submit_metric_observation(&form)
+                .map_err(FormError::from),
+            FormMode::BindEvidence { project_id, unbind } => self
+                .submit_bind_evidence(&form, &project_id, unbind)
+                .map_err(FormError::from),
         };
         match result {
             Ok(()) => {
@@ -4693,7 +4845,7 @@ impl App {
                 }
                 self.reopen_after_mutation(&form.mode);
             }
-            Err(error) => self.form_error(form, error),
+            Err(error) => self.form_error_with_field(form, error),
         }
     }
 
@@ -4742,16 +4894,6 @@ impl App {
                     priority,
                     current.labels.clone(),
                 )
-                .map_err(|error| error.message)?;
-            changed = true;
-        }
-        let status = Self::form_value(form, "status").trim().to_owned();
-        if !status.is_empty() && status != current.status {
-            self.client
-                .set_task_status(SetTaskStatusRequest {
-                    id: task_id.to_owned(),
-                    status: status.clone(),
-                })
                 .map_err(|error| error.message)?;
             changed = true;
         }
@@ -4970,21 +5112,36 @@ impl App {
         Ok(())
     }
 
-    fn submit_new_task(&mut self, form: &FormState) -> Result<(), String> {
+    fn submit_new_task(&mut self, form: &FormState) -> Result<(), FormError> {
         let title = Self::form_value(form, "title").trim().to_owned();
         let project = Self::form_value(form, "project").to_owned();
         let project_id = (!project.is_empty()).then_some(project);
         let milestone = Self::form_value(form, "milestone").trim();
-        let estimate = Self::form_u32(form, "estimate")?;
-        let earliest = Self::form_int(form, "earliest", false)?;
-        let deadline = Self::form_int(form, "deadline", false)?;
-        if earliest.is_some_and(|value| value < 0) || deadline.is_some_and(|value| value < 0) {
-            return Err("planning timestamps must be non-negative".into());
+        let estimate = Self::form_u32(form, "estimate")
+            .map_err(|message| FormError::field("estimate", message))?;
+        let earliest = Self::form_int(form, "earliest", false)
+            .map_err(|message| FormError::field("earliest", message))?;
+        let deadline = Self::form_int(form, "deadline", false)
+            .map_err(|message| FormError::field("deadline", message))?;
+        if earliest.is_some_and(|value| value < 0) {
+            return Err(FormError::field(
+                "earliest",
+                "Earliest start must be non-negative",
+            ));
+        }
+        if deadline.is_some_and(|value| value < 0) {
+            return Err(FormError::field(
+                "deadline",
+                "Deadline must be non-negative",
+            ));
         }
         if let (Some(earliest), Some(deadline)) = (earliest, deadline)
             && earliest > deadline
         {
-            return Err("earliest start must not be after the deadline".into());
+            return Err(FormError::field(
+                "deadline",
+                "Earliest start must not be after the deadline",
+            ));
         }
         let task = self
             .client
@@ -5043,7 +5200,7 @@ impl App {
         Ok(())
     }
 
-    fn submit_edit_task(&mut self, form: &FormState, task_id: &str) -> Result<(), String> {
+    fn submit_edit_task(&mut self, form: &FormState, task_id: &str) -> Result<(), FormError> {
         let title = Self::form_value(form, "title").trim().to_owned();
         let current = self
             .client
@@ -5052,16 +5209,31 @@ impl App {
             .into_iter()
             .find(|task| task.id == task_id)
             .ok_or_else(|| "task no longer exists".to_owned())?;
-        let estimate = Self::form_u32(form, "estimate")?;
-        let earliest = Self::form_int(form, "earliest", false)?;
-        let deadline = Self::form_int(form, "deadline", false)?;
-        if earliest.is_some_and(|value| value < 0) || deadline.is_some_and(|value| value < 0) {
-            return Err("planning timestamps must be non-negative".into());
+        let estimate = Self::form_u32(form, "estimate")
+            .map_err(|message| FormError::field("estimate", message))?;
+        let earliest = Self::form_int(form, "earliest", false)
+            .map_err(|message| FormError::field("earliest", message))?;
+        let deadline = Self::form_int(form, "deadline", false)
+            .map_err(|message| FormError::field("deadline", message))?;
+        if earliest.is_some_and(|value| value < 0) {
+            return Err(FormError::field(
+                "earliest",
+                "Earliest start must be non-negative",
+            ));
+        }
+        if deadline.is_some_and(|value| value < 0) {
+            return Err(FormError::field(
+                "deadline",
+                "Deadline must be non-negative",
+            ));
         }
         if let (Some(earliest), Some(deadline)) = (earliest, deadline)
             && earliest > deadline
         {
-            return Err("earliest start must not be after the deadline".into());
+            return Err(FormError::field(
+                "deadline",
+                "Earliest start must not be after the deadline",
+            ));
         }
         let project = Self::form_value(form, "project");
         let project_id = (!project.is_empty()).then(|| project.to_owned());
@@ -5077,7 +5249,7 @@ impl App {
                 .iter()
                 .any(|milestone| &milestone.id == milestone_id)
         {
-            return Err(format!("milestone {milestone_id} is not in this project"));
+            return Err(format!("milestone {milestone_id} is not in this project").into());
         }
         if project_id != current.project_id {
             if let Some(project_id) = &project_id
@@ -5086,7 +5258,7 @@ impl App {
                     .iter()
                     .any(|project| &project.id == project_id)
             {
-                return Err(format!("project {project_id} is not available"));
+                return Err(format!("project {project_id} is not available").into());
             }
             if current.milestone_id.is_some() {
                 self.client

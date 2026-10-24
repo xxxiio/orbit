@@ -5431,37 +5431,79 @@ mod m29_layout_presentation_tests {
             "scroll did not move: {bottom}"
         );
         assert!(bottom.contains("↑↓ scroll"), "{bottom}");
+
+        // Over-scrolling is clamped in the app, so the first ↑ moves instead
+        // of spending presses on an invisible offset.
+        let painted_max = app.detail_max_scroll.get();
+        app.detail_scroll = 9_999;
+        app.move_selection(-1);
+        assert!(
+            app.detail_scroll <= painted_max,
+            "detail scroll was not clamped in the app: {} > {painted_max}",
+            app.detail_scroll
+        );
+        let after_up = render(&mut app, 120, 12);
+        assert!(after_up.contains("ACTIONS"), "{after_up}");
     }
 
     #[test]
-    fn board_selection_stays_visible_after_a_data_refresh() {
+    fn board_selection_keeps_its_stable_id_across_refreshes_and_a_status_change() {
         let mut app = project_app("m29-refresh");
         switch_to(&mut app, "board");
-        let selected = app
+        let (selected, selected_id) = app
             .current_component()
             .unwrap()
             .selection
             .iter()
-            .position(|item| item.title.starts_with("Gamma"))
-            .expect("gamma card");
+            .enumerate()
+            .find(|(_, item)| item.title.starts_with("Alpha"))
+            .map(|(index, item)| (index, item.id.clone()))
+            .expect("Alpha card");
         app.selected = selected;
-        let before = render(&mut app, 120, 35);
-        assert!(
-            before
-                .lines()
-                .any(|line| line.contains("▸") && line.contains("Gamma")),
-            "{before}"
+        assert_eq!(
+            app.current_selected_id().as_deref(),
+            Some(selected_id.as_str())
+        );
+        assert_eq!(
+            app.detail_model().unwrap().title,
+            "Alpha task with a long title"
         );
 
         app.refresh_project();
-        let after = render(&mut app, 120, 35);
-        assert!(
-            after
-                .lines()
-                .any(|line| line.contains("▸") && line.contains("Gamma")),
-            "selection lost after refresh: {after}"
+        assert_eq!(
+            app.current_selected_id().as_deref(),
+            Some(selected_id.as_str()),
+            "selection lost after refresh_project"
         );
-        assert!(after.contains("columns 2-4 of 9"), "{after}");
+        assert_eq!(
+            app.detail_model().unwrap().title,
+            "Alpha task with a long title"
+        );
+
+        app.execute_pending(app::PendingAction::SetTaskStatus {
+            task_id: selected_id.clone(),
+            status: "in_progress".into(),
+        });
+        assert_eq!(
+            app.current_selected_id().as_deref(),
+            Some(selected_id.as_str()),
+            "selection lost after a status transition"
+        );
+        assert_eq!(
+            app.detail_model().unwrap().title,
+            "Alpha task with a long title"
+        );
+
+        app.refresh_workspace();
+        assert_eq!(
+            app.current_selected_id().as_deref(),
+            Some(selected_id.as_str()),
+            "selection lost after refresh_workspace"
+        );
+        assert_eq!(
+            app.detail_model().unwrap().title,
+            "Alpha task with a long title"
+        );
     }
 
     #[test]
@@ -5631,6 +5673,7 @@ mod m29_layout_presentation_tests {
         app.selected = 0;
         let item = app.selected_item().cloned().expect("task selection");
         let task_id = item.id.clone();
+        let original_status = item.status.clone();
         let entries = app.palette_entries("");
         assert!(
             entries.iter().any(|entry| entry.label == "Quick edit"),
@@ -5646,7 +5689,7 @@ mod m29_layout_presentation_tests {
             form.mode
         );
         let keys: Vec<&str> = form.fields.iter().map(|field| field.key.as_str()).collect();
-        assert_eq!(&keys[..2], ["title", "priority"], "{keys:?}");
+        assert_eq!(keys, ["title", "priority"], "{keys:?}");
         form.fields[0].value = "Quick edited title".into();
         form.fields[0].cursor = form.fields[0].value.chars().count();
         form.fields[1].value = "high".into();
@@ -5655,6 +5698,10 @@ mod m29_layout_presentation_tests {
         let task = app.client.task_detail(&task_id).unwrap();
         assert_eq!(task.title, "Quick edited title");
         assert_eq!(task.priority.as_deref(), Some("high"));
+        assert_eq!(
+            task.status, original_status,
+            "quick edit must not move status"
+        );
         assert!(
             app.status.text.contains("Quick edit saved"),
             "{}",
@@ -5752,6 +5799,453 @@ mod m29_layout_presentation_tests {
         assert!(
             rendered.contains('▏'),
             "the caret should be visible: {rendered}"
+        );
+    }
+
+    fn select_kind(app: &mut App, kind: orbit_ui::ItemKind) {
+        if app.project.is_none() {
+            let project = app
+                .client
+                .create_project(orbit_client::CreateProjectRequest {
+                    id: None,
+                    name: "Key context".into(),
+                })
+                .unwrap();
+            app.refresh_workspace();
+            app.open_project(&project.id);
+        }
+        let state = app.project.as_mut().expect("project");
+        let view = state.active_view;
+        let component = state.views[view].components.first_mut().expect("component");
+        component.selection = vec![SelectionItem {
+            id: format!("fake-{kind:?}"),
+            kind,
+            title: format!("Fake {kind:?}"),
+            subtitle: String::new(),
+            status: "ready".into(),
+            fields: Vec::new(),
+            allowed_statuses: Vec::new(),
+            allowed_transitions: Vec::new(),
+            revision: None,
+        }];
+        app.active_component = 0;
+        app.selected = 0;
+    }
+
+    fn action_named(app: &App, id: &str) -> orbit_ui::model::AvailableAction {
+        app.available_actions()
+            .into_iter()
+            .find(|action| action.id == id)
+            .unwrap_or_else(|| panic!("missing action {id}"))
+    }
+
+    #[test]
+    fn hotkeys_follow_the_current_context_in_the_bar_and_menu() {
+        let mut app = project_app("m29-keys");
+        // A freshly opened project lands on the Overview; make the metric
+        // component the selected entity for this context.
+        assert!(matches!(app.screen, Screen::Project));
+        select_kind(&mut app, orbit_ui::ItemKind::Metric);
+        assert_eq!(
+            app.selected_item().map(|item| item.kind),
+            Some(orbit_ui::ItemKind::Metric)
+        );
+        let settings = action_named(&app, "edit_project");
+        assert_eq!(
+            app.action_key(&settings),
+            None,
+            "e edits a task/metric, not project settings"
+        );
+        let open = action_named(&app, "open");
+        assert_eq!(app.action_key(&open), Some("Enter"));
+
+        let rendered = render(&mut app, 120, 35);
+        let bar = rendered
+            .lines()
+            .find(|line| line.contains("Actions:"))
+            .expect("action bar");
+        assert!(!bar.contains("e Edit"), "{bar}");
+
+        app.open_action_menu();
+        let menu = render(&mut app, 120, 40);
+        let settings_line = menu
+            .lines()
+            .find(|line| line.contains("Project settings"))
+            .expect("project settings row");
+        assert!(
+            !settings_line.contains("e     Project settings"),
+            "project settings must not claim e: {settings_line:?}"
+        );
+        app.modal = None;
+
+        for kind in [
+            orbit_ui::ItemKind::Metric,
+            orbit_ui::ItemKind::Habit,
+            orbit_ui::ItemKind::Knowledge,
+        ] {
+            select_kind(&mut app, kind);
+            let settings = action_named(&app, "edit_project");
+            assert_eq!(app.action_key(&settings), None, "{kind:?}");
+            app.open_action_menu();
+            let menu = render(&mut app, 120, 40);
+            let line = menu
+                .lines()
+                .find(|line| line.contains("Project settings"))
+                .expect("settings row");
+            assert!(
+                !line.contains("e     Project settings"),
+                "project settings must not claim e: {line:?}"
+            );
+            app.modal = None;
+        }
+
+        select_kind(&mut app, orbit_ui::ItemKind::Task);
+        assert_eq!(app.action_key(&action_named(&app, "edit_task")), Some("e"));
+        assert_eq!(app.action_key(&action_named(&app, "edit_project")), None);
+
+        // Sidebar focus: Enter activates the sidebar row, not the item.
+        app.focus = FocusPane::Sidebar;
+        assert_eq!(app.action_key(&action_named(&app, "open")), None);
+        let wide = render(&mut app, 120, 35);
+        let bar = wide
+            .lines()
+            .find(|line| line.contains("Actions:"))
+            .expect("action bar");
+        assert!(!bar.contains("Enter Open"), "{bar}");
+
+        // Compact mode with the sidebar visible: workspace actions are hidden.
+        let compact = render(&mut app, 60, 18);
+        let bar = compact
+            .lines()
+            .find(|line| line.contains("Actions:"))
+            .expect("action bar");
+        assert!(bar.contains("a more") && bar.contains("q quit"), "{bar}");
+        assert!(!bar.contains("Open") && !bar.contains("Edit"), "{bar}");
+    }
+
+    fn kanban_board(prefix: &str) -> ResolvedComponent {
+        let columns = (0..6)
+            .map(|column| KanbanColumnModel {
+                key: format!("{prefix}-state-{column}"),
+                title: format!("{prefix} column {column}"),
+                items: (0..2)
+                    .map(|row| ListItemModel {
+                        id: format!("{prefix}-card-{column}-{row}"),
+                        kind: orbit_ui::ItemKind::Task,
+                        title: format!("{prefix} card {column}-{row}"),
+                        subtitle: "ready".into(),
+                        status: "ready".into(),
+                        group: format!("{prefix}-state-{column}"),
+                        meta: Vec::new(),
+                    })
+                    .collect(),
+            })
+            .collect::<Vec<_>>();
+        let selection = columns
+            .iter()
+            .flat_map(|column| column.items.iter())
+            .map(|item| SelectionItem {
+                id: item.id.clone(),
+                kind: orbit_ui::ItemKind::Task,
+                title: item.title.clone(),
+                subtitle: item.subtitle.clone(),
+                status: item.status.clone(),
+                fields: Vec::new(),
+                allowed_statuses: Vec::new(),
+                allowed_transitions: Vec::new(),
+                revision: None,
+            })
+            .collect();
+        ResolvedComponent {
+            id: prefix.into(),
+            title: format!("{prefix} board"),
+            component_type: "kanban".into(),
+            status: LoadStatus::Ready,
+            body: ComponentBody::Kanban { columns },
+            selection,
+        }
+    }
+
+    #[test]
+    fn only_the_active_board_marks_or_pans_a_selected_card() {
+        let mut app = base_app("m29-two-boards");
+        app.screen = Screen::Home;
+        app.focus = FocusPane::Workspace;
+        app.show_detail = false;
+        app.active_component = 0;
+        app.selected = 11;
+        app.home = orbit_ui::ResolvedView {
+            id: "two-boards".into(),
+            title: "Two boards".into(),
+            description: String::new(),
+            layout: orbit_blueprint::presentation::ViewLayout {
+                kind: orbit_blueprint::presentation::ViewLayoutKind::Horizontal,
+                columns: 1,
+            },
+            components: vec![kanban_board("Alpha"), kanban_board("Beta")],
+            generated: false,
+        };
+        let rendered = render(&mut app, 160, 45);
+        let marked = rendered
+            .lines()
+            .filter(|line| {
+                line.contains("▸") && (line.contains("Alpha card") || line.contains("Beta card"))
+            })
+            .count();
+        assert_eq!(marked, 1, "exactly one board marks a card:\n{rendered}");
+        assert_eq!(
+            rendered.matches("columns 4-6 of 6").count(),
+            1,
+            "only the active board pans to the selected column:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn status_menu_lists_only_allowed_transitions_and_executes_one() {
+        let mut app = project_app("m29-status-menu");
+        switch_to(&mut app, "board");
+        let (index, task_id, allowed) = app
+            .current_component()
+            .unwrap()
+            .selection
+            .iter()
+            .enumerate()
+            .find(|(_, item)| item.title.starts_with("Alpha"))
+            .map(|(index, item)| (index, item.id.clone(), item.allowed_statuses.clone()))
+            .expect("task");
+        app.selected = index;
+        assert!(!allowed.is_empty(), "fixture needs a transition");
+        handle_key(&mut app, KeyCode::Char('S'), KeyModifiers::NONE).unwrap();
+        let Some(Modal::ActionMenu {
+            actions, selected, ..
+        }) = &mut app.modal
+        else {
+            panic!("status menu");
+        };
+        assert!(
+            actions.iter().all(|action| action.id == "set_task_status"),
+            "{actions:?}"
+        );
+        let payloads: Vec<&str> = actions
+            .iter()
+            .filter_map(|action| action.payload.as_deref())
+            .collect();
+        assert_eq!(payloads.len(), allowed.len());
+        assert!(
+            payloads
+                .iter()
+                .all(|status| allowed.contains(&status.to_string()))
+        );
+        *selected = actions
+            .iter()
+            .position(|action| {
+                action
+                    .payload
+                    .as_deref()
+                    .is_some_and(|status| status != "done" && status != "cancelled")
+            })
+            .unwrap_or(0);
+        let chosen = actions[*selected].payload.clone().unwrap();
+        handle_key(&mut app, KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        if matches!(app.modal, Some(Modal::Confirm { .. })) {
+            handle_key(&mut app, KeyCode::Char('y'), KeyModifiers::NONE).unwrap();
+        }
+        let task = app.client.task_detail(&task_id).unwrap();
+        assert_eq!(task.status, chosen);
+    }
+
+    #[test]
+    fn capital_s_and_e_are_text_inside_forms_palettes_and_search() {
+        let mut app = base_app("m29-capital-text");
+        app.start_form(FormMode::NewTask { project_id: None });
+        handle_key(&mut app, KeyCode::Char('S'), KeyModifiers::NONE).unwrap();
+        handle_key(&mut app, KeyCode::Char('E'), KeyModifiers::NONE).unwrap();
+        let Some(Modal::Form(form)) = &app.modal else {
+            panic!("form");
+        };
+        assert_eq!(App::form_value(form, "title"), "SE");
+
+        app.modal = None;
+        app.open_palette();
+        handle_key(&mut app, KeyCode::Char('S'), KeyModifiers::NONE).unwrap();
+        handle_key(&mut app, KeyCode::Char('E'), KeyModifiers::NONE).unwrap();
+        let Some(Modal::Palette { query, .. }) = &app.modal else {
+            panic!("palette");
+        };
+        assert_eq!(query, "SE");
+
+        app.modal = None;
+        app.open_search();
+        handle_key(&mut app, KeyCode::Char('S'), KeyModifiers::NONE).unwrap();
+        handle_key(&mut app, KeyCode::Char('E'), KeyModifiers::NONE).unwrap();
+        let Some(Modal::Search { query, .. }) = &app.modal else {
+            panic!("search");
+        };
+        assert_eq!(query, "SE");
+    }
+
+    #[test]
+    fn estimate_range_error_marks_the_estimate_field() {
+        let mut app = base_app("m29-estimate-error");
+        app.start_form(FormMode::NewTask { project_id: None });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("task form");
+        };
+        form.fields[0].value = "Range task".into();
+        let estimate = form
+            .fields
+            .iter()
+            .position(|field| field.key == "estimate")
+            .unwrap();
+        form.fields[estimate].value = "0".into();
+        form.dirty = true;
+        app.submit_form(form);
+        let Some(Modal::Form(form)) = &app.modal else {
+            panic!("form should stay open");
+        };
+        assert_eq!(form.invalid, Some(estimate));
+        assert_eq!(form.focused, estimate);
+        assert!(
+            form.error
+                .as_deref()
+                .unwrap_or("")
+                .contains("between 1 and 525600"),
+            "{:?}",
+            form.error
+        );
+    }
+
+    #[test]
+    fn negative_timestamp_marks_the_earliest_field() {
+        let mut app = project_app("m29-negative-time");
+        switch_to(&mut app, "board");
+        app.selected = 0;
+        let task_id = app.selected_item().unwrap().id.clone();
+        app.start_form(FormMode::EditTask { task_id });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("edit form");
+        };
+        let earliest = form
+            .fields
+            .iter()
+            .position(|field| field.key == "earliest")
+            .unwrap();
+        form.fields[earliest].value = "-1".into();
+        form.dirty = true;
+        app.submit_form(form);
+        let Some(Modal::Form(form)) = &app.modal else {
+            panic!("form should stay open");
+        };
+        assert_eq!(form.invalid, Some(earliest));
+        assert_eq!(form.focused, earliest);
+        assert!(
+            form.error.as_deref().unwrap_or("").contains("non-negative"),
+            "{:?}",
+            form.error
+        );
+    }
+
+    #[test]
+    fn narrow_action_bar_still_reaches_status_and_quit() {
+        let mut app = project_app("m29-bar60");
+        switch_to(&mut app, "board");
+        app.selected = 0;
+        let compact = render(&mut app, 60, 18);
+        let bar = compact
+            .lines()
+            .find(|line| line.contains("Actions:"))
+            .expect("action bar");
+        for expected in ["S Status", "a more", "q quit"] {
+            assert!(bar.contains(expected), "missing {expected}: {bar}");
+        }
+        assert!(!bar.contains("a more actions"), "{bar}");
+
+        let wide = render(&mut app, 120, 35);
+        assert!(wide.contains("S status"), "board legend: {wide}");
+    }
+
+    #[test]
+    fn palette_recents_record_successful_destinations_only() {
+        let mut fresh = base_app("m29-recents-fresh");
+        fresh.execute_palette_action(app::PaletteAction::OpenProject("missing".into()));
+        assert!(
+            fresh.recent_destinations().is_empty(),
+            "a rejected project must not enter the MRU: {:?}",
+            fresh.recent_destinations()
+        );
+
+        let mut app = project_app("m29-recents");
+        switch_to(&mut app, "board");
+        let hit = app
+            .search_hits("Alpha")
+            .into_iter()
+            .find(|hit| matches!(hit.action, app::PaletteAction::SelectItem { .. }))
+            .expect("search hit for a card");
+        app.execute_palette_action(hit.action);
+        let selected = app.selected_item().map(|item| item.id.clone()).unwrap();
+        let expected = format!("item:{selected}");
+        assert_eq!(
+            app.recent_destinations().first().map(String::as_str),
+            Some(expected.as_str()),
+            "search selection should be recorded"
+        );
+
+        app.go_screen(Screen::Home);
+        let entries = app.palette_entries("");
+        assert!(
+            !entries.iter().any(|entry| entry.label.starts_with("View:")),
+            "Home must not offer stale project view destinations"
+        );
+    }
+
+    #[test]
+    fn sidebar_marks_only_the_open_project_and_sizes_for_its_label() {
+        let mut app = base_app("m29-sidebar");
+        let alpha = app
+            .client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: "Alpha".into(),
+            })
+            .unwrap();
+        app.client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: "Beta".into(),
+            })
+            .unwrap();
+        app.refresh_workspace();
+        app.open_project(&alpha.id);
+        let rendered = render(&mut app, 120, 35);
+        let alpha_line = rendered
+            .lines()
+            .find(|line| line.contains("● Alpha"))
+            .expect("marked alpha row");
+        assert!(
+            alpha_line.contains('▸') || alpha_line.contains("  ●"),
+            "{alpha_line:?}"
+        );
+        assert!(
+            !rendered.lines().any(|line| line.contains("● Beta")),
+            "only the open project is marked:\n{rendered}"
+        );
+        assert!(
+            rendered.lines().any(|line| line.contains("  Beta")),
+            "the other project should still be listed:\n{rendered}"
+        );
+
+        let long = "ProjectName12345";
+        app.client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: long.into(),
+            })
+            .unwrap();
+        app.refresh_workspace();
+        let wide = render(&mut app, 200, 40);
+        assert!(
+            wide.contains(long),
+            "sidebar truncated a fitting label:\n{wide}"
         );
     }
 

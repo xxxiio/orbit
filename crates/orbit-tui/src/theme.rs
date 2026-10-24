@@ -161,28 +161,35 @@ impl Theme {
 
     pub fn status(&self, status: &str) -> Style {
         match status {
-            "done" | "completed" | "mastered" | "reported" | "active" | "succeeded" => {
-                self.success()
+            "done" | "completed" | "mastered" | "reported" | "active" | "succeeded"
+            | "supported" | "evaluated" | "recorded" => self.success(),
+            "blocked" | "failed" | "unreachable" | "cancelled" | "error" | "rejected" => {
+                self.danger()
             }
-            "blocked" | "failed" | "unreachable" | "cancelled" | "error" => self.danger(),
             "ready" | "review" | "waiting" | "waiting_input" | "launching" | "in_progress"
-            | "investigating" | "studying" | "practicing" | "analysis" | "running" => {
-                self.warning()
+            | "investigating" | "studying" | "practicing" | "analysis" | "running"
+            | "implementing" | "preparing" | "assessment" => self.warning(),
+            "inbox" | "planned" | "proposed" | "backlog" | "designed" | "due" | "queued" => {
+                self.info()
             }
-            "inbox" | "planned" | "proposed" | "backlog" | "designed" | "due" => self.info(),
             _ => self.text(),
         }
     }
 
     pub fn status_glyph(status: &str) -> &'static str {
         match status {
-            "done" | "completed" | "mastered" | "reported" | "succeeded" => "✓",
-            "blocked" | "failed" | "unreachable" | "cancelled" => "!",
-            "ready" | "review" | "waiting" | "waiting_input" | "launching" => "◐",
+            "done" | "completed" | "mastered" | "reported" | "succeeded" | "supported"
+            | "evaluated" | "recorded" => "✓",
+            "blocked" | "failed" | "unreachable" | "cancelled" | "interrupted" => "!",
+            "rejected" => "✕",
+            "ready" | "review" | "waiting" | "waiting_input" | "launching" | "preparing" => "◐",
             "in_progress" | "investigating" | "studying" | "practicing" | "analysis"
-            | "running" => "▶",
-            "inbox" | "proposed" | "planned" | "backlog" | "designed" | "due" => "○",
+            | "running" | "implementing" => "▶",
+            "inbox" | "proposed" | "planned" | "backlog" | "designed" | "due" | "queued" => "○",
             "deferred" | "paused" | "on_hold" => "~",
+            "active" => "●",
+            "archived" => "▪",
+            "assessment" => "◇",
             _ => "·",
         }
     }
@@ -206,3 +213,78 @@ pub const WIDE_BREAKPOINT: u16 = 120;
 pub const MEDIUM_BREAKPOINT: u16 = 76;
 /// One row is reserved above a component's content for its legend/hints.
 pub const LEGEND_HEIGHT: u16 = 1;
+
+#[cfg(test)]
+mod tests {
+    use super::Theme;
+    use std::collections::BTreeSet;
+
+    const TASK_STATUSES: &[&str] = &[
+        "inbox",
+        "planned",
+        "ready",
+        "in_progress",
+        "waiting",
+        "blocked",
+        "review",
+        "deferred",
+        "done",
+        "cancelled",
+    ];
+    const PROJECT_STATUSES: &[&str] = &[
+        "proposed",
+        "active",
+        "on_hold",
+        "completed",
+        "cancelled",
+        "archived",
+    ];
+    const AGENT_STATUSES: &[&str] = &[
+        "queued",
+        "preparing",
+        "launching",
+        "running",
+        "waiting_input",
+        "blocked",
+        "completed",
+        "failed",
+        "interrupted",
+        "unreachable",
+    ];
+
+    #[test]
+    fn every_known_status_has_a_non_default_glyph() {
+        let mut statuses: BTreeSet<String> = TASK_STATUSES
+            .iter()
+            .chain(PROJECT_STATUSES)
+            .chain(AGENT_STATUSES)
+            .map(|status| (*status).to_owned())
+            .collect();
+        for descriptor in orbit_blueprint::bundled::BUNDLED_BLUEPRINTS {
+            let blueprint = orbit_blueprint::bundled::bundled_blueprint(descriptor.id).unwrap();
+            for item in &blueprint.work_items {
+                statuses.extend(item.states.iter().cloned());
+            }
+        }
+        for status in statuses {
+            let glyph = Theme::status_glyph(&status);
+            assert_ne!(glyph, "·", "{status} has no glyph");
+            assert_eq!(
+                glyph.chars().count(),
+                1,
+                "{status} glyph must occupy one cell"
+            );
+            // Every status also has a meaningful style decision.
+            let _ = Theme { color: true }.status(&status);
+        }
+    }
+
+    #[test]
+    fn project_statuses_never_share_a_glyph() {
+        let glyphs: BTreeSet<&str> = PROJECT_STATUSES
+            .iter()
+            .map(|status| Theme::status_glyph(status))
+            .collect();
+        assert_eq!(glyphs.len(), PROJECT_STATUSES.len(), "{glyphs:?}");
+    }
+}
