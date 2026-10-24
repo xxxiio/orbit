@@ -2,6 +2,56 @@
 //! All writes are reviewed and queued through the shared AuthorityConnection.
 use super::*;
 
+/// Outcome of the exact command a connected rich mutation queued.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum MutationOutcome {
+    Accepted,
+    Pending {
+        command_id: Option<String>,
+        state: String,
+    },
+    Conflict {
+        command_id: String,
+        state: String,
+        reason: String,
+    },
+}
+
+impl MutationOutcome {
+    fn accepted(&self) -> bool {
+        matches!(self, Self::Accepted)
+    }
+
+    fn pending(&self) -> bool {
+        matches!(self, Self::Pending { .. })
+    }
+
+    fn disposition(&self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::Pending { .. } => "pending",
+            Self::Conflict { .. } => "conflict",
+        }
+    }
+
+    fn message(&self) -> Option<String> {
+        match self {
+            Self::Accepted => None,
+            Self::Pending { command_id, state } => Some(format!(
+                "queued as {} ({state}) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.",
+                command_id.as_deref().unwrap_or("unknown")
+            )),
+            Self::Conflict {
+                command_id,
+                state,
+                reason,
+            } => Some(format!(
+                "queued change {command_id} rejected ({state}): {reason}; inspect authority.unresolved or authority.conflict_review before retrying"
+            )),
+        }
+    }
+}
+
 impl ConnectedMcp {
     // Connected job tools require a live server and bound job. Never stage
     // agent evidence into ordinary task-command outbox or local replica.
@@ -101,6 +151,118 @@ impl ConnectedMcp {
         }
     }
 
+    /// Durable state of the command just queued by a rich mutation.
+    ///
+    /// Aggregate depth cannot attribute a pending row to this call, so follow
+    /// the exact identity the client recorded. A missing identity or state is
+    /// deliberately reported as pending: an unobserved command is never
+    /// accepted.
+    fn queued_outcome(&self, before: Option<String>) -> MutationOutcome {
+        match &self.client {
+            AuthorityConnection::Embedded(_) => MutationOutcome::Accepted,
+            AuthorityConnection::Remote { .. } => {
+                let Some(command_id) = self.client.last_queued_command_id() else {
+                    return MutationOutcome::Pending {
+                        command_id: None,
+                        state: "unavailable".into(),
+                    };
+                };
+                if Some(&command_id) == before.as_ref() {
+                    return MutationOutcome::Pending {
+                        command_id: Some(command_id),
+                        state: "unavailable".into(),
+                    };
+                }
+                self.command_outcome(&command_id)
+            }
+        }
+    }
+
+    fn command_outcome(&self, command_id: &str) -> MutationOutcome {
+        match self.client.command_state(command_id) {
+            Ok(Some(state)) if state == "accepted" => MutationOutcome::Accepted,
+            Ok(Some(state)) if state == "conflict" => {
+                let reason = self
+                    .client
+                    .command_status(command_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|status| {
+                        status
+                            .pointer("/receipt/error")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)
+                    })
+                    .filter(|reason| !reason.trim().is_empty())
+                    .unwrap_or_else(|| {
+                        "command conflict requires explicit reconciliation; inspect the outbox"
+                            .to_owned()
+                    });
+                MutationOutcome::Conflict {
+                    command_id: command_id.to_owned(),
+                    state,
+                    reason,
+                }
+            }
+            Ok(Some(state)) => MutationOutcome::Pending {
+                command_id: Some(command_id.to_owned()),
+                state,
+            },
+            Ok(None) | Err(_) => MutationOutcome::Pending {
+                command_id: Some(command_id.to_owned()),
+                state: "unavailable".into(),
+            },
+        }
+    }
+
+    /// One task projection shared by `task.get` and rich mutations: the
+    /// accepted authority task (description, priority, labels, lifecycle,
+    /// planning) plus, when available, its ordered acceptance criteria.
+    ///
+    /// `criteria: None` means the criteria read was unavailable, not that the
+    /// task has no criteria. Mutation responses must never turn an unavailable
+    /// read after a successful queue into an error, so absence is explicit
+    /// (`acceptance_criteria: null` and `criteria_available: false`) rather than
+    /// guessed.
+    fn task_body(
+        task: &orbit_client::TaskDto,
+        criteria: Option<Vec<orbit_client::AcceptanceCriterionDto>>,
+    ) -> Value {
+        json!({
+            "id": task.id,
+            "title": task.title,
+            "status": task.status,
+            "project_id": task.project_id,
+            "milestone_id": task.milestone_id,
+            "planning": {
+                "estimated_minutes": task.estimated_minutes,
+                "earliest_start_at_ms": task.earliest_start_at_ms,
+                "deadline_at_ms": task.deadline_at_ms,
+            },
+            "description": task.description,
+            "priority": task.priority,
+            "labels": task.labels,
+            "acceptance_criteria": criteria.as_deref().map(criterion_rows),
+            "criteria_available": criteria.is_some(),
+        })
+    }
+
+    /// Read-time projection: both reads are required because a live read has
+    /// no durable mutation to protect.
+    fn task_json(&self, id: &str) -> Result<Value, String> {
+        let task = self.client.task_detail(id).map_err(debug_err)?;
+        let criteria = self.client.acceptance_criteria(id).map_err(debug_err)?;
+        Ok(Self::task_body(&task, Some(criteria)))
+    }
+
+    fn criteria_json(&self, task_id: &str) -> Result<Value, String> {
+        let criteria = self
+            .client
+            .acceptance_criteria(task_id)
+            .map_err(debug_err)?;
+        Ok(json!({"task_id": task_id, "criteria": criterion_rows(&criteria)}))
+    }
+
     fn check_milestone_scope(&self, action: &MilestoneAction) -> Result<(), String> {
         match action {
             MilestoneAction::Create { project_id, .. } => self.allow_project(project_id),
@@ -151,7 +313,9 @@ impl ConnectedMcp {
             }
             TaskAction::ChangeStatus { task_id, .. }
             | TaskAction::Rename { task_id, .. }
-            | TaskAction::SetPlanning { task_id, .. } => self.check_existing_task(task_id),
+            | TaskAction::SetPlanning { task_id, .. }
+            | TaskAction::SetDetails { task_id, .. }
+            | TaskAction::AcceptanceCriteria { task_id, .. } => self.check_existing_task(task_id),
             TaskAction::AddPrerequisite {
                 task_id,
                 prerequisite_id,
@@ -174,11 +338,18 @@ impl ConnectedMcp {
     }
     fn check_existing_task(&self, id: &str) -> Result<(), String> {
         let records = self.client.tasks().map_err(debug_err)?;
-        let row = records
+        if let Some(row) = records
             .iter()
             .find(|row| row.get("id").and_then(Value::as_str) == Some(id))
-            .ok_or("task absent from last accepted snapshot; refresh before mutation")?;
-        self.check_project_option(row.get("project_id").and_then(Value::as_str))
+        {
+            return self.check_project_option(row.get("project_id").and_then(Value::as_str));
+        }
+        // A read-only agent may never have refreshed this replica, and another
+        // device may have created the task after the last accepted snapshot.
+        // The live task-detail route is authoritative for scope decisions, so
+        // fall back to it instead of denying a legitimate rich read.
+        let task = self.client.task_detail(id).map_err(debug_err)?;
+        self.check_project_option(task.project_id.as_deref())
     }
 
     /// Decode and authorize the ENTIRE workflow before queueing its first step.
@@ -616,6 +787,159 @@ impl ConnectedMcp {
             })),
             "projects.list" => self.read_family("projects"),
             "tasks.list" => self.read_family("tasks"),
+            // Rich per-task reads use the live task route (falling back from a
+            // snapshot that lacks the task). Writes report the exact queued
+            // command state and label the payload as last accepted server state.
+            "task.get" => {
+                let id = required_str(args, "id")?;
+                self.check_existing_task(&id)?;
+                self.task_json(&id)
+            }
+            "task.update" => {
+                self.policy.write_allowed()?;
+                let id = required_str(args, "id")?;
+                self.check_existing_task(&id)?;
+                if args.get("description").is_none()
+                    && args.get("priority").is_none()
+                    && args.get("labels").is_none()
+                {
+                    return Err(
+                        "task.update requires at least one of description, priority or labels"
+                            .into(),
+                    );
+                }
+                let current = self.client.task_detail(&id).map_err(debug_err)?;
+                let description = match args.get("description") {
+                    Some(value) => value
+                        .as_str()
+                        .ok_or_else(|| "description must be a string".to_owned())?
+                        .to_owned(),
+                    None => current.description,
+                };
+                let priority = match args.get("priority") {
+                    Some(value) => optional_priority(value)?,
+                    None => current.priority,
+                };
+                let labels = match args.get("labels") {
+                    Some(value) => labels_arg(value)?,
+                    None => current.labels,
+                };
+                let before = self.client.last_queued_command_id();
+                // The client returns the *last accepted* task it read before
+                // queueing. Never perform a second, fallible read after the
+                // command is durable: an error here would invite a retry that
+                // queues a duplicate under a new command identity.
+                let accepted = self
+                    .client
+                    .update_task_details(id.clone(), description, priority, labels)
+                    .map_err(debug_err)?;
+                let outcome = self.queued_outcome(before);
+                // Criteria are advisory in a mutation response. A failed read
+                // after queueing is reported as unavailable, not as failure.
+                let criteria = self.client.acceptance_criteria(&id).ok();
+                Ok(mutation_body(Self::task_body(&accepted, criteria), outcome))
+            }
+            "task.acceptance.list" => {
+                let id = required_str(args, "task_id")?;
+                self.check_existing_task(&id)?;
+                self.criteria_json(&id)
+            }
+            "task.acceptance.add"
+            | "task.acceptance.update"
+            | "task.acceptance.check"
+            | "task.acceptance.reorder"
+            | "task.acceptance.remove" => {
+                self.policy.write_allowed()?;
+                let id = required_str(args, "task_id")?;
+                self.check_existing_task(&id)?;
+                let before = self.client.last_queued_command_id();
+                let accepted = match name {
+                    "task.acceptance.add" => {
+                        let text = required_str(args, "text")?;
+                        self.client.add_acceptance_criterion(id.clone(), text)
+                    }
+                    "task.acceptance.update" => {
+                        let criterion_id = required_str(args, "criterion_id")?;
+                        let text = required_str(args, "text")?;
+                        self.client
+                            .set_acceptance_criterion_text(id.clone(), criterion_id, text)
+                    }
+                    "task.acceptance.check" => {
+                        let criterion_id = required_str(args, "criterion_id")?;
+                        let completed = args
+                            .get("completed")
+                            .map(|value| {
+                                value
+                                    .as_bool()
+                                    .ok_or_else(|| "completed must be a boolean".to_owned())
+                            })
+                            .transpose()?
+                            .unwrap_or(true);
+                        self.client.set_acceptance_criterion_completed(
+                            id.clone(),
+                            criterion_id,
+                            completed,
+                        )
+                    }
+                    "task.acceptance.reorder" => {
+                        let criterion_id = required_str(args, "criterion_id")?;
+                        let position = required_i64(args, "position")?;
+                        if position < 0 {
+                            return Err("position must be a non-negative zero-based index".into());
+                        }
+                        self.client.move_acceptance_criterion(
+                            id.clone(),
+                            criterion_id,
+                            position as usize,
+                        )
+                    }
+                    _ => {
+                        let criterion_id = required_str(args, "criterion_id")?;
+                        self.client
+                            .remove_acceptance_criterion(id.clone(), criterion_id)
+                    }
+                }
+                .map_err(debug_err)?;
+                // The client returns the *accepted* list; the queued change is
+                // only outbox state until `authority.flush` commits it.
+                let outcome = self.queued_outcome(before);
+                let server_state = json!({
+                    "task_id": id,
+                    "criteria": criterion_rows(&accepted),
+                    "criteria_available": true,
+                });
+                Ok(mutation_body(server_state, outcome))
+            }
+            "task.activity" => {
+                let id = required_str(args, "task_id")?;
+                self.check_existing_task(&id)?;
+                let limit = args
+                    .get("limit")
+                    .map(|value| {
+                        value
+                            .as_i64()
+                            .ok_or_else(|| "limit must be an integer".to_owned())
+                    })
+                    .transpose()?
+                    .unwrap_or(50);
+                if !(0..=200).contains(&limit) {
+                    return Err("limit must be between 0 and 200".into());
+                }
+                let activity = self.client.task_activity(&id).map_err(debug_err)?;
+                Ok(json!(
+                    activity
+                        .into_iter()
+                        .take(limit as usize)
+                        .map(|row| json!({
+                            "id": row.id,
+                            "kind": row.kind,
+                            "origin": row.origin,
+                            "occurred_at_ms": row.occurred_at_ms,
+                            "summary": row.summary,
+                        }))
+                        .collect::<Vec<_>>()
+                ))
+            }
             "planning.completion_impact" => {
                 if !self.policy.projects.is_empty() || !self.policy.allow_unscoped_execution {
                     return Err(
@@ -1180,7 +1504,9 @@ impl ConnectedMcp {
                     .map(|rows| json!(rows))
             }
             "authority.refresh" => {
-                self.policy.write_allowed()?;
+                // Refreshing the accepted cache is a local read: it queues and
+                // accepts nothing. Read-only agents need it to make a fresh
+                // connected session usable.
                 self.client.refresh().map_err(debug_err)?;
                 self.dispatch("authority.status", &json!({}))
             }
@@ -1290,4 +1616,73 @@ impl ConnectedMcp {
             )),
         }
     }
+}
+
+/// Wire shape for one ordered acceptance criterion. Positions come from the
+/// authority list order; checking a criterion never implies a task transition.
+fn criterion_rows(criteria: &[orbit_client::AcceptanceCriterionDto]) -> Vec<Value> {
+    criteria
+        .iter()
+        .map(|criterion| {
+            json!({
+                "id": criterion.id,
+                "text": criterion.text,
+                "completed": criterion.completed,
+                "completed_at_ms": criterion.completed_at_ms,
+                "position": criterion.position,
+            })
+        })
+        .collect()
+}
+
+/// `priority: null` or `"none"` clears the label; any other value is passed to
+/// the client, which canonicalises and validates it before queueing.
+fn optional_priority(value: &Value) -> Result<Option<String>, String> {
+    match value {
+        Value::Null => Ok(None),
+        Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("none") {
+                Ok(None)
+            } else {
+                Ok(Some(trimmed.to_owned()))
+            }
+        }
+        _ => Err("priority must be a string or null".into()),
+    }
+}
+
+fn labels_arg(value: &Value) -> Result<Vec<String>, String> {
+    let Some(items) = value.as_array() else {
+        return Err("labels must be an array of strings".into());
+    };
+    items
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| "labels must be an array of strings".to_owned())
+        })
+        .collect()
+}
+
+/// Wrap the payload in the explicit mutation response contract.
+///
+/// `server_state` is always the last accepted projection; it is never the
+/// queued value. `accepted` means the exact command is already committed,
+/// `pending` means it is still only durable local intent, and `conflict` means
+/// the authority permanently rejected it.
+fn mutation_body(server_state: Value, outcome: MutationOutcome) -> Value {
+    let mut body = json!({
+        "accepted": outcome.accepted(),
+        "pending": outcome.pending(),
+        "disposition": outcome.disposition(),
+        "server_state": server_state,
+    });
+    if let Some(message) = outcome.message() {
+        body.as_object_mut()
+            .expect("mutation body is an object")
+            .insert("message".into(), json!(message));
+    }
+    body
 }

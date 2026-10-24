@@ -106,7 +106,10 @@ pub(crate) fn audit(db: &Connection) -> Result<OutboxAudit, AuthorityError> {
     let mut first_conflict = None;
     let mut accepted_receipts = 0;
     let mut previous_ordinal: Option<i64> = None;
-    let mut seen_unresolved = false;
+    // A permanent conflict does not block later rows: the flush skips it and
+    // continues. Only an earlier *pending* intent before an accepted row proves
+    // that the global order was bypassed.
+    let mut seen_pending = false;
     let mut max_ordinal = 0;
 
     for row in &mut rows {
@@ -200,14 +203,29 @@ pub(crate) fn audit(db: &Connection) -> Result<OutboxAudit, AuthorityError> {
         }
         match row.state.as_str() {
             "pending" | "conflict" => {
-                seen_unresolved = true;
+                if row.state == "pending" {
+                    seen_pending = true;
+                }
                 if first_unresolved.is_none() {
                     first_unresolved = Some(row.id.clone());
                 }
                 if row.state == "conflict" && first_conflict.is_none() {
                     first_conflict = Some(row.id.clone());
                 }
-                if row.receipt.is_some() {
+                // A conflict row may carry its rejection reason as
+                // `{"error": "..."}`. That is an explanation written by the
+                // flush, never an acceptance receipt, so it is valid only when
+                // it makes no acceptance claim.
+                let explanatory = row.state == "conflict"
+                    && row.receipt.as_deref().is_some_and(|raw| {
+                        serde_json::from_str::<Value>(raw).is_ok_and(|receipt| {
+                            receipt.get("error").and_then(Value::as_str).is_some()
+                                && receipt.get("revision").is_none()
+                                && receipt.get("command_id").is_none()
+                                && receipt.get("response").is_none()
+                        })
+                    });
+                if row.receipt.is_some() && !explanatory {
                     issue(
                         &mut issues,
                         "unresolved_receipt",
@@ -218,12 +236,12 @@ pub(crate) fn audit(db: &Connection) -> Result<OutboxAudit, AuthorityError> {
             }
             "accepted" => {
                 accepted_receipts += 1;
-                if seen_unresolved {
+                if seen_pending {
                     issue(
                         &mut issues,
                         "accepted_after_pending",
                         Some(&row.id),
-                        "accepted command follows unresolved global intention",
+                        "accepted command follows an unresolved pending intention",
                     );
                 }
                 let parsed = row
@@ -264,12 +282,25 @@ pub(crate) fn audit(db: &Connection) -> Result<OutboxAudit, AuthorityError> {
                 }
             }
             "superseded" if row.receipt.is_some() => {
-                issue(
-                    &mut issues,
-                    "superseded_receipt",
-                    Some(&row.id),
-                    "superseded command must not carry an acceptance receipt",
-                );
+                // Reviewing/replacing a conflict preserves its original
+                // explanatory `{"error": ...}` receipt. That is history, not
+                // an acceptance claim, so only reject acceptance-shaped data.
+                let explanatory = row.receipt.as_deref().is_some_and(|raw| {
+                    serde_json::from_str::<Value>(raw).is_ok_and(|receipt| {
+                        receipt.get("error").and_then(Value::as_str).is_some()
+                            && receipt.get("revision").is_none()
+                            && receipt.get("command_id").is_none()
+                            && receipt.get("response").is_none()
+                    })
+                });
+                if !explanatory {
+                    issue(
+                        &mut issues,
+                        "superseded_receipt",
+                        Some(&row.id),
+                        "superseded command must not carry an acceptance receipt",
+                    );
+                }
             }
             _ => {}
         }

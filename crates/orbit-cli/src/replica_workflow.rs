@@ -279,6 +279,7 @@ impl WorkflowManifest {
             .map_err(|error| match error {
                 AuthorityError::Conflict(reason)
                 | AuthorityError::Invalid(reason)
+                | AuthorityError::Unauthorized(reason)
                 | AuthorityError::Unavailable(reason) => reason,
                 AuthorityError::Storage(_) => "replica database write failed".into(),
                 AuthorityError::Transport(_) => {

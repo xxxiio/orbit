@@ -28,6 +28,10 @@ pub struct AppendResult {
 pub enum AuthorityError {
     Sql(rusqlite::Error),
     Invalid(&'static str),
+    /// A validated application use case rejected the command. Transports keep
+    /// the typed reason so not-found, conflict, oversize and validation
+    /// failures map to distinct HTTP statuses instead of a generic 400.
+    Application(orbit_application::ApplicationError),
     ImmutableConflict,
     Unauthorized,
     StaleRevision,
@@ -42,6 +46,51 @@ impl From<rusqlite::Error> for AuthorityError {
 
 pub fn digest(value: &str) -> Vec<u8> {
     Sha256::digest(value.as_bytes()).to_vec()
+}
+
+/// Ordered labels attached to one task. Labels are a separate table so the
+/// task row stays typed and the snapshot projection orders them deterministically.
+fn read_task_labels(conn: &Connection, task_id: &str) -> Result<Vec<String>, AuthorityError> {
+    let mut stmt = conn.prepare("SELECT label FROM task_labels WHERE task_id=?1 ORDER BY label")?;
+    let labels = stmt
+        .query_map([task_id], |row| row.get(0))?
+        .collect::<Result<Vec<String>, _>>()?;
+    Ok(labels)
+}
+
+/// Read one canonical task projection including its rich details.
+fn read_task_record(
+    conn: &Connection,
+    task_id: &str,
+) -> Result<Option<crate::domain_commands::TaskRecord>, AuthorityError> {
+    let record = conn
+        .query_row(
+            "SELECT id,title,status,project_id,milestone_id,estimated_minutes,earliest_start_at_ms,deadline_at_ms,description,priority FROM tasks WHERE id=?1",
+            [task_id],
+            |r| {
+                Ok(crate::domain_commands::TaskRecord {
+                    id: r.get(0)?,
+                    title: r.get(1)?,
+                    status: r.get(2)?,
+                    project_id: r.get(3)?,
+                    milestone_id: r.get(4)?,
+                    estimated_minutes: r.get(5)?,
+                    earliest_start_at_ms: r.get(6)?,
+                    deadline_at_ms: r.get(7)?,
+                    description: r.get(8)?,
+                    priority: r.get(9)?,
+                    labels: Vec::new(),
+                })
+            },
+        )
+        .optional()?;
+    match record {
+        Some(mut record) => {
+            record.labels = read_task_labels(conn, task_id)?;
+            Ok(Some(record))
+        }
+        None => Ok(None),
+    }
 }
 
 pub(crate) type FullSnapshot = (
@@ -461,7 +510,9 @@ impl AuthorityStore {
             rows.collect::<Result<Vec<_>, _>>()?
         };
         let tasks = {
-            let mut stmt = tx.prepare("SELECT id,title,status,project_id,milestone_id,estimated_minutes,earliest_start_at_ms,deadline_at_ms FROM tasks ORDER BY id")?;
+            let mut stmt = tx.prepare(
+                "SELECT id,title,status,project_id,milestone_id,estimated_minutes,earliest_start_at_ms,deadline_at_ms,description,priority FROM tasks ORDER BY id",
+            )?;
             let rows = stmt.query_map([], |r| {
                 Ok(crate::domain_commands::TaskRecord {
                     id: r.get(0)?,
@@ -472,9 +523,16 @@ impl AuthorityStore {
                     estimated_minutes: r.get(5)?,
                     earliest_start_at_ms: r.get(6)?,
                     deadline_at_ms: r.get(7)?,
+                    description: r.get(8)?,
+                    priority: r.get(9)?,
+                    labels: Vec::new(),
                 })
             })?;
-            rows.collect::<Result<Vec<_>, _>>()?
+            let mut tasks = rows.collect::<Result<Vec<_>, _>>()?;
+            for task in &mut tasks {
+                task.labels = read_task_labels(&tx, &task.id)?;
+            }
+            tasks
         };
         // Do not return a canonical claim if the relay was populated outside
         // the accepted command path or its receipt history is incomplete.
@@ -637,7 +695,9 @@ impl AuthorityStore {
             rows.collect::<Result<Vec<_>, _>>()?
         };
         let tasks = {
-            let mut stmt = tx.prepare("SELECT id,title,status,project_id,milestone_id,estimated_minutes,earliest_start_at_ms,deadline_at_ms FROM tasks ORDER BY id")?;
+            let mut stmt = tx.prepare(
+                "SELECT id,title,status,project_id,milestone_id,estimated_minutes,earliest_start_at_ms,deadline_at_ms,description,priority FROM tasks ORDER BY id",
+            )?;
             let rows = stmt.query_map([], |r| {
                 Ok(crate::domain_commands::TaskRecord {
                     id: r.get(0)?,
@@ -648,9 +708,16 @@ impl AuthorityStore {
                     estimated_minutes: r.get(5)?,
                     earliest_start_at_ms: r.get(6)?,
                     deadline_at_ms: r.get(7)?,
+                    description: r.get(8)?,
+                    priority: r.get(9)?,
+                    labels: Vec::new(),
                 })
             })?;
-            rows.collect::<Result<Vec<_>, _>>()?
+            let mut tasks = rows.collect::<Result<Vec<_>, _>>()?;
+            for task in &mut tasks {
+                task.labels = read_task_labels(&tx, &task.id)?;
+            }
+            tasks
         };
         tx.commit()?;
         Ok((revision, projects, tasks))
@@ -795,22 +862,26 @@ impl AuthorityStore {
         Ok(result)
     }
     pub fn tasks(&self) -> Result<(i64, Vec<crate::domain_commands::TaskRecord>), AuthorityError> {
-        let mut stmt = self.conn.prepare("SELECT id,title,status,project_id,milestone_id,estimated_minutes,earliest_start_at_ms,deadline_at_ms FROM tasks ORDER BY id")?;
-        let tasks = stmt
-            .query_map([], |r| {
-                Ok(crate::domain_commands::TaskRecord {
-                    id: r.get(0)?,
-                    title: r.get(1)?,
-                    status: r.get(2)?,
-                    project_id: r.get(3)?,
-                    milestone_id: r.get(4)?,
-                    estimated_minutes: r.get(5)?,
-                    earliest_start_at_ms: r.get(6)?,
-                    deadline_at_ms: r.get(7)?,
-                })
-            })?
+        let mut stmt = self.conn.prepare("SELECT id FROM tasks ORDER BY id")?;
+        let ids = stmt
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+        let tasks = ids
+            .into_iter()
+            .map(|id| {
+                read_task_record(&self.conn, &id)?
+                    .ok_or(AuthorityError::Invalid("task does not exist"))
+            })
             .collect::<Result<Vec<_>, _>>()?;
         Ok((self.tip()?, tasks))
+    }
+    /// One canonical task projection including rich details and ordered labels.
+    pub(crate) fn task_record(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<crate::domain_commands::TaskRecord>, AuthorityError> {
+        read_task_record(&self.conn, task_id)
     }
     /// Single authority transaction: validate domain rules, commit the canonical
     /// task, immutable semantic event and command acknowledgement together.
@@ -891,6 +962,9 @@ impl AuthorityStore {
                     estimated_minutes: None,
                     earliest_start_at_ms: None,
                     deadline_at_ms: None,
+                    description: String::new(),
+                    priority: None,
+                    labels: Vec::new(),
                 };
                 let changed=tx.execute("INSERT OR IGNORE INTO tasks(id,title,status,status_sequence,project_id) VALUES(?1,?2,?3,?4,?5)", params![record.id,record.title,record.status,sequence,record.project_id])?;
                 if changed != 1 {
@@ -933,6 +1007,9 @@ impl AuthorityStore {
                         estimated_minutes: None,
                         earliest_start_at_ms: None,
                         deadline_at_ms: None,
+                        description: String::new(),
+                        priority: None,
+                        labels: Vec::new(),
                     },
                     vec![
                         FieldMutation::new("title", Some(title.clone()), base)
@@ -997,6 +1074,9 @@ impl AuthorityStore {
                         estimated_minutes: None,
                         earliest_start_at_ms: None,
                         deadline_at_ms: None,
+                        description: String::new(),
+                        priority: None,
+                        labels: Vec::new(),
                     },
                     vec![
                         FieldMutation::new("project_id", project_id.clone(), base)
@@ -1054,6 +1134,9 @@ impl AuthorityStore {
                         estimated_minutes: None,
                         earliest_start_at_ms: None,
                         deadline_at_ms: None,
+                        description: String::new(),
+                        priority: None,
+                        labels: Vec::new(),
                     },
                     vec![mutation],
                 )
@@ -1106,6 +1189,9 @@ impl AuthorityStore {
                         estimated_minutes: *estimated_minutes,
                         earliest_start_at_ms: *earliest_start_at_ms,
                         deadline_at_ms: *deadline_at_ms,
+                        description: String::new(),
+                        priority: None,
+                        labels: Vec::new(),
                     },
                     mutations,
                 )
@@ -1194,6 +1280,9 @@ impl AuthorityStore {
                         estimated_minutes: None,
                         earliest_start_at_ms: None,
                         deadline_at_ms: None,
+                        description: String::new(),
+                        priority: None,
+                        labels: Vec::new(),
                     },
                     vec![mutation],
                 )
@@ -1235,19 +1324,66 @@ impl AuthorityStore {
                         estimated_minutes: None,
                         earliest_start_at_ms: None,
                         deadline_at_ms: None,
+                        description: String::new(),
+                        priority: None,
+                        labels: Vec::new(),
                     },
                     vec![
                         FieldMutation::new("status", Some(to.as_str().into()), Some(base)).unwrap(),
                     ],
                 )
             }
+            TaskAction::SetDetails { .. } | TaskAction::AcceptanceCriteria { .. } => {
+                return Err(AuthorityError::Invalid(
+                    "rich task action requires the application command path",
+                ));
+            }
         };
-        // Return the actual persisted planning values for every task mutation,
-        // including renames, status changes and project reassignment.
-        let mut record = record;
-        (record.milestone_id, record.estimated_minutes, record.earliest_start_at_ms, record.deadline_at_ms) = tx.query_row(
-            "SELECT milestone_id,estimated_minutes,earliest_start_at_ms,deadline_at_ms FROM tasks WHERE id=?1",
-            [&record.id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?;
+        // Return the actual persisted projection for every task mutation,
+        // including renames, status changes, planning and rich details.
+        let record_id = record.id.clone();
+        let (activity_kind, activity_summary) = match &command.action {
+            TaskAction::Create { title, .. } => ("created", format!("Task {title} created")),
+            TaskAction::Rename { title, .. } => ("updated", format!("Task renamed to {title}")),
+            TaskAction::AssignProject { .. } => {
+                ("updated", "Task project assignment updated".to_owned())
+            }
+            TaskAction::AssignMilestone { milestone_id, .. } => match milestone_id {
+                Some(id) => ("updated", format!("Task assigned to milestone {id}")),
+                None => ("updated", "Task removed from milestone".to_owned()),
+            },
+            TaskAction::SetPlanning { .. } => ("updated", "Task planning updated".to_owned()),
+            TaskAction::AddPrerequisite {
+                prerequisite_id, ..
+            } => (
+                "blocker_opened",
+                format!("Prerequisite {prerequisite_id} added"),
+            ),
+            TaskAction::RemovePrerequisite {
+                prerequisite_id, ..
+            } => (
+                "blocker_resolved",
+                format!("Prerequisite {prerequisite_id} removed"),
+            ),
+            TaskAction::ChangeStatus { status, .. } => {
+                ("status_changed", format!("Task status changed to {status}"))
+            }
+            TaskAction::SetDetails { .. } | TaskAction::AcceptanceCriteria { .. } => {
+                return Err(AuthorityError::Invalid(
+                    "rich task action requires the application command path",
+                ));
+            }
+        };
+        append_task_command_activity(
+            &tx,
+            &command.command_id,
+            actor,
+            &record_id,
+            activity_kind,
+            &activity_summary,
+        )?;
+        let record = read_task_record(&tx, &record_id)?
+            .ok_or(AuthorityError::Invalid("task does not exist"))?;
         let change = SemanticChange::new(
             EntityRef::new(EntityKind::Task, record.id.clone())
                 .map_err(|_| AuthorityError::Invalid("invalid task ref"))?,
@@ -1427,6 +1563,40 @@ impl AuthorityStore {
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
+}
+
+/// Append one activity for a connected raw-SQL task command so HTTP/MCP parity
+/// matches the rich application command path. The deterministic id is derived
+/// from the durable command id; duplicate commands return their receipt before
+/// reaching this insert, so a retry can never append a second activity.
+fn append_task_command_activity(
+    tx: &rusqlite::Connection,
+    command_id: &str,
+    actor: &str,
+    task_id: &str,
+    kind: &str,
+    summary: &str,
+) -> Result<(), AuthorityError> {
+    let occurred_at_ms: i64 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| AuthorityError::Invalid("clock"))?
+        .as_millis()
+        .try_into()
+        .map_err(|_| AuthorityError::Invalid("clock overflow"))?;
+    tx.execute(
+        "INSERT INTO activities(id,subject_kind,subject_id,activity_kind,activity_kind_value,\
+         origin_kind,origin_value,occurred_at_ms,summary) \
+         VALUES(?1,'task',?2,?3,NULL,'external',?4,?5,?6)",
+        params![
+            format!("activity-{command_id}"),
+            task_id,
+            kind,
+            actor,
+            occurred_at_ms,
+            summary
+        ],
+    )?;
+    Ok(())
 }
 
 /// Resolve optimistic semantic field bases for task edits using accepted history.

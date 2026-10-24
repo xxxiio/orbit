@@ -109,7 +109,45 @@ pub(crate) fn host_import_attachment(
     description: Option<String>,
 ) -> Result<AttachmentDto, ClientError> {
     let owner = parse_attachment_owner(&owner_kind, &owner_id)?;
-    let source = Path::new(&path);
+    let (filename, content_type, content) = read_attachment_source(&path)?;
+    let id = AttachmentId::new(generate_id("attachment")).map_err(invalid_input)?;
+    let revision = host.snapshot().map_err(authority_client_error)?.0;
+    host.import_attachment_accepted(
+        actor,
+        &generate_id("command"),
+        revision,
+        ImportAttachmentCommand {
+            id: id.clone(),
+            owner,
+            filename,
+            content_type: Some(content_type),
+            content,
+            description,
+            activity_id: new_activity_id()?,
+            origin: orbit_domain::ActivityOrigin::Human,
+        },
+    )
+    .map_err(attachment_command_error)?;
+    let (attachment, _) = host.attachment_content(&id).map_err(ClientError::from)?;
+    Ok(AttachmentDto::from(&attachment))
+}
+
+/// Client-visible attachment size limit. One configuration surface governs the
+/// client limit and the server limit, so a too-large file is rejected before
+/// any bytes are staged or transmitted.
+pub(crate) fn attachment_max_bytes() -> u64 {
+    std::env::var("ORBIT_ATTACHMENT_MAX_BYTES")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_ATTACHMENT_MAX_BYTES)
+}
+
+/// Read one attachment source file without following symbolic links.
+///
+/// The file name is metadata, never a path: callers must not rebuild filesystem
+/// paths from it. The bytes are inert data and are never interpreted by Orbit.
+pub(crate) fn read_attachment_source(path: &str) -> Result<(String, String, Vec<u8>), ClientError> {
+    let source = Path::new(path);
     let metadata = fs::symlink_metadata(source).map_err(|error| ClientError {
         code: ClientErrorCode::InvalidInput,
         message: format!("cannot read attachment source {path:?}: {error}"),
@@ -139,31 +177,30 @@ pub(crate) fn host_import_attachment(
         })?
         .to_owned();
     validate_attachment_filename(&filename).map_err(invalid_input)?;
+    let limit = attachment_max_bytes();
+    if metadata.len() > limit {
+        return Err(ClientError {
+            code: ClientErrorCode::InvalidInput,
+            message: format!(
+                "attachment source {path:?} is {} bytes, exceeding the configured {limit} byte limit (ORBIT_ATTACHMENT_MAX_BYTES)",
+                metadata.len()
+            ),
+        });
+    }
     let content = fs::read(source).map_err(|error| ClientError {
         code: ClientErrorCode::InvalidInput,
         message: format!("cannot read attachment source {path:?}: {error}"),
     })?;
+    if content.len() as u64 > limit {
+        return Err(ClientError {
+            code: ClientErrorCode::InvalidInput,
+            message: format!(
+                "attachment source {path:?} grew beyond the configured {limit} byte limit while being read (ORBIT_ATTACHMENT_MAX_BYTES)"
+            ),
+        });
+    }
     let content_type = orbit_domain::content_type_for_filename(&filename).to_owned();
-    let id = AttachmentId::new(generate_id("attachment")).map_err(invalid_input)?;
-    let revision = host.snapshot().map_err(authority_client_error)?.0;
-    host.import_attachment_accepted(
-        actor,
-        &generate_id("command"),
-        revision,
-        ImportAttachmentCommand {
-            id: id.clone(),
-            owner,
-            filename,
-            content_type: Some(content_type),
-            content,
-            description,
-            activity_id: new_activity_id()?,
-            origin: orbit_domain::ActivityOrigin::Human,
-        },
-    )
-    .map_err(attachment_command_error)?;
-    let (attachment, _) = host.attachment_content(&id).map_err(ClientError::from)?;
-    Ok(AttachmentDto::from(&attachment))
+    Ok((filename, content_type, content))
 }
 
 pub(crate) fn host_attachment_content(

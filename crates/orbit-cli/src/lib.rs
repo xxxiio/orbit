@@ -1,4 +1,5 @@
 mod agent_commands;
+mod attachment_commands;
 mod authority_http;
 mod blueprint_commands;
 mod connected_agent;
@@ -134,6 +135,9 @@ pub fn run(cli: Cli) -> Result<String, CliError> {
         };
     }
     let response = match command {
+        Command::Attachment(attachment) => {
+            return attachment_commands::run(&deployment, &db_path, attachment.command, json);
+        }
         Command::Capabilities(args) => Response::Authority {
             result: serde_json::to_value(orbit_runtime::capabilities::discover(
                 args.id.as_deref(),

@@ -142,7 +142,8 @@ the destination before running either command.
 
 Tasks now have first-class acceptance criteria: an ordered list with stable IDs
 and per-criterion completion. Edit them in the TUI with `K`, or over MCP with
-`task.acceptance.*`. They are local-authoritative only in this build. A linked
+`task.acceptance.*`. These work locally and in connected mode; connected changes
+are queued as canonical commands and become accepted after a flush. A linked
 note remains useful when the acceptance argument needs longer prose or shared
 context:
 

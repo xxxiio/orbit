@@ -11,9 +11,79 @@ mod http;
 #[path = "authority/markdown_mirror.rs"]
 mod markdown_mirror;
 pub use http::AuthorityHttp;
+pub use http::BinaryResponse;
 use http::validate_url;
 
 type CommandStatusRow = (String, String, String, Option<i64>, String, Option<String>);
+/// `(owner_kind, owner_id, filename, content_type, size_bytes, checksum,
+/// created_at_ms, description, is_image, id)` for one cached accepted row.
+type CachedAttachmentRow = (
+    String,
+    String,
+    String,
+    String,
+    i64,
+    String,
+    i64,
+    Option<String>,
+    i64,
+    String,
+);
+
+/// One durably staged attachment upload.
+///
+/// `state = accepted` is only ever written after a validated server receipt;
+/// a `pending` row is local intent and must never be presented as accepted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AttachmentUploadRow {
+    pub command_id: String,
+    pub attachment_id: String,
+    pub activity_id: String,
+    pub owner_kind: String,
+    pub owner_id: String,
+    pub filename: String,
+    pub content_type: String,
+    pub size_bytes: u64,
+    pub checksum: String,
+    pub staging_path: String,
+    pub description: Option<String>,
+    pub created_at_ms: i64,
+    pub state: String,
+    pub receipt: Option<String>,
+    pub last_error: Option<String>,
+}
+
+const ATTACHMENT_UPLOAD_SELECT_BY: &str = "SELECT command_id,attachment_id,activity_id,owner_kind,owner_id,filename,content_type,size_bytes,checksum,staging_path,description,created_at_ms,state,receipt,last_error FROM attachment_uploads WHERE";
+
+fn attachment_upload_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AttachmentUploadRow> {
+    let size_bytes: i64 = row.get(7)?;
+    Ok(AttachmentUploadRow {
+        command_id: row.get(0)?,
+        attachment_id: row.get(1)?,
+        activity_id: row.get(2)?,
+        owner_kind: row.get(3)?,
+        owner_id: row.get(4)?,
+        filename: row.get(5)?,
+        content_type: row.get(6)?,
+        size_bytes: u64::try_from(size_bytes).map_err(|_| {
+            rusqlite::Error::FromSqlConversionFailure(
+                7,
+                rusqlite::types::Type::Integer,
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "negative attachment size",
+                )),
+            )
+        })?,
+        checksum: row.get(8)?,
+        staging_path: row.get(9)?,
+        description: row.get(10)?,
+        created_at_ms: row.get(11)?,
+        state: row.get(12)?,
+        receipt: row.get(13)?,
+        last_error: row.get(14)?,
+    })
+}
 
 #[derive(Debug)]
 pub enum AuthorityError {
@@ -22,6 +92,9 @@ pub enum AuthorityError {
     Invalid(String),
     Conflict(String),
     Unavailable(String),
+    /// The server rejected this device's credentials (401/403). Never a domain
+    /// verdict about the command, so the row must stay pending.
+    Unauthorized(String),
 }
 impl From<rusqlite::Error> for AuthorityError {
     fn from(e: rusqlite::Error) -> Self {
@@ -220,9 +293,39 @@ pub struct ConvergenceCycle {
 
 pub struct AuthorityReplica {
     db: Connection,
+    /// Replica-owned directory for bytes that the server has not yet
+    /// acknowledged. It is intentionally outside the accepted cache: a staged
+    /// file is never evidence that an attachment exists on the server.
+    attachment_staging_root: std::path::PathBuf,
+}
+
+/// Schema-version marker for the connected replica layout. It is stored in
+/// `authority_settings` so a replica written by a newer client fails closed
+/// instead of being silently reused with missing durable state.
+const REPLICA_SCHEMA_VERSION: i64 = 2;
+
+/// `<replica parent>/attachment-staging` for a file-backed replica. An
+/// in-memory replica (tests, ephemeral clients) stages under a process-unique
+/// temporary directory so offline staging still has real durable bytes.
+fn attachment_staging_root(path: &Path) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static MEMORY_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+    if path == Path::new(":memory:") {
+        return std::env::temp_dir().join(format!(
+            "orbit-attachment-staging-{}-{}",
+            std::process::id(),
+            MEMORY_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+    }
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .join("attachment-staging")
 }
 impl AuthorityReplica {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, AuthorityError> {
+        let path = path.as_ref();
+        let attachment_staging_root = attachment_staging_root(path);
         let db = Connection::open(path)?;
         // Never initialize the connected replica over a local-authoritative
         // workspace. Both layouts are SQLite but have incompatible ownership.
@@ -239,7 +342,25 @@ impl AuthorityReplica {
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS authority_settings (id INTEGER PRIMARY KEY CHECK(id=1), url TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS authority_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL CHECK(revision>=0), fingerprint TEXT NOT NULL, payload TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS authority_outbox (command_id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('project','task','evidence','schedule','routine','milestone','strategy','markdown','folder_create','folder_move','agent','blueprint')), action TEXT NOT NULL, expected_revision INTEGER, state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','accepted','conflict','superseded')), receipt TEXT, ordinal INTEGER NOT NULL UNIQUE);")?;
+            CREATE TABLE IF NOT EXISTS authority_outbox (command_id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('project','task','evidence','schedule','routine','milestone','strategy','markdown','folder_create','folder_move','agent','blueprint')), action TEXT NOT NULL, expected_revision INTEGER, state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','accepted','conflict','superseded')), receipt TEXT, ordinal INTEGER NOT NULL UNIQUE);
+            CREATE TABLE IF NOT EXISTS attachment_uploads (
+                command_id TEXT PRIMARY KEY,
+                attachment_id TEXT NOT NULL UNIQUE,
+                activity_id TEXT NOT NULL,
+                owner_kind TEXT NOT NULL,
+                owner_id TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                checksum TEXT NOT NULL,
+                staging_path TEXT NOT NULL,
+                description TEXT,
+                created_at_ms INTEGER NOT NULL,
+                state TEXT NOT NULL CHECK(state IN ('pending','accepted','conflict')),
+                receipt TEXT,
+                last_error TEXT
+            );
+            CREATE TABLE IF NOT EXISTS replica_metadata (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL);")?;
         // Greenfield schema: do not silently retain an older SQL-knowledge
         // outbox whose endpoints were retired. The user may initialize a fresh
         // replica, but an existing incompatible outbox fails closed.
@@ -275,6 +396,46 @@ impl AuthorityReplica {
                 "split Markdown outbox unsupported: initialize fresh replica".into(),
             ));
         }
+        // The attachment staging queue is durable user intent, not a cache. A
+        // table written by an incompatible build must fail closed instead of
+        // silently losing staged bytes or their acceptance receipts.
+        let staging_schema_ddl: Option<String> = db
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='attachment_uploads'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let incompatible_staging_schema = staging_schema_ddl.is_some_and(|ddl| {
+            !ddl.contains("staging_path")
+                || !ddl.contains("last_error")
+                || !ddl.contains("receipt")
+                || !ddl.contains("'conflict'")
+                || !ddl.contains("'accepted'")
+        });
+        if incompatible_staging_schema {
+            return Err(AuthorityError::Invalid(
+                "incompatible attachment staging schema: initialize fresh replica".into(),
+            ));
+        }
+        let recorded_schema: Option<i64> = db
+            .query_row(
+                "SELECT schema_version FROM replica_metadata WHERE id=1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        // A replica written by a newer client fails closed: this build cannot
+        // know what durable state it is missing. An *older* replica is migrated
+        // forward instead of being rejected, because losing a user's durable
+        // outbox to a version bump is unacceptable.
+        if let Some(version) = recorded_schema
+            && !(1..=REPLICA_SCHEMA_VERSION).contains(&version)
+        {
+            return Err(AuthorityError::Invalid(format!(
+                "replica schema version {version} is not supported by this client ({REPLICA_SCHEMA_VERSION}); initialize a fresh replica"
+            )));
+        }
         db.execute_batch(
             "CREATE TABLE IF NOT EXISTS accepted_markdown_cache (
             note_id TEXT PRIMARY KEY NOT NULL,
@@ -287,9 +448,46 @@ impl AuthorityReplica {
             inventory_digest TEXT,
             source_revision INTEGER,
             document_count INTEGER NOT NULL CHECK(document_count>=0)
+        );
+        -- Accepted attachment metadata observed from the server. This is a
+        -- cache of accepted state only: pending uploads live in
+        -- attachment_uploads and are never projected from here.
+        CREATE TABLE IF NOT EXISTS accepted_attachment_metadata (
+            id TEXT PRIMARY KEY NOT NULL,
+            owner_kind TEXT NOT NULL,
+            owner_id TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            content_type TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            checksum TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            description TEXT,
+            is_image INTEGER NOT NULL CHECK(is_image IN (0,1))
         );",
         )?;
-        Ok(Self { db })
+        match recorded_schema {
+            Some(version) if version < REPLICA_SCHEMA_VERSION => {
+                // v1 -> v2 introduced the durable attachment staging table plus
+                // the accepted attachment metadata cache. Every table above is
+                // created with IF NOT EXISTS, so the migration is the version
+                // advance itself; staged uploads and outbox rows are untouched.
+                db.execute(
+                    "UPDATE replica_metadata SET schema_version=?1 WHERE id=1",
+                    [REPLICA_SCHEMA_VERSION],
+                )?;
+            }
+            Some(_) => {}
+            None => {
+                db.execute(
+                    "INSERT INTO replica_metadata(id,schema_version) VALUES(1,?1)",
+                    [REPLICA_SCHEMA_VERSION],
+                )?;
+            }
+        }
+        Ok(Self {
+            db,
+            attachment_staging_root,
+        })
     }
     /// The canonical server URL is pinned to this replica on first connection.
     pub fn bind(&mut self, url: &str) -> Result<(), AuthorityError> {
@@ -485,7 +683,8 @@ impl AuthorityReplica {
                 Some(match error {
                     AuthorityError::Conflict(reason)
                     | AuthorityError::Invalid(reason)
-                    | AuthorityError::Unavailable(reason) => reason,
+                    | AuthorityError::Unavailable(reason)
+                    | AuthorityError::Unauthorized(reason) => reason,
                     AuthorityError::Transport(_) => "Markdown server unavailable".into(),
                     AuthorityError::Storage(_) => "Markdown mirror storage error".into(),
                 }),
@@ -748,6 +947,30 @@ impl AuthorityReplica {
         )
         .transpose()
     }
+    /// Outbox state for one command identity, including a staged attachment
+    /// upload. Frontends poll this instead of inferring per-command progress
+    /// from the total queue depth.
+    pub fn command_state(&self, id: &str) -> Result<Option<String>, AuthorityError> {
+        let state: Option<String> = self
+            .db
+            .query_row(
+                "SELECT state FROM authority_outbox WHERE command_id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if state.is_some() {
+            return Ok(state);
+        }
+        Ok(self
+            .db
+            .query_row(
+                "SELECT state FROM attachment_uploads WHERE command_id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
     /// All commands share one durable global ordinal, including Markdown
     /// writes. A rejected command cannot be overtaken by other domains.
     pub fn queue_markdown(
@@ -875,6 +1098,267 @@ impl AuthorityReplica {
             [],
             |r| r.get(0),
         )?)
+    }
+    /// Replica-owned directory holding bytes for unacknowledged uploads.
+    /// Diagnostics only: content must always be read through the verified
+    /// attachment APIs, never by joining this path with a display filename.
+    pub(crate) fn attachment_staging_root(&self) -> &Path {
+        &self.attachment_staging_root
+    }
+    /// Durably record a staged upload. The caller writes and fsyncs the bytes
+    /// first; the row is the durable intent that makes them retryable.
+    pub(crate) fn insert_attachment_upload(
+        &mut self,
+        upload: &AttachmentUploadRow,
+    ) -> Result<(), AuthorityError> {
+        self.db.execute(
+            "INSERT INTO attachment_uploads(command_id,attachment_id,activity_id,owner_kind,owner_id,filename,content_type,size_bytes,checksum,staging_path,description,created_at_ms,state,receipt,last_error)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'pending',NULL,NULL)",
+            params![
+                upload.command_id,
+                upload.attachment_id,
+                upload.activity_id,
+                upload.owner_kind,
+                upload.owner_id,
+                upload.filename,
+                upload.content_type,
+                i64::try_from(upload.size_bytes).map_err(|_| {
+                    AuthorityError::Invalid("attachment size exceeds local range".into())
+                })?,
+                upload.checksum,
+                upload.staging_path,
+                upload.description,
+                upload.created_at_ms,
+            ],
+        )?;
+        Ok(())
+    }
+    pub(crate) fn attachment_upload(
+        &self,
+        command_id: &str,
+    ) -> Result<Option<AttachmentUploadRow>, AuthorityError> {
+        Ok(self
+            .db
+            .query_row(
+                &format!("{ATTACHMENT_UPLOAD_SELECT_BY} command_id=?1"),
+                [command_id],
+                attachment_upload_row,
+            )
+            .optional()?)
+    }
+    /// Look up a staged/accepted upload by its attachment identity. A row means
+    /// this replica owns the only local copy of the pending bytes.
+    pub(crate) fn attachment_upload_by_attachment(
+        &self,
+        attachment_id: &str,
+    ) -> Result<Option<AttachmentUploadRow>, AuthorityError> {
+        Ok(self
+            .db
+            .query_row(
+                &format!("{ATTACHMENT_UPLOAD_SELECT_BY} attachment_id=?1"),
+                [attachment_id],
+                attachment_upload_row,
+            )
+            .optional()?)
+    }
+    pub(crate) fn pending_attachment_uploads(
+        &self,
+    ) -> Result<Vec<AttachmentUploadRow>, AuthorityError> {
+        self.pending_attachment_uploads_for(None)
+    }
+    /// Unacknowledged uploads in creation order. `None` returns every owner so
+    /// a global flush keeps the exact staging order.
+    pub(crate) fn pending_attachment_uploads_for(
+        &self,
+        owner: Option<(&str, &str)>,
+    ) -> Result<Vec<AttachmentUploadRow>, AuthorityError> {
+        let (filter, values): (&str, Vec<&str>) = match owner {
+            Some((kind, id)) => (" AND owner_kind=?1 AND owner_id=?2", vec![kind, id]),
+            None => ("", Vec::new()),
+        };
+        let sql = format!(
+            "{ATTACHMENT_UPLOAD_SELECT_BY} state IN ('pending','conflict'){filter} ORDER BY rowid"
+        );
+        let mut stmt = self.db.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(values), attachment_upload_row)?;
+        let mut uploads = Vec::new();
+        for row in rows {
+            uploads.push(row?);
+        }
+        Ok(uploads)
+    }
+    pub(crate) fn pending_attachment_upload_count(&self) -> Result<i64, AuthorityError> {
+        Ok(self.db.query_row(
+            "SELECT COUNT(*) FROM attachment_uploads WHERE state IN ('pending','conflict')",
+            [],
+            |r| r.get(0),
+        )?)
+    }
+    /// Permanently rejected uploads, in staging order, with their last error.
+    /// A flush must report these instead of claiming the queue is empty.
+    pub(crate) fn attachment_upload_conflicts(
+        &self,
+    ) -> Result<Vec<(String, String)>, AuthorityError> {
+        let mut stmt = self.db.prepare(
+            "SELECT command_id,last_error FROM attachment_uploads WHERE state='conflict' ORDER BY rowid",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+        rows.map(|row| {
+            let (id, error) = row?;
+            Ok((
+                id,
+                error.unwrap_or_else(|| {
+                    "attachment upload conflict requires explicit reconciliation".into()
+                }),
+            ))
+        })
+        .collect()
+    }
+    /// Record a validated acceptance and its canonical receipt. The staging
+    /// file is deleted by the caller only after this durable update.
+    pub(crate) fn mark_attachment_upload_accepted(
+        &mut self,
+        command_id: &str,
+        receipt: &Value,
+    ) -> Result<(), AuthorityError> {
+        let updated = self.db.execute(
+            "UPDATE attachment_uploads SET state='accepted',receipt=?1,last_error=NULL WHERE command_id=?2 AND state IN ('pending','conflict')",
+            params![receipt.to_string(), command_id],
+        )?;
+        if updated == 0 {
+            return Err(AuthorityError::Invalid(
+                "attachment upload receipt has no pending staging row".into(),
+            ));
+        }
+        Ok(())
+    }
+    /// Leave the row retryable while surfacing why the last attempt failed.
+    /// `conflict` marks a permanent server rejection that needs user action.
+    pub(crate) fn record_attachment_upload_failure(
+        &mut self,
+        command_id: &str,
+        state: &str,
+        last_error: &str,
+    ) -> Result<(), AuthorityError> {
+        if !matches!(state, "pending" | "conflict") {
+            return Err(AuthorityError::Invalid(
+                "attachment upload state must be pending or conflict".into(),
+            ));
+        }
+        self.db.execute(
+            "UPDATE attachment_uploads SET state=?1,last_error=?2 WHERE command_id=?3 AND state IN ('pending','conflict')",
+            params![state, last_error, command_id],
+        )?;
+        Ok(())
+    }
+    /// Drop a local staging record. Returns the staging path the caller must
+    /// delete; accepted rows never own staged bytes any more.
+    pub(crate) fn remove_attachment_upload(
+        &mut self,
+        attachment_id: &str,
+    ) -> Result<Option<AttachmentUploadRow>, AuthorityError> {
+        let row = self.attachment_upload_by_attachment(attachment_id)?;
+        if row.is_some() {
+            self.db.execute(
+                "DELETE FROM attachment_uploads WHERE attachment_id=?1",
+                [attachment_id],
+            )?;
+        }
+        Ok(row)
+    }
+    /// Cache accepted attachment metadata observed from the server. This never
+    /// implies pending uploads are accepted; it only refines offline metadata
+    /// reads and lets content verification compare against known metadata.
+    pub(crate) fn cache_accepted_attachments(
+        &self,
+        attachments: &[crate::AttachmentDto],
+    ) -> Result<(), AuthorityError> {
+        for attachment in attachments {
+            let size = i64::try_from(attachment.size_bytes).map_err(|_| {
+                AuthorityError::Invalid("attachment size exceeds local range".into())
+            })?;
+            self.db.execute(
+                "INSERT INTO accepted_attachment_metadata(id,owner_kind,owner_id,filename,content_type,size_bytes,checksum,created_at_ms,description,is_image)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
+                 ON CONFLICT(id) DO UPDATE SET owner_kind=excluded.owner_kind,owner_id=excluded.owner_id,filename=excluded.filename,content_type=excluded.content_type,size_bytes=excluded.size_bytes,checksum=excluded.checksum,created_at_ms=excluded.created_at_ms,description=excluded.description,is_image=excluded.is_image",
+                params![
+                    attachment.id,
+                    attachment.owner_kind,
+                    attachment.owner_id,
+                    attachment.filename,
+                    attachment.content_type,
+                    size,
+                    attachment.checksum,
+                    attachment.created_at_ms,
+                    attachment.description,
+                    if attachment.is_image { 1 } else { 0 },
+                ],
+            )?;
+        }
+        Ok(())
+    }
+    pub(crate) fn cached_attachment(
+        &self,
+        id: &str,
+    ) -> Result<Option<crate::AttachmentDto>, AuthorityError> {
+        let row: Option<CachedAttachmentRow> = self
+            .db
+            .query_row(
+                "SELECT owner_kind,owner_id,filename,content_type,size_bytes,checksum,created_at_ms,description,is_image,id FROM accepted_attachment_metadata WHERE id=?1",
+                [id],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                        r.get(8)?,
+                        r.get(9)?,
+                    ))
+                },
+            )
+            .optional()?;
+        row.map(
+            |(
+                owner_kind,
+                owner_id,
+                filename,
+                content_type,
+                size_bytes,
+                checksum,
+                created_at_ms,
+                description,
+                is_image,
+                id,
+            )| {
+                Ok(crate::AttachmentDto {
+                    id,
+                    owner_kind,
+                    owner_id,
+                    filename,
+                    content_type,
+                    size_bytes: u64::try_from(size_bytes).map_err(|_| {
+                        AuthorityError::Invalid("cached attachment size is negative".into())
+                    })?,
+                    checksum,
+                    created_at_ms,
+                    description,
+                    is_image: is_image != 0,
+                })
+            },
+        )
+        .transpose()
+    }
+    pub(crate) fn forget_cached_attachment(&self, id: &str) -> Result<(), AuthorityError> {
+        self.db
+            .execute("DELETE FROM accepted_attachment_metadata WHERE id=?1", [id])?;
+        Ok(())
     }
     /// Show all unresolved intentions; receipts remain available for audit.
     pub fn unresolved(&self) -> Result<Vec<Value>, AuthorityError> {
@@ -1389,7 +1873,78 @@ impl AuthorityReplica {
         }
         Ok(Some((id, kind, action)))
     }
+    /// Flush the ordered domain outbox, then upload staged attachments.
+    ///
+    /// A *domain* rejection (`Invalid`, including a 404 for an outbox route) is
+    /// permanent: the row is marked `conflict` and later rows still flush. A
+    /// revision fence (`Conflict`/409) is transient: the row stays `pending`
+    /// and this flush stops before uploading attachments whose owner may not
+    /// exist yet. Attachment transport failures never mask an outbox result:
+    /// each row keeps its own retryable state, and an attachment conflict makes
+    /// the aggregate outcome blocked instead of pretending the queue is empty.
     pub fn flush(&mut self, http: &AuthorityHttp) -> Result<FlushOutcome, AuthorityError> {
+        let outbox = self.flush_outbox(http)?;
+        let uploads = if outbox.retryable.is_some() {
+            None
+        } else {
+            Some(crate::attachments_remote::flush_pending_uploads(
+                self, http,
+            )?)
+        };
+        let accepted = outbox.accepted + uploads.as_ref().map_or(0, |uploads| uploads.accepted);
+        let mut conflicts = outbox.conflicts;
+        if let Some(uploads) = &uploads {
+            conflicts.extend(uploads.conflicts.iter().cloned());
+        }
+        if let Some((command_id, reason)) = outbox.retryable {
+            // A 409 is a revision fence recorded as a reviewable conflict: the
+            // frozen envelope cannot be replayed safely, so the operator must
+            // review it against accepted history before staging a replacement.
+            return Ok(FlushOutcome::Blocked {
+                accepted,
+                command_id,
+                reason: format!("revision conflict; command marked conflict for review: {reason}"),
+            });
+        }
+        if let Some((command_id, reason)) = conflicts.first().cloned() {
+            return Ok(FlushOutcome::Blocked {
+                accepted,
+                command_id,
+                reason: blocked_reason(conflicts.len(), &reason),
+            });
+        }
+        Ok(if accepted == 0 {
+            FlushOutcome::Empty
+        } else {
+            FlushOutcome::Accepted(accepted)
+        })
+    }
+    /// Record why a command was permanently rejected. The reason is stored in
+    /// the receipt column as `{"error": ...}`: conflict rows carry an
+    /// explanation, never an acceptance receipt, and the outbox audit enforces
+    /// exactly that distinction.
+    fn mark_outbox_conflict(&mut self, id: &str, reason: &str) -> Result<(), AuthorityError> {
+        self.db.execute(
+            "UPDATE authority_outbox SET state='conflict',receipt=?1 WHERE command_id=?2 AND state='pending'",
+            params![json!({"error": reason}).to_string(), id],
+        )?;
+        Ok(())
+    }
+    /// Every unresolved permanent rejection, in global queue order.
+    fn outbox_conflicts(&self) -> Result<Vec<(String, String)>, AuthorityError> {
+        let mut stmt = self.db.prepare(
+            "SELECT command_id,receipt FROM authority_outbox WHERE state='conflict' ORDER BY ordinal",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+        rows.map(|row| {
+            let (id, receipt) = row?;
+            Ok((id, outbox_conflict_reason(receipt.as_deref())))
+        })
+        .collect()
+    }
+    fn flush_outbox(&mut self, http: &AuthorityHttp) -> Result<OutboxFlush, AuthorityError> {
         // The connected outbox is the sole source of pending mutations.
         // Refuse to transmit if persisted ordering or receipts are corrupt.
         // Auditing never rewrites records and cannot silently repair history.
@@ -1402,22 +1957,22 @@ impl AuthorityReplica {
         }
         self.bind(&http.base)?;
         let mut accepted = 0;
+        let mut retryable: Option<(String, String)> = None;
         loop {
-            // Select the globally first unresolved intent, including a
-            // conflict. Earlier Markdown writes cannot be bypassed by tasks.
-            let first:Option<(String,String,String,String)>=self.db.query_row(
-                "SELECT command_id,kind,action,state FROM authority_outbox WHERE state IN ('pending','conflict') ORDER BY ordinal LIMIT 1",
-                [],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
-            let Some((id, kind, raw, state)) = first else {
+            // Select the first *pending* intent. A permanently rejected row is
+            // already recorded as a conflict and must not block later commands;
+            // the caller is told about every conflict in the aggregate outcome.
+            let first: Option<(String, String, String)> = self
+                .db
+                .query_row(
+                    "SELECT command_id,kind,action FROM authority_outbox WHERE state='pending' ORDER BY ordinal LIMIT 1",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .optional()?;
+            let Some((id, kind, raw)) = first else {
                 break;
             };
-            if state == "conflict" {
-                return Ok(FlushOutcome::Blocked {
-                    accepted,
-                    command_id: id,
-                    reason: "command conflict requires explicit reconciliation".into(),
-                });
-            }
             if kind == "agent" || kind == "blueprint" {
                 let intent: Value = serde_json::from_str(&raw)
                     .map_err(|e| AuthorityError::Invalid(e.to_string()))?;
@@ -1482,15 +2037,16 @@ impl AuthorityReplica {
                         accepted += 1;
                     }
                     Err(AuthorityError::Conflict(reason)) => {
-                        self.db.execute(
-                            "UPDATE authority_outbox SET state='conflict' WHERE command_id=?1",
-                            [&id],
-                        )?;
-                        return Ok(FlushOutcome::Blocked {
-                            accepted,
-                            command_id: id,
-                            reason,
-                        });
+                        // A revision fence cannot be replayed with the frozen
+                        // envelope: record it as a reviewable conflict and stop
+                        // before any dependent attachment upload.
+                        self.mark_outbox_conflict(&id, &reason)?;
+                        retryable = Some((id, reason));
+                        break;
+                    }
+                    Err(AuthorityError::Invalid(reason)) => {
+                        self.mark_outbox_conflict(&id, &reason)?;
+                        continue;
                     }
                     Err(error) => return Err(error),
                 }
@@ -1545,15 +2101,13 @@ impl AuthorityReplica {
                         accepted += 1;
                     }
                     Err(AuthorityError::Conflict(reason)) => {
-                        self.db.execute(
-                            "UPDATE authority_outbox SET state='conflict' WHERE command_id=?1",
-                            [&id],
-                        )?;
-                        return Ok(FlushOutcome::Blocked {
-                            accepted,
-                            command_id: id,
-                            reason,
-                        });
+                        self.mark_outbox_conflict(&id, &reason)?;
+                        retryable = Some((id, reason));
+                        break;
+                    }
+                    Err(AuthorityError::Invalid(reason)) => {
+                        self.mark_outbox_conflict(&id, &reason)?;
+                        continue;
                     }
                     Err(error) => return Err(error),
                 }
@@ -1697,25 +2251,54 @@ impl AuthorityReplica {
                     accepted += 1;
                 }
                 Err(AuthorityError::Conflict(reason)) => {
-                    self.db.execute(
-                        "UPDATE authority_outbox SET state='conflict' WHERE command_id=?1",
-                        [&id],
-                    )?;
-                    return Ok(FlushOutcome::Blocked {
-                        accepted,
-                        command_id: id,
-                        reason,
-                    });
+                    // The frozen envelope cannot be replayed: record a
+                    // reviewable conflict and stop before dependent uploads.
+                    self.mark_outbox_conflict(&id, &reason)?;
+                    retryable = Some((id, reason));
+                    break;
+                }
+                Err(AuthorityError::Invalid(reason)) => {
+                    self.mark_outbox_conflict(&id, &reason)?;
+                    continue;
                 }
                 Err(error) => return Err(error),
             }
         }
-        Ok(if accepted == 0 {
-            FlushOutcome::Empty
-        } else {
-            FlushOutcome::Accepted(accepted)
+        Ok(OutboxFlush {
+            accepted,
+            conflicts: self.outbox_conflicts()?,
+            retryable,
         })
     }
+}
+
+/// Aggregate result of draining the durable outbox.
+struct OutboxFlush {
+    accepted: usize,
+    /// Every permanent rejection now recorded, in queue order.
+    conflicts: Vec<(String, String)>,
+    /// A transient revision fence that left a row pending.
+    retryable: Option<(String, String)>,
+}
+
+/// Human-readable aggregate message. The outbox variant deliberately keeps its
+/// three public fields so every existing CLI/TUI caller stays source
+/// compatible; the conflict count is reported in this reason text.
+fn blocked_reason(conflicts: usize, reason: &str) -> String {
+    format!("{conflicts} command conflict(s) require explicit reconciliation; first: {reason}")
+}
+
+fn outbox_conflict_reason(receipt: Option<&str>) -> String {
+    receipt
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .filter(|message| !message.trim().is_empty())
+        .unwrap_or_else(|| "command conflict requires explicit reconciliation".into())
 }
 
 #[cfg(test)]
@@ -1766,6 +2349,7 @@ mod tests {
     fn cache_rejects_incomplete_and_divergent_history_without_overwrite() {
         let mut replica = AuthorityReplica {
             db: Connection::open_in_memory().unwrap(),
+            attachment_staging_root: std::env::temp_dir(),
         };
         replica.db.execute_batch("CREATE TABLE authority_snapshot(id INTEGER PRIMARY KEY,revision INTEGER,fingerprint TEXT,payload TEXT)").unwrap();
         let hash = "a".repeat(64);
@@ -2720,6 +3304,125 @@ mod full_markdown_mirror_tests {
         let replica = AuthorityReplica::open(&path).unwrap();
         assert_eq!(replica.cached_markdown_inventory(10).unwrap().len(), 1);
         assert!(replica.cached_markdown("persisted").unwrap().is_some());
+    }
+}
+
+#[cfg(test)]
+mod replica_migration_tests {
+    use super::*;
+
+    const OUTBOX_DDL: &str = "CREATE TABLE authority_outbox (
+        command_id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('project','task','evidence','schedule','routine','milestone','strategy','markdown','folder_create','folder_move','agent','blueprint')),
+        action TEXT NOT NULL,
+        expected_revision INTEGER,
+        state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','accepted','conflict','superseded')),
+        receipt TEXT,
+        ordinal INTEGER NOT NULL UNIQUE
+    );";
+
+    fn v1_replica(path: &Path) {
+        let db = Connection::open(path).unwrap();
+        db.execute_batch(&format!(
+            "CREATE TABLE authority_settings (id INTEGER PRIMARY KEY CHECK(id=1), url TEXT NOT NULL);
+             CREATE TABLE authority_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL CHECK(revision>=0), fingerprint TEXT NOT NULL, payload TEXT NOT NULL);
+             {OUTBOX_DDL}
+             CREATE TABLE replica_metadata (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL);
+             INSERT INTO replica_metadata(id,schema_version) VALUES(1,1);
+             INSERT INTO authority_outbox(command_id,kind,action,ordinal) VALUES('kept','task','{{\"type\":\"create\",\"task_id\":\"t\",\"title\":\"T\"}}',1);"
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn v1_replica_is_migrated_in_place_without_losing_the_outbox() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("v1.sqlite");
+        v1_replica(&path);
+
+        let replica =
+            AuthorityReplica::open(&path).expect("an older replica is migrated, not rejected");
+        let version: i64 = replica
+            .db
+            .query_row(
+                "SELECT schema_version FROM replica_metadata WHERE id=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, REPLICA_SCHEMA_VERSION);
+        let staging: i64 = replica
+            .db
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='attachment_uploads'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(staging, 1, "v2 staging tables are created by the migration");
+        let cached: i64 = replica
+            .db
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='accepted_attachment_metadata'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cached, 1);
+        assert_eq!(
+            replica.unresolved().unwrap().len(),
+            1,
+            "durable outbox rows survive the migration"
+        );
+        assert_eq!(
+            replica.command_state("kept").unwrap().as_deref(),
+            Some("pending")
+        );
+    }
+
+    #[test]
+    fn a_newer_replica_still_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("newer.sqlite");
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(&format!(
+                "CREATE TABLE replica_metadata (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL);
+                 INSERT INTO replica_metadata(id,schema_version) VALUES(1,{});",
+                REPLICA_SCHEMA_VERSION + 1
+            ))
+            .unwrap();
+        assert!(matches!(
+            AuthorityReplica::open(&path),
+            Err(AuthorityError::Invalid(message)) if message.contains("not supported")
+        ));
+    }
+
+    #[test]
+    fn a_current_replica_reopens_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("current.sqlite");
+        {
+            let mut replica = AuthorityReplica::open(&path).unwrap();
+            replica
+                .queue(
+                    "pending",
+                    CommandKind::Task,
+                    &json!({"type":"create","task_id":"t","title":"T"}),
+                )
+                .unwrap();
+        }
+        let replica = AuthorityReplica::open(&path).expect("current replica reopens");
+        let version: i64 = replica
+            .db
+            .query_row(
+                "SELECT schema_version FROM replica_metadata WHERE id=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, REPLICA_SCHEMA_VERSION);
+        assert_eq!(replica.pending_count().unwrap(), 1);
     }
 }
 

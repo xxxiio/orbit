@@ -169,6 +169,9 @@ mod tests {
             estimated_minutes: estimate,
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn edge(id: &str, pre: &str) -> TaskDependencyEdge {
@@ -274,6 +277,9 @@ mod portfolio_allocation_edges {
             estimated_minutes: minutes,
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn req(minutes: i64) -> PortfolioCapacityRequest {
@@ -364,6 +370,9 @@ mod portfolio_boundary_regressions {
             estimated_minutes: duration,
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn request() -> PortfolioCapacityRequest {

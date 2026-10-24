@@ -275,6 +275,9 @@ mod tests {
             estimated_minutes: Some(minutes),
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn request() -> ScenarioCompareRequest {

@@ -222,7 +222,7 @@ impl AuthorityStore {
             |r| r.get(0),
         )?;
         let tasks = {
-            let mut stmt=tx.prepare("SELECT id,title,status,project_id,milestone_id,estimated_minutes,earliest_start_at_ms,deadline_at_ms FROM tasks ORDER BY id")?;
+            let mut stmt=tx.prepare("SELECT id,title,status,project_id,milestone_id,estimated_minutes,earliest_start_at_ms,deadline_at_ms,description,priority FROM tasks ORDER BY id")?;
             stmt.query_map([], |r| {
                 Ok(TaskRecord {
                     id: r.get(0)?,
@@ -233,6 +233,9 @@ impl AuthorityStore {
                     estimated_minutes: r.get(5)?,
                     earliest_start_at_ms: r.get(6)?,
                     deadline_at_ms: r.get(7)?,
+                    description: r.get(8)?,
+                    priority: r.get(9)?,
+                    labels: Vec::new(),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?
@@ -264,6 +267,9 @@ mod tests {
             estimated_minutes: Some(30),
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn edge(task: &str, prerequisite: &str) -> TaskDependencyEdge {

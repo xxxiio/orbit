@@ -4,16 +4,17 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use orbit_application::{
-    AcceptanceCriteriaChange, AcceptanceCriteriaCommand, AssociateAttachmentCommand,
-    CreateTaskCommand, CreateTaskWithActivityCommand, ImportAttachmentCommand,
-    RemoveAttachmentCommand, UpdateTaskDetailsCommand,
+    AcceptanceCriteriaChange, AcceptanceCriteriaCommand, ApplicationError,
+    AssociateAttachmentCommand, CreateTaskCommand, CreateTaskWithActivityCommand,
+    ImportAttachmentCommand, RemoveAttachmentCommand, UpdateTaskDetailsCommand,
 };
 use orbit_domain::{
-    AcceptanceCriterionId, ActivityId, ActivityOrigin, AttachmentId, AttachmentOwner, DomainError,
-    TaskId, TaskPriority, TaskScope,
+    AcceptanceCriterionId, ActivityId, ActivityOrigin, AttachmentId, AttachmentOwner,
+    AttachmentOwnerKind, DomainError, ProjectId, TaskId, TaskPriority, TaskScope,
 };
 
 use crate::AuthoritativeHost;
+use crate::AuthorityError;
 use crate::attachment_store::AttachmentObjectStore;
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -122,6 +123,104 @@ fn import_list_read_remove_and_content_gc() {
 }
 
 #[test]
+fn import_ledger_payload_and_history_are_metadata_only() {
+    let mut host = AuthoritativeHost::open(":memory:").expect("open host");
+    let root = host.attachment_store_root().to_path_buf();
+    let content = vec![b'x'; 256 * 1024];
+    let command = import_command("att-large", "task-1", "large.bin", &content, "import-large");
+
+    let (revision, duplicate, id) = host
+        .import_attachment_accepted("user", "import-large", 0, command.clone())
+        .expect("import large attachment");
+    assert_eq!((revision, duplicate), (1, false));
+    assert_eq!(id.as_str(), "att-large");
+    assert_eq!(
+        host.list_attachments(&AttachmentOwner::task("task-1").unwrap())
+            .unwrap()[0]
+            .size_bytes(),
+        256 * 1024
+    );
+
+    let payload: String = host
+        .authority
+        .conn
+        .query_row(
+            "SELECT payload FROM authority_commands WHERE command_id='import-large'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("stored payload");
+    let wire: String = host
+        .authority
+        .conn
+        .query_row(
+            "SELECT wire FROM authority_history WHERE kind='change' ORDER BY cursor DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("stored history wire");
+    assert!(
+        payload.len() < 8 * 1024,
+        "import payload must stay metadata-only, got {} bytes",
+        payload.len()
+    );
+    assert!(
+        wire.len() < 8 * 1024,
+        "history wire must stay metadata-only, got {} bytes",
+        wire.len()
+    );
+    assert!(payload.contains("\"size_bytes\":262144"), "{payload}");
+    assert!(!payload.contains(&"x".repeat(64)), "{payload}");
+    assert!(!wire.contains(&"x".repeat(64)), "{wire}");
+
+    // A lost-ack retry still returns the original receipt.
+    let (duplicate_revision, duplicate, duplicate_id) = host
+        .import_attachment_accepted("user", "import-large", 0, command.clone())
+        .expect("duplicate import");
+    assert_eq!((duplicate_revision, duplicate), (1, true));
+    assert_eq!(duplicate_id.as_str(), "att-large");
+    assert_eq!(
+        host.list_attachments(&AttachmentOwner::task("task-1").unwrap())
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // A different file under the same command id must conflict because the
+    // checksum is bound to the immutable command payload.
+    let mut changed = command;
+    changed.content = b"different bytes".to_vec();
+    assert!(matches!(
+        host.import_attachment_accepted("user", "import-large", 0, changed),
+        Err(AuthorityError::ImmutableConflict)
+    ));
+
+    // Application rejections keep their typed reason instead of flattening to
+    // a generic invalid request.
+    let fresh = host.import_attachment_accepted(
+        "user",
+        "import-fresh",
+        1,
+        import_command(
+            "att-large",
+            "task-1",
+            "large.bin",
+            &content,
+            "import-large-activity",
+        ),
+    );
+    assert!(matches!(
+        fresh,
+        Err(AuthorityError::Application(
+            ApplicationError::AlreadyExists { .. }
+        ))
+    ));
+    assert_eq!(host.snapshot().unwrap().0, 1);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn oversize_import_is_rejected_before_metadata_or_history() {
     let mut host = AuthoritativeHost::open(":memory:").expect("open host");
     let original_root = host.attachment_store_root().to_path_buf();
@@ -134,7 +233,12 @@ fn oversize_import_is_rejected_before_metadata_or_history() {
         0,
         import_command("att-big", "task-1", "big.txt", b"12345", "big-activity"),
     );
-    assert!(result.is_err());
+    match result {
+        Err(AuthorityError::Application(ApplicationError::AttachmentTooLarge { max_bytes })) => {
+            assert_eq!(max_bytes, 4)
+        }
+        other => panic!("expected preserved oversize application error, got {other:?}"),
+    }
     assert_eq!(host.snapshot().unwrap().0, 0);
     let owner = AttachmentOwner::task("task-1").expect("valid owner");
     assert!(host.list_attachments(&owner).expect("list").is_empty());
@@ -308,6 +412,168 @@ fn rich_task_detail_and_acceptance_commands_are_duplicate_safe() {
         .expect("read acceptance criteria");
     assert_eq!(criteria.len(), 1);
     assert_eq!(criteria.items()[0].text(), "Works offline");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn attachment_owner_existence_and_project_scope_cover_every_kind() {
+    let mut host = AuthoritativeHost::open(":memory:").expect("open host");
+    let root = host.attachment_store_root().to_path_buf();
+
+    let project = ProjectId::new("project-1").expect("valid project id");
+    host.project_command(
+        "user",
+        crate::domain_commands::ProjectCommand {
+            command_id: "project-create".to_owned(),
+            expected_revision: 0,
+            project_id: project.as_str().to_owned(),
+            name: "Attachment owners".to_owned(),
+            workflow_id: None,
+        },
+    )
+    .expect("create project");
+
+    host.create_task_accepted(
+        "user",
+        "task-create",
+        1,
+        CreateTaskWithActivityCommand {
+            task: CreateTaskCommand {
+                id: TaskId::new("task-1").expect("valid task id"),
+                title: "In project".to_owned(),
+                scope: TaskScope::in_project(project.clone()),
+            },
+            activity_id: ActivityId::new("task-create-activity").expect("valid activity id"),
+            origin: ActivityOrigin::Human,
+            summary: "Created task".to_owned(),
+        },
+    )
+    .expect("create project task");
+
+    host.create_task_accepted(
+        "user",
+        "standalone-create",
+        2,
+        CreateTaskWithActivityCommand {
+            task: CreateTaskCommand {
+                id: TaskId::new("task-standalone").expect("valid task id"),
+                title: "Standalone".to_owned(),
+                scope: TaskScope::standalone(),
+            },
+            activity_id: ActivityId::new("standalone-activity").expect("valid activity id"),
+            origin: ActivityOrigin::Human,
+            summary: "Created standalone task".to_owned(),
+        },
+    )
+    .expect("create standalone task");
+
+    // Blueprint work items and agent jobs are schema-owned tables; insert the
+    // minimal valid rows so the owner lookup is exercised against real SQL.
+    host.authority
+        .conn
+        .execute(
+            "INSERT INTO orbit_blueprints(id, version, manifest_json) VALUES('bp-attachment', 1, '{}')",
+            [],
+        )
+        .expect("insert blueprint");
+    host.authority
+        .conn
+        .execute(
+            "INSERT INTO orbit_blueprint_work_items(id, project_id, kind, state, properties_json, revision, blueprint_id, blueprint_version) \
+             VALUES('item-1','project-1','task','todo','{}',0,'bp-attachment',1)",
+            [],
+        )
+        .expect("insert work item");
+    host.authority
+        .conn
+        .execute(
+            "INSERT INTO agent_jobs(id, request_id, project_id, task_id, launch_revision, agent_kind, \
+             machine_ref, runtime_kind, repository_ref, state, revision, created_at_ms, updated_at_ms) \
+             VALUES('job-1','req-1','project-1','task-1',0,'agent','machine-1','runtime-1','repo-1','queued',0,1,1)",
+            [],
+        )
+        .expect("insert agent job");
+
+    host.stage_markdown_create("op-knowledge", "note-1", "note.md", "# Note\n")
+        .expect("stage knowledge note");
+
+    let task = AttachmentOwner::task("task-1").expect("owner");
+    let standalone = AttachmentOwner::task("task-standalone").expect("owner");
+    let project_owner = AttachmentOwner::project("project-1").expect("owner");
+    let work_item = AttachmentOwner::new(AttachmentOwnerKind::WorkItem, "item-1").expect("owner");
+    let knowledge = AttachmentOwner::new(AttachmentOwnerKind::Knowledge, "note-1").expect("owner");
+    let agent_job = AttachmentOwner::new(AttachmentOwnerKind::AgentJob, "job-1").expect("owner");
+
+    // Every supported kind resolves to its own table.
+    for owner in [
+        &task,
+        &standalone,
+        &project_owner,
+        &work_item,
+        &knowledge,
+        &agent_job,
+    ] {
+        assert!(
+            host.attachment_owner_exists(owner).expect("owner lookup"),
+            "{} {} should exist",
+            owner.kind().as_str(),
+            owner.id()
+        );
+    }
+
+    // Missing owners in every kind are reported as absent, not as errors.
+    for (kind, id) in [
+        (AttachmentOwnerKind::Task, "task-missing"),
+        (AttachmentOwnerKind::Project, "project-missing"),
+        (AttachmentOwnerKind::WorkItem, "item-missing"),
+        (AttachmentOwnerKind::Knowledge, "note-missing"),
+        (AttachmentOwnerKind::AgentJob, "job-missing"),
+    ] {
+        let owner = AttachmentOwner::new(kind, id).expect("owner");
+        assert!(
+            !host.attachment_owner_exists(&owner).expect("owner lookup"),
+            "{} {id} should be missing",
+            owner.kind().as_str()
+        );
+        assert!(
+            host.attachment_owner_project(&owner)
+                .expect("project lookup")
+                .is_none(),
+            "missing owners have no project scope"
+        );
+    }
+
+    // Project scope is derived from the stored owner row.
+    assert_eq!(
+        host.attachment_owner_project(&task).expect("task project"),
+        Some(project.clone())
+    );
+    assert_eq!(
+        host.attachment_owner_project(&project_owner)
+            .expect("project project"),
+        Some(project.clone())
+    );
+    assert_eq!(
+        host.attachment_owner_project(&work_item)
+            .expect("work item project"),
+        Some(project.clone())
+    );
+    assert_eq!(
+        host.attachment_owner_project(&agent_job)
+            .expect("agent job project"),
+        Some(project.clone())
+    );
+    assert_eq!(
+        host.attachment_owner_project(&standalone)
+            .expect("standalone project"),
+        None
+    );
+    assert_eq!(
+        host.attachment_owner_project(&knowledge)
+            .expect("knowledge project"),
+        None
+    );
 
     let _ = fs::remove_dir_all(root);
 }

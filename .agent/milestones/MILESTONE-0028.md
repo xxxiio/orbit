@@ -159,6 +159,17 @@ locally and materially improves every project.
 - EC-008: This milestone, task/status/acceptance/evidence records, roadmap,
   journal and documentation pages.
 
+#### Connected completion (2026-10-22)
+
+Connected mode now has rich task parity (description/priority/labels, ordered
+acceptance criteria, activity and snapshot-first detail), server-authoritative
+attachments with durable offline staging exactly-once flush, idempotent removal
+and cross-client retrieval, and an explicit local agent job completion/
+interruption lifecycle with resume guards. Scenario D (6 checks) and a connected
+MCP acceptance pass against a disposable server; Scenario C passes with a
+scripted Herdr CLI. Oracle gates found and remediation closed ledger-payload,
+retry, pending-accuracy, error-propagation and evidence-wiring defects.
+
 #### Usability recovery (2026-10-22)
 
 The original M28 delivery was a working project-centric shell but not an
@@ -180,9 +191,13 @@ everyday project manager. Recovery added:
 
 ## Remaining work
 
-- Connected attachment upload/retrieval is not implemented; all connected
-  attachment operations fail closed with an explicit message (next step
-  NEXT-0009). Connected task descriptions/criteria have the same limitation.
+- Authorization is single-tenant: any enrolled device may access any existing
+  attachment owner. Per-device project ACLs remain a tracked follow-up
+  (TODO-0013).
+- No server-side attachment GC endpoint; purge is local-only (TODO-0014).
+- Connected MCP does not expose attachment tools.
+- Live Herdr/model acceptance (Scenario C) remains opt-in; automated evidence
+  uses a scripted Herdr CLI.
 - Connected project/task workflows share the shell and preserve pending/accepted
   separation. Connected multi-command edits are not atomic: a later rejected
   intent can leave earlier intents queued (documented recovery via outbox/CLI).

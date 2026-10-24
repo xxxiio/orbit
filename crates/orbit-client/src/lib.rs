@@ -63,6 +63,7 @@ pub const ORBIT_CLIENT_API_VERSION: u32 = 4;
 static CLIENT_ID_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 mod attachments;
+mod attachments_remote;
 pub mod authority;
 pub mod connected;
 pub mod embedded_authority;
@@ -395,6 +396,22 @@ impl OrbitClient {
             .iter()
             .map(TaskDto::from)
             .collect())
+    }
+
+    /// One task with its rich details.
+    ///
+    /// Reads through the same local projection as `list_tasks`, so callers can
+    /// use one uniform method in local and connected mode. An unknown or
+    /// malformed id is a typed error rather than an empty task.
+    pub fn task_detail(&self, id: &str) -> Result<TaskDto, ClientError> {
+        let task_id = TaskId::new(id.to_owned()).map_err(invalid_input)?;
+        self.list_tasks()?
+            .into_iter()
+            .find(|task| task.id == task_id.as_str())
+            .ok_or_else(|| ClientError {
+                code: ClientErrorCode::NotFound,
+                message: format!("task {id} not found"),
+            })
     }
 
     pub fn list_knowledge(&self) -> Result<Vec<KnowledgeItemDto>, ClientError> {
@@ -1788,3 +1805,11 @@ mod client_facade_tests;
 #[cfg(test)]
 #[path = "rich_client_tests.rs"]
 mod rich_client_tests;
+
+#[cfg(test)]
+#[path = "attachment_staging_tests.rs"]
+mod attachment_staging_tests;
+
+#[cfg(test)]
+#[path = "connected_flush_tests.rs"]
+mod connected_flush_tests;

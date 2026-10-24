@@ -13,7 +13,7 @@ mod remote_mcp;
 use automation::{AutomationStore, Job, JobInput, QueueError, Run, SettleInput};
 use axum::{
     Json, Router,
-    extract::{Query, State},
+    extract::{DefaultBodyLimit, Path as AxumPath, Query, Request, State},
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -21,6 +21,7 @@ use axum::{
 use domain_commands::{
     ProjectCommand, ProjectRecord, ProjectResult, TaskCommand, TaskRecord, TaskResult,
 };
+use orbit_application::ApplicationError;
 use orbit_runtime::AuthoritativeHost;
 use orbit_runtime::AuthorityError;
 use orbit_runtime::authority_milestones::{MilestoneCommand, MilestoneResult, MilestoneSnapshot};
@@ -42,6 +43,8 @@ struct AppState {
     automation: Arc<Mutex<AutomationStore>>,
     proposals: Arc<Mutex<ProposalStore>>,
     admin_key_hash: Vec<u8>,
+    /// Upper bound for attachment import bodies, checked before buffering.
+    attachment_body_limit: usize,
 }
 #[derive(Deserialize)]
 struct EnrollRequest {
@@ -65,9 +68,51 @@ type ApiError = (StatusCode, Json<ErrorResponse>);
 fn error(code: StatusCode, message: &'static str) -> ApiError {
     (code, Json(ErrorResponse { error: message }))
 }
+/// Map a typed application rejection to the transport status. Keeping the
+/// original error until the adapter means not-found, conflict, oversize and
+/// validation failures no longer collapse into a generic 400.
+fn application_error_status(error: &ApplicationError) -> (StatusCode, &'static str) {
+    use orbit_application::RepositoryError;
+    use orbit_domain::DomainError;
+    match error {
+        ApplicationError::NotFound { .. } => (StatusCode::NOT_FOUND, "not found"),
+        ApplicationError::AlreadyExists { .. } => (StatusCode::CONFLICT, "already exists"),
+        ApplicationError::Repository(RepositoryError::Conflict) => {
+            (StatusCode::CONFLICT, "conflict")
+        }
+        ApplicationError::AttachmentTooLarge { .. }
+        | ApplicationError::Domain(DomainError::AttachmentTooLarge { .. }) => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "attachment exceeds the server byte limit",
+        ),
+        ApplicationError::Domain(_) => (StatusCode::BAD_REQUEST, "invalid input"),
+        ApplicationError::InconsistentReference { .. }
+        | ApplicationError::PlanRejected { .. }
+        | ApplicationError::HabitPlanRejected { .. }
+        | ApplicationError::Progress(_) => (StatusCode::BAD_REQUEST, "invalid input"),
+        ApplicationError::AttachmentContentUnavailable { .. } => {
+            (StatusCode::CONFLICT, "attachment content is unavailable")
+        }
+        ApplicationError::Repository(RepositoryError::Unavailable) => {
+            (StatusCode::SERVICE_UNAVAILABLE, "storage unavailable")
+        }
+        ApplicationError::Repository(RepositoryError::CorruptData { .. })
+        | ApplicationError::Repository(RepositoryError::Other(_))
+        | ApplicationError::AttachmentStore(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "storage error")
+        }
+    }
+}
 fn map_error(err: AuthorityError) -> ApiError {
     match err {
         AuthorityError::Invalid(_) => error(StatusCode::BAD_REQUEST, "invalid request"),
+        AuthorityError::Application(application) => {
+            let (status, message) = application_error_status(&application);
+            if status == StatusCode::INTERNAL_SERVER_ERROR {
+                eprintln!("orbit-server application command error: {application:?}");
+            }
+            error(status, message)
+        }
         AuthorityError::ImmutableConflict => {
             error(StatusCode::CONFLICT, "immutable sequence already used")
         }
@@ -1319,6 +1364,478 @@ async fn authoritative_agent_overview(
             .map_err(map_error)?,
     ))
 }
+#[derive(Deserialize)]
+struct AttachmentImportQuery {
+    command_id: String,
+    expected_revision: i64,
+    attachment_id: String,
+    activity_id: String,
+    owner_kind: String,
+    owner_id: String,
+    filename: String,
+    content_type: Option<String>,
+    description: Option<String>,
+}
+#[derive(Deserialize)]
+struct AttachmentOwnerQuery {
+    owner_kind: String,
+    owner_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AttachmentRemoveRequest {
+    command_id: String,
+    expected_revision: i64,
+    attachment_id: String,
+    activity_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AttachmentAssociateRequest {
+    command_id: String,
+    expected_revision: i64,
+    source_id: String,
+    new_id: String,
+    owner_kind: String,
+    owner_id: String,
+    activity_id: String,
+}
+#[derive(Serialize)]
+struct AttachmentView {
+    id: String,
+    owner_kind: String,
+    owner_id: String,
+    filename: String,
+    content_type: String,
+    size_bytes: u64,
+    checksum: String,
+    created_at_ms: i64,
+    description: Option<String>,
+    is_image: bool,
+}
+impl From<&orbit_domain::Attachment> for AttachmentView {
+    fn from(attachment: &orbit_domain::Attachment) -> Self {
+        Self {
+            id: attachment.id().as_str().to_owned(),
+            owner_kind: attachment.owner().kind().as_str().to_owned(),
+            owner_id: attachment.owner().id().to_owned(),
+            filename: attachment.filename().to_owned(),
+            content_type: attachment.content_type().to_owned(),
+            size_bytes: attachment.size_bytes(),
+            checksum: attachment.checksum().to_owned(),
+            created_at_ms: attachment.created_at_ms(),
+            description: attachment.description().map(str::to_owned),
+            is_image: attachment.is_image(),
+        }
+    }
+}
+#[derive(Serialize)]
+struct AttachmentImportResult {
+    revision: i64,
+    duplicate: bool,
+    /// True when a retried import found its original receipt but the accepted
+    /// attachment has since been removed. `attachment` is then null.
+    removed: bool,
+    attachment: Option<AttachmentView>,
+}
+#[derive(Serialize)]
+struct AttachmentListResult {
+    attachments: Vec<AttachmentView>,
+}
+#[derive(Serialize)]
+struct AttachmentRemoveResult {
+    revision: i64,
+    /// The desired end state (the attachment is no longer present).
+    removed: bool,
+    duplicate: bool,
+    content_removed: bool,
+    /// True when a fresh removal command found the attachment already gone.
+    already_removed: bool,
+}
+#[derive(Serialize)]
+struct AttachmentAssociateResult {
+    revision: i64,
+    duplicate: bool,
+    attachment_id: String,
+}
+#[derive(Serialize)]
+struct AttachmentErrorResponse {
+    error: String,
+}
+type AttachmentFailure = (StatusCode, Json<AttachmentErrorResponse>);
+fn attachment_error(code: StatusCode, message: impl Into<String>) -> AttachmentFailure {
+    (
+        code,
+        Json(AttachmentErrorResponse {
+            error: message.into(),
+        }),
+    )
+}
+/// Reuse device authentication but answer with an actionable message body.
+fn attachment_device(state: &AppState, headers: &HeaderMap) -> Result<String, AttachmentFailure> {
+    device(state, headers)
+        .map_err(|(status, Json(body))| attachment_error(status, body.error.to_owned()))
+}
+fn attachment_owner(
+    owner_kind: &str,
+    owner_id: &str,
+) -> Result<orbit_domain::AttachmentOwner, AttachmentFailure> {
+    use orbit_domain::{AttachmentOwner, AttachmentOwnerKind};
+    let kind = AttachmentOwnerKind::parse(owner_kind).ok_or_else(|| {
+        attachment_error(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "unknown owner_kind {owner_kind:?}; expected task, project, work_item, knowledge, or agent_job"
+            ),
+        )
+    })?;
+    AttachmentOwner::new(kind, owner_id)
+        .map_err(|_| attachment_error(StatusCode::BAD_REQUEST, "owner_id must not be empty"))
+}
+fn attachment_owner_missing(owner: &orbit_domain::AttachmentOwner) -> AttachmentFailure {
+    attachment_error(
+        StatusCode::NOT_FOUND,
+        format!(
+            "{} {} does not exist; create it before attaching files",
+            owner.kind().as_str(),
+            owner.id()
+        ),
+    )
+}
+fn attachment_application_error(error: ApplicationError) -> AttachmentFailure {
+    let (status, message) = application_error_status(&error);
+    if status == StatusCode::INTERNAL_SERVER_ERROR {
+        eprintln!("orbit-server attachment storage error: {error:?}");
+    }
+    attachment_error(status, message)
+}
+fn attachment_authority_error(error: AuthorityError) -> AttachmentFailure {
+    match error {
+        AuthorityError::Application(application) => attachment_application_error(application),
+        AuthorityError::Invalid(message) => attachment_error(
+            StatusCode::BAD_REQUEST,
+            format!("invalid attachment command: {message}"),
+        ),
+        AuthorityError::ImmutableConflict => attachment_error(
+            StatusCode::CONFLICT,
+            "command_id was already accepted with a different attachment payload",
+        ),
+        AuthorityError::StaleRevision => attachment_error(
+            StatusCode::CONFLICT,
+            "stale server revision; refresh and retry",
+        ),
+        AuthorityError::IncompleteProjection => attachment_error(
+            StatusCode::CONFLICT,
+            "semantic history is incomplete or conflicted",
+        ),
+        AuthorityError::MigrationConflict => attachment_error(
+            StatusCode::CONFLICT,
+            "incompatible or conflicting authority history",
+        ),
+        AuthorityError::Unauthorized => {
+            attachment_error(StatusCode::FORBIDDEN, "device identity mismatch")
+        }
+        AuthorityError::Sql(error) => {
+            eprintln!("orbit-server attachment storage error: {error}");
+            attachment_error(StatusCode::INTERNAL_SERVER_ERROR, "storage error")
+        }
+    }
+}
+fn attachment_lock(
+    state: &AppState,
+) -> Result<std::sync::MutexGuard<'_, AuthoritativeHost>, AttachmentFailure> {
+    state
+        .store
+        .lock()
+        .map_err(|_| attachment_error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))
+}
+/// Raw bytes arrive only through this bounded route; metadata comes from the
+/// query string so no multipart parser or client path is involved. The device
+/// is authenticated before the body is read, so unauthorised callers cannot
+/// make the server buffer large uploads.
+async fn authoritative_attachment_import(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<AttachmentImportQuery>,
+    request: Request,
+) -> Result<Json<AttachmentImportResult>, AttachmentFailure> {
+    use orbit_application::ImportAttachmentCommand;
+    let actor = attachment_device(&state, &headers)?;
+    let owner = attachment_owner(&query.owner_kind, &query.owner_id)?;
+    let id = orbit_domain::AttachmentId::new(query.attachment_id.clone()).map_err(|_| {
+        attachment_error(
+            StatusCode::BAD_REQUEST,
+            "attachment_id is not a valid identifier",
+        )
+    })?;
+    let activity_id = orbit_domain::ActivityId::new(query.activity_id.clone()).map_err(|_| {
+        attachment_error(
+            StatusCode::BAD_REQUEST,
+            "activity_id is not a valid identifier",
+        )
+    })?;
+    let body = axum::body::to_bytes(request.into_body(), state.attachment_body_limit)
+        .await
+        .map_err(|_| {
+            attachment_error(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "attachment body exceeds the server byte limit",
+            )
+        })?;
+    let mut store = attachment_lock(&state)?;
+    if !store
+        .attachment_owner_exists(&owner)
+        .map_err(attachment_application_error)?
+    {
+        return Err(attachment_owner_missing(&owner));
+    }
+    let (revision, duplicate, attachment_id) = store
+        .import_attachment_accepted(
+            &actor,
+            &query.command_id,
+            query.expected_revision,
+            ImportAttachmentCommand {
+                id,
+                owner: owner.clone(),
+                filename: query.filename,
+                content_type: query.content_type,
+                content: body.to_vec(),
+                description: query.description,
+                activity_id,
+                origin: orbit_domain::ActivityOrigin::External(actor.clone()),
+            },
+        )
+        .map_err(attachment_authority_error)?;
+    // Listed metadata is the canonical projection of the accepted row; a
+    // duplicate retry therefore returns the original stored record.
+    let attachment = store
+        .list_attachments(&owner)
+        .map_err(attachment_application_error)?
+        .into_iter()
+        .find(|item| item.id() == &attachment_id);
+    let Some(attachment) = attachment else {
+        // A lost-ack retry of an import whose attachment was later removed
+        // must not report a permanent conflict: the command really was
+        // accepted, so report the accepted revision with no metadata.
+        if duplicate {
+            return Ok(Json(AttachmentImportResult {
+                revision,
+                duplicate: true,
+                removed: true,
+                attachment: None,
+            }));
+        }
+        return Err(attachment_error(
+            StatusCode::CONFLICT,
+            "attachment receipt exists but its metadata is missing",
+        ));
+    };
+    Ok(Json(AttachmentImportResult {
+        revision,
+        duplicate,
+        removed: false,
+        attachment: Some(AttachmentView::from(&attachment)),
+    }))
+}
+async fn authoritative_attachment_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<AttachmentOwnerQuery>,
+) -> Result<Json<AttachmentListResult>, AttachmentFailure> {
+    attachment_device(&state, &headers)?;
+    let owner = attachment_owner(&query.owner_kind, &query.owner_id)?;
+    let store = attachment_lock(&state)?;
+    let attachments = store
+        .list_attachments(&owner)
+        .map_err(attachment_application_error)?
+        .iter()
+        .map(AttachmentView::from)
+        .collect();
+    Ok(Json(AttachmentListResult { attachments }))
+}
+/// Sanitize a display filename for a `Content-Disposition` header: quotes,
+/// backslashes and control characters are stripped and non-ASCII characters are
+/// replaced so the header is always a valid ASCII header value.
+fn attachment_download_filename(filename: &str) -> String {
+    let sanitized: String = filename
+        .chars()
+        .filter(|character| *character != '"' && *character != '\\' && !character.is_control())
+        .map(|character| if character.is_ascii() { character } else { '_' })
+        .collect();
+    if sanitized.trim().is_empty() {
+        "attachment".to_owned()
+    } else {
+        sanitized
+    }
+}
+async fn authoritative_attachment_content(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+) -> Result<(HeaderMap, Vec<u8>), AttachmentFailure> {
+    attachment_device(&state, &headers)?;
+    let id = orbit_domain::AttachmentId::new(id).map_err(|_| {
+        attachment_error(
+            StatusCode::BAD_REQUEST,
+            "attachment id is not a valid identifier",
+        )
+    })?;
+    let store = attachment_lock(&state)?;
+    let (attachment, content) = store
+        .attachment_content(&id)
+        .map_err(attachment_application_error)?;
+    let mut response = HeaderMap::new();
+    let content_type = header::HeaderValue::from_str(attachment.content_type()).map_err(|_| {
+        attachment_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "stored content type is not a valid header value",
+        )
+    })?;
+    let checksum = header::HeaderValue::from_str(attachment.checksum()).map_err(|_| {
+        attachment_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "stored checksum is not a valid header value",
+        )
+    })?;
+    response.insert(header::CONTENT_TYPE, content_type);
+    response.insert("x-orbit-checksum", checksum);
+    response.insert(
+        "x-orbit-size",
+        header::HeaderValue::from_str(&attachment.size_bytes().to_string()).map_err(|_| {
+            attachment_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "stored size is not a valid header value",
+            )
+        })?,
+    );
+    response.insert(
+        header::CONTENT_DISPOSITION,
+        header::HeaderValue::from_str(&format!(
+            "attachment; filename=\"{}\"",
+            attachment_download_filename(attachment.filename())
+        ))
+        .map_err(|_| {
+            attachment_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "attachment filename is not a valid header value",
+            )
+        })?,
+    );
+    response.insert(
+        "x-content-type-options",
+        header::HeaderValue::from_static("nosniff"),
+    );
+    // Content bytes are never logged; the caller receives them once.
+    Ok((response, content))
+}
+async fn authoritative_attachment_remove(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<AttachmentRemoveRequest>,
+) -> Result<Json<AttachmentRemoveResult>, AttachmentFailure> {
+    use orbit_application::RemoveAttachmentCommand;
+    let actor = attachment_device(&state, &headers)?;
+    let id = orbit_domain::AttachmentId::new(request.attachment_id).map_err(|_| {
+        attachment_error(
+            StatusCode::BAD_REQUEST,
+            "attachment_id is not a valid identifier",
+        )
+    })?;
+    let activity_id = orbit_domain::ActivityId::new(request.activity_id).map_err(|_| {
+        attachment_error(
+            StatusCode::BAD_REQUEST,
+            "activity_id is not a valid identifier",
+        )
+    })?;
+    let mut store = attachment_lock(&state)?;
+    let outcome = store.remove_attachment_accepted(
+        &actor,
+        &request.command_id,
+        request.expected_revision,
+        RemoveAttachmentCommand {
+            id,
+            activity_id,
+            origin: orbit_domain::ActivityOrigin::External(actor.clone()),
+        },
+    );
+    let (revision, duplicate, content_removed) = match outcome {
+        Ok(value) => value,
+        // A fresh removal command for an attachment that is already gone is a
+        // successful no-op rather than a permanent 404. No receipt is written,
+        // so each retry remains idempotent.
+        Err(AuthorityError::Application(ApplicationError::NotFound { .. })) => {
+            let revision = store
+                .snapshot()
+                .map_err(|_| attachment_error(StatusCode::INTERNAL_SERVER_ERROR, "storage error"))?
+                .0;
+            return Ok(Json(AttachmentRemoveResult {
+                revision,
+                removed: true,
+                duplicate: false,
+                content_removed: false,
+                already_removed: true,
+            }));
+        }
+        Err(error) => return Err(attachment_authority_error(error)),
+    };
+    Ok(Json(AttachmentRemoveResult {
+        revision,
+        removed: true,
+        duplicate,
+        content_removed,
+        already_removed: false,
+    }))
+}
+async fn authoritative_attachment_associate(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<AttachmentAssociateRequest>,
+) -> Result<Json<AttachmentAssociateResult>, AttachmentFailure> {
+    use orbit_application::AssociateAttachmentCommand;
+    let actor = attachment_device(&state, &headers)?;
+    let owner = attachment_owner(&request.owner_kind, &request.owner_id)?;
+    let source_id = orbit_domain::AttachmentId::new(request.source_id).map_err(|_| {
+        attachment_error(
+            StatusCode::BAD_REQUEST,
+            "source_id is not a valid identifier",
+        )
+    })?;
+    let new_id = orbit_domain::AttachmentId::new(request.new_id).map_err(|_| {
+        attachment_error(StatusCode::BAD_REQUEST, "new_id is not a valid identifier")
+    })?;
+    let activity_id = orbit_domain::ActivityId::new(request.activity_id).map_err(|_| {
+        attachment_error(
+            StatusCode::BAD_REQUEST,
+            "activity_id is not a valid identifier",
+        )
+    })?;
+    let mut store = attachment_lock(&state)?;
+    if !store
+        .attachment_owner_exists(&owner)
+        .map_err(attachment_application_error)?
+    {
+        return Err(attachment_owner_missing(&owner));
+    }
+    let (revision, duplicate, attachment_id) = store
+        .associate_attachment_accepted(
+            &actor,
+            &request.command_id,
+            request.expected_revision,
+            AssociateAttachmentCommand {
+                source_id,
+                new_id,
+                owner,
+                activity_id,
+                origin: orbit_domain::ActivityOrigin::External(actor.clone()),
+            },
+        )
+        .map_err(attachment_authority_error)?;
+    Ok(Json(AttachmentAssociateResult {
+        revision,
+        duplicate,
+        attachment_id: attachment_id.as_str().to_owned(),
+    }))
+}
 async fn authoritative_task_command(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1344,6 +1861,165 @@ async fn authoritative_tasks(
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
     let (revision, tasks) = store.tasks().map_err(map_error)?;
     Ok(Json(DomainTasksResponse { revision, tasks }))
+}
+#[derive(Serialize)]
+struct TaskDetailResponse {
+    id: String,
+    title: String,
+    status: String,
+    project_id: Option<String>,
+    milestone_id: Option<String>,
+    estimated_minutes: Option<i64>,
+    earliest_start_at_ms: Option<i64>,
+    deadline_at_ms: Option<i64>,
+    description: String,
+    priority: Option<String>,
+    labels: Vec<String>,
+}
+impl From<TaskRecord> for TaskDetailResponse {
+    fn from(task: TaskRecord) -> Self {
+        Self {
+            id: task.id,
+            title: task.title,
+            status: task.status,
+            project_id: task.project_id,
+            milestone_id: task.milestone_id,
+            estimated_minutes: task.estimated_minutes,
+            earliest_start_at_ms: task.earliest_start_at_ms,
+            deadline_at_ms: task.deadline_at_ms,
+            description: task.description,
+            priority: task.priority,
+            labels: task.labels,
+        }
+    }
+}
+#[derive(Serialize)]
+struct AcceptanceCriterionResponse {
+    id: String,
+    text: String,
+    completed: bool,
+    completed_at_ms: Option<i64>,
+    position: usize,
+}
+#[derive(Serialize)]
+struct ActivityResponse {
+    id: String,
+    kind: String,
+    origin: String,
+    occurred_at_ms: i64,
+    summary: String,
+}
+fn activity_kind(value: &orbit_domain::ActivityKind) -> String {
+    use orbit_domain::ActivityKind;
+    match value {
+        ActivityKind::Created => "created",
+        ActivityKind::Updated => "updated",
+        ActivityKind::StatusChanged => "status_changed",
+        ActivityKind::ProgressUpdated => "progress_updated",
+        ActivityKind::BlockerOpened => "blocker_opened",
+        ActivityKind::BlockerResolved => "blocker_resolved",
+        ActivityKind::Scheduled => "scheduled",
+        ActivityKind::Rescheduled => "rescheduled",
+        ActivityKind::Completed => "completed",
+        ActivityKind::AttachmentAdded => "attachment_added",
+        ActivityKind::AttachmentRemoved => "attachment_removed",
+        ActivityKind::Custom(value) => return format!("custom:{value}"),
+    }
+    .to_owned()
+}
+fn activity_origin(value: &orbit_domain::ActivityOrigin) -> String {
+    use orbit_domain::ActivityOrigin;
+    match value {
+        ActivityOrigin::Human => "human".to_owned(),
+        ActivityOrigin::System => "system".to_owned(),
+        ActivityOrigin::Agent(agent) => format!("agent:{agent}"),
+        ActivityOrigin::External(external) => format!("external:{external}"),
+    }
+}
+fn application_error(err: orbit_application::ApplicationError) -> ApiError {
+    eprintln!("orbit-server application read error: {err:?}");
+    error(StatusCode::INTERNAL_SERVER_ERROR, "storage error")
+}
+async fn authoritative_task_detail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<TaskDetailResponse>, ApiError> {
+    device(&state, &headers)?;
+    let store = state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
+    let task = store
+        .task_record(&id)
+        .map_err(map_error)?
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, "task not found"))?;
+    Ok(Json(TaskDetailResponse::from(task)))
+}
+async fn authoritative_task_acceptance_criteria(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Vec<AcceptanceCriterionResponse>>, ApiError> {
+    device(&state, &headers)?;
+    let store = state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
+    if store.task_record(&id).map_err(map_error)?.is_none() {
+        return Err(error(StatusCode::NOT_FOUND, "task not found"));
+    }
+    let task_id = orbit_domain::TaskId::new(id)
+        .map_err(|_| error(StatusCode::BAD_REQUEST, "invalid task id"))?;
+    let criteria = store
+        .acceptance_criteria(&task_id)
+        .map_err(application_error)?;
+    let items = criteria
+        .items()
+        .iter()
+        .enumerate()
+        .map(|(position, criterion)| AcceptanceCriterionResponse {
+            id: criterion.id().as_str().to_owned(),
+            text: criterion.text().to_owned(),
+            completed: criterion.is_completed(),
+            completed_at_ms: criterion.completed_at_ms(),
+            position,
+        })
+        .collect();
+    Ok(Json(items))
+}
+async fn authoritative_task_activity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Vec<ActivityResponse>>, ApiError> {
+    device(&state, &headers)?;
+    let store = state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
+    if store.task_record(&id).map_err(map_error)?.is_none() {
+        return Err(error(StatusCode::NOT_FOUND, "task not found"));
+    }
+    let records = store
+        .application_queries()
+        .activities()
+        .map_err(application_error)?;
+    let mut items: Vec<ActivityResponse> = records
+        .iter()
+        .filter(|record| {
+            matches!(record.subject(), orbit_domain::ActivitySubject::Task(task) if task.as_str() == id)
+        })
+        .map(|record| ActivityResponse {
+            id: record.id().as_str().to_owned(),
+            kind: activity_kind(record.kind()),
+            origin: activity_origin(record.origin()),
+            occurred_at_ms: record.occurred_at_ms(),
+            summary: record.summary().to_owned(),
+        })
+        .collect();
+    items.reverse();
+    Ok(Json(items))
 }
 #[derive(Deserialize)]
 struct HistoryPrefixQuery {
@@ -2211,6 +2887,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         std::fs::create_dir_all(parent)?;
     }
+    let attachment_body_limit = std::env::var("ORBIT_ATTACHMENT_MAX_BYTES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(64 * 1024 * 1024);
     let state = AppState {
         store: Arc::new(Mutex::new(
             AuthoritativeHost::open(Path::new(&database))
@@ -2225,6 +2905,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|e| format!("proposals open: {e:?}"))?,
         )),
         admin_key_hash: Sha256::digest(admin_key.as_bytes()).to_vec(),
+        attachment_body_limit,
     };
     // A single scheduler writes durable due runs; no cloud service needed.
     let scheduler = state.automation.clone();
@@ -2333,6 +3014,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             post(authoritative_schedule_command),
         )
         .route("/v1/authoritative/tasks", get(authoritative_tasks))
+        .route(
+            "/v1/authoritative/tasks/{id}",
+            get(authoritative_task_detail),
+        )
+        .route(
+            "/v1/authoritative/tasks/{id}/acceptance-criteria",
+            get(authoritative_task_acceptance_criteria),
+        )
+        .route(
+            "/v1/authoritative/tasks/{id}/activity",
+            get(authoritative_task_activity),
+        )
+        .route(
+            "/v1/authoritative/attachment-import",
+            // Route-scoped limit: only attachment bytes bypass axum's 2 MiB
+            // default, and they are still bounded before buffering.
+            post(authoritative_attachment_import)
+                .layer(DefaultBodyLimit::max(attachment_body_limit)),
+        )
+        .route(
+            "/v1/authoritative/attachments",
+            get(authoritative_attachment_list),
+        )
+        .route(
+            "/v1/authoritative/attachments/{id}/content",
+            get(authoritative_attachment_content),
+        )
+        .route(
+            "/v1/authoritative/attachment-remove",
+            post(authoritative_attachment_remove),
+        )
+        .route(
+            "/v1/authoritative/attachment-associate",
+            post(authoritative_attachment_associate),
+        )
         .route(
             "/v1/authoritative/task-dependencies",
             get(authoritative_task_dependencies),

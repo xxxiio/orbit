@@ -158,10 +158,6 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
                     return Ok(false);
                 }
                 KeyCode::Char('i') => {
-                    if app.client.is_connected() {
-                        app.notify("Attachments are local-authoritative in this build; connected mode does not accept uploads yet.", StatusKind::Warning);
-                        return Ok(false);
-                    }
                     app.go_screen(Screen::Inbox);
                     return Ok(false);
                 }
@@ -241,10 +237,6 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
         KeyCode::Char('a') | KeyCode::Char('s') => app.open_action_menu(),
         KeyCode::Char('e') => app.edit_selected(),
         KeyCode::Char('K') => {
-            if app.client.is_connected() {
-                app.notify("Acceptance criteria are local-authoritative in this build; connected mode does not support them yet.", StatusKind::Warning);
-                return Ok(false);
-            }
             if let Some(item) = app.selected_item()
                 && item.kind == orbit_ui::model::ItemKind::Task
             {
@@ -259,10 +251,6 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
             }
         }
         KeyCode::Char('H') => {
-            if app.client.is_connected() {
-                app.notify("Task activity history is local-authoritative in this build; connected mode does not project it yet.", StatusKind::Warning);
-                return Ok(false);
-            }
             if let Some(item) = app.selected_item()
                 && item.kind == orbit_ui::model::ItemKind::Task
             {
@@ -278,10 +266,6 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
             app.execute_action(action);
         }
         KeyCode::Char('F') => {
-            if app.client.is_connected() {
-                app.notify("Attachments are local-authoritative in this build; connected mode does not serve them yet.", StatusKind::Warning);
-                return Ok(false);
-            }
             let action =
                 orbit_ui::AvailableAction::enabled("open_attachments", "Attachments", None);
             app.execute_action(action);
@@ -719,14 +703,13 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                             state.items = items;
                             state.selected =
                                 state.selected.min(state.items.len().saturating_sub(1));
-                            app.notify(
-                                if item.completed {
-                                    "Acceptance criterion reopened"
-                                } else {
-                                    "Acceptance criterion checked"
-                                },
-                                StatusKind::Success,
-                            );
+                            let label = if item.completed {
+                                "Acceptance criterion reopened"
+                            } else {
+                                "Acceptance criterion checked"
+                            };
+                            let (message, kind) = app.mutation_status(label);
+                            app.notify(message, kind);
                         }
                         Err(error) => app.notify(
                             format!("Updating the criterion failed: {}", error.message),
@@ -762,6 +745,9 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                         Ok(items) => {
                             state.items = items;
                             state.selected = position;
+                            let (message, kind) =
+                                app.mutation_status("Acceptance criterion reordered");
+                            app.notify(message, kind);
                         }
                         Err(error) => app.notify(
                             format!("Reordering the criterion failed: {}", error.message),
@@ -781,6 +767,9 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                         Ok(items) => {
                             state.items = items;
                             state.selected = position;
+                            let (message, kind) =
+                                app.mutation_status("Acceptance criterion reordered");
+                            app.notify(message, kind);
                         }
                         Err(error) => app.notify(
                             format!("Reordering the criterion failed: {}", error.message),
@@ -811,7 +800,7 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
         Modal::Attachments(state) => match code {
             KeyCode::Esc => keep = false,
             KeyCode::Enter => {
-                if let Some(item) = state.items.get(state.selected) {
+                if let Some(item) = state.selected_attachment() {
                     let attachment_id = item.id.clone();
                     keep = false;
                     app.preview_attachment(attachment_id);
@@ -820,7 +809,7 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                state.selected = (state.selected + 1).min(state.items.len().saturating_sub(1));
+                state.selected = (state.selected + 1).min(state.len().saturating_sub(1));
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 state.selected = state.selected.saturating_sub(1);
@@ -835,7 +824,7 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                 });
             }
             KeyCode::Char('o') => {
-                if let Some(item) = state.items.get(state.selected) {
+                if let Some(item) = state.selected_attachment() {
                     let attachment_id = item.id.clone();
                     let filename = item.filename.clone();
                     keep = false;
@@ -853,22 +842,33 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                 }
             }
             KeyCode::Char('E') => {
-                if let Some(item) = state.items.get(state.selected) {
+                if let Some(item) = state.selected_attachment() {
                     let attachment_id = item.id.clone();
                     keep = false;
                     app.start_form(app::FormMode::ExportAttachment { attachment_id });
                 }
             }
             KeyCode::Char('x') => {
-                if let Some(item) = state.items.get(state.selected) {
+                if let Some(item) = state.selected_attachment() {
                     let attachment_id = item.id.clone();
                     let filename = item.filename.clone();
+                    let pending = state.selected_is_pending();
                     keep = false;
                     app.modal = Some(Modal::Confirm {
-                        title: "Remove attachment".into(),
-                        body: format!(
-                            "Remove the association for '{filename}'? Content is deleted only when nothing else references it."
-                        ),
+                        title: if pending {
+                            "Discard staged upload".into()
+                        } else {
+                            "Remove attachment".into()
+                        },
+                        body: if pending {
+                            format!(
+                                "Discard the locally staged upload for '{filename}'? Nothing was accepted on the server."
+                            )
+                        } else {
+                            format!(
+                                "Remove the association for '{filename}'? This requires the server and deletes content only when nothing else references it."
+                            )
+                        },
                         pending: app::PendingAction::RemoveAttachment {
                             attachment_id,
                             owner_kind: state.owner_kind.clone(),
@@ -2880,6 +2880,538 @@ mod m28_unified_connected_tests {
             app.status.text
         );
         assert!(app.request_quit());
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[cfg(test)]
+mod m29_connected_task_detail_tests {
+    use super::*;
+    use app::{FormMode, Modal};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread;
+    use std::time::Duration;
+
+    /// Minimal loopback authority: path-addressed JSON GET responses. Every
+    /// undeclared path is a 404, so a test cannot silently rely on a route it
+    /// never declared.
+    struct Authority {
+        base: String,
+        stop: Arc<AtomicBool>,
+        handle: Option<thread::JoinHandle<()>>,
+    }
+
+    impl Authority {
+        fn start(routes: Vec<(&'static str, serde_json::Value)>) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+            listener
+                .set_nonblocking(true)
+                .expect("nonblocking listener");
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let stop = Arc::new(AtomicBool::new(false));
+            let signal = Arc::clone(&stop);
+            let handle = thread::spawn(move || {
+                while !signal.load(Ordering::SeqCst) {
+                    let (mut socket, _) = match listener.accept() {
+                        Ok(connection) => connection,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(2));
+                            continue;
+                        }
+                        Err(_) => break,
+                    };
+                    socket
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut buffer = [0_u8; 8192];
+                    let mut request = Vec::new();
+                    while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                        let read = socket.read(&mut buffer).unwrap_or(0);
+                        if read == 0 || request.len() > 65536 {
+                            break;
+                        }
+                        request.extend_from_slice(&buffer[..read]);
+                    }
+                    let head = String::from_utf8_lossy(&request);
+                    let target = head
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or_default();
+                    let path = target.split('?').next().unwrap_or_default();
+                    let body = routes
+                        .iter()
+                        .find(|(route, _)| *route == path)
+                        .map(|(_, body)| body.to_string());
+                    let (status, body) = match body {
+                        Some(body) => ("200 OK", body),
+                        None => (
+                            "404 Not Found",
+                            serde_json::json!({"error":"route absent"}).to_string(),
+                        ),
+                    };
+                    let raw = format!(
+                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = socket.write_all(raw.as_bytes());
+                    let _ = socket.flush();
+                }
+            });
+            Self {
+                base,
+                stop,
+                handle: Some(handle),
+            }
+        }
+    }
+
+    impl Drop for Authority {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::SeqCst);
+            if let Some(handle) = self.handle.take() {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    fn replica_path(kind: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "orbit-tui-m29-{kind}-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    fn connected_app(server: &str, kind: &str) -> (App, std::path::PathBuf) {
+        let path = replica_path(kind);
+        let backend = crate::backend::Backend::open_connected_with_identity(
+            &path,
+            server,
+            Some(("device-1", "token")),
+        )
+        .expect("connected backend");
+        let app = App::open_with_backend(backend).expect("connected app");
+        (app, path)
+    }
+
+    fn snapshot() -> serde_json::Value {
+        serde_json::json!({
+            "revision": 4_i64,
+            "history_fingerprint": "a".repeat(64),
+            "projects": [],
+            "tasks": [{
+                "id": "task-1",
+                "title": "Ship it",
+                "status": "inbox",
+                "project_id": null,
+                "milestone_id": null,
+                "estimated_minutes": 45,
+                "earliest_start_at_ms": null,
+                "deadline_at_ms": null,
+                "description": "Body from server",
+                "priority": "high",
+                "labels": ["api"],
+            }],
+            "task_dependencies": [], "habits": [], "habit_occurrences": [],
+            "metrics": [], "metric_observations": [], "schedule": [],
+            "routines": [], "milestones": [], "strategies": [],
+        })
+    }
+
+    fn detail() -> serde_json::Value {
+        serde_json::json!({
+            "id": "task-1",
+            "title": "Ship it",
+            "status": "inbox",
+            "project_id": null,
+            "milestone_id": null,
+            "estimated_minutes": 45,
+            "earliest_start_at_ms": null,
+            "deadline_at_ms": null,
+            "description": "Body from server",
+            "priority": "high",
+            "labels": ["api", "ui"],
+        })
+    }
+
+    fn criteria() -> serde_json::Value {
+        serde_json::json!([
+            {"id":"criterion-1","text":"Works offline","completed":true,
+             "completed_at_ms":123_i64,"position":0},
+            {"id":"criterion-2","text":"Syncs","completed":false,
+             "completed_at_ms":null,"position":1},
+        ])
+    }
+
+    fn activity() -> serde_json::Value {
+        serde_json::json!([
+            {"id":"activity-2","kind":"updated","origin":"human",
+             "occurred_at_ms":200_i64,"summary":"Task task-1 description updated"},
+            {"id":"activity-1","kind":"created","origin":"human",
+             "occurred_at_ms":100_i64,"summary":"Task task-1 created"},
+        ])
+    }
+
+    fn field<'a>(form: &'a app::FormState, key: &str) -> &'a str {
+        form.fields
+            .iter()
+            .find(|candidate| candidate.key == key)
+            .map(|candidate| candidate.value.as_str())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn connected_app_loads_task_details_from_the_authority_route() {
+        // Keep the task out of the accepted snapshot so this test exercises
+        // the live task-detail fallback rather than the snapshot-first path.
+        let mut snapshot_without_task = snapshot();
+        snapshot_without_task["tasks"] = serde_json::json!([]);
+        let authority = Authority::start(vec![
+            ("/v1/authoritative/snapshot", snapshot_without_task),
+            ("/v1/authoritative/tasks/task-1", detail()),
+        ]);
+        let (mut app, path) = connected_app(&authority.base, "detail");
+        assert!(app.client.is_connected());
+
+        let task = app.client.task_detail("task-1").expect("connected detail");
+        assert_eq!(task.description, "Body from server");
+        assert_eq!(task.priority.as_deref(), Some("high"));
+        assert_eq!(task.labels, vec!["api".to_string(), "ui".to_string()]);
+
+        // The details editor is fed by the same read, so it no longer shows a
+        // blank description/priority/labels from the thin accepted snapshot.
+        app.start_form(FormMode::EditTaskDetails {
+            task_id: "task-1".into(),
+        });
+        let Some(Modal::Form(form)) = app.modal.as_ref() else {
+            panic!("details form missing");
+        };
+        assert_eq!(field(form, "description"), "Body from server");
+        assert_eq!(field(form, "priority"), "high");
+        assert_eq!(field(form, "labels"), "api, ui");
+
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn connected_criteria_and_activity_actions_are_available() {
+        let authority = Authority::start(vec![
+            ("/v1/authoritative/snapshot", snapshot()),
+            ("/v1/authoritative/tasks/task-1", detail()),
+            (
+                "/v1/authoritative/tasks/task-1/acceptance-criteria",
+                criteria(),
+            ),
+            ("/v1/authoritative/tasks/task-1/activity", activity()),
+        ]);
+        let (mut app, path) = connected_app(&authority.base, "actions");
+        app.go_screen(Screen::Inbox);
+        assert_eq!(
+            app.selected_item().map(|item| item.id.as_str()),
+            Some("task-1")
+        );
+
+        let ids = app
+            .available_actions()
+            .into_iter()
+            .map(|action| action.id)
+            .collect::<Vec<_>>();
+        for expected in [
+            "edit_task_details",
+            "manage_acceptance_criteria",
+            "task_activity",
+            "attach_file",
+            "open_attachments",
+        ] {
+            assert!(
+                ids.iter().any(|id| id == expected),
+                "missing {expected}: {ids:?}"
+            );
+        }
+
+        app.open_criteria("task-1".into(), "Ship it".into());
+        let Some(Modal::Criteria(state)) = app.modal.as_ref() else {
+            panic!("criteria modal missing: {}", app.status.text);
+        };
+        assert_eq!(state.items.len(), 2);
+        assert_eq!(state.items[0].id, "criterion-1");
+        assert!(state.items[0].completed);
+
+        app.modal = None;
+        app.open_activity("task-1".into(), "Ship it".into());
+        let Some(Modal::Activity(state)) = app.modal.as_ref() else {
+            panic!("activity modal missing: {}", app.status.text);
+        };
+        assert_eq!(state.items.len(), 2);
+        assert_eq!(state.items[0].kind, "updated");
+
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn connected_attachment_add_reports_pending_and_marks_the_row() {
+        let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
+        let (mut app, path) = connected_app(&authority.base, "pending-attach");
+        app.go_screen(Screen::Inbox);
+        let Some(item) = app.selected_item() else {
+            panic!("task selection missing");
+        };
+        assert_eq!(item.id, "task-1");
+
+        let source = std::env::temp_dir().join(format!(
+            "orbit-tui-pending-attach-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&source, b"pending evidence").unwrap();
+
+        app.start_form(FormMode::AttachFile {
+            owner_kind: "task".into(),
+            owner_id: "task-1".into(),
+        });
+        // A later list/upload attempt cannot reach the server route; the add
+        // must therefore stay staged and report pending, never accepted.
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("attach form missing");
+        };
+        form.fields[0].value = source.to_string_lossy().into_owned();
+        form.dirty = true;
+        app.submit_form(form);
+        assert_eq!(app.status.kind, StatusKind::Pending, "{}", app.status.text);
+        assert!(
+            app.status.text.to_lowercase().contains("pending"),
+            "{}",
+            app.status.text
+        );
+        assert_eq!(app.client.pending_attachment_count().unwrap(), 1);
+        // The header must include staged uploads, not only outbox commands.
+        assert_eq!(app.client.pending_count(), 1);
+
+        app.open_attachments("task".into(), "task-1".into(), "Ship it".into());
+        let Some(Modal::Attachments(state)) = app.modal.as_ref() else {
+            panic!("attachments modal missing: {}", app.status.text);
+        };
+        assert!(state.items.is_empty(), "staged must not be accepted");
+        assert_eq!(state.pending.len(), 1);
+        assert_eq!(
+            state.pending[0].attachment.filename,
+            source.file_name().unwrap().to_string_lossy()
+        );
+        assert_eq!(state.pending[0].state, "pending");
+        let pending_id = state.pending[0].attachment.id.clone();
+
+        // A staged preview is labelled pending and reads staged bytes.
+        app.preview_attachment(pending_id);
+        let Some(Modal::Message { title, lines }) = app.modal.as_ref() else {
+            panic!("preview modal missing: {}", app.status.text);
+        };
+        assert!(title.contains("[pending]"), "{title}");
+        assert!(
+            lines.iter().any(|line| line.contains("[pending]")),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.contains("pending evidence")),
+            "staged content missing: {lines:?}"
+        );
+
+        app.open_attachments("task".into(), "task-1".into(), "Ship it".into());
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(120, 35)).unwrap();
+        terminal
+            .draw(|frame| render::draw(frame, &mut app))
+            .unwrap();
+        let rendered: String = (0..terminal.backend().buffer().area.height)
+            .map(|y| {
+                (0..terminal.backend().buffer().area.width)
+                    .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("[pending]"), "{rendered}");
+        assert!(rendered.contains("orbit-tui-pending-attach"), "{rendered}");
+        assert!(
+            rendered.contains("1 pending"),
+            "header must count the staged upload: {rendered}"
+        );
+
+        // Pending removal is local: the staged row is discarded without the
+        // server, while accepted removal keeps requiring the online route.
+        handle_key(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).unwrap();
+        let Some(Modal::Confirm { title, .. }) = app.modal.as_ref() else {
+            panic!("pending removal confirmation missing");
+        };
+        assert_eq!(title, "Discard staged upload");
+        handle_key(&mut app, KeyCode::Char('y'), KeyModifiers::NONE).unwrap();
+        assert_eq!(app.client.pending_attachment_count().unwrap(), 0);
+        assert!(app.status.text.contains("discarded"), "{}", app.status.text);
+        let Some(Modal::Attachments(state)) = app.modal.as_ref() else {
+            panic!(
+                "discarding must refresh the attachments modal: {}",
+                app.status.text
+            );
+        };
+        assert!(state.pending.is_empty(), "{:?}", state.pending);
+        assert_eq!(state.owner_id, "task-1");
+
+        let _ = std::fs::remove_file(&source);
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn queued_task_details_save_reports_pending_not_saved() {
+        let authority = Authority::start(vec![
+            ("/v1/authoritative/snapshot", snapshot()),
+            ("/v1/authoritative/tasks/task-1", detail()),
+        ]);
+        let (mut app, path) = connected_app(&authority.base, "pending-details");
+
+        app.start_form(FormMode::EditTaskDetails {
+            task_id: "task-1".into(),
+        });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("details form missing");
+        };
+        form.fields
+            .iter_mut()
+            .find(|candidate| candidate.key == "description")
+            .expect("description field")
+            .value = "Queued body".into();
+        form.dirty = true;
+        app.submit_form(form);
+
+        assert_eq!(app.status.kind, StatusKind::Pending, "{}", app.status.text);
+        assert!(
+            app.status.text.to_lowercase().contains("pending"),
+            "{}",
+            app.status.text
+        );
+        assert_eq!(app.client.pending_count(), 1);
+        // The queued value is outbox state only: the accepted read is unchanged.
+        let accepted = app.client.task_detail("task-1").expect("accepted detail");
+        assert_eq!(accepted.description, "Body from server");
+
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn blocked_flush_and_per_command_conflict_are_visible() {
+        let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
+        let (mut app, path) = connected_app(&authority.base, "blocked-flush");
+
+        app.client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: "Blocked".into(),
+            })
+            .expect("queued project");
+        let id = app
+            .client
+            .last_queued_command_id()
+            .expect("queued command identity");
+        assert!(matches!(
+            app.client.command_outcome(&id),
+            crate::backend::MutationOutcome::Pending { .. }
+        ));
+
+        // The fake authority declares no command route, so flush receives a
+        // permanent 404 rejection and must mark this command conflicted.
+        let flush = orbit_ui::AvailableAction::enabled("flush_pending", "Flush", None);
+        assert!(!app.execute_action(flush));
+        assert_eq!(app.status.kind, StatusKind::Warning, "{}", app.status.text);
+        assert!(
+            app.status.text.contains("Flush blocked"),
+            "{}",
+            app.status.text
+        );
+        assert!(app.status.text.contains("rejected"), "{}", app.status.text);
+        assert!(app.status.text.contains("conflict"), "{}", app.status.text);
+
+        match app.client.command_outcome(&id) {
+            crate::backend::MutationOutcome::Conflict { state, reason, .. } => {
+                assert_eq!(state, "conflict");
+                assert!(
+                    reason.contains("not found") || reason.contains("404"),
+                    "{reason}"
+                );
+            }
+            other => panic!("expected a conflict for {id}: {other:?}"),
+        }
+
+        // Missing state fails closed as pending, never accepted.
+        match app.client.command_outcome("never-queued") {
+            crate::backend::MutationOutcome::Pending { state, .. } => {
+                assert_eq!(state, "unavailable");
+            }
+            other => panic!("missing state must fail closed: {other:?}"),
+        }
+
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn connected_attachment_actions_are_enabled() {
+        let authority = Authority::start(vec![
+            ("/v1/authoritative/snapshot", snapshot()),
+            (
+                "/v1/authoritative/attachments",
+                serde_json::json!({"attachments": []}),
+            ),
+        ]);
+        let (mut app, path) = connected_app(&authority.base, "attachments");
+        app.go_screen(Screen::Inbox);
+
+        let ids = app
+            .available_actions()
+            .into_iter()
+            .map(|action| action.id)
+            .collect::<Vec<_>>();
+        for expected in ["attach_file", "open_attachments"] {
+            assert!(
+                ids.iter().any(|id| id == expected),
+                "connected mode must advertise {expected}: {ids:?}"
+            );
+        }
+        assert!(
+            !ids.iter().any(|id| id == "purge_attachments"),
+            "server-owned GC must stay unavailable: {ids:?}"
+        );
+
+        let attach = orbit_ui::AvailableAction::enabled("attach_file", "Attach file", None);
+        assert!(!app.execute_action(attach));
+        assert!(
+            matches!(app.modal, Some(Modal::Form(ref form)) if matches!(form.mode, FormMode::AttachFile { .. })),
+            "attach must open the file form: {}",
+            app.status.text
+        );
+        app.modal = None;
+
+        let open = orbit_ui::AvailableAction::enabled("open_attachments", "Attachments", None);
+        assert!(!app.execute_action(open));
+        let Some(Modal::Attachments(state)) = app.modal.as_ref() else {
+            panic!("attachments modal missing: {}", app.status.text);
+        };
+        assert!(state.items.is_empty());
+        assert!(state.pending.is_empty());
+
+        drop(app);
         let _ = std::fs::remove_file(&path);
     }
 }

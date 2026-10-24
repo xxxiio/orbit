@@ -5,120 +5,129 @@ template_digest: "179af91e65608fbfd07b28126ed729856e6524410956892a698b3f40e902e6
 project_owned: true
 record_contract: current-task
 record_schema_version: 1
-id: TASK-0005
+id: TASK-0006
 status: completed
 milestone_id: MILESTONE-0028
 ---
 
-# Task: M28 usability recovery and core workflow completion
+# Task: M28 connected completion and agent lifecycle acceptance
 
 ## Objective
 
-Turn the project-centric shell into a usable everyday project manager: Basic as
-the default offline workflow, rich task details with ordered acceptance
-criteria, first-class local attachments, discoverable non-Vim navigation,
-workflow terminology, and MCP parity for external agents acting on Basic tasks.
+Finish the remaining M28 acceptance scope: server-authoritative task details,
+acceptance criteria, activity and attachments in connected mode; an explicit
+agent job completion/interruption lifecycle with resume guards; and required
+scenario evidence, without weakening local authority or claiming unverified
+live-agent behaviour.
 
 ## Current behaviour
 
-The project-centric TUI, blueprint views, forms, palette, search, history and PTY
-harness existed. Task identity/planning existed, but there was no description,
-priority, labels or acceptance criteria; no attachment capability anywhere; no
-`basic` workflow and no automatic binding; persisted UI state was absent;
-multiline editing was impossible; MCP could only create a task with a title and
-change status; user-facing labels said "Blueprint".
+Local Basic project management, rich task details, acceptance criteria and
+attachments were complete. Connected mode could queue project/task commands but
+rejected descriptions, criteria, activity and attachments; server routes did not
+exist for attachments; agent jobs could be launched/reviewed but not explicitly
+completed locally, so `agent resume` could not be exercised end-to-end. Oracle
+reviews then found ledger-payload, retry, pending-accuracy and evidence-wiring
+defects in the new code.
 
 ## Desired behaviour
 
-A new user can create a Basic project and fully manage a task in the TUI without
-CLI workarounds or Vim knowledge, and an independent external agent can perform
-the same task workflow through MCP without Orbit launching or managing an agent.
+Connected clients can read and edit rich task fields through the accepted
+command ledger, stage attachment uploads offline and synchronise them exactly
+once, retrieve attachments from another authorized client, and see pending vs
+accepted state honestly. Operators can complete or interrupt a local agent job,
+resume from a terminal predecessor with a durable handoff, and exercise the
+documented lifecycle with a scripted Herdr CLI. Evidence for connected TUI, MCP
+and agent scenarios is required, not silently skipped.
 
 ## Scope
 
-- `basic` bundled workflow (v1) and authority-owned default binding.
-- Task description (Markdown), priority, labels, ordered acceptance criteria.
-- Content-addressed local attachment store with metadata, limits, GC and TUI/MCP
-  operations.
-- TUI detail/editing, multiline editor, criteria/attachments/activity modals,
-  action bar, session restore, onboarding, workflow picker and terminology.
-- MCP task detail/acceptance/activity/attachment/project/workflow tools.
-- Focused Rust tests, PTY acceptance, docs and GetDone records.
+- Additive `TaskAction::SetDetails`/`AcceptanceCriteria` and server task
+  detail/criteria/activity read routes.
+- Connected client rich reads/writes, per-command pending/conflict state,
+  read-first-then-queue, snapshot-first detail reads.
+- Server attachment import/list/download/remove/associate routes with owner
+  validation, auth-before-body, metadata-only ledger payloads and idempotent
+  retry/removal.
+- Replica attachment staging, ordered flush, checksum verification, CLI
+  `orbit attachment` commands, TUI pending markers.
+- Local `agent complete`/`agent interrupt`, resume launch-claim guard and
+  scripted Scenario C acceptance.
+- Oracle remediation (outbox 4xx handling, error propagation, docs accuracy),
+  evidence wiring and records.
 
 ## Out of scope
 
-- Connected-mode attachment upload/synchronisation (server endpoints).
-- Live Herdr agent launch/review acceptance.
+- Live Herdr/model execution (requires explicit authorization/token spend).
+- Per-device project ACLs; the authority remains intentionally single-tenant.
+- Server-side attachment garbage collection.
+- Connected MCP attachment tools.
 - Public release verification (M27 external gate).
-- Renaming Rust crates, tables or MCP `blueprint.*` identifiers.
 
 ## Dependencies
 
-- MILESTONE-0015 Linux executable baseline.
-- MILESTONE-0022 planning contracts and MILESTONE-0023 agent read models.
-- MILESTONE-0025 blueprint binding/work-item surfaces (implemented surfaces only).
-- Existing local authority ledger, application services and PTY harness.
+- MILESTONE-0015 Linux executable baseline and the existing authority ledger.
+- MILESTONE-0022/0023 planning and agent read contracts.
+- MILESTONE-0025 implemented blueprint/work-item surfaces.
+- M28 local task-detail/attachment work (TASK-0005).
 
 ## Risks
 
-- Schema migration: additive columns/tables with defaults; legacy workspace PTY
-  coverage.
-- Attachment safety: content-addressed paths, symlink rejection, size limits and
-  no content execution.
-- False connected success: unsupported operations fail closed with clear errors.
-- Default workflow churn: Basic binds only when a project has no binding and is
-  never applied silently to existing projects.
+- Connected writes could be reported as accepted while queued; mitigated with
+  per-command state and fail-closed pending.
+- Lost acknowledgements could duplicate attachments/criteria; mitigated with
+  deterministic identities and metadata-only command payloads.
+- Attachment content could bloat the ledger; mitigated by checksum metadata.
+- Unauthenticated uploads could exhaust memory; authenticated before buffering.
+- Agent completion could resume an ambiguous launch; guarded with a launch-claim
+  check.
+- Single-tenant authorization could be mistaken for per-project scoping;
+  documented explicitly and tracked as TODO-0013.
 
 ## Acceptance criteria
 
-- [x] AC-001: `basic` v1 is a validated bundled workflow with ordinary task views
-  (Overview, Tasks, Board, Timeline) and no specialized work-item requirement.
-- [x] AC-002: Every new project is bound to Basic by the shared authority path
-  (rich and minimal creation), offline; existing bindings are never replaced
-  silently; an explicit change/unpin operation exists.
-- [x] AC-003: Tasks support Markdown description, priority, labels and ordered
-  acceptance criteria with stable ids, completion timestamps and explicit
-  add/edit/reorder/check/uncheck/remove; checking all never completes the task.
-- [x] AC-004: Attachments are first-class for tasks/projects/work items with
-  content-addressed storage, metadata, size limits, symlink rejection, integrity
-  verification, dedup, association removal and unreferenced-object GC.
-- [x] AC-005: The TUI can edit details in a multiline editor, manage criteria,
-  attach/list/preview/export/remove files, inspect activity, change workflows and
-  restore the active project/view after restart.
-- [x] AC-006: Navigation needs no Vim knowledge: arrows/Enter/Esc/Tab/Space plus
-  `/`, `?`, Ctrl+P; an action bar exposes executable actions with real keys.
-- [x] AC-007: User-facing terminology says workflow; `orbit workflow` is accepted
-  as a CLI alias while `orbit blueprint` and `blueprint.*` remain compatible.
-- [x] AC-008: MCP provides task detail/update, acceptance criteria, activity,
-  project creation (Basic default), workflow list/apply, and authorized
-  attachment metadata/content tools; no operation launches an agent job.
-- [x] AC-009: Focused Rust tests, PTY acceptance and an external MCP stdio
-  scenario pass; workspace tests, clippy, fmt and documentation checks pass.
-- [x] AC-010: Records state verified progress and remaining limitations without
-  claiming connected attachments or live agent acceptance.
+- [x] AC-001: Connected clients can read task detail, ordered acceptance
+  criteria and activity, and queue details/criteria changes through the accepted
+  ledger with exactly-once receipts.
+- [x] AC-002: Queued connected mutations are never reported as accepted; TUI/MCP
+  use per-command pending/conflict state and fail closed when it is unavailable.
+- [x] AC-003: Server attachment import/list/download/remove/associate are
+  device-authenticated, validate owners, enforce limits before buffering, store
+  metadata-only ledger payloads and return actionable 400/401/404/409/413.
+- [x] AC-004: Attachments can be staged offline, flushed exactly once after
+  reconnect, retrieved by another client with checksum verification, retried
+  after lost acknowledgements/truncated uploads, and removed idempotently.
+- [x] AC-005: CLI and TUI expose attachment add/list/inspect/export/remove/flush
+  with explicit pending and conflict markers; TUI header counts staged uploads.
+- [x] AC-006: `orbit agent complete|interrupt` record job-only terminal states;
+  resume requires a terminal predecessor with a durable handoff and refuses
+  ambiguous/claimed launches; scripted Scenario C passes.
+- [x] AC-007: Connected TUI, connected MCP and agent scenario checks run after
+  the build with required-evidence envs; docs match connected behaviour.
+- [x] AC-008: Oracle findings are remediated; workspace tests, clippy, fmt,
+  documentation, PTY/MCP/connected/agent suites and the M15 product profile pass
+  (apart from the withheld release-workflow contract).
 
 ## Validation
 
 ```sh
-cargo test --offline -p orbit-domain -p orbit-application -p orbit-storage \
-  -p orbit-runtime -p orbit-blueprint -p orbit-client -p orbit-ui -p orbit-tui \
-  -p orbit-mcp -p orbit-sync
 cargo test --workspace --offline
 cargo clippy --offline -p orbit-domain -p orbit-application -p orbit-storage \
   -p orbit-runtime -p orbit-sync -p orbit-blueprint -p orbit-client -p orbit-ui \
   -p orbit-tui -p orbit-mcp -p orbit-cli -p orbit-server --all-targets -- -D warnings
 cargo fmt --all -- --check
 python3 -m unittest discover -s tests/documentation
-python3 -m pytest -q tests/acceptance/tui tests/acceptance/mcp
+python3 -m pytest -q tests/acceptance/tui tests/acceptance/mcp \
+  tests/acceptance/connected
+ORBIT_REQUIRE_AGENT_EVIDENCE=1 python3 -m pytest -q tests/acceptance/agent
 ./scripts/m15-full-automated.sh --profile full
 ```
 
 ### Evidence
 
-- `.agent/evidence/m28-usability-focused-tests.txt`
-- `.agent/evidence/m28-usability-workspace-tests.txt`
-- `.agent/evidence/m28-usability-clippy.log`
-- `.agent/evidence/m28-usability-pty.txt`
-- `target/tui-evidence/` real PTY transcripts.
-- `.agent/evidence/m28-usability-m15.zip` (40/42; two release-workflow contract
-  checks blocked by the intentionally withheld workflow file).
+- Workspace 1,489 passed, 0 failed.
+- TUI 39, MCP 2, connected 6, agent 1.
+- Documentation 39; clippy/fmt clean.
+- M15 45 passed, 2 failed (release-workflow contract only; workflow file
+  intentionally withheld). `.agent/evidence/m28-connected-final-m15.zip`.
+- Oracle gate reports and remediation are recorded in the journal.

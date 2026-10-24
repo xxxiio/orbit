@@ -311,6 +311,9 @@ mod tests {
             estimated_minutes: minutes,
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn edge(task: &str, requires: &str) -> TaskDependencyEdge {
@@ -492,6 +495,9 @@ mod additional_contract_tests {
             estimated_minutes: minutes,
             earliest_start_at_ms: None,
             deadline_at_ms: deadline,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn edge(task: &str, prerequisite: &str) -> TaskDependencyEdge {

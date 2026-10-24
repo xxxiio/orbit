@@ -91,7 +91,8 @@ or launches processes.
 Tasks now have first-class, ordered acceptance criteria with stable IDs and
 per-criterion completion. In the TUI select the task and press `K`; over MCP use
 `task.acceptance.add`, `task.acceptance.check` and the other explicit
-operations. They are local-authoritative in this build. Checking every criterion
+operations. They work in local and connected mode; connected writes queue a
+canonical command and become accepted after a flush. Checking every criterion
 does not complete the task; completion remains explicit. See
 [task details and attachments](../guides/task-details-and-attachments.md).
 

@@ -37,6 +37,7 @@ Global options may appear before or after the subcommand where clap permits it.
 | `orbit note` | Markdown notes in the file-authoritative vault |
 | `orbit folder` | Physical folder navigation and mutation |
 | `orbit schedule` | Schedule blocks |
+| `orbit attachment` | Attach, list, inspect, export, remove and flush file attachments |
 | `orbit agent` | Optional agent jobs, handoffs and reviews |
 | `orbit sync` | Connected authority and offline replica |
 | `orbit search` | Cross-entity search |
@@ -256,6 +257,53 @@ Note kinds and statuses are enumerated by `orbit note kind --help` and `orbit
 note status --help`. Schedule times and habit occurrence times are Unix
 milliseconds.
 
+## Attachment commands
+
+```text
+orbit attachment add OWNER_KIND OWNER_ID PATH [--description TEXT] [--json]
+orbit attachment list OWNER_KIND OWNER_ID [--json]
+orbit attachment inspect ID [--json]
+orbit attachment export ID DESTINATION [--json]
+orbit attachment remove ID [--json]
+orbit attachment flush [--json]
+```
+
+`OWNER_KIND` is one of `task`, `project`, `work_item`, `knowledge` or
+`agent_job`. Content is immutable and content-addressed; `export` never
+overwrites an existing destination.
+
+In a local deployment every import is accepted synchronously. In a connected
+deployment the CLI stages bytes in the replica, attempts one upload, and reports
+acceptance only after a validated server receipt:
+
+| Command | JSON shape |
+| --- | --- |
+| `add` | `{"accepted": bool, "pending": bool, "attachment": {...}}` |
+| `list` | `{"accepted": [...], "staged": [{"attachment": {...}, "state": "pending\|conflict", "last_error": string\|null}]}` |
+| `inspect` | `{"pending": bool, "verified_size_bytes": number, "attachment": {...}}` |
+| `export` | `{"pending": bool, "destination": path, "attachment": {...}}` |
+| `remove` | `{"removed": true, "pending": bool, "pending_discarded": bool, "content_removed": bool, "attachment_id": id}` |
+| `flush` | `{"pending_before": n, "uploads_pending_before": n, "pending_after": n, "uploads_pending_after": n, "outcome": {...}}` |
+
+`accepted` and `pending` are mutually exclusive for `add`. A pending upload is
+never included in `accepted` or reported as an accepted attachment: `list`
+keeps it in `staged`, and the human output marks it `[pending]`.
+
+`flush` is connected-only. It flushes the ordered command outbox and then the
+staged attachment uploads, printing the pending counts before and after; queued
+commands and uploads are idempotent across retries. `outcome.status` is `empty`
+(nothing queued), `flushed` (all accepted) or `blocked` (a command or upload
+needs attention, including `blocked_command`/`reason`). A blocked or conflicted
+upload is never counted as accepted. Local mode returns a clear usage error
+instead of pretending there is an outbox.
+
+Connected mode requires `ORBIT_SYNC_HTTP_TOKEN` and `ORBIT_AUTHORITY_DEVICE`
+for server-backed operations. Without credentials, staged uploads remain
+listable locally, but accepted reads, export of accepted content, and accepted
+removal fail explicitly. Removing an accepted attachment is online-only in this
+build; removing a staged upload discards it locally without contacting the
+server. Server-side content garbage collection is not exposed to clients.
+
 ## Agent commands
 
 | Command | Purpose / important flags |
@@ -275,6 +323,8 @@ milliseconds.
 | `orbit agent handoff` | `JOB_ID --file FILE` |
 | `orbit agent continue` | `JOB_ID --message TEXT` |
 | `orbit agent handoffs` | `JOB_ID` |
+| `orbit agent complete` | `JOB_ID [--summary TEXT]`; terminalizes the job record only, never the task |
+| `orbit agent interrupt` | `JOB_ID [--reason TEXT]`; interrupts the job record only, the external session may keep running |
 | `orbit agent resume-context` | `JOB_ID` |
 | `orbit agent resume` | `JOB_ID` |
 | `orbit agent capture` | `JOB_ID [--max-commits 1..100]` |
@@ -286,6 +336,17 @@ milliseconds.
 Agent execution requires Herdr and a configured provider. `start` and
 `continue` are external side effects; reconcile uncertain results instead of
 retrying. Review never completes an Orbit task.
+
+`orbit agent complete` and `orbit agent interrupt` change the **Orbit job
+record only**. They do not complete the Orbit task, delete handoffs or erase a
+recorded review. Completion requires a non-terminal job and records the optional
+`--summary`; interrupt records the optional `--reason` and requires a
+non-terminal job. Neither command stops the external Herdr session: the runtime
+has no stop verb, so the session may keep running, and the JSON result reports
+`task_completed: false` and `runtime_stopped: false`. Close or reconcile a live
+session out of band. A terminal job is refused with an actionable error instead
+of being completed twice; use `resume` to create a successor from a terminal
+predecessor with a durable handoff.
 
 ## Sync commands
 
@@ -333,9 +394,10 @@ Runtime errors in JSON mode carry a `type` and `message`; exit classes are:
 
 ## Not available in this build
 
-- No CLI subcommand for task descriptions, priority, labels, acceptance
-  criteria or attachments; use the TUI or MCP tools. The domain stores these
-  values and they remain local-authoritative.
+- No CLI subcommand for task descriptions, priority, labels or acceptance
+  criteria; use the TUI or MCP tools. The domain and the connected authority
+  store and queue these values. Attachments have the `orbit attachment` group
+  described above.
 - No standalone milestone create/list/status command.
 - No project-switch command and no global active project.
 - No dedicated backup subcommand.

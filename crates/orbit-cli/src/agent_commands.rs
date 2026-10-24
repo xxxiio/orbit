@@ -155,6 +155,12 @@ pub(super) fn run_agent(
             host.local_agent_handoffs(&job_id)
                 .map_err(CliError::Usage)?,
         ),
+        AgentSubcommand::Complete { job_id, summary } => host
+            .complete_local_agent_job(&job_id, &summary, now_ms())
+            .map_err(CliError::Usage)?,
+        AgentSubcommand::Interrupt { job_id, reason } => host
+            .interrupt_local_agent_job(&job_id, &reason, now_ms())
+            .map_err(CliError::Usage)?,
         AgentSubcommand::Resume { job_id } => {
             let new_id = generate_id("agent-job");
             let mut runtime = HerdrRuntime::default();

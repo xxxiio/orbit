@@ -24,12 +24,17 @@ from pty_harness import ENTER, TuiSession, Workspace  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 MCP_BINARY = Path(os.environ.get("ORBIT_MCP_BIN", ROOT / "target/debug/orbit-mcp"))
+TUI_BINARY = Path(os.environ.get("ORBIT_TUI_BIN", ROOT / "target/debug/orbit-tui"))
+REQUIRE_EVIDENCE = os.environ.get("ORBIT_REQUIRE_MCP_EVIDENCE") == "1"
 
 
 class McpClient:
     def __init__(self, env: dict[str, str]):
         if not MCP_BINARY.is_file():
-            pytest.skip(f"orbit-mcp binary missing at {MCP_BINARY}")
+            message = f"orbit-mcp binary missing at {MCP_BINARY}"
+            if REQUIRE_EVIDENCE:
+                pytest.fail(f"{message} (ORBIT_REQUIRE_MCP_EVIDENCE=1 forbids a skipped run)")
+            pytest.skip(message)
         self.process = subprocess.Popen(
             [str(MCP_BINARY)],
             stdin=subprocess.PIPE,
@@ -91,6 +96,11 @@ def find_key(value, key: str):
 
 @pytest.fixture
 def workspace(tmp_path):
+    if REQUIRE_EVIDENCE and not TUI_BINARY.is_file():
+        pytest.fail(
+            f"orbit-tui binary missing at {TUI_BINARY} "
+            "(ORBIT_REQUIRE_MCP_EVIDENCE=1 forbids a skipped run)"
+        )
     ws = Workspace.create(tmp_path)
     base = dict(ws.env)
     base.update(

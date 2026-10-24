@@ -8,8 +8,11 @@ Backing up Orbit means backing up **three things together**:
 
 Configuration (`~/.orbit/config.toml`) should also be kept with them. In
 connected mode, the server's SQLite database is authoritative and each client
-replica has its own pending-command outbox. Server-side attachment storage is not
-implemented yet, so attachments remain a local-workspace concern in this build.
+replica has its own pending-command outbox. The server also owns an attachment
+object store beside its database, and each replica may hold a staging directory
+of uploads the server has not accepted yet. Back up the server store with the
+server database, and preserve a replica's staging directory with that replica
+when unflushed uploads matter.
 
 For the default database `~/.orbit/orbit.db`, the three local parts are:
 
@@ -90,16 +93,24 @@ Markdown vault or the attachment object store for you.
 
 In connected mode, the server SQLite database is canonical. Arrange a
 consistent server-side backup (including committed WAL data) using the
-deployment's supported procedure. Separately preserve each client replica and
-its unresolved outbox.
+deployment's supported procedure. Back up the server attachment object store
+(the `attachments/objects/` directory beside the server database) in the same
+operation: server attachment metadata lives in SQLite, but the bytes live in
+that directory. Separately preserve each client replica, its unresolved outbox
+and its `attachment-staging/` directory.
 
 - Backing up only the server does not preserve pending edits on disconnected
-  devices.
-- Never delete replica/outbox data to resolve a conflict.
+  devices, including staged attachment uploads.
+- Never delete replica/outbox or attachment-staging data to resolve a conflict.
 - Restoring an older server snapshot can lose accepted history published after
   that snapshot. Clients may hold newer revisions.
+- An attachment object store restored without its database lists no
+  associations; a database restored without the store lists attachments whose
+  bytes are missing.
 - Credentials and enrollment material are separate secrets; a database backup
   does not automatically include them.
+- There is no client-visible server attachment GC endpoint, so server-side
+  orphan cleanup is a deployment concern, not a backup step.
 
 ## Recovery
 
@@ -109,11 +120,15 @@ its unresolved outbox.
    stopped. Do not overwrite a live database.
 3. Copy the verified backup into place.
 4. Restore the matching Markdown vault, attachment object store and
-   configuration.
+   configuration. In connected mode also restore the server attachment store
+   with the server database; restore each replica's staging directory with that
+   replica.
 5. Run `sqlite3 DB "PRAGMA integrity_check;"` and then `orbit doctor` and
    `orbit status`.
 6. Open one attached file to confirm the content object is present and its
-   checksum verifies.
+   checksum verifies. For a replica, run `orbit attachment list` and
+   `orbit attachment flush` only after the server is back and credentials are
+   valid.
 7. Exercise representative reads and one disposable write before resuming
    normal work.
 

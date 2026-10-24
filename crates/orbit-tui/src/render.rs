@@ -71,10 +71,9 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
                 },
                 "",
                 app.projects.len(),
-                app.workspace
-                    .as_ref()
-                    .map(|workspace| workspace.pending_commands)
-                    .unwrap_or(0)
+                // The client owns the pending sum so staged attachment uploads
+                // are counted alongside outbox commands.
+                app.client.pending_count()
             ),
             app.theme.warning(),
         ));
@@ -1434,7 +1433,7 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
             let mut lines = Vec::new();
-            if state.items.is_empty() {
+            if state.is_empty() {
                 lines.push(Line::from(Span::styled(
                     "No attachments yet. Press A to attach a file.",
                     app.theme.muted(),
@@ -1466,6 +1465,43 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                         app.theme.warning(),
                     ),
                 ]));
+            }
+            for (offset, pending) in state.pending.iter().enumerate() {
+                let selected = state.items.len() + offset == state.selected;
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        if selected { "▸ " } else { "  " },
+                        if selected {
+                            app.theme.accent()
+                        } else {
+                            app.theme.muted()
+                        },
+                    ),
+                    Span::styled("[pending] ", app.theme.warning()),
+                    Span::styled(
+                        format!("{:<18}", pending.attachment.filename),
+                        if selected {
+                            app.theme.selected()
+                        } else {
+                            app.theme.text()
+                        },
+                    ),
+                    Span::styled(
+                        format!("{:<20}", pending.attachment.content_type),
+                        app.theme.muted(),
+                    ),
+                    Span::styled(
+                        human_bytes(pending.attachment.size_bytes),
+                        app.theme.muted(),
+                    ),
+                    Span::styled(format!("  {}", pending.state), app.theme.warning()),
+                ]));
+                if let Some(reason) = &pending.last_error {
+                    lines.push(Line::from(Span::styled(
+                        format!("            {reason}"),
+                        app.theme.muted(),
+                    )));
+                }
             }
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
@@ -1941,7 +1977,7 @@ fn modal_size(area: Rect, modal: &Modal) -> (u16, u16) {
         Modal::Criteria(state) => (state.items.len() as u16 + 8)
             .min(area.height.saturating_sub(4))
             .max(10),
-        Modal::Attachments(state) => (state.items.len() as u16 + 8)
+        Modal::Attachments(state) => (state.len() as u16 + 10)
             .min(area.height.saturating_sub(4))
             .max(10),
         Modal::Activity(state) => (state.items.len() as u16 + 8)

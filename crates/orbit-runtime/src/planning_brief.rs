@@ -486,6 +486,9 @@ mod tests {
             estimated_minutes: minutes,
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn edge(id: &str, prerequisite: &str) -> TaskDependencyEdge {
@@ -636,6 +639,9 @@ mod milestone_tests {
             estimated_minutes: Some(15),
             earliest_start_at_ms: None,
             deadline_at_ms: deadline,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn req() -> WorkBriefRequest {
@@ -729,6 +735,9 @@ mod portfolio_today_tests {
             estimated_minutes: Some(20),
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn dep(task_id: &str, prerequisite_id: &str) -> TaskDependencyEdge {

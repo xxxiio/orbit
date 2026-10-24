@@ -44,6 +44,39 @@ fn command_payload<T: std::fmt::Debug>(command: &T) -> Result<String, AuthorityE
         .map_err(|_| AuthorityError::Invalid("invalid rich command payload"))
 }
 
+fn content_sha256(content: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+    let digest = Sha256::digest(content);
+    let mut value = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        let _ = write!(value, "{byte:02x}");
+    }
+    value
+}
+
+/// Import command identity binds display metadata and content integrity, never
+/// the raw bytes. A retry with a different file under the same command id still
+/// conflicts, while the receipt and semantic `rich_state` stay small instead of
+/// holding a permanent copy of the attachment.
+fn attachment_import_payload(command: &ImportAttachmentCommand) -> Result<String, AuthorityError> {
+    let object = content_sha256(&command.content);
+    serde_json::to_string(&serde_json::json!({
+        "kind": "attachment_import",
+        "attachment_id": command.id.as_str(),
+        "owner_kind": command.owner.kind().as_str(),
+        "owner_id": command.owner.id(),
+        "filename": command.filename,
+        "content_type": command.content_type,
+        "size_bytes": command.content.len(),
+        "checksum": object,
+        "object": object,
+        "description": command.description,
+        "activity_id": command.activity_id.as_str(),
+    }))
+    .map_err(|_| AuthorityError::Invalid("invalid attachment import payload"))
+}
+
 /// Locate the latest recorded version of one semantic field. Without this
 /// optimistic base, a second status update conflicts with the accepted replay.
 /// The later admission revision check fences races between this lookup and the
@@ -1020,7 +1053,7 @@ impl AuthoritativeHost {
         command: ImportAttachmentCommand,
     ) -> Result<(i64, bool, AttachmentId), AuthorityError> {
         let id = command.id.clone();
-        let payload = command_payload(&command)?;
+        let payload = attachment_import_payload(&command)?;
         let (revision, duplicate, result_id) = self.accept_rich_state(
             RichStateInput {
                 actor,

@@ -12,8 +12,31 @@ status: current
 
 ## Active
 
-### TODO-0011 — Server-authoritative attachment upload and retrieval
+### TODO-0013 — Per-device project authorization for connected attachments
 - **Status:** ready
+- **Priority:** P1
+- **Milestone:** MILESTONE-0028
+- **Reason:** The authority is single-tenant; any enrolled device may access any existing attachment owner. Required for multi-user deployments.
+- **Depends on:** a device/project ACL model shared by all entity commands
+- **Blocks:** multi-tenant attachment authorization claims
+- **Unblock condition:** none
+- **Acceptance:** A device can only list/read/write attachments for projects it is scoped to; denial is tested for task, project, work-item, knowledge and agent-job owners.
+- **Source:** NEXT-0009
+
+### TODO-0014 — Server-side attachment garbage collection
+- **Status:** ready
+- **Priority:** P2
+- **Milestone:** MILESTONE-0028
+- **Reason:** Connected clients cannot purge unreferenced attachment content; only local purge exists.
+- **Depends on:** server attachment routes
+- **Blocks:** storage reclamation for server deployments
+- **Unblock condition:** none
+- **Acceptance:** An authorized admin operation removes unreferenced objects and reports counts without deleting referenced content.
+- **Source:** NEXT-0009
+
+
+### TODO-0011 — Server-authoritative attachment upload and retrieval
+- **Status:** completed
 - **Priority:** P1
 - **Milestone:** MILESTONE-0028
 - **Reason:** Connected attachment operations currently fail closed; required scenario D needs durable upload intents, integrity verification and cross-client retrieval.

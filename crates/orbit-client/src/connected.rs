@@ -94,12 +94,32 @@ impl ConnectedWorkspace {
 
 pub struct ConnectedOrbitClient {
     replica: AuthorityReplica,
+    /// The most recent command this process durably queued. Frontends use it to
+    /// observe that one specific command's outbox state instead of guessing from
+    /// an aggregate queue depth.
+    pub last_queued_command: Option<String>,
 }
 impl ConnectedOrbitClient {
     pub fn open(replica_db: impl AsRef<Path>, server: &str) -> Result<Self, AuthorityError> {
         let mut replica = AuthorityReplica::open(replica_db)?;
         replica.bind(server)?;
-        Ok(Self { replica })
+        Ok(Self {
+            replica,
+            last_queued_command: None,
+        })
+    }
+    /// The most recently queued command identity, if this process queued one.
+    pub fn last_queued_command_id(&self) -> Option<String> {
+        self.last_queued_command.clone()
+    }
+    /// Outbox state for one command identity: `pending`, `accepted`, `conflict`
+    /// or `superseded`. `None` means this replica has never seen that identity.
+    /// Attachment uploads are included because they are durable intentions too.
+    pub fn command_state(&self, id: &str) -> Result<Option<String>, AuthorityError> {
+        self.replica.command_state(id)
+    }
+    fn note_queued(&mut self, id: &str) {
+        self.last_queued_command = Some(id.to_owned());
     }
     /// Offline-safe: never causes a network request or infers accepted state
     /// from queued commands.
@@ -338,7 +358,9 @@ impl ConnectedOrbitClient {
             command_id,
             CommandKind::Project,
             &json!({"project_id":project_id,"name":name}),
-        )
+        )?;
+        self.note_queued(command_id);
+        Ok(())
     }
     pub fn queue_strategy_action(
         &mut self,
@@ -348,7 +370,9 @@ impl ConnectedOrbitClient {
         let value =
             serde_json::to_value(action).map_err(|e| AuthorityError::Invalid(e.to_string()))?;
         self.replica
-            .queue(command_id, CommandKind::Strategy, &value)
+            .queue(command_id, CommandKind::Strategy, &value)?;
+        self.note_queued(command_id);
+        Ok(())
     }
     pub fn queue_milestone_action(
         &mut self,
@@ -358,7 +382,9 @@ impl ConnectedOrbitClient {
         let value =
             serde_json::to_value(action).map_err(|e| AuthorityError::Invalid(e.to_string()))?;
         self.replica
-            .queue(command_id, CommandKind::Milestone, &value)
+            .queue(command_id, CommandKind::Milestone, &value)?;
+        self.note_queued(command_id);
+        Ok(())
     }
     pub fn queue_routine_action(
         &mut self,
@@ -367,7 +393,10 @@ impl ConnectedOrbitClient {
     ) -> Result<(), AuthorityError> {
         let value =
             serde_json::to_value(action).map_err(|e| AuthorityError::Invalid(e.to_string()))?;
-        self.replica.queue(command_id, CommandKind::Routine, &value)
+        self.replica
+            .queue(command_id, CommandKind::Routine, &value)?;
+        self.note_queued(command_id);
+        Ok(())
     }
     pub fn queue_schedule_action(
         &mut self,
@@ -377,7 +406,9 @@ impl ConnectedOrbitClient {
         let value =
             serde_json::to_value(action).map_err(|e| AuthorityError::Invalid(e.to_string()))?;
         self.replica
-            .queue(command_id, CommandKind::Schedule, &value)
+            .queue(command_id, CommandKind::Schedule, &value)?;
+        self.note_queued(command_id);
+        Ok(())
     }
     pub fn queue_task(
         &mut self,
@@ -390,7 +421,9 @@ impl ConnectedOrbitClient {
             command_id,
             CommandKind::Task,
             &json!({"type":"create","task_id":task_id,"title":title,"project_id":project_id}),
-        )
+        )?;
+        self.note_queued(command_id);
+        Ok(())
     }
     pub fn queue_task_status(
         &mut self,
@@ -402,7 +435,9 @@ impl ConnectedOrbitClient {
             command_id,
             CommandKind::Task,
             &json!({"type":"change_status","task_id":task_id,"status":status}),
-        )
+        )?;
+        self.note_queued(command_id);
+        Ok(())
     }
     pub fn queue_habit(
         &mut self,
@@ -415,7 +450,9 @@ impl ConnectedOrbitClient {
             command_id,
             CommandKind::Evidence,
             &json!({"type":"create_habit","habit_id":habit_id,"name":name,"cadence":cadence}),
-        )
+        )?;
+        self.note_queued(command_id);
+        Ok(())
     }
     pub fn queue_habit_occurrence(
         &mut self,
@@ -424,7 +461,9 @@ impl ConnectedOrbitClient {
         habit_id: &str,
         occurred_at_ms: i64,
     ) -> Result<(), AuthorityError> {
-        self.replica.queue(command_id,CommandKind::Evidence,&json!({"type":"record_habit","occurrence_id":occurrence_id,"habit_id":habit_id,"occurred_at_ms":occurred_at_ms}))
+        self.replica.queue(command_id,CommandKind::Evidence,&json!({"type":"record_habit","occurrence_id":occurrence_id,"habit_id":habit_id,"occurred_at_ms":occurred_at_ms}))?;
+        self.note_queued(command_id);
+        Ok(())
     }
     pub fn queue_metric_target(
         &mut self,
@@ -434,7 +473,9 @@ impl ConnectedOrbitClient {
         target: i64,
         direction: &str,
     ) -> Result<(), AuthorityError> {
-        self.replica.queue(command_id,CommandKind::Evidence,&json!({"type":"set_metric_target","metric_id":metric_id,"baseline":baseline,"target":target,"direction":direction}))
+        self.replica.queue(command_id,CommandKind::Evidence,&json!({"type":"set_metric_target","metric_id":metric_id,"baseline":baseline,"target":target,"direction":direction}))?;
+        self.note_queued(command_id);
+        Ok(())
     }
     pub fn queue_metric_observation(
         &mut self,
@@ -443,7 +484,9 @@ impl ConnectedOrbitClient {
         observed_at_ms: i64,
         value: i64,
     ) -> Result<(), AuthorityError> {
-        self.replica.queue(command_id,CommandKind::Evidence,&json!({"type":"record_metric","metric_id":metric_id,"observed_at_ms":observed_at_ms,"value":value}))
+        self.replica.queue(command_id,CommandKind::Evidence,&json!({"type":"record_metric","metric_id":metric_id,"observed_at_ms":observed_at_ms,"value":value}))?;
+        self.note_queued(command_id);
+        Ok(())
     }
     /// Queue a canonical domain action with its stable idempotency identity.
     /// Stage a complete cross-domain workflow in one local transaction.
@@ -461,28 +504,36 @@ impl ConnectedOrbitClient {
         kind: CommandKind,
         action: &Value,
     ) -> Result<(), AuthorityError> {
-        self.replica.queue(command_id, kind, action)
+        self.replica.queue(command_id, kind, action)?;
+        self.note_queued(command_id);
+        Ok(())
     }
     pub fn queue_markdown(
         &mut self,
         id: &str,
         command: &orbit_runtime::markdown_commands::MarkdownCommand,
     ) -> Result<(), AuthorityError> {
-        self.replica.queue_markdown(id, command)
+        self.replica.queue_markdown(id, command)?;
+        self.note_queued(id);
+        Ok(())
     }
     pub fn queue_folder_create(
         &mut self,
         id: &str,
         command: &orbit_runtime::folder_commands::FolderCreate,
     ) -> Result<(), AuthorityError> {
-        self.replica.queue_folder_create(id, command)
+        self.replica.queue_folder_create(id, command)?;
+        self.note_queued(id);
+        Ok(())
     }
     pub fn queue_folder_move(
         &mut self,
         id: &str,
         command: &orbit_runtime::folder_commands::FolderMove,
     ) -> Result<(), AuthorityError> {
-        self.replica.queue_folder_move(id, command)
+        self.replica.queue_folder_move(id, command)?;
+        self.note_queued(id);
+        Ok(())
     }
     /// Explicit last-accepted Markdown cache; callers must surface staleness.
     pub fn cached_markdown(
@@ -583,6 +634,44 @@ impl ConnectedOrbitClient {
     }
     pub fn flush(&mut self, http: &AuthorityHttp) -> Result<FlushOutcome, AuthorityError> {
         self.replica.flush(http)
+    }
+    /// Replica access for crate-internal attachment staging, which must share
+    /// exactly one SQLite connection with the accepted cache and outbox.
+    pub(crate) fn replica(&self) -> &AuthorityReplica {
+        &self.replica
+    }
+    pub(crate) fn replica_mut(&mut self) -> &mut AuthorityReplica {
+        &mut self.replica
+    }
+    /// Durable, unacknowledged uploads in staging order. These are local intent
+    /// only and must never be presented as accepted attachments.
+    pub fn pending_attachment_uploads(
+        &self,
+    ) -> Result<Vec<crate::PendingAttachmentDto>, AuthorityError> {
+        crate::attachments_remote::all_staged_attachments(&self.replica)
+    }
+    pub fn has_pending_attachment_uploads(&self) -> Result<bool, AuthorityError> {
+        Ok(self.replica.pending_attachment_upload_count()? > 0)
+    }
+    /// Outbox intentions plus staged attachment uploads. Callers use this to
+    /// distinguish "accepted and unchanged" from "mutation still pending".
+    pub fn pending_command_count(&self) -> Result<i64, AuthorityError> {
+        Ok(self.replica.pending_count()? + self.replica.pending_attachment_upload_count()?)
+    }
+    pub fn staged_attachments(
+        &self,
+        owner_kind: &str,
+        owner_id: &str,
+    ) -> Result<Vec<crate::PendingAttachmentDto>, AuthorityError> {
+        crate::attachments_remote::staged_attachments(&self.replica, owner_kind, owner_id)
+    }
+    /// Remember accepted server metadata so content verification can compare
+    /// downloaded bytes against known metadata. Caching never accepts an upload.
+    pub(crate) fn cache_accepted_attachments(
+        &self,
+        attachments: &[crate::AttachmentDto],
+    ) -> Result<(), AuthorityError> {
+        self.replica.cache_accepted_attachments(attachments)
     }
     pub fn reconnect(
         &mut self,

@@ -60,6 +60,14 @@ pub mod knowledge_operations;
 pub mod knowledge_service;
 pub mod markdown_commands;
 
+/// Storage failures while resolving an attachment owner stay typed application
+/// errors so transports can answer without exposing SQL details.
+fn attachment_lookup_error(error: rusqlite::Error) -> orbit_application::ApplicationError {
+    orbit_application::ApplicationError::Repository(orbit_application::RepositoryError::Other(
+        format!("attachment owner lookup: {error}"),
+    ))
+}
+
 /// Revision, fingerprint, canonical projects/tasks and evidence from one
 /// consistent authority snapshot.
 pub type AuthoritySnapshot = (
@@ -191,6 +199,91 @@ impl AuthoritativeHost {
         orbit_application::read_attachment_content(&self.authority.conn, &self.attachment_store, id)
     }
 
+    /// Whether an attachment's owning entity exists in canonical storage.
+    ///
+    /// Attachment rows deliberately carry no foreign key because owners span
+    /// several schemas (tasks, projects, blueprint work items, Markdown notes
+    /// and agent jobs). Transports therefore validate the target here before
+    /// accepting new metadata. Table names come from a closed match and the
+    /// identifier is always a bound parameter.
+    pub fn attachment_owner_exists(
+        &self,
+        owner: &orbit_domain::AttachmentOwner,
+    ) -> Result<bool, orbit_application::ApplicationError> {
+        use orbit_domain::AttachmentOwnerKind;
+        let table = match owner.kind() {
+            AttachmentOwnerKind::Task => "tasks",
+            AttachmentOwnerKind::Project => "projects",
+            AttachmentOwnerKind::WorkItem => "orbit_blueprint_work_items",
+            AttachmentOwnerKind::Knowledge => "markdown_note_index",
+            AttachmentOwnerKind::AgentJob => "agent_jobs",
+        };
+        let sql = format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id = ?1)");
+        self.authority
+            .conn
+            .query_row(&sql, [owner.id()], |row| row.get::<_, bool>(0))
+            .map_err(attachment_lookup_error)
+    }
+
+    /// The project an attachment owner belongs to, when it has one.
+    ///
+    /// Projects resolve to themselves; tasks/work items/agent jobs use their
+    /// stored `project_id`; Markdown knowledge has no project scope yet.
+    /// Missing owners return `None` rather than an error.
+    pub fn attachment_owner_project(
+        &self,
+        owner: &orbit_domain::AttachmentOwner,
+    ) -> Result<Option<orbit_domain::ProjectId>, orbit_application::ApplicationError> {
+        use orbit_domain::AttachmentOwnerKind;
+        use rusqlite::OptionalExtension;
+        let conn = &self.authority.conn;
+        let project_id: Option<String> = match owner.kind() {
+            AttachmentOwnerKind::Project => {
+                let exists: bool = conn
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?1)",
+                        [owner.id()],
+                        |row| row.get(0),
+                    )
+                    .map_err(attachment_lookup_error)?;
+                exists.then(|| owner.id().to_owned())
+            }
+            AttachmentOwnerKind::Task => conn
+                .query_row(
+                    "SELECT project_id FROM tasks WHERE id = ?1",
+                    [owner.id()],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(attachment_lookup_error)?
+                .flatten(),
+            AttachmentOwnerKind::WorkItem => conn
+                .query_row(
+                    "SELECT project_id FROM orbit_blueprint_work_items WHERE id = ?1",
+                    [owner.id()],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(attachment_lookup_error)?
+                .flatten(),
+            AttachmentOwnerKind::AgentJob => conn
+                .query_row(
+                    "SELECT project_id FROM agent_jobs WHERE id = ?1",
+                    [owner.id()],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(attachment_lookup_error)?
+                .flatten(),
+            AttachmentOwnerKind::Knowledge => None,
+        };
+        project_id
+            .map(|id| {
+                orbit_domain::ProjectId::new(id).map_err(orbit_application::ApplicationError::from)
+            })
+            .transpose()
+    }
+
     /// Ordered acceptance criteria for one task.
     pub fn acceptance_criteria(
         &self,
@@ -292,9 +385,8 @@ impl AuthoritativeHost {
                     Ok((revision, true, result))
                 }
                 CommandAdmission::New(revision) => {
-                    let result = apply(&mut self.application_services()).map_err(|_| {
-                        AuthorityError::Invalid("rich application command rejected")
-                    })?;
+                    let result = apply(&mut self.application_services())
+                        .map_err(AuthorityError::Application)?;
                     let receipt = serde_json::to_string(&(revision, &result)).map_err(|_| {
                         AuthorityError::Invalid("rich receipt serialization failed")
                     })?;
@@ -969,6 +1061,14 @@ impl AuthoritativeHost {
         self.authority.tasks()
     }
 
+    /// One canonical task projection including rich details and ordered labels.
+    pub fn task_record(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<domain_commands::TaskRecord>, store::AuthorityError> {
+        self.authority.task_record(task_id)
+    }
+
     pub fn project_command(
         &mut self,
         actor: &str,
@@ -1042,7 +1142,145 @@ impl AuthoritativeHost {
         actor: &str,
         command: domain_commands::TaskCommand,
     ) -> Result<domain_commands::TaskResult, store::AuthorityError> {
-        self.authority.authority_task_command(actor, command)
+        use domain_commands::{AcceptanceCriteriaAction, TaskAction, TaskResult};
+        use orbit_application::{
+            AcceptanceCriteriaChange, AcceptanceCriteriaCommand, UpdateTaskDetailsCommand,
+        };
+
+        // New rich variants are additive; every existing action keeps using the
+        // canonical SQL command handler unchanged.
+        match &command.action {
+            TaskAction::SetDetails {
+                task_id,
+                description,
+                priority,
+                labels,
+            } => {
+                let priority = match priority {
+                    Some(value) => Some(
+                        orbit_domain::TaskPriority::from_str_checked(value).map_err(|_| {
+                            store::AuthorityError::Invalid(
+                                "invalid task priority; expected low, medium, high, or urgent",
+                            )
+                        })?,
+                    ),
+                    None => None,
+                };
+                let activity_id =
+                    orbit_domain::ActivityId::new(format!("activity-{}", command.command_id))
+                        .map_err(|_| store::AuthorityError::Invalid("invalid activity id"))?;
+                let rich = UpdateTaskDetailsCommand {
+                    task_id: orbit_domain::TaskId::new(task_id.clone())
+                        .map_err(|_| store::AuthorityError::Invalid("invalid task id"))?,
+                    description: description.clone(),
+                    priority,
+                    labels: labels.clone(),
+                    activity_id,
+                    origin: orbit_domain::ActivityOrigin::External(actor.to_owned()),
+                };
+                let (revision, duplicate, task_id) = self.update_task_details_accepted(
+                    actor,
+                    &command.command_id,
+                    command.expected_revision,
+                    rich,
+                )?;
+                let task = self
+                    .authority
+                    .task_record(&task_id)?
+                    .ok_or(store::AuthorityError::Invalid("task does not exist"))?;
+                Ok(TaskResult {
+                    revision,
+                    duplicate,
+                    task,
+                })
+            }
+            TaskAction::AcceptanceCriteria { task_id, change } => {
+                let change = match change {
+                    AcceptanceCriteriaAction::Add { criterion_id, text } => {
+                        AcceptanceCriteriaChange::Add {
+                            criterion_id: orbit_domain::AcceptanceCriterionId::new(
+                                criterion_id.clone(),
+                            )
+                            .map_err(|_| {
+                                store::AuthorityError::Invalid("invalid acceptance criterion id")
+                            })?,
+                            text: text.clone(),
+                        }
+                    }
+                    AcceptanceCriteriaAction::SetText { criterion_id, text } => {
+                        AcceptanceCriteriaChange::SetText {
+                            criterion_id: orbit_domain::AcceptanceCriterionId::new(
+                                criterion_id.clone(),
+                            )
+                            .map_err(|_| {
+                                store::AuthorityError::Invalid("invalid acceptance criterion id")
+                            })?,
+                            text: text.clone(),
+                        }
+                    }
+                    AcceptanceCriteriaAction::SetCompleted {
+                        criterion_id,
+                        completed,
+                    } => AcceptanceCriteriaChange::SetCompleted {
+                        criterion_id: orbit_domain::AcceptanceCriterionId::new(
+                            criterion_id.clone(),
+                        )
+                        .map_err(|_| {
+                            store::AuthorityError::Invalid("invalid acceptance criterion id")
+                        })?,
+                        completed: *completed,
+                    },
+                    AcceptanceCriteriaAction::Reorder {
+                        criterion_id,
+                        position,
+                    } => AcceptanceCriteriaChange::Reorder {
+                        criterion_id: orbit_domain::AcceptanceCriterionId::new(
+                            criterion_id.clone(),
+                        )
+                        .map_err(|_| {
+                            store::AuthorityError::Invalid("invalid acceptance criterion id")
+                        })?,
+                        position: *position,
+                    },
+                    AcceptanceCriteriaAction::Remove { criterion_id } => {
+                        AcceptanceCriteriaChange::Remove {
+                            criterion_id: orbit_domain::AcceptanceCriterionId::new(
+                                criterion_id.clone(),
+                            )
+                            .map_err(|_| {
+                                store::AuthorityError::Invalid("invalid acceptance criterion id")
+                            })?,
+                        }
+                    }
+                };
+                let activity_id =
+                    orbit_domain::ActivityId::new(format!("activity-{}", command.command_id))
+                        .map_err(|_| store::AuthorityError::Invalid("invalid activity id"))?;
+                let rich = AcceptanceCriteriaCommand {
+                    task_id: orbit_domain::TaskId::new(task_id.clone())
+                        .map_err(|_| store::AuthorityError::Invalid("invalid task id"))?,
+                    change,
+                    activity_id,
+                    origin: orbit_domain::ActivityOrigin::External(actor.to_owned()),
+                };
+                let (revision, duplicate, task_id) = self.apply_acceptance_criteria_accepted(
+                    actor,
+                    &command.command_id,
+                    command.expected_revision,
+                    rich,
+                )?;
+                let task = self
+                    .authority
+                    .task_record(&task_id)?
+                    .ok_or(store::AuthorityError::Invalid("task does not exist"))?;
+                Ok(TaskResult {
+                    revision,
+                    duplicate,
+                    task,
+                })
+            }
+            _ => self.authority.authority_task_command(actor, command),
+        }
     }
 
     pub fn evidence_command(

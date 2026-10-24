@@ -6,48 +6,49 @@ project_owned: true
 record_contract: change-impact
 record_schema_version: 1
 status: current
-task_id: TASK-0005
+task_id: TASK-0006
 ---
 
 # Change Impact Declaration
 
 ## Task
 
-TASK-0005 — M28 usability recovery and core workflow completion.
+TASK-0006 — M28 connected completion and agent lifecycle acceptance.
 
 ## Impact classification
 
 | Impact | Value | Reason | Activated gate |
 |---|---|---|---|
-| public_api | yes | New client methods/DTOs for task details, acceptance criteria, attachments and workflows; new MCP tools; `orbit workflow` alias; blueprint validation now allows zero work items when views exist. | workspace compile, public-contract tests and compatibility review |
-| persisted_data | yes | Schema 20 adds task description/priority, `task_labels`, `task_acceptance_criteria`, `attachment_objects` and `attachments`. Additive migration; existing rows default to empty details. | storage migration tests, legacy workspace PTY |
-| configuration | yes | `ORBIT_ATTACHMENT_MAX_BYTES`, `ORBIT_VIEWER`, `ORBIT_TUI_STATE` added; defaults preserve existing behaviour. | configuration/documentation tests |
-| dependencies | yes | `orbit-tui` adds `serde` (existing workspace dependency) for session state; no new external crates otherwise. | dependency review, locked offline build and clippy |
-| security_boundary | yes | Attachment paths are opaque and content-addressed; filenames are display-only; symlinks rejected; size limits enforced; content is never executed; MCP attachment access is explicit and project-scoped; no MCP operation launches an agent. | security path/scope and no-code-execution tests | attachment safety tests, MCP scope/read-only tests, no-process TUI boundary test |
-| concurrency | no | Commands remain serialized by the authority ledger; attachment import writes immutable objects before metadata. | duplicate-command and retry tests |
-| performance_sensitive | yes | Task list attaches labels in one query; attachments are streamed only when explicitly read; no per-frame storage access added. | performance-sensitive bounded-query tests | focused test suites |
-| user_interface | yes | Task detail editing, multiline editor, criteria/attachment/activity modals, action bar, onboarding banner, session restore, workflow picker and terminology changes. | Ratatui buffer tests and real-PTY scenarios |
-| deployment | yes | New projects are bound to Basic on both authority creation paths; connected attachment/detail operations fail closed. | deployment-mode acceptance tests | local and connected acceptance tests |
+| public_api | yes | Additive `TaskAction::SetDetails`/`AcceptanceCriteria`, new server task/attachment routes, `orbit attachment` commands, `agent complete`/`interrupt`, and client APIs for per-command state and staging. | workspace compile, wire-compatibility and acceptance suites |
+| persisted_data | yes | Replica schema v2 adds `attachment_uploads`, `replica_metadata` and accepted-attachment metadata; server ledger remains metadata-only for imports; no change to authoritative entity tables. | replica migration, idempotency and retry tests |
+| configuration | yes | `ORBIT_REQUIRE_CONNECTED_TUI_EVIDENCE`, `ORBIT_REQUIRE_MCP_EVIDENCE`, `ORBIT_REQUIRE_AGENT_EVIDENCE` gate required evidence checks. | configuration and evidence-flag tests |
+| dependencies | yes | No new external crates; `serde`/`sha2`/`reqwest` were already present. | dependency review, locked offline build and clippy |
+| security_boundary | yes | Attachment routes authenticate before reading the body, validate owner existence, enforce limits, reject path-like filenames, verify checksums and never execute content; agent resume refuses ambiguous launch claims. | security path/scope, auth-before-body and no-execution tests |
+| concurrency | yes | Ordered outbox flush continues after permanent domain rejection, records revision fences as reviewable conflicts, and uploads attachments only after the owning intents are accepted. | concurrency/ordering outbox audit and staging-order tests |
+| performance_sensitive | yes | Import ledger payloads are checksum/metadata-only; JSON reads keep a short timeout while binary transfers use a longer one; no new per-frame queries. | performance-sensitive ledger-size, bounded-query and transfer tests |
+| user_interface | yes | Connected details/criteria/activity, attachment pending markers, header pending count, blocked-flush recovery and agent job commands. | Ratatui buffer tests and PTY/connected acceptance |
+| deployment | yes | Connected server-authoritative rich writes and attachments, with explicit single-tenant authorization semantics and offline staging. | deployment-mode connected server, MCP and scenario D acceptance tests |
 
 ## Assumptions and unknowns
 
-- The local workspace is the authoritative attachment source of truth in this
-  build; connected upload is intentionally unavailable.
-- Acceptance-criteria completion is informational and never authorizes task
-  completion.
-- Agent Development remains an optional workflow; no Herdr runtime is required
-  for Basic or MCP usage.
+- The authority is a single-tenant workspace: all enrolled devices share access to
+  every project/entity, consistent with existing commands. Per-device project
+  ACLs are a tracked follow-up (TODO-0013).
+- Live Herdr/model execution requires explicit authorization and is not part of
+  automated evidence; Scenario C uses a scripted Herdr CLI.
+- The release workflow file is intentionally withheld; M15 release-contract
+  checks cannot pass until it is restored.
 
 ## Required outputs
 
-- Additive schema migration and repository adapters.
-- Application commands with activity and duplicate safety.
-- Client and MCP surfaces with typed errors.
-- TUI experience and PTY evidence.
-- Documentation, backup guidance and GetDone records.
+- Additive task/attachment wire and server routes with tests.
+- Replica staging and ordered flush with idempotency/integrity tests.
+- CLI/TUI surface with honest pending/conflict state.
+- Agent lifecycle commands and scripted acceptance.
+- Documentation, evidence wiring and records.
 
 ## Test tier
 
-- Tier 3: user-facing UI, persisted data, security-sensitive file handling and
-  authorization-sensitive MCP tools. Focused suites, the full Rust workspace,
-  clippy, documentation tests and real-terminal acceptance were run.
+- Tier 3: user-facing UI, server-authoritative writes, file content handling and
+  agent lifecycle. Workspace tests, clippy, fmt, documentation, real PTY,
+  connected-server, MCP and agent suites were run, plus the M15 product profile.

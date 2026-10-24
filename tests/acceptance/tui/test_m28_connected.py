@@ -26,6 +26,7 @@ from pty_harness import CTRL_Q, ENTER, TuiSession, Workspace, strip_ansi  # noqa
 ROOT = Path(__file__).resolve().parents[3]
 SERVER = Path(os.environ.get("ORBIT_SERVER_BIN", ROOT / "target" / "debug" / "orbit-server"))
 TUI = Path(os.environ.get("ORBIT_TUI_BIN", ROOT / "target" / "debug" / "orbit-tui"))
+REQUIRE_EVIDENCE = os.environ.get("ORBIT_REQUIRE_CONNECTED_TUI_EVIDENCE") == "1"
 
 
 def _request(base, path, token=None, payload=None, device=None):
@@ -48,7 +49,15 @@ def _request(base, path, token=None, payload=None, device=None):
 @pytest.fixture
 def connected_workspace(tmp_path):
     if not SERVER.is_file() or not TUI.is_file():
-        pytest.skip("orbit-server/orbit-tui binaries are not built")
+        message = (
+            f"orbit-server/orbit-tui binaries are not built "
+            f"(server={SERVER.is_file()}, tui={TUI.is_file()})"
+        )
+        if REQUIRE_EVIDENCE:
+            pytest.fail(
+                f"{message} (ORBIT_REQUIRE_CONNECTED_TUI_EVIDENCE=1 forbids a skipped run)"
+            )
+        pytest.skip(message)
     port_socket = socket.socket()
     port_socket.bind(("127.0.0.1", 0))
     port = port_socket.getsockname()[1]

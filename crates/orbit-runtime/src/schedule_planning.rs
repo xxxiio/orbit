@@ -317,6 +317,9 @@ mod tests {
             estimated_minutes: minutes,
             earliest_start_at_ms: start,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn block(id: &str, start: i64, end: i64) -> ScheduleRecord {
@@ -446,6 +449,9 @@ mod integration_contract_tests {
             estimated_minutes: minutes,
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn request() -> SchedulePlanRequest {

@@ -64,9 +64,10 @@ acceptance requirements are satisfied.
 orbit task complete TASK_ID
 ```
 
-Tasks have first-class acceptance criteria (local-authoritative in this build):
-edit them in the TUI with `K` or over MCP with `task.acceptance.*`. They are a
-separate ordered aggregate; checking every criterion never completes the task.
+Tasks have first-class acceptance criteria in both local and connected mode:
+edit them in the TUI with `K` or over MCP with `task.acceptance.*`. Connected
+changes queue a canonical command and are accepted only after a flush. They are
+a separate ordered aggregate; checking every criterion never completes the task.
 For longer arguments you can also use a linked note or a project success
 criterion, and state which one is authoritative. See
 [task details and attachments](task-details-and-attachments.md) and
@@ -86,6 +87,28 @@ orbit agent continue JOB_ID --message "Address the failing acceptance check"
 
 `continue` sends to an existing confirmed session. Delivery errors are
 ambiguous; inspect the session instead of retrying blindly.
+
+## Complete or interrupt a job record
+
+```sh
+orbit agent complete JOB_ID --summary "Work captured for review"
+orbit agent interrupt JOB_ID --reason "Operator moved this work elsewhere"
+```
+
+Both commands change only the Orbit job record. Handoffs, the recorded review
+and the Orbit task are untouched, and neither command accepts the task.
+Completion is only valid after the runtime has been observed; an unreachable
+job needs an explicit operator decision.
+
+`interrupt` is **not** an operator stop for the external runtime. The Herdr
+adapter has no stop/close verb, so the external session may keep running. The
+JSON result reports `runtime_stopped: false`. Close or reconcile that session
+out of band if it must not continue.
+
+A predecessor whose launch claim is `claimed` or `ambiguous` with no confirmed
+session cannot be resumed: the first launch may already have created a live
+session. Run `orbit agent sweep` or reconcile the runtime before creating a
+successor.
 
 ## Continue versus resume
 

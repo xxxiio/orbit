@@ -811,6 +811,25 @@ impl SqliteStore {
         if !prior.state.is_terminal() {
             return Err(invalid("predecessor still active"));
         }
+        // A claimed or ambiguous launch may already have created an external
+        // session. A successor must not start until that claim is reconciled.
+        let claim: Option<(String, Option<String>)> = tx
+            .query_row(
+                "SELECT dispatch_state,session_ref FROM agent_job_launch_claims WHERE job_id=?1",
+                [prior_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(repo_error)?;
+        if let Some((dispatch_state, session_ref)) = claim
+            && matches!(dispatch_state.as_str(), "claimed" | "ambiguous")
+            && session_ref.is_none()
+            && prior.runtime_session_ref.is_none()
+        {
+            return Err(invalid(
+                "predecessor launch is unconfirmed; reconcile or sweep the runtime before resuming",
+            ));
+        }
         let latest:Option<(String,String)>=tx.query_row("SELECT handoff_id,payload_json FROM agent_job_handoffs WHERE job_id=?1 ORDER BY reported_at_ms DESC,handoff_id DESC LIMIT 1",[prior_id],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(repo_error)?;
         let Some((handoff_id, payload)) = latest else {
             return Err(invalid("resume requires handoff"));
@@ -1429,6 +1448,9 @@ impl SqliteStore {
                 match state.as_str() {
                     "waiting_input" | "blocked" => "respond_to_agent",
                     "unreachable" | "launching" => "inspect_runtime",
+                    // Completion without a handoff is allowed, but it is not
+                    // acceptance-ready evidence by itself.
+                    "completed" if handoff_count == 0 => "inspect_missing_handoff",
                     "completed" => "check_task_acceptance",
                     "failed" | "interrupted" => "inspect_and_resume",
                     _ => "none",
@@ -1540,6 +1562,66 @@ impl SqliteStore {
         tx.commit().map_err(repo_error)?;
         self.get_agent_job(id)?
             .ok_or_else(|| invalid("job missing after transition"))
+    }
+
+    /// Explicit operator completion of a non-terminal local job. Completion is
+    /// terminal for the job only: durable handoffs, the recorded review and the
+    /// Orbit task are untouched, so task acceptance stays a separate decision.
+    /// A terminal job is refused instead of silently replayed; use
+    /// `resume_agent_job_for_device` (or the local resume path) for a successor.
+    /// Completion is recorded in the append-only job event timeline, which is
+    /// the same activity trail every other lifecycle transition uses.
+    pub fn complete_agent_job(
+        &mut self,
+        job_id: &str,
+        completed_at_ms: i64,
+        summary: &str,
+    ) -> Result<AgentJob, RepositoryError> {
+        if !nonempty(job_id) || completed_at_ms < 0 || summary.len() > 4096 {
+            return Err(invalid("invalid agent completion request"));
+        }
+        let summary = summary.trim();
+        let reason = if summary.is_empty() {
+            "completed:operator".to_owned()
+        } else {
+            format!("completed:{summary}")
+        };
+        let tx = self.connection.transaction().map_err(repo_error)?;
+        let job = read_job(&tx, job_id)?.ok_or_else(|| invalid("unknown agent job"))?;
+        if job.state.is_terminal() {
+            return Err(invalid(format!(
+                "agent job is already terminal ({}); resume it to create a successor",
+                job.state.as_str()
+            )));
+        }
+        // Queued/preparing/launching are not completable: an agent that never
+        // reached a running observation has no completion evidence to record.
+        if !job.state.can_transition(AgentJobState::Completed) {
+            return Err(invalid(format!(
+                "agent job cannot be completed from state {}; launch and inspect it first",
+                job.state.as_str()
+            )));
+        }
+        if completed_at_ms < job.updated_at_ms {
+            return Err(invalid("agent completion timestamp regression"));
+        }
+        let updated = tx
+            .execute(
+                "UPDATE agent_jobs SET state='completed',revision=revision+1,updated_at_ms=?2 WHERE id=?1 AND revision=?3",
+                params![job_id, completed_at_ms, job.revision],
+            )
+            .map_err(repo_error)?;
+        if updated != 1 {
+            return Err(invalid("concurrent agent job modification"));
+        }
+        tx.execute(
+            "INSERT INTO agent_job_events(job_id,revision,state,recorded_at_ms,reason) VALUES (?1,?2,'completed',?3,?4)",
+            params![job_id, job.revision + 1, completed_at_ms, reason],
+        )
+        .map_err(repo_error)?;
+        tx.commit().map_err(repo_error)?;
+        self.get_agent_job(job_id)?
+            .ok_or_else(|| invalid("job missing after completion"))
     }
 }
 
@@ -1787,6 +1869,40 @@ mod tests {
         );
     }
     #[test]
+    fn resume_refuses_an_unconfirmed_launch_claim() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        ready_task(&store, "task");
+        store
+            .start_agent_job_for_device("device-a", &job("first", "task"), false)
+            .unwrap();
+        assert!(
+            store
+                .claim_agent_launch("first", 1, "ambiguous-token", 101)
+                .unwrap()
+        );
+        store
+            .transition_agent_job("first", 2, AgentJobState::Interrupted, 102, "stopped")
+            .unwrap();
+        store
+            .record_agent_job_handoff(
+                "first",
+                "handoff-one",
+                &serde_json::json!({"summary":"continue","validation":{},"next_steps":["test"]}),
+                103,
+            )
+            .unwrap();
+        let error = store
+            .resume_agent_job_for_device("device-a", "first", "second", 104)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("reconcile") && error.contains("sweep"),
+            "{error}"
+        );
+        assert!(store.get_agent_job("second").unwrap().is_none());
+    }
+
+    #[test]
     fn authenticated_owner_binding_is_atomic_and_replay_safe() {
         let mut store = SqliteStore::in_memory().unwrap();
         ready_task(&store, "task");
@@ -1921,6 +2037,63 @@ mod tests {
                 .len(),
             2
         );
+    }
+    #[test]
+    fn explicit_completion_is_terminal_and_preserves_handoffs() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        ready_task(&store, "task");
+        store.reserve_agent_job(&job("a", "task")).unwrap();
+        // An agent that never launched has no completion evidence to record.
+        assert!(store.complete_agent_job("a", 101, "done").is_err());
+        store
+            .transition_agent_job("a", 0, AgentJobState::Preparing, 101, "prepare")
+            .unwrap();
+        store
+            .transition_agent_job("a", 1, AgentJobState::Launching, 102, "launch")
+            .unwrap();
+        let running = store
+            .transition_agent_job("a", 2, AgentJobState::Running, 103, "runtime_present")
+            .unwrap();
+        store
+            .record_agent_job_handoff(
+                "a",
+                "handoff-one",
+                &serde_json::json!({"summary":"implemented","validation":{"status":"cargo test"},"next_steps":[]}),
+                104,
+            )
+            .unwrap();
+        let completed = store
+            .complete_agent_job("a", 105, "  agent reported implementation  ")
+            .unwrap();
+        assert_eq!(completed.state, AgentJobState::Completed);
+        assert_eq!(completed.revision, running.revision + 1);
+        assert_eq!(completed.updated_at_ms, 105);
+        // Handoffs survive completion; the task is never completed implicitly.
+        assert_eq!(store.list_agent_job_handoffs("a").unwrap().len(), 1);
+        let task_status: String = store
+            .connection
+            .query_row("SELECT status FROM tasks WHERE id='task'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(task_status, "ready");
+        let event: (String, String) = store
+            .connection
+            .query_row(
+                "SELECT state,reason FROM agent_job_events WHERE job_id='a' AND revision=?1",
+                [completed.revision],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            event,
+            (
+                "completed".to_owned(),
+                "completed:agent reported implementation".to_owned()
+            )
+        );
+        // Terminal jobs are refused rather than re-completed.
+        assert!(store.complete_agent_job("a", 106, "again").is_err());
+        assert!(store.complete_agent_job("missing", 106, "x").is_err());
+        assert!(store.complete_agent_job("a", 90, "regression").is_err());
     }
     #[test]
     fn launch_claims_are_single_dispatch_and_recoverable() {
@@ -2189,6 +2362,24 @@ mod m23_catchup_tests {
         assert_eq!(changed[0]["next_action"], "resume_or_rework");
         assert_eq!(changed[0]["review_decision"], "changes_requested");
         assert_eq!(store.list_agent_jobs_needing_attention().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn completed_job_without_a_handoff_is_not_acceptance_ready() {
+        let store = SqliteStore::in_memory().unwrap();
+        store
+            .connection
+            .execute(
+                "INSERT INTO agent_jobs(id,request_id,project_id,task_id,launch_revision,\
+                 agent_kind,machine_ref,runtime_kind,repository_ref,state,revision,\
+                 created_at_ms,updated_at_ms) \
+                 VALUES ('job','req','proj','task',0,'codex','local','herdr','/repo',\
+                 'completed',4,1,2)",
+                [],
+            )
+            .unwrap();
+        let overview = store.agent_job_overview().unwrap();
+        assert_eq!(overview[0]["next_action"], "inspect_missing_handoff");
     }
 }
 

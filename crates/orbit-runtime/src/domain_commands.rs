@@ -9,6 +9,33 @@ pub struct TaskCommand {
     pub expected_revision: i64,
     pub action: TaskAction,
 }
+/// One ordered acceptance-criteria operation on the wire.
+///
+/// Additive alongside the task command envelope: clients that do not know
+/// these operations continue to send the older actions unchanged.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AcceptanceCriteriaAction {
+    Add {
+        criterion_id: String,
+        text: String,
+    },
+    SetText {
+        criterion_id: String,
+        text: String,
+    },
+    SetCompleted {
+        criterion_id: String,
+        completed: bool,
+    },
+    Reorder {
+        criterion_id: String,
+        position: usize,
+    },
+    Remove {
+        criterion_id: String,
+    },
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TaskAction {
@@ -52,6 +79,20 @@ pub enum TaskAction {
         task_id: String,
         prerequisite_id: String,
     },
+    /// Replace the rich task details. These variants are additive: older
+    /// payloads remain valid and older clients simply never emit them.
+    SetDetails {
+        task_id: String,
+        description: String,
+        priority: Option<String>,
+        labels: Vec<String>,
+    },
+    /// Apply one ordered acceptance-criteria operation. Checking criteria never
+    /// changes the task lifecycle status.
+    AcceptanceCriteria {
+        task_id: String,
+        change: AcceptanceCriteriaAction,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskRecord {
@@ -68,6 +109,12 @@ pub struct TaskRecord {
     pub earliest_start_at_ms: Option<i64>,
     #[serde(default)]
     pub deadline_at_ms: Option<i64>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub priority: Option<String>,
+    #[serde(default)]
+    pub labels: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskResult {

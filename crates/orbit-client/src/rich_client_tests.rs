@@ -468,69 +468,149 @@ fn project_workflow_binding_roundtrips_through_the_client() {
 }
 
 #[test]
-fn connected_mode_fails_closed_for_attachments_and_rich_task_commands() {
+fn connected_attachments_stage_offline_while_accepted_reads_and_purge_stay_honest() {
+    let dir = scratch_dir("connected-attachments");
+    let source = dir.join("note.txt");
+    fs::write(&source, b"staged evidence").expect("write source");
     let mut remote =
         AuthorityConnection::remote(":memory:", "https://example.org", None).expect("open remote");
 
-    let attachment_error = remote
-        .list_attachments("task", "task-1")
-        .expect_err("attachments are unavailable in connected mode");
-    match attachment_error {
-        super::unified::ClientConnectionError::Unavailable(message) => {
-            assert_eq!(message, super::unified::ATTACHMENTS_UNAVAILABLE_MESSAGE);
+    // Accepted server reads still require the server; the failure is
+    // offline-specific, not a blanket "attachments unavailable".
+    match remote.list_attachments("task", "task-1") {
+        Err(super::unified::ClientConnectionError::Unavailable(message)) => {
+            assert_eq!(message, super::unified::ATTACHMENTS_OFFLINE_MESSAGE);
             assert_eq!(
                 message,
-                "attachments are not available in connected mode in this build; the server does not yet accept attachment uploads"
+                "offline: connected attachment reads require a server connection; uploads staged on this replica can still be listed and discarded"
             );
         }
         other => panic!("expected Unavailable, got {other:?}"),
     }
+    // Owner kinds are still validated locally before any network request.
+    assert!(matches!(
+        remote.list_attachments("sprint", "sprint-1"),
+        Err(super::unified::ClientConnectionError::Local(error))
+            if error.code == ClientErrorCode::InvalidInput
+    ));
 
+    // Import stages durable bytes without a server and never claims acceptance.
+    let staged = remote
+        .import_attachment(
+            "task".into(),
+            "task-1".into(),
+            source.to_string_lossy().into_owned(),
+            Some("Evidence".into()),
+        )
+        .expect("stage attachment offline");
+    assert_eq!(staged.owner_kind, "task");
+    assert_eq!(staged.filename, "note.txt");
+    assert_eq!(staged.size_bytes, 15);
+    assert!(
+        remote
+            .has_pending_attachment_uploads()
+            .expect("pending flag")
+    );
+    assert_eq!(remote.pending_command_count().expect("pending count"), 1);
+    let staged_rows = remote
+        .staged_attachments("task", "task-1")
+        .expect("staged list");
+    assert_eq!(staged_rows.len(), 1);
+    assert_eq!(staged_rows[0].attachment.id, staged.id);
+    assert_eq!(staged_rows[0].state, "pending");
+    assert_eq!(
+        remote
+            .pending_attachment_uploads()
+            .expect("all staged")
+            .len(),
+        1
+    );
+    // Staged bytes are verifiable offline; accepted bytes are not fabricated.
+    let (staged_meta, staged_bytes) = remote
+        .attachment_content(&staged.id)
+        .expect("read staged content offline");
+    assert_eq!(staged_meta.id, staged.id);
+    assert_eq!(staged_bytes, b"staged evidence");
     assert!(matches!(
-        remote.import_attachment("task".into(), "task-1".into(), "/tmp/x".into(), None),
-        Err(super::unified::ClientConnectionError::Unavailable(message))
-            if message == super::unified::ATTACHMENTS_UNAVAILABLE_MESSAGE
+        remote.attachment_content("attachment-unknown"),
+        Err(super::unified::ClientConnectionError::Remote(
+            crate::authority::AuthorityError::Unavailable(message)
+        )) if message == crate::attachments_remote::ACCEPTED_CONTENT_REQUIRES_SERVER
     ));
+    assert!(
+        remote
+            .export_attachment(
+                &staged.id,
+                dir.join("copy.txt").to_string_lossy().into_owned()
+            )
+            .is_ok()
+    );
     assert!(matches!(
-        remote.attachment_content("attachment-1"),
-        Err(super::unified::ClientConnectionError::Unavailable(_))
+        remote.export_attachment(
+            "attachment-unknown",
+            dir.join("other.txt").to_string_lossy().into_owned()
+        ),
+        Err(super::unified::ClientConnectionError::Remote(
+            crate::authority::AuthorityError::Unavailable(_)
+        ))
     ));
+    // Accepted removal is online-only; a staged upload is discarded locally.
     assert!(matches!(
-        remote.export_attachment("attachment-1", "/tmp/x".into()),
-        Err(super::unified::ClientConnectionError::Unavailable(_))
+        remote.remove_attachment("attachment-unknown".into()),
+        Err(super::unified::ClientConnectionError::Remote(
+            crate::authority::AuthorityError::Unavailable(message)
+        )) if message.contains("offline: removing an accepted attachment requires a server connection")
     ));
-    assert!(matches!(
-        remote.remove_attachment("attachment-1".into()),
-        Err(super::unified::ClientConnectionError::Unavailable(_))
-    ));
+    assert!(
+        !remote
+            .remove_attachment(staged.id.clone())
+            .expect("discard staged upload")
+    );
+    assert!(
+        !remote
+            .has_pending_attachment_uploads()
+            .expect("no pending upload")
+    );
+    assert_eq!(remote.pending_command_count().expect("settled"), 0);
     assert!(matches!(
         remote.purge_attachment_content(),
-        Err(super::unified::ClientConnectionError::Unavailable(_))
+        Err(super::unified::ClientConnectionError::Unavailable(message))
+            if message == super::unified::PURGE_ATTACHMENTS_UNAVAILABLE_MESSAGE
     ));
 
+    // Rich task writes now queue a canonical command; without accepted state
+    // the expected revision is unknowable, so the failure is offline-specific
+    // rather than the old blanket "Unavailable".
     match remote.update_task_details(
         "task-1".into(),
         "Connected".into(),
         Some("high".into()),
         Vec::new(),
     ) {
-        Err(super::unified::ClientConnectionError::Unavailable(message)) => {
-            assert_eq!(message, super::unified::TASK_DETAILS_UNAVAILABLE_MESSAGE)
+        Err(super::unified::ClientConnectionError::Unsupported(message)) => {
+            assert_eq!(message, super::unified::TASK_DETAILS_ACCEPTED_STATE_MESSAGE)
         }
-        other => panic!("expected Unavailable, got {other:?}"),
+        other => panic!("expected Unsupported, got {other:?}"),
     }
     assert!(matches!(
         remote.acceptance_criteria("task-1"),
-        Err(super::unified::ClientConnectionError::Unavailable(message))
-            if message == super::unified::TASK_DETAILS_UNAVAILABLE_MESSAGE
+        Err(super::unified::ClientConnectionError::Unsupported(message))
+            if message == super::unified::TASK_READS_OFFLINE_MESSAGE
     ));
     assert!(matches!(
         remote.add_acceptance_criterion("task-1".into(), "Criteria".into()),
-        Err(super::unified::ClientConnectionError::Unavailable(_))
+        Err(super::unified::ClientConnectionError::Unsupported(message))
+            if message == super::unified::TASK_DETAILS_ACCEPTED_STATE_MESSAGE
     ));
     assert!(matches!(
         remote.task_activity("task-1"),
-        Err(super::unified::ClientConnectionError::Unavailable(_))
+        Err(super::unified::ClientConnectionError::Unsupported(message))
+            if message == super::unified::TASK_READS_OFFLINE_MESSAGE
+    ));
+    assert!(matches!(
+        remote.task_detail("task-1"),
+        Err(super::unified::ClientConnectionError::Unsupported(message))
+            if message == super::unified::TASK_READS_OFFLINE_MESSAGE
     ));
     assert_eq!(
         remote
@@ -541,8 +621,468 @@ fn connected_mode_fails_closed_for_attachments_and_rich_task_commands() {
         1,
         "static workflow descriptors remain readable offline"
     );
+    // Workflow reads are now live server reads; only binding *changes* remain
+    // unavailable in this connected build.
     assert!(matches!(
         remote.project_workflow("project-1"),
-        Err(super::unified::ClientConnectionError::Unavailable(_))
+        Err(super::unified::ClientConnectionError::Unsupported(_))
     ));
+    assert!(matches!(
+        remote.apply_workflow("project-1".into(), "development".into(), None),
+        Err(super::unified::ClientConnectionError::Unavailable(message))
+            if message == super::unified::PROJECT_WORKFLOW_UNAVAILABLE_MESSAGE
+    ));
+}
+
+#[test]
+fn local_task_detail_reads_one_task_and_reports_missing_ids() {
+    let dir = scratch_dir("task-detail");
+    let path = dir.join("workspace.db");
+    let mut client = OrbitClient::open(&path).expect("open client");
+    create_task(&mut client, "task-1");
+    client
+        .update_task_details(
+            "task-1".into(),
+            "Body".into(),
+            Some("medium".into()),
+            vec!["api".into()],
+        )
+        .expect("update details");
+
+    let detail = client.task_detail("task-1").expect("read task detail");
+    assert_eq!(detail.title, "Task task-1");
+    assert_eq!(detail.description, "Body");
+    assert_eq!(detail.priority.as_deref(), Some("medium"));
+    assert_eq!(detail.labels, vec!["api".to_string()]);
+
+    let missing = client
+        .task_detail("task-missing")
+        .expect_err("unknown task is an error");
+    assert_eq!(missing.code, ClientErrorCode::NotFound);
+    assert!(missing.message.contains("task-missing"));
+    let invalid = client
+        .task_detail(" ")
+        .expect_err("a blank id is invalid input");
+    assert_eq!(invalid.code, ClientErrorCode::InvalidInput);
+
+    drop(client);
+    let _ = fs::remove_dir_all(dir);
+}
+
+/// Connected reads and queued rich-task commands against a real HTTP socket.
+mod connected_task_details {
+    use super::*;
+    use crate::authority::{AuthorityError, AuthorityHttp};
+    use crate::unified::{ClientConnectionError, TASK_READS_OFFLINE_MESSAGE};
+    use serde_json::{Value, json};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
+    struct Reply {
+        path: &'static str,
+        status: u16,
+        body: String,
+    }
+
+    fn reply(path: &'static str, body: Value) -> Reply {
+        Reply {
+            path,
+            status: 200,
+            body: body.to_string(),
+        }
+    }
+
+    fn missing(path: &'static str) -> Reply {
+        Reply {
+            path,
+            status: 404,
+            body: json!({"error": "task not found"}).to_string(),
+        }
+    }
+
+    fn serve(replies: Vec<Reply>) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        let handle = thread::spawn(move || {
+            for reply in replies {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                    .unwrap();
+                let mut buffer = [0_u8; 16384];
+                let mut request = Vec::new();
+                while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                    let bytes = socket.read(&mut buffer).unwrap();
+                    if bytes == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buffer[..bytes]);
+                    assert!(request.len() < 65536, "oversized test request");
+                }
+                let start = String::from_utf8_lossy(&request);
+                let lower = start.to_ascii_lowercase();
+                let first = start.lines().next().unwrap_or("");
+                assert!(
+                    first.contains(reply.path),
+                    "unexpected HTTP request {first}"
+                );
+                assert!(first.starts_with("GET "), "expected GET, got {first}");
+                assert!(
+                    lower.contains("authorization: bearer test-token"),
+                    "missing bearer token in {start}"
+                );
+                assert!(
+                    lower.contains("x-orbit-device-id: device-1"),
+                    "missing device header in {start}"
+                );
+                let status = match reply.status {
+                    200 => "200 OK",
+                    404 => "404 Not Found",
+                    _ => "500 Internal Server Error",
+                };
+                let raw = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    reply.body.len(),
+                    reply.body
+                );
+                socket.write_all(raw.as_bytes()).unwrap();
+                socket.flush().unwrap();
+            }
+        });
+        (address, handle)
+    }
+
+    fn remote(base: &str) -> AuthorityConnection {
+        AuthorityConnection::remote(":memory:", base, Some(("device-1", "test-token")))
+            .expect("open remote")
+    }
+
+    fn task(description: &str) -> Value {
+        json!({
+            "id": "task-1",
+            "title": "Task 1",
+            "status": "planned",
+            "project_id": "project-1",
+            "milestone_id": null,
+            "estimated_minutes": 45,
+            "earliest_start_at_ms": null,
+            "deadline_at_ms": 1_700_000_000_000_i64,
+            "description": description,
+            "priority": "low",
+            "labels": ["api"],
+        })
+    }
+
+    fn snapshot(description: &str) -> Value {
+        json!({
+            "revision": 4_i64,
+            "history_fingerprint": "a".repeat(64),
+            "projects": [], "tasks": [task(description)],
+            "task_dependencies": [], "habits": [], "habit_occurrences": [],
+            "metrics": [], "metric_observations": [], "schedule": [],
+            "routines": [], "milestones": [], "strategies": [],
+        })
+    }
+
+    fn accepted(remote: &mut AuthorityConnection) {
+        if let AuthorityConnection::Remote { replica, .. } = remote {
+            replica
+                .accept_snapshot_for_testing(&snapshot("old body"))
+                .unwrap();
+        }
+    }
+
+    fn criteria() -> Value {
+        json!([
+            {"id": "criterion-1", "text": "Works offline", "completed": true,
+             "completed_at_ms": 123_i64, "position": 0},
+            {"id": "criterion-2", "text": "Syncs", "completed": false,
+             "completed_at_ms": null, "position": 1},
+        ])
+    }
+
+    #[test]
+    fn task_detail_route_maps_rich_fields() {
+        let (base, handle) = serve(vec![reply(
+            "/v1/authoritative/tasks/task-1",
+            json!({
+                "id": "task-1",
+                "title": "Detailed",
+                "status": "ready",
+                "project_id": "project-1",
+                "milestone_id": "milestone-1",
+                "estimated_minutes": 90,
+                "earliest_start_at_ms": 10_i64,
+                "deadline_at_ms": 20_i64,
+                "description": "Body from server",
+                "priority": "high",
+                "labels": ["api", "ui"],
+            }),
+        )]);
+        let remote = remote(&base);
+        let detail = remote.task_detail("task-1").expect("read detail");
+        assert_eq!(detail.id, "task-1");
+        assert_eq!(detail.title, "Detailed");
+        assert_eq!(detail.status, "ready");
+        assert_eq!(detail.project_id.as_deref(), Some("project-1"));
+        assert_eq!(detail.milestone_id.as_deref(), Some("milestone-1"));
+        assert_eq!(detail.estimated_minutes, Some(90));
+        assert_eq!(detail.earliest_start_at_ms, Some(10));
+        assert_eq!(detail.deadline_at_ms, Some(20));
+        assert_eq!(detail.description, "Body from server");
+        assert_eq!(detail.priority.as_deref(), Some("high"));
+        assert_eq!(detail.labels, vec!["api".to_string(), "ui".to_string()]);
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn criteria_and_activity_routes_map_ordered_projections() {
+        let (base, handle) = serve(vec![
+            reply(
+                "/v1/authoritative/tasks/task-1/acceptance-criteria",
+                criteria(),
+            ),
+            reply(
+                "/v1/authoritative/tasks/task-1/activity",
+                json!([
+                    {"id": "activity-2", "kind": "updated", "origin": "human",
+                     "occurred_at_ms": 200_i64, "summary": "Task task-1 description updated"},
+                    {"id": "activity-1", "kind": "created", "origin": "human",
+                     "occurred_at_ms": 100_i64, "summary": "Task task-1 created"},
+                ]),
+            ),
+        ]);
+        let remote = remote(&base);
+
+        let criteria = remote.acceptance_criteria("task-1").expect("criteria");
+        assert_eq!(criteria.len(), 2);
+        assert_eq!(criteria[0].id, "criterion-1");
+        assert_eq!(criteria[0].text, "Works offline");
+        assert!(criteria[0].completed);
+        assert_eq!(criteria[0].completed_at_ms, Some(123));
+        assert_eq!(criteria[0].position, 0);
+        assert!(!criteria[1].completed);
+        assert_eq!(criteria[1].position, 1);
+
+        let activity = remote.task_activity("task-1").expect("activity");
+        assert_eq!(
+            activity
+                .iter()
+                .map(|item| (item.kind.as_str(), item.occurred_at_ms))
+                .collect::<Vec<_>>(),
+            vec![("updated", 200), ("created", 100)],
+            "server order (newest first) is preserved"
+        );
+        assert_eq!(activity[0].origin, "human");
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn missing_task_detail_surfaces_a_typed_not_found_error() {
+        let (base, handle) = serve(vec![missing("/v1/authoritative/tasks/task-missing")]);
+        let remote = remote(&base);
+        match remote.task_detail("task-missing") {
+            Err(ClientConnectionError::Remote(AuthorityError::Invalid(message))) => {
+                assert!(message.contains("/v1/authoritative/tasks/task-missing"));
+                assert!(
+                    message.contains("404"),
+                    "message should mention 404: {message}"
+                );
+            }
+            other => panic!("expected typed remote Invalid, got {other:?}"),
+        }
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn details_update_queues_set_details_and_returns_the_accepted_value() {
+        let mut remote = remote("https://example.org");
+        accepted(&mut remote);
+
+        let returned = remote
+            .update_task_details(
+                "task-1".into(),
+                "new body".into(),
+                Some("HIGH".into()),
+                vec!["ui".into()],
+            )
+            .expect("queue details update");
+        assert_eq!(
+            returned.description, "old body",
+            "the pending value must never be returned as accepted"
+        );
+        assert_eq!(returned.priority.as_deref(), Some("low"));
+        assert_eq!(returned.labels, vec!["api".to_string()]);
+
+        assert_eq!(remote.pending_command_count().unwrap(), 1);
+        let pending = remote.unresolved_commands().unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0]["kind"], "task");
+        assert!(
+            pending[0]["expected_revision"].is_null(),
+            "the outbox fences the revision at flush time, not at queue time"
+        );
+        assert_eq!(pending[0]["action"]["type"], "set_details");
+        assert_eq!(pending[0]["action"]["task_id"], "task-1");
+        assert_eq!(pending[0]["action"]["description"], "new body");
+        assert_eq!(
+            pending[0]["action"]["priority"], "high",
+            "priority is canonicalised before queueing"
+        );
+        assert_eq!(pending[0]["action"]["labels"][0], "ui");
+    }
+
+    #[test]
+    fn pending_details_never_project_into_accepted_reads() {
+        let mut remote = remote("https://example.org");
+        accepted(&mut remote);
+        remote
+            .update_task_details(
+                "task-1".into(),
+                "pending body".into(),
+                Some("urgent".into()),
+                Vec::new(),
+            )
+            .expect("queue details update");
+
+        let snapshot = remote.accepted_snapshot().unwrap().expect("snapshot");
+        assert_eq!(snapshot["tasks"][0]["description"], "old body");
+        assert_eq!(snapshot["tasks"][0]["priority"], "low");
+        assert_eq!(remote.pending_command_count().unwrap(), 1);
+        assert_eq!(remote.workspace().unwrap()["pending_count"], 1);
+    }
+
+    #[test]
+    fn acceptance_mutations_queue_their_wire_operation_and_return_accepted_list() {
+        let (base, handle) = serve(vec![
+            reply(
+                "/v1/authoritative/tasks/task-1/acceptance-criteria",
+                criteria(),
+            ),
+            reply(
+                "/v1/authoritative/tasks/task-1/acceptance-criteria",
+                criteria(),
+            ),
+            reply(
+                "/v1/authoritative/tasks/task-1/acceptance-criteria",
+                criteria(),
+            ),
+            reply(
+                "/v1/authoritative/tasks/task-1/acceptance-criteria",
+                criteria(),
+            ),
+            reply(
+                "/v1/authoritative/tasks/task-1/acceptance-criteria",
+                criteria(),
+            ),
+        ]);
+        let mut remote = remote(&base);
+        accepted(&mut remote);
+
+        let added = remote
+            .add_acceptance_criterion("task-1".into(), "New criterion".into())
+            .expect("add criterion");
+        assert_eq!(
+            added.len(),
+            2,
+            "the accepted list must not include the pending addition"
+        );
+        let text = remote
+            .set_acceptance_criterion_text("task-1".into(), "criterion-2".into(), "Renamed".into())
+            .expect("set text");
+        assert_eq!(text[1].id, "criterion-2");
+        remote
+            .set_acceptance_criterion_completed("task-1".into(), "criterion-2".into(), true)
+            .expect("set completed");
+        remote
+            .move_acceptance_criterion("task-1".into(), "criterion-2".into(), 0)
+            .expect("reorder");
+        remote
+            .remove_acceptance_criterion("task-1".into(), "criterion-1".into())
+            .expect("remove");
+
+        let pending = remote.unresolved_commands().unwrap();
+        assert_eq!(pending.len(), 5);
+        let operations: Vec<&str> = pending
+            .iter()
+            .map(|command| {
+                assert_eq!(command["action"]["type"], "acceptance_criteria");
+                assert_eq!(command["action"]["task_id"], "task-1");
+                command["action"]["change"]["operation"].as_str().unwrap()
+            })
+            .collect();
+        assert_eq!(
+            operations,
+            vec!["add", "set_text", "set_completed", "reorder", "remove"]
+        );
+        assert!(pending[0]["action"]["change"]["criterion_id"].is_string());
+        assert_eq!(
+            pending[1]["action"]["change"]["criterion_id"],
+            "criterion-2"
+        );
+        assert_eq!(pending[1]["action"]["change"]["text"], "Renamed");
+        assert_eq!(pending[2]["action"]["change"]["completed"], true);
+        assert_eq!(pending[3]["action"]["change"]["position"], 0);
+        assert_eq!(
+            pending[4]["action"]["change"]["criterion_id"],
+            "criterion-1"
+        );
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn offline_connected_reads_fail_with_a_clear_message() {
+        let remote = AuthorityConnection::remote(":memory:", "https://example.org", None)
+            .expect("open offline remote");
+        match remote.task_detail("task-1") {
+            Err(ClientConnectionError::Unsupported(message)) => {
+                assert_eq!(message, TASK_READS_OFFLINE_MESSAGE)
+            }
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn project_workflow_route_maps_a_binding_and_none() {
+        let (base, handle) = serve(vec![
+            reply(
+                "/v1/authoritative/blueprints/binding?project_id=project-1",
+                json!({"project_id": "project-1", "blueprint_id": "development", "version": 2}),
+            ),
+            reply(
+                "/v1/authoritative/blueprints/binding?project_id=project-empty",
+                Value::Null,
+            ),
+        ]);
+        let remote = remote(&base);
+        let binding = remote
+            .project_workflow("project-1")
+            .expect("read workflow")
+            .expect("binding present");
+        assert_eq!(binding.project_id, "project-1");
+        assert_eq!(binding.workflow_id, "development");
+        assert_eq!(binding.version, 2);
+        assert!(
+            remote
+                .project_workflow("project-empty")
+                .expect("read workflow")
+                .is_none()
+        );
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn authenticated_get_bytes_returns_the_raw_body() {
+        let (base, handle) = serve(vec![reply(
+            "/v1/authoritative/tasks/task-1/attachment-content",
+            json!({"raw": "bytes"}),
+        )]);
+        let transport = AuthorityHttp::new(&base, "test-token", "device-1").unwrap();
+        let bytes = transport
+            .get_bytes("/v1/authoritative/tasks/task-1/attachment-content")
+            .expect("raw read");
+        assert_eq!(bytes, br#"{"raw":"bytes"}"#);
+        handle.join().unwrap();
+    }
 }

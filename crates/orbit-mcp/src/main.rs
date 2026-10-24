@@ -236,13 +236,81 @@ fn connected_tool_list() -> Value {
             "Read accepted projects from last server snapshot"
         ),
         // The accepted connected snapshot carries only task identity, title,
-        // status, project/milestone and planning fields. It does not project
-        // description, priority, labels, acceptance criteria, per-task activity
-        // or attachments, so the local-only task.get/task.activity and all
-        // attachment tools are intentionally not advertised here.
+        // status, project/milestone and planning fields. Rich detail, criteria
+        // and activity are read from the authoritative per-task routes instead
+        // (see `task.get`/`task.acceptance.*`/`task.activity` below).
+        //
+        // Attachment tools are deliberately absent: the server exposes
+        // attachment routes, but `AuthorityConnection`'s attachment surface is
+        // not implemented for connected mode yet, so advertising them would be
+        // a promise this build cannot keep.
         tool(
             "tasks.list",
             "Read accepted tasks from last server snapshot"
+        ),
+        schema_tool(
+            "task.get",
+            "Read one task from the authority with description, priority, labels, lifecycle, planning fields and ordered acceptance criteria",
+            json!({"id":{"type":"string","description":"Task id"}}),
+            json!(["id"]),
+        ),
+        schema_tool(
+            "task.update",
+            "Queue a task description/priority/label update; omitted fields keep their accepted value. The response returns accepted/pending/disposition and labels the payload as server_state, which is always the last accepted state and never the queued value",
+            json!({
+                "id":{"type":"string","description":"Task id"},
+                "description":{"type":"string","description":"Markdown-compatible description"},
+                "priority":{"type":"string","enum":["low","medium","high","urgent","none"],
+                    "description":"Priority label; none clears it"},
+                "labels":{"type":"array","items":{"type":"string"},
+                    "description":"Complete replacement label list, normalised by the task aggregate"},
+            }),
+            json!(["id"]),
+        ),
+        schema_tool(
+            "task.acceptance.list",
+            "List the ordered acceptance criteria for a task",
+            json!({"task_id":{"type":"string"}}),
+            json!(["task_id"]),
+        ),
+        schema_tool(
+            "task.acceptance.add",
+            "Queue an appended acceptance criterion; checking criteria never changes task status. The response labels the returned ordered list as server_state and reports accepted/pending/disposition",
+            json!({"task_id":{"type":"string"},"text":{"type":"string"}}),
+            json!(["task_id", "text"]),
+        ),
+        schema_tool(
+            "task.acceptance.update",
+            "Queue replacement text for one acceptance criterion, preserving completion and position; the response labels the accepted list as server_state",
+            json!({"task_id":{"type":"string"},"criterion_id":{"type":"string"},"text":{"type":"string"}}),
+            json!(["task_id", "criterion_id", "text"]),
+        ),
+        schema_tool(
+            "task.acceptance.check",
+            "Queue a check or reopen of one acceptance criterion; task status must still be changed explicitly. The response labels the accepted list as server_state",
+            json!({"task_id":{"type":"string"},"criterion_id":{"type":"string"},
+                "completed":{"type":"boolean","default":true}}),
+            json!(["task_id", "criterion_id"]),
+        ),
+        schema_tool(
+            "task.acceptance.reorder",
+            "Queue a move of one acceptance criterion to a zero-based position; the response labels the accepted list as server_state",
+            json!({"task_id":{"type":"string"},"criterion_id":{"type":"string"},
+                "position":{"type":"integer","minimum":0}}),
+            json!(["task_id", "criterion_id", "position"]),
+        ),
+        schema_tool(
+            "task.acceptance.remove",
+            "Queue removal of one acceptance criterion from the ordered list; the response labels the accepted list as server_state",
+            json!({"task_id":{"type":"string"},"criterion_id":{"type":"string"}}),
+            json!(["task_id", "criterion_id"]),
+        ),
+        schema_tool(
+            "task.activity",
+            "Read durable semantic activity for one task, newest first",
+            json!({"task_id":{"type":"string"},
+                "limit":{"type":"integer","minimum":0,"maximum":200,"default":50}}),
+            json!(["task_id"]),
         ),
         orbit_runtime::capabilities::mcp_tool("planning.handoff_task")
             .expect("registered planning tool"),
@@ -1814,6 +1882,532 @@ mod connected_authority_mcp_tests {
 }
 
 #[cfg(test)]
+mod connected_rich_task_mcp_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread;
+    use std::time::Duration;
+
+    fn policy() -> AgentPolicy {
+        AgentPolicy {
+            agent_id: "rich-task-agent".into(),
+            session_id: "unit".into(),
+            mode: Mode::Developer,
+            projects: BTreeSet::new(),
+            allow_unscoped_execution: true,
+            allow_unscoped_knowledge: false,
+        }
+    }
+
+    /// Minimal loopback authority: path-addressed JSON GET responses, 404 for
+    /// anything undeclared so a test cannot depend on an unlisted route.
+    struct Authority {
+        base: String,
+        stop: Arc<AtomicBool>,
+        handle: Option<thread::JoinHandle<()>>,
+    }
+
+    impl Authority {
+        fn start(routes: Vec<(&'static str, serde_json::Value)>) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+            listener
+                .set_nonblocking(true)
+                .expect("nonblocking listener");
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let stop = Arc::new(AtomicBool::new(false));
+            let signal = Arc::clone(&stop);
+            let handle = thread::spawn(move || {
+                while !signal.load(Ordering::SeqCst) {
+                    let (mut socket, _) = match listener.accept() {
+                        Ok(connection) => connection,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(2));
+                            continue;
+                        }
+                        Err(_) => break,
+                    };
+                    socket
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut buffer = [0_u8; 8192];
+                    let mut request = Vec::new();
+                    while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                        let read = socket.read(&mut buffer).unwrap_or(0);
+                        if read == 0 || request.len() > 65536 {
+                            break;
+                        }
+                        request.extend_from_slice(&buffer[..read]);
+                    }
+                    let head = String::from_utf8_lossy(&request);
+                    let target = head
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or_default();
+                    let path = target.split('?').next().unwrap_or_default();
+                    let body = routes
+                        .iter()
+                        .find(|(route, _)| *route == path)
+                        .map(|(_, body)| body.to_string());
+                    let (status, body) = match body {
+                        Some(body) => ("200 OK", body),
+                        None => ("404 Not Found", json!({"error":"route absent"}).to_string()),
+                    };
+                    let raw = format!(
+                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = socket.write_all(raw.as_bytes());
+                    let _ = socket.flush();
+                }
+            });
+            Self {
+                base,
+                stop,
+                handle: Some(handle),
+            }
+        }
+    }
+
+    impl Drop for Authority {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::SeqCst);
+            if let Some(handle) = self.handle.take() {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    fn scratch_path(kind: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "orbit-mcp-rich-task-{kind}-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    fn snapshot() -> serde_json::Value {
+        json!({
+            "revision": 4_i64,
+            "history_fingerprint": "a".repeat(64),
+            "projects": [],
+            "tasks": [{
+                "id": "task-1",
+                "title": "Ship it",
+                "status": "inbox",
+                "project_id": null,
+                "milestone_id": null,
+                "estimated_minutes": 45,
+                "earliest_start_at_ms": null,
+                "deadline_at_ms": null,
+                "description": "Body from server",
+                "priority": "high",
+                "labels": ["api"],
+            }],
+            "task_dependencies": [], "habits": [], "habit_occurrences": [],
+            "metrics": [], "metric_observations": [], "schedule": [],
+            "routines": [], "milestones": [], "strategies": [],
+        })
+    }
+
+    fn detail() -> serde_json::Value {
+        json!({
+            "id": "task-1",
+            "title": "Ship it",
+            "status": "inbox",
+            "project_id": null,
+            "milestone_id": null,
+            "estimated_minutes": 45,
+            "earliest_start_at_ms": null,
+            "deadline_at_ms": null,
+            "description": "Body from server",
+            "priority": "high",
+            "labels": ["api", "ui"],
+        })
+    }
+
+    fn criteria() -> serde_json::Value {
+        json!([
+            {"id":"criterion-1","text":"Works offline","completed":true,
+             "completed_at_ms":123_i64,"position":0},
+            {"id":"criterion-2","text":"Syncs","completed":false,
+             "completed_at_ms":null,"position":1},
+        ])
+    }
+
+    fn revision_of(server: &mut ConnectedMcp) -> i64 {
+        server.dispatch("authority.status", &json!({})).unwrap()["accepted_revision"]
+            .as_i64()
+            .expect("embedded authority reports a revision")
+    }
+
+    #[test]
+    fn connected_catalog_advertises_rich_task_tools_without_attachments() {
+        let names = connected_tool_list()
+            .as_array()
+            .expect("connected tool catalogue")
+            .iter()
+            .filter_map(|tool| tool["name"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>();
+        for expected in [
+            "task.get",
+            "task.update",
+            "task.acceptance.list",
+            "task.acceptance.add",
+            "task.acceptance.update",
+            "task.acceptance.check",
+            "task.acceptance.reorder",
+            "task.acceptance.remove",
+            "task.activity",
+        ] {
+            assert!(
+                names.iter().any(|name| name == expected),
+                "missing {expected}"
+            );
+        }
+        // Attachment routes exist server-side, but the connected client surface
+        // does not: advertising them would be a promise this build cannot keep.
+        for refused in [
+            "attachment.list",
+            "attachment.inspect",
+            "attachment.add",
+            "attachment.read",
+            "attachment.remove",
+            "attachment.associate",
+        ] {
+            assert!(
+                !names.iter().any(|name| name == refused),
+                "connected mode must not advertise {refused}"
+            );
+        }
+    }
+
+    #[test]
+    fn connected_adapter_reads_details_criteria_and_activity_through_the_unified_client() {
+        let path = scratch_path("embedded");
+        let mut server = ConnectedMcp {
+            client: AuthorityConnection::embedded(&path, "mcp-test").expect("embedded client"),
+            policy: policy(),
+        };
+
+        let revision = revision_of(&mut server);
+        server
+            .dispatch(
+                "project.command",
+                &json!({"command_id":"project-1","expected_revision":revision,
+                    "project_id":"proj","name":"Project"}),
+            )
+            .unwrap();
+        let revision = revision_of(&mut server);
+        server
+            .dispatch(
+                "task.command",
+                &json!({"command_id":"task-create","expected_revision":revision,
+                    "action":{"type":"create","task_id":"task-1","title":"Detailed","project_id":"proj"}}),
+            )
+            .unwrap();
+
+        let updated = server
+            .dispatch(
+                "task.update",
+                &json!({"id":"task-1","description":"Body","priority":"high",
+                    "labels":["api","ui"]}),
+            )
+            .unwrap();
+        assert_eq!(updated["accepted"], true, "{updated}");
+        assert_eq!(updated["pending"], false, "{updated}");
+        assert_eq!(updated["disposition"], "accepted", "{updated}");
+        assert_eq!(updated["server_state"]["description"], "Body", "{updated}");
+        assert_eq!(updated["server_state"]["priority"], "high", "{updated}");
+        assert_eq!(
+            updated["server_state"]["labels"],
+            json!(["api", "ui"]),
+            "{updated}"
+        );
+
+        let read = server
+            .dispatch("task.get", &json!({"id":"task-1"}))
+            .unwrap();
+        assert_eq!(read["id"], "task-1");
+        assert_eq!(read["status"], "inbox");
+        assert_eq!(read["description"], "Body");
+        assert_eq!(read["priority"], "high");
+        assert_eq!(read["labels"], json!(["api", "ui"]));
+        assert_eq!(read["planning"]["estimated_minutes"], Value::Null);
+        assert_eq!(read["acceptance_criteria"], json!([]));
+
+        let added = server
+            .dispatch(
+                "task.acceptance.add",
+                &json!({"task_id":"task-1","text":"Works"}),
+            )
+            .unwrap();
+        assert_eq!(added["pending"], false, "{added}");
+        assert_eq!(added["disposition"], "accepted", "{added}");
+        assert_eq!(added["server_state"]["criteria"][0]["text"], "Works");
+        let criterion_id = added["server_state"]["criteria"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let checked = server
+            .dispatch(
+                "task.acceptance.check",
+                &json!({"task_id":"task-1","criterion_id":criterion_id,"completed":true}),
+            )
+            .unwrap();
+        assert_eq!(
+            checked["server_state"]["criteria"][0]["completed"], true,
+            "{checked}"
+        );
+
+        let criteria = server
+            .dispatch("task.acceptance.list", &json!({"task_id":"task-1"}))
+            .unwrap();
+        assert_eq!(criteria["criteria"].as_array().unwrap().len(), 1);
+
+        let activity = server
+            .dispatch("task.activity", &json!({"task_id":"task-1","limit":10}))
+            .unwrap();
+        let activity = activity.as_array().expect("activity rows");
+        assert!(!activity.is_empty(), "task activity must not be empty");
+        assert!(
+            activity
+                .iter()
+                .any(|row| row["kind"].as_str() == Some("updated")),
+            "{activity:?}"
+        );
+        assert_eq!(
+            server
+                .dispatch("task.activity", &json!({"task_id":"task-1","limit":201}))
+                .unwrap_err(),
+            "limit must be between 0 and 200"
+        );
+
+        drop(server);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn queued_connected_task_update_and_criteria_report_pending() {
+        let authority = Authority::start(vec![
+            ("/v1/authoritative/snapshot", snapshot()),
+            ("/v1/authoritative/tasks/task-1", detail()),
+            (
+                "/v1/authoritative/tasks/task-1/acceptance-criteria",
+                criteria(),
+            ),
+        ]);
+        let path = scratch_path("pending");
+        let mut server = ConnectedMcp {
+            client: AuthorityConnection::remote(
+                &path,
+                &authority.base,
+                Some(("device-1", "token")),
+            )
+            .expect("remote client"),
+            policy: policy(),
+        };
+        server.dispatch("authority.refresh", &json!({})).unwrap();
+
+        let updated = server
+            .dispatch(
+                "task.update",
+                &json!({"id":"task-1","description":"Queued body"}),
+            )
+            .unwrap();
+        assert_eq!(updated["pending"], true, "{updated}");
+        assert_eq!(updated["accepted"], false, "{updated}");
+        assert_eq!(updated["disposition"], "pending", "{updated}");
+        assert!(
+            updated["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("authority.flush")),
+            "{updated}"
+        );
+        // `server_state` is explicitly the last accepted state: the queued body
+        // is not reported as committed, and untouched fields keep their value.
+        assert_eq!(updated["server_state"]["description"], "Body from server");
+        assert_eq!(updated["server_state"]["priority"], "high");
+        assert!(
+            updated.get("description").is_none(),
+            "queued fields must not sit beside server_state: {updated}"
+        );
+        assert_eq!(
+            updated["server_state"]["acceptance_criteria"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+
+        let added = server
+            .dispatch(
+                "task.acceptance.add",
+                &json!({"task_id":"task-1","text":"Queued criterion"}),
+            )
+            .unwrap();
+        assert_eq!(added["pending"], true, "{added}");
+        assert_eq!(added["accepted"], false, "{added}");
+        assert_eq!(added["disposition"], "pending", "{added}");
+        assert_eq!(
+            added["server_state"]["criteria"].as_array().unwrap().len(),
+            2,
+            "queued criterion must not appear in the accepted list"
+        );
+        assert_eq!(
+            server.dispatch("authority.status", &json!({})).unwrap()["unresolved_count"],
+            2
+        );
+
+        drop(server);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn queued_task_update_succeeds_offline_after_the_queue() {
+        let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
+        // Capture the endpoint, then stop the server after the accepted cache is
+        // present but before the mutation. Every post-queue read now fails; the
+        // mutation response must still describe the durable pending command.
+        let base = authority.base.clone();
+        let path = scratch_path("offline-after-queue");
+        let mut server = ConnectedMcp {
+            client: AuthorityConnection::remote(&path, &base, Some(("device-1", "token")))
+                .expect("remote client"),
+            policy: policy(),
+        };
+        server.dispatch("authority.refresh", &json!({})).unwrap();
+        drop(authority);
+
+        let args = json!({"id":"task-1","description":"Queued while offline","priority":"urgent"});
+        let updated = server.dispatch("task.update", &args).unwrap();
+        assert_eq!(updated["pending"], true, "{updated}");
+        assert_eq!(updated["accepted"], false, "{updated}");
+        assert_eq!(updated["disposition"], "pending", "{updated}");
+        assert!(
+            updated["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("authority.flush")),
+            "{updated}"
+        );
+        // The accepted payload is returned even though the criteria read is now
+        // unreachable; absence is explicit instead of an error after the queue.
+        assert_eq!(
+            updated["server_state"]["description"], "Body from server",
+            "{updated}"
+        );
+        assert_eq!(updated["server_state"]["priority"], "high", "{updated}");
+        assert_eq!(updated["server_state"]["acceptance_criteria"], Value::Null);
+        assert_eq!(updated["server_state"]["criteria_available"], false);
+        assert_eq!(
+            server.dispatch("authority.status", &json!({})).unwrap()["unresolved_count"],
+            1
+        );
+
+        // A retry with the same inputs must not fail after the first command is
+        // durable, so a caller is never told to retry a committed intent.
+        let retried = server.dispatch("task.update", &args).unwrap();
+        assert_eq!(retried["disposition"], "pending", "{retried}");
+        assert_eq!(retried["server_state"]["description"], "Body from server");
+
+        drop(server);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn read_only_connected_session_reads_rich_task_state_but_cannot_mutate() {
+        let mut without_tasks = snapshot();
+        without_tasks["tasks"] = json!([]);
+        let mut scoped_detail = detail();
+        scoped_detail["project_id"] = json!("proj");
+        let authority = Authority::start(vec![
+            ("/v1/authoritative/snapshot", without_tasks),
+            ("/v1/authoritative/tasks/task-1", scoped_detail),
+            (
+                "/v1/authoritative/tasks/task-1/acceptance-criteria",
+                criteria(),
+            ),
+            (
+                "/v1/authoritative/tasks/task-1/activity",
+                json!([{
+                    "id":"activity-1","kind":"created","origin":"human",
+                    "occurred_at_ms":100_i64,"summary":"Task task-1 created"
+                }]),
+            ),
+        ]);
+        let path = scratch_path("read-only");
+        let mut server = ConnectedMcp {
+            client: AuthorityConnection::remote(
+                &path,
+                &authority.base,
+                Some(("device-1", "token")),
+            )
+            .expect("remote client"),
+            policy: AgentPolicy {
+                agent_id: "read-only-agent".into(),
+                session_id: "test".into(),
+                mode: Mode::ReadOnly,
+                // Scope comes from the live detail fallback, not from a
+                // snapshot that lacks the task.
+                projects: ["proj".to_owned()].into_iter().collect(),
+                allow_unscoped_execution: false,
+                allow_unscoped_knowledge: false,
+            },
+        };
+
+        // Local cache refresh is a read and must work without developer mode.
+        server.dispatch("authority.refresh", &json!({})).unwrap();
+
+        // The accepted snapshot exists but lacks the task, so this proves the
+        // live task-detail fallback is what authorizes the read.
+        let read = server
+            .dispatch("task.get", &json!({"id":"task-1"}))
+            .unwrap();
+        assert_eq!(read["description"], "Body from server", "{read}");
+        assert_eq!(read["acceptance_criteria"].as_array().unwrap().len(), 2);
+
+        let criteria = server
+            .dispatch("task.acceptance.list", &json!({"task_id":"task-1"}))
+            .unwrap();
+        assert_eq!(criteria["criteria"].as_array().unwrap().len(), 2);
+
+        let activity = server
+            .dispatch("task.activity", &json!({"task_id":"task-1"}))
+            .unwrap();
+        assert_eq!(activity[0]["kind"], "created");
+
+        for (name, args) in [
+            ("task.update", json!({"id":"task-1","description":"no"})),
+            (
+                "task.acceptance.add",
+                json!({"task_id":"task-1","text":"no"}),
+            ),
+            ("authority.flush", json!({})),
+            (
+                "task.command",
+                json!({"command_id":"read-only-denied","expected_revision":1,
+                    "action":{"type":"change_status","task_id":"task-1","status":"done"}}),
+            ),
+        ] {
+            let error = server.dispatch(name, &args).unwrap_err();
+            assert!(error.contains("read-only"), "{name}: {error}");
+        }
+
+        drop(server);
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[cfg(test)]
 mod connected_workflow_m20_tests {
     use super::*;
 
@@ -2889,8 +3483,45 @@ mod rich_mcp_tests {
             assert_eq!(tool["inputSchema"]["additionalProperties"], false, "{name}");
             assert!(tool["inputSchema"]["properties"].is_object(), "{name}");
         }
+        // Rich task detail/criteria/activity are now served from authoritative
+        // per-task routes in connected mode, with the same strict schemas.
         let connected = connected_tool_list();
-        for name in required {
+        let shared = [
+            "task.get",
+            "task.update",
+            "task.acceptance.list",
+            "task.acceptance.add",
+            "task.acceptance.update",
+            "task.acceptance.check",
+            "task.acceptance.reorder",
+            "task.acceptance.remove",
+            "task.activity",
+        ];
+        for name in shared {
+            let tool = connected
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap_or_else(|| panic!("connected catalogue missing {name}"));
+            assert_eq!(tool["inputSchema"]["type"], "object", "{name}");
+            assert_eq!(tool["inputSchema"]["additionalProperties"], false, "{name}");
+            assert!(tool["inputSchema"]["properties"].is_object(), "{name}");
+        }
+        // Local-only surfaces stay local-only. Attachment tools are absent from
+        // connected mode because the connected client attachment surface is not
+        // implemented yet, even though the server exposes the routes.
+        for name in [
+            "project.create",
+            "workflow.list",
+            "workflow.apply",
+            "attachment.list",
+            "attachment.inspect",
+            "attachment.add",
+            "attachment.read",
+            "attachment.remove",
+            "attachment.associate",
+        ] {
             assert!(
                 !connected
                     .as_array()

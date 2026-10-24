@@ -1,14 +1,14 @@
 //! Project-centric application state. All mutations go through the local/connected backend;
 //! this module owns navigation, focus, prompts and presentation state only.
-use crate::backend::Backend;
+use crate::backend::{Backend, MutationOutcome};
 use crate::planning_ui;
 use crate::theme::Theme;
 use orbit_blueprint::{Blueprint, FieldKind};
 use orbit_client::{
     AcceptanceCriterionDto, ActivityDto, AttachmentDto, ConfigureProjectStrategyRequest,
     CreateKnowledgeRequest, CreateProjectRequest, CreateTaskRequest, MetricTargetDto,
-    ProjectCriterionInputDto, RecordHabitOccurrenceRequest, SetProjectStatusRequest,
-    SetTaskPlanningRequest, SetTaskStatusRequest,
+    PendingAttachmentDto, ProjectCriterionInputDto, RecordHabitOccurrenceRequest,
+    SetProjectStatusRequest, SetTaskPlanningRequest, SetTaskStatusRequest,
 };
 use orbit_runtime::planning_actions::PlanningActionMenu;
 use orbit_runtime::planning_brief::WorkBrief;
@@ -17,6 +17,39 @@ use orbit_ui::model::*;
 use orbit_ui::{ComponentBody, ComponentRegistry, LoadStatus, ResolvedComponent, ResolvedView};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+/// Connected mode cannot purge unreferenced content objects because the
+/// authoritative server owns attachment garbage collection.
+pub const CONNECTED_PURGE_REFUSED: &str = "Attachment content cleanup is not available in connected mode; the authoritative server owns attachment garbage collection.";
+
+/// Turn a per-command outcome into user-facing status text.
+///
+/// A missing/unknown state is deliberately reported as pending: the TUI must
+/// never promote an unobserved command to accepted. Conflicts name their state
+/// and reason so the user can act on the outbox instead of seeing success.
+fn describe_mutation_outcome(
+    outcome: Option<MutationOutcome>,
+    text: String,
+) -> (String, StatusKind) {
+    match outcome {
+        None | Some(MutationOutcome::Accepted) => (text, StatusKind::Success),
+        Some(MutationOutcome::Pending { state, .. }) => {
+            let state = if state == "unavailable" {
+                "state unavailable; treated as pending".to_owned()
+            } else {
+                format!("queued state: {state}")
+            };
+            (
+                format!("Pending (not accepted; {state}): {text}"),
+                StatusKind::Pending,
+            )
+        }
+        Some(MutationOutcome::Conflict { state, reason, .. }) => (
+            format!("Queued change rejected ({state}): {reason}; inspect the outbox. {text}"),
+            StatusKind::Warning,
+        ),
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
@@ -222,8 +255,36 @@ pub struct AttachmentsModal {
     pub owner_kind: String,
     pub owner_id: String,
     pub title: String,
+    /// Server-accepted attachments.
     pub items: Vec<AttachmentDto>,
+    /// Locally staged uploads; never merged into `items`.
+    pub pending: Vec<PendingAttachmentDto>,
     pub selected: usize,
+}
+
+impl AttachmentsModal {
+    /// Accepted rows first, then staged rows marked `[pending]`.
+    pub fn len(&self) -> usize {
+        self.items.len() + self.pending.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn selected_attachment(&self) -> Option<&AttachmentDto> {
+        if self.selected < self.items.len() {
+            self.items.get(self.selected)
+        } else {
+            self.pending
+                .get(self.selected - self.items.len())
+                .map(|pending| &pending.attachment)
+        }
+    }
+
+    pub fn selected_is_pending(&self) -> bool {
+        self.selected >= self.items.len() && self.selected < self.len()
+    }
 }
 
 /// Read-only activity history for one entity.
@@ -613,15 +674,10 @@ impl App {
         }
     }
 
-    fn mutation_status(&mut self, text: impl Into<String>) -> (String, StatusKind) {
-        if self.client.take_pending() {
-            (
-                format!("Pending (not accepted): {}", text.into()),
-                StatusKind::Pending,
-            )
-        } else {
-            (text.into(), StatusKind::Success)
-        }
+    /// Report the exact per-command disposition instead of inferring success
+    /// from a quiet client. Key handlers in `main` use this too.
+    pub(crate) fn mutation_status(&mut self, text: impl Into<String>) -> (String, StatusKind) {
+        describe_mutation_outcome(self.client.take_outcome(), text.into())
     }
 
     pub fn notify(&mut self, text: impl Into<String>, kind: StatusKind) {
@@ -1195,12 +1251,20 @@ impl App {
             }
         }
         if self.client.is_connected() {
+            // Closed allowlist for connected mode. Attachment list/import/open
+            // and export are supported; `purge_attachments` stays out because
+            // only the authoritative server may garbage-collect content.
             actions.retain(|action| {
                 matches!(
                     action.id.as_str(),
                     "open"
                         | "create_task"
+                        | "attach_file"
+                        | "open_attachments"
                         | "edit_task"
+                        | "edit_task_details"
+                        | "manage_acceptance_criteria"
+                        | "task_activity"
                         | "add_dependency"
                         | "remove_dependency"
                         | "set_task_status"
@@ -1952,16 +2016,22 @@ impl App {
                     ),
                 }
             }
-            "purge_attachments" => match self.client.purge_attachment_content() {
-                Ok(removed) => self.notify(
-                    format!("Removed {removed} unreferenced attachment object(s)"),
-                    StatusKind::Success,
-                ),
-                Err(error) => self.notify(
-                    format!("Attachment cleanup failed: {}", error.message),
-                    StatusKind::Error,
-                ),
-            },
+            "purge_attachments" => {
+                if self.client.is_connected() {
+                    self.notify(CONNECTED_PURGE_REFUSED, StatusKind::Warning);
+                    return false;
+                }
+                match self.client.purge_attachment_content() {
+                    Ok(removed) => self.notify(
+                        format!("Removed {removed} unreferenced attachment object(s)"),
+                        StatusKind::Success,
+                    ),
+                    Err(error) => self.notify(
+                        format!("Attachment cleanup failed: {}", error.message),
+                        StatusKind::Error,
+                    ),
+                }
+            }
             "record_habit" => {
                 let Some(item) = self.selected_item() else {
                     self.notify("Select a habit first", StatusKind::Warning);
@@ -2105,9 +2175,16 @@ impl App {
             }
             "flush_pending" => match self.client.flush_pending() {
                 Ok((message, blocked)) => {
+                    let uploads = self.client.pending_attachment_count().unwrap_or_default();
                     self.refresh_after_mutation();
                     self.notify(
-                        message,
+                        if uploads > 0 {
+                            format!(
+                                "{message}; {uploads} staged attachment upload(s) still pending"
+                            )
+                        } else {
+                            message
+                        },
                         if blocked {
                             StatusKind::Warning
                         } else {
@@ -2231,7 +2308,8 @@ impl App {
                     .remove_acceptance_criterion(task_id.clone(), criterion_id)
                 {
                     Ok(_) => {
-                        self.notify("Acceptance criterion removed", StatusKind::Success);
+                        let (message, kind) = self.mutation_status("Acceptance criterion removed");
+                        self.notify(message, kind);
                         self.open_criteria(task_id, task_title);
                     }
                     Err(error) => self.notify(
@@ -2245,23 +2323,61 @@ impl App {
                 owner_kind,
                 owner_id,
                 title,
-            } => match self.client.remove_attachment(attachment_id) {
-                Ok(content_removed) => {
-                    self.notify(
-                        if content_removed {
-                            "Attachment removed; unreferenced content deleted"
+            } => {
+                // Pending rows are local intent: discarding them needs no
+                // server and must not imply that accepted content changed.
+                let was_pending = self
+                    .client
+                    .pending_attachments(&owner_kind, &owner_id)
+                    .map(|items| items.iter().any(|item| item.attachment.id == attachment_id))
+                    .unwrap_or(false);
+                match self.client.remove_attachment(attachment_id) {
+                    Ok(content_removed) => {
+                        if was_pending {
+                            // Refresh only the staging side from the replica;
+                            // an offline accepted-list failure must not close
+                            // the modal or replace the discard message.
+                            let items = match &self.modal {
+                                Some(Modal::Attachments(state))
+                                    if state.owner_kind == owner_kind
+                                        && state.owner_id == owner_id =>
+                                {
+                                    state.items.clone()
+                                }
+                                _ => Vec::new(),
+                            };
+                            let pending = self
+                                .client
+                                .pending_attachments(&owner_kind, &owner_id)
+                                .unwrap_or_default();
+                            self.modal = Some(Modal::Attachments(AttachmentsModal {
+                                owner_kind,
+                                owner_id,
+                                title,
+                                items,
+                                pending,
+                                selected: 0,
+                            }));
                         } else {
-                            "Attachment removed; content still referenced elsewhere"
-                        },
-                        StatusKind::Success,
-                    );
-                    self.open_attachments(owner_kind, owner_id, title);
+                            self.open_attachments(owner_kind, owner_id, title);
+                        }
+                        self.notify(
+                            if was_pending {
+                                "Staged upload discarded locally; it was never accepted"
+                            } else if content_removed {
+                                "Attachment removed; unreferenced content deleted"
+                            } else {
+                                "Attachment removed; content still referenced elsewhere"
+                            },
+                            StatusKind::Success,
+                        );
+                    }
+                    Err(error) => self.notify(
+                        format!("Removing the attachment failed: {}", error.message),
+                        StatusKind::Error,
+                    ),
                 }
-                Err(error) => self.notify(
-                    format!("Removing the attachment failed: {}", error.message),
-                    StatusKind::Error,
-                ),
-            },
+            }
             PendingAction::OpenAttachment {
                 attachment_id,
                 filename,
@@ -2760,11 +2876,10 @@ impl App {
     }
 
     fn task_dto(&self, task_id: &str) -> Option<orbit_client::TaskDto> {
-        self.client
-            .list_tasks()
-            .ok()?
-            .into_iter()
-            .find(|task| task.id == task_id)
+        // One uniform read: local uses the authoritative projection, connected
+        // uses the task-detail route. Scanning `list_tasks` would only see the
+        // thin accepted snapshot and hide description/priority/labels.
+        self.client.task_detail(task_id).ok()
     }
 
     /// Load ordered acceptance criteria for a task into a modal.
@@ -2791,9 +2906,20 @@ impl App {
     /// is never executed or decoded as an image here; the user is directed to
     /// the external viewer instead.
     pub fn preview_attachment(&mut self, attachment_id: String) {
+        let pending = self
+            .client
+            .pending_attachment(&attachment_id)
+            .ok()
+            .flatten()
+            .is_some();
         match self.client.attachment_content(&attachment_id) {
             Ok((attachment, content)) => {
                 let mut lines = vec![
+                    if pending {
+                        "Status: [pending] staged locally; not accepted by the server".to_owned()
+                    } else {
+                        "Status: accepted (last accepted server state)".to_owned()
+                    },
                     format!("File: {}", attachment.filename),
                     format!("Type: {}", attachment.content_type),
                     format!("Size: {} bytes", attachment.size_bytes),
@@ -2818,7 +2944,11 @@ impl App {
                     lines.push("Binary content: no inline preview. Press o to open it.".into());
                 }
                 self.modal = Some(Modal::Message {
-                    title: format!("Attachment · {}", attachment.filename),
+                    title: if pending {
+                        format!("Attachment · {} [pending]", attachment.filename)
+                    } else {
+                        format!("Attachment · {} [accepted]", attachment.filename)
+                    },
                     lines,
                 });
             }
@@ -2832,6 +2962,10 @@ impl App {
     /// Toggle one criterion's completion. Task status is never changed here.
     /// Move one criterion to a new index within the ordered list.
     pub fn open_attachments(&mut self, owner_kind: String, owner_id: String, title: String) {
+        let pending = self
+            .client
+            .pending_attachments(&owner_kind, &owner_id)
+            .unwrap_or_default();
         match self.client.list_attachments(&owner_kind, &owner_id) {
             Ok(items) => {
                 self.modal = Some(Modal::Attachments(AttachmentsModal {
@@ -2839,8 +2973,32 @@ impl App {
                     owner_id,
                     title,
                     items,
+                    pending,
                     selected: 0,
                 }));
+            }
+            // Staged uploads are readable offline. Show them instead of hiding
+            // durable local intent just because accepted reads need the server.
+            Err(error) if !pending.is_empty() => {
+                self.modal = Some(Modal::Attachments(AttachmentsModal {
+                    owner_kind,
+                    owner_id,
+                    title,
+                    items: Vec::new(),
+                    pending,
+                    selected: 0,
+                }));
+                // Never replace a just-reported pending upload with a warning;
+                // the pending marker is the important acceptance fact.
+                if self.status.kind != StatusKind::Pending {
+                    self.notify(
+                        format!(
+                            "Accepted attachments unavailable (showing staged uploads): {}",
+                            error.message
+                        ),
+                        StatusKind::Warning,
+                    );
+                }
             }
             Err(error) => self.notify(
                 format!("Attachments unavailable: {}", error.message),
@@ -3894,7 +4052,8 @@ impl App {
         self.client
             .update_task_details(task_id.to_owned(), description, priority, labels)
             .map_err(|error| error.message)?;
-        self.notify("Task details saved", StatusKind::Success);
+        let (message, kind) = self.mutation_status("Task details saved");
+        self.notify(message, kind);
         Ok(())
     }
 
@@ -3903,7 +4062,8 @@ impl App {
         self.client
             .add_acceptance_criterion(task_id.to_owned(), text)
             .map_err(|error| error.message)?;
-        self.notify("Acceptance criterion added", StatusKind::Success);
+        let (message, kind) = self.mutation_status("Acceptance criterion added");
+        self.notify(message, kind);
         Ok(())
     }
 
@@ -3917,7 +4077,8 @@ impl App {
         self.client
             .set_acceptance_criterion_text(task_id.to_owned(), criterion_id.to_owned(), text)
             .map_err(|error| error.message)?;
-        self.notify("Acceptance criterion updated", StatusKind::Success);
+        let (message, kind) = self.mutation_status("Acceptance criterion updated");
+        self.notify(message, kind);
         Ok(())
     }
 
@@ -3942,10 +4103,27 @@ impl App {
                 description,
             )
             .map_err(|error| error.message)?;
-        self.notify(
-            format!("Attached {}", attachment.filename),
-            StatusKind::Success,
-        );
+        // A connected import may only stage locally. Report pending until a
+        // server receipt names this exact attachment as accepted.
+        let pending = self
+            .client
+            .pending_attachments(owner_kind, owner_id)
+            .map(|items| items.iter().any(|item| item.attachment.id == attachment.id))
+            .unwrap_or(false);
+        if pending {
+            self.notify(
+                format!(
+                    "Pending upload: {} (not accepted yet; flush to send it)",
+                    attachment.filename
+                ),
+                StatusKind::Pending,
+            );
+        } else {
+            self.notify(
+                format!("Attached {}", attachment.filename),
+                StatusKind::Success,
+            );
+        }
         Ok(())
     }
 
@@ -4623,4 +4801,55 @@ pub fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as i64)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod outcome_tests {
+    use super::*;
+
+    #[test]
+    fn per_command_outcomes_keep_pending_and_conflict_out_of_success() {
+        let (message, kind) = describe_mutation_outcome(
+            Some(MutationOutcome::Pending {
+                command_id: Some("cmd-1".into()),
+                state: "pending".into(),
+            }),
+            "saved".into(),
+        );
+        assert_eq!(kind, StatusKind::Pending);
+        assert!(message.contains("pending"), "{message}");
+        assert!(
+            message.contains("cmd-1") || message.contains("queued state"),
+            "{message}"
+        );
+
+        let (message, kind) = describe_mutation_outcome(
+            Some(MutationOutcome::Conflict {
+                command_id: "cmd-1".into(),
+                state: "conflict".into(),
+                reason: "revision 4 is stale".into(),
+            }),
+            "saved".into(),
+        );
+        assert_eq!(kind, StatusKind::Warning);
+        assert!(message.contains("rejected"), "{message}");
+        assert!(message.contains("revision 4 is stale"), "{message}");
+        assert!(message.contains("inspect the outbox"), "{message}");
+
+        // Missing identity/state is fail-closed, never a success message.
+        let (message, kind) = describe_mutation_outcome(
+            Some(MutationOutcome::Pending {
+                command_id: None,
+                state: "unavailable".into(),
+            }),
+            "saved".into(),
+        );
+        assert_eq!(kind, StatusKind::Pending);
+        assert!(message.contains("unavailable"), "{message}");
+
+        let (message, kind) =
+            describe_mutation_outcome(Some(MutationOutcome::Accepted), "saved".into());
+        assert_eq!(kind, StatusKind::Success);
+        assert_eq!(message, "saved");
+    }
 }

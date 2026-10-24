@@ -44,12 +44,14 @@ orbit-tui
 Connected mode is selected by configuration, not by a TUI flag. The same
 project-centric shell reads the accepted replica and queues project/task
 mutations as durable intents. The header shows `CONNECTED` and the unresolved
-count; queued changes are labelled **Pending (not accepted)** and never appear as
+count, which is the durable command outbox plus any staged attachment uploads;
+queued changes are labelled **Pending (not accepted)** and never appear as
 accepted project/task rows. Press `f` (or choose **Flush pending commands**) to
 submit the outbox, then `r` to load the accepted server state. Project/task
-creation and task status, rename, planning, scope and dependency actions use
-this path. Connected project settings, workflow/work-item, habit, metric and
-note editing still report that they require the connected command surface.
+creation and task status, rename, planning, scope, dependency, rich-detail and
+acceptance-criteria actions use this path. Connected project settings,
+workflow/work-item, habit, metric and note editing still report that they
+require the connected command surface.
 
 Multi-field connected edits can queue more than one intent. If the server rejects
 a later intent, earlier intents can remain queued; inspect the outbox with the
@@ -290,16 +292,52 @@ work items and global knowledge references. Record a habit with `Space`; record
 a metric observation or target from the action menu. Accepted changes refresh
 the view; repeated submissions are ignored while the refresh is pending.
 
-## Connected mode and local-only features
+## Connected mode
 
-Attachments, task descriptions, priority, labels and acceptance criteria are
-local-authoritative in this build. Connected mode fails closed for them with a
-clear "not available in connected mode" message rather than queueing a command
-the server cannot accept. Server-side attachment storage is not implemented.
-Task status and planning changes still use the connected command path described
-above; the rich local-only features do not. See
-[task details and attachments](task-details-and-attachments.md) for the exact
-refusals.
+Connected mode reads the accepted replica/snapshot and sends mutations through
+the connected command path. The header shows `CONNECTED`, the project count and
+the pending count, where the pending count includes both durable queued commands
+and staged attachment uploads. A staged upload therefore participates in the
+unresolved count while it is still `[pending]`; accepted attachment rows never
+include it. Queued changes are labelled **Pending (not accepted)** and never
+appear as accepted rows. Press `f` (or choose **Flush pending commands**) to
+submit the outbox, then `r` to load accepted state. The flush result also reports
+how many staged attachment uploads remain pending.
+
+Rich task details work in connected mode:
+
+- `e` edits description, priority and labels; the values load from the accepted
+  snapshot, and the edit is queued and marked pending until the server accepts
+  it;
+- `K` reads and queues ordered acceptance-criteria changes. Criteria come from
+  the server route, so this needs connectivity; the modal shows the accepted
+  list, and a queued change appears only after flush and refresh;
+- `H` reads the task's authoritative semantic activity from the server;
+- `i` stages a file, `F` opens the attachment modal, `E`/`o` export accepted
+  content and `x` removes an association.
+
+The attachment modal lists accepted attachments first and then locally staged
+uploads as `[pending]` rows, with their `pending`/`conflict` state and last error.
+Staged bytes remain visible when the server is unreachable; accepted metadata
+and accepted content require the server. Removing an accepted attachment is
+online-only. Removing a staged upload discards that local intent without
+contacting the server. The TUI sends no implicit launch or upload retry beyond
+an explicit `f` flush.
+
+If `f` reports a blocked or conflicted upload, the reason and last error stay on
+the row. A `conflict` row stops automatic retry: remove and re-import the staged
+file, or reconnect and refresh before an explicit retry. The TUI does not
+silently reorder or discard durable upload intents.
+Server-side attachment garbage collection is not exposed to clients, so the local
+**Clean up unreferenced attachment content** action is unavailable in connected
+mode.
+
+Changing a project's workflow/work-item configuration still reports that it
+requires the connected command surface. Multi-field connected edits can queue
+more than one intent; if the server rejects a later intent, earlier intents can
+remain queued. For compatibility while connected parity is completed, set
+`ORBIT_TUI_LEGACY_CONNECTED=1` to launch the previous connected command palette.
+It remains server-authoritative and preserves the outbox.
 
 ## Agent monitoring
 
@@ -351,9 +389,11 @@ and `reset` from a shell.
 - **A project opens with generated views** — the project has no pinned workflow,
   or the pinned version has no `views` section. That is expected for unbound or
   older projects. Apply a newer workflow (`W`) if you want its declared views.
-- **An edit or attachment says "not available in connected mode"** — rich task
-  details and attachments are local-only in this build. Open a local workspace
-  to use them.
+- **An edit or attachment stays `[pending]`** — the connected change is durable
+  outbox/staging intent, not accepted state. Press `f` to flush while online,
+  then `r` to refresh. A conflicted upload must be removed and re-imported.
+- **Accepted attachment content is unavailable offline** — accepted metadata and
+  bytes require the server. Staged uploads still open from local bytes.
 - **The workspace is stale** — press `r`. If refresh still fails, the last
   accepted view remains labelled `stale`; check `orbit doctor` and the database
   path.

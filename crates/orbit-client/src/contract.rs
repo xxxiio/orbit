@@ -263,6 +263,21 @@ pub struct AttachmentDto {
     pub is_image: bool,
 }
 
+/// An attachment that is staged locally but not yet accepted by the server.
+///
+/// A pending upload is never interchangeable with [`AttachmentDto`] from
+/// `list_attachments`: it has no server-accepted existence yet, so clients must
+/// present it separately (for example as "pending upload").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingAttachmentDto {
+    /// Staged metadata, including the checksum of the bytes held locally.
+    pub attachment: AttachmentDto,
+    /// `pending` (retryable) or `conflict` (needs user action).
+    pub state: String,
+    /// Why the last upload attempt failed, when it did.
+    pub last_error: Option<String>,
+}
+
 impl From<&orbit_domain::Attachment> for AttachmentDto {
     fn from(attachment: &orbit_domain::Attachment) -> Self {
         Self {

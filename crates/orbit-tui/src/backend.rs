@@ -1,22 +1,24 @@
 //! Local/connected backend for the one project-centric TUI shell.
 //!
 //! The renderer uses one view model for both modes; the shell only branches for
-//! capability/availability labels. Connected mutations return queued DTOs but
-//! expose whether the command is still pending (never accepted) through
-//! `take_pending`.
+//! capability/availability labels. Connected rich mutations return the last
+//! accepted DTO while the exact queued command identity is followed through the
+//! outbox. The shell reports `accepted`, `pending` or `conflict` for that
+//! command; a missing identity or state fails closed as pending, never success.
 
 use orbit_client::OrbitClient;
 use orbit_client::unified::{AuthorityConnection, CommandDisposition};
 use orbit_client::{
     AcceptanceCriterionDto, ActivityDto, AttachmentDto, ClientError, ClientErrorCode,
     ConfigureProjectStrategyRequest, CreateKnowledgeRequest, CreateProjectRequest,
-    CreateTaskRequest, HabitDto, MetricTargetDto, ProjectDto, ProjectEvidenceBindingDto,
-    ProjectWorkflowDto, RecordHabitOccurrenceRequest, SetProjectStatusRequest,
-    SetTaskPlanningRequest, SetTaskStatusRequest, TaskDto, TaskPlanProposalDto,
-    WorkflowDescriptorDto,
+    CreateTaskRequest, HabitDto, MetricTargetDto, PendingAttachmentDto, ProjectDto,
+    ProjectEvidenceBindingDto, ProjectWorkflowDto, RecordHabitOccurrenceRequest,
+    SetProjectStatusRequest, SetTaskPlanningRequest, SetTaskStatusRequest, TaskDto,
+    TaskPlanProposalDto, WorkflowDescriptorDto,
 };
 use orbit_runtime::domain_commands::{ProjectCommand, TaskAction, TaskCommand};
 use std::path::Path;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -56,11 +58,174 @@ fn connected_error(error: orbit_client::unified::ClientConnectionError) -> Clien
     }
 }
 
+/// Per-command outcome for the mutation the shell just submitted.
+///
+/// Aggregate outbox depth cannot tell "my command is pending" from "someone
+/// else queued earlier", so connected rich mutations follow the exact command
+/// identity recorded by the client. A missing identity or state fails closed as
+/// [`MutationOutcome::Pending`] with an explicit `unavailable` state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MutationOutcome {
+    Accepted,
+    Pending {
+        command_id: Option<String>,
+        state: String,
+    },
+    Conflict {
+        command_id: String,
+        state: String,
+        reason: String,
+    },
+}
+
+impl MutationOutcome {
+    pub fn is_accepted(&self) -> bool {
+        matches!(self, Self::Accepted)
+    }
+
+    /// Anything that is not a committed acceptance keeps the pending signal on.
+    pub fn needs_attention(&self) -> bool {
+        !self.is_accepted()
+    }
+}
+
+fn outcome_from_disposition(
+    connection: &AuthorityConnection,
+    disposition: &CommandDisposition,
+) -> MutationOutcome {
+    match disposition {
+        CommandDisposition::Pending => MutationOutcome::Pending {
+            command_id: connection.last_queued_command_id(),
+            state: "pending".into(),
+        },
+        _ => MutationOutcome::Accepted,
+    }
+}
+
+/// Translate one durable command state into an outcome. The caller must only
+/// pass a state read for the command this mutation queued.
+fn outcome_from_state(
+    command_id: Option<String>,
+    state: Option<&str>,
+    conflict_reason: Option<String>,
+) -> MutationOutcome {
+    match state {
+        Some("accepted") => MutationOutcome::Accepted,
+        Some("conflict") => MutationOutcome::Conflict {
+            command_id: command_id.unwrap_or_default(),
+            state: "conflict".into(),
+            reason: conflict_reason
+                .filter(|reason| !reason.trim().is_empty())
+                .unwrap_or_else(|| {
+                    "command conflict requires explicit reconciliation; inspect the outbox".into()
+                }),
+        },
+        // `pending`, `superseded` or an unexpected state is never success.
+        Some(state) => MutationOutcome::Pending {
+            command_id,
+            state: state.to_owned(),
+        },
+        None => MutationOutcome::Pending {
+            command_id,
+            state: "unavailable".into(),
+        },
+    }
+}
+
+/// Read the conflict explanation recorded on the outbox row, if any.
+fn conflict_reason(connection: &AuthorityConnection, command_id: &str) -> Option<String> {
+    connection
+        .command_status(command_id)
+        .ok()
+        .flatten()
+        .and_then(|status| {
+            status
+                .pointer("/receipt/error")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+}
+
+/// Read the durable state of one command identity.
+fn command_outcome(connection: &AuthorityConnection, command_id: &str) -> MutationOutcome {
+    match connection.command_state(command_id) {
+        Ok(state) => {
+            let reason = (state.as_deref() == Some("conflict"))
+                .then(|| conflict_reason(connection, command_id))
+                .flatten();
+            outcome_from_state(Some(command_id.to_owned()), state.as_deref(), reason)
+        }
+        Err(_) => MutationOutcome::Pending {
+            command_id: Some(command_id.to_owned()),
+            state: "unavailable".into(),
+        },
+    }
+}
+
+/// Follow the command queued by one rich mutation.
+///
+/// `before` is the last identity seen before the call. A new identity is the
+/// only honest signal that this call queued something; if none appeared, the
+/// outcome fails closed rather than treating "no visible growth" as success.
+fn read_rich_outcome(connection: &AuthorityConnection, before: Option<String>) -> MutationOutcome {
+    if matches!(connection, AuthorityConnection::Embedded(_)) {
+        // Embedded authority commits synchronously and keeps no outbox.
+        return MutationOutcome::Accepted;
+    }
+    let after = connection.last_queued_command_id();
+    let Some(command_id) = after else {
+        return MutationOutcome::Pending {
+            command_id: None,
+            state: "unavailable".into(),
+        };
+    };
+    if Some(&command_id) == before.as_ref() {
+        return MutationOutcome::Pending {
+            command_id: Some(command_id),
+            state: "unavailable".into(),
+        };
+    }
+    command_outcome(connection, &command_id)
+}
+
+/// Process-scoped directory for connected attachment exports. The first call
+/// creates it; later calls reuse the same path inside this process.
+fn connected_export_dir() -> Result<std::path::PathBuf, ClientError> {
+    static DIRECTORY: OnceLock<std::path::PathBuf> = OnceLock::new();
+    if let Some(path) = DIRECTORY.get() {
+        return Ok(path.clone());
+    }
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let path = std::env::temp_dir().join(format!(
+        "orbit-tui-attachments-{}-{nanos}",
+        std::process::id()
+    ));
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(&path).map_err(|error| {
+        unavailable(format!(
+            "cannot create connected attachment export directory {}: {error}",
+            path.display()
+        ))
+    })?;
+    Ok(DIRECTORY.get_or_init(|| path).clone())
+}
+
 pub enum Backend {
     Local(OrbitClient),
     Connected {
         connection: AuthorityConnection,
-        pending: bool,
+        /// Outcome of the most recent connected mutation, consumed by the shell
+        /// through [`Backend::take_outcome`].
+        pending: Option<MutationOutcome>,
     },
 }
 
@@ -90,7 +255,7 @@ impl Backend {
             .map_err(|error| unavailable(format!("connected client unavailable: {error:?}")))?;
         Ok(Self::Connected {
             connection,
-            pending: false,
+            pending: None,
         })
     }
 
@@ -98,12 +263,19 @@ impl Backend {
         matches!(self, Self::Connected { .. })
     }
 
-    /// Returns and clears the pending flag left by the last mutation.
-    pub fn take_pending(&mut self) -> bool {
+    /// Returns and clears the outcome of the last connected mutation.
+    pub fn take_outcome(&mut self) -> Option<MutationOutcome> {
         match self {
-            Self::Local(_) => false,
-            Self::Connected { pending, .. } => std::mem::take(pending),
+            Self::Local(_) => None,
+            Self::Connected { pending, .. } => pending.take(),
         }
+    }
+
+    /// True when the last mutation is queued, conflicted, or its state could
+    /// not be established. Never inferred from aggregate outbox depth.
+    pub fn take_pending(&mut self) -> bool {
+        self.take_outcome()
+            .is_some_and(|outcome| outcome.needs_attention())
     }
 
     pub fn refresh_accepted(&mut self) -> Result<(), ClientError> {
@@ -129,7 +301,7 @@ impl Backend {
                         reason,
                     } => (
                         format!(
-                            "Accepted {accepted}; {command_id} remains blocked: {reason}. Resolve the conflict with the CLI or legacy connected command surface."
+                            "Flush blocked after accepting {accepted} command(s): {command_id} was rejected. {reason}. Inspect the outbox and resolve it with the CLI or legacy connected command surface."
                         ),
                         true,
                     ),
@@ -145,20 +317,46 @@ impl Backend {
         }
     }
 
+    /// Pending work the user can see, including staged attachment uploads.
+    /// The client owns this sum; the TUI must not re-derive it from outbox
+    /// lengths, which omit attachment staging.
     pub fn pending_count(&self) -> usize {
         match self {
             Self::Local(_) => 0,
             Self::Connected { connection, .. } => connection
-                .unresolved_commands()
-                .map(|rows| rows.len())
-                .unwrap_or(0),
+                .pending_command_count()
+                .map(|count| count.max(0) as usize)
+                .unwrap_or_else(|_| {
+                    connection
+                        .unresolved_commands()
+                        .map(|rows| rows.len())
+                        .unwrap_or(0)
+                }),
         }
     }
 
     fn record_disposition(&mut self, disposition: &CommandDisposition) {
-        if let Self::Connected { pending, .. } = self {
-            *pending |= matches!(disposition, CommandDisposition::Pending);
+        if let Self::Connected {
+            connection,
+            pending,
+        } = self
+        {
+            *pending = Some(outcome_from_disposition(connection, disposition));
         }
+    }
+
+    /// Follow the exact command a rich mutation queued. `before` is the last
+    /// identity observed before the call, so a concurrent queue cannot be
+    /// mistaken for this mutation.
+    fn record_rich_outcome(&mut self, before: Option<String>) {
+        let Self::Connected {
+            connection,
+            pending,
+        } = self
+        else {
+            return;
+        };
+        *pending = Some(read_rich_outcome(connection, before));
     }
 
     pub fn workspace_view_data(&self) -> Result<orbit_ui::WorkspaceData, orbit_ui::ViewDataError> {
@@ -333,7 +531,7 @@ impl Backend {
                         },
                     })
                     .map_err(mapped)?;
-                *pending |= matches!(disposition, CommandDisposition::Pending);
+                *pending = Some(outcome_from_disposition(connection, &disposition));
                 if let Some(milestone_id) = milestone_id.clone() {
                     let disposition = connection
                         .task_command(TaskCommand {
@@ -345,7 +543,7 @@ impl Backend {
                             },
                         })
                         .map_err(mapped)?;
-                    *pending |= matches!(disposition, CommandDisposition::Pending);
+                    *pending = Some(outcome_from_disposition(connection, &disposition));
                 }
                 Ok(TaskDto {
                     description: String::new(),
@@ -963,8 +1161,25 @@ impl Backend {
         }
     }
 
-    /// Rich task details (description, priority, labels). Connected mode fails
-    /// closed: the server does not accept these fields yet.
+    /// One task with its rich details.
+    ///
+    /// Local mode reads the authoritative projection; connected mode reads the
+    /// authoritative task-detail route so the details editor sees description,
+    /// priority and labels instead of the thin accepted snapshot.
+    pub fn task_detail(&self, id: &str) -> Result<TaskDto, ClientError> {
+        match self {
+            Self::Local(client) => client.task_detail(id),
+            Self::Connected { connection, .. } => {
+                connection.task_detail(id).map_err(connected_error)
+            }
+        }
+    }
+
+    /// Rich task details (description, priority, labels).
+    ///
+    /// Connected mode queues the canonical `SetDetails` command and returns the
+    /// currently accepted projection, so the caller must consult `take_outcome`
+    /// before reporting success.
     pub fn update_task_details(
         &mut self,
         task_id: String,
@@ -976,9 +1191,16 @@ impl Backend {
             Self::Local(client) => {
                 client.update_task_details(task_id, description, priority, labels)
             }
-            Self::Connected { connection, .. } => connection
-                .update_task_details(task_id, description, priority, labels)
-                .map_err(connected_error),
+            Self::Connected { connection, .. } => {
+                let before = connection.last_queued_command_id();
+                let result = connection
+                    .update_task_details(task_id, description, priority, labels)
+                    .map_err(connected_error);
+                if result.is_ok() {
+                    self.record_rich_outcome(before);
+                }
+                result
+            }
         }
     }
 
@@ -1001,9 +1223,16 @@ impl Backend {
     ) -> Result<Vec<AcceptanceCriterionDto>, ClientError> {
         match self {
             Self::Local(client) => client.add_acceptance_criterion(task_id, text),
-            Self::Connected { connection, .. } => connection
-                .add_acceptance_criterion(task_id, text)
-                .map_err(connected_error),
+            Self::Connected { connection, .. } => {
+                let before = connection.last_queued_command_id();
+                let result = connection
+                    .add_acceptance_criterion(task_id, text)
+                    .map_err(connected_error);
+                if result.is_ok() {
+                    self.record_rich_outcome(before);
+                }
+                result
+            }
         }
     }
 
@@ -1017,9 +1246,16 @@ impl Backend {
             Self::Local(client) => {
                 client.set_acceptance_criterion_text(task_id, criterion_id, text)
             }
-            Self::Connected { connection, .. } => connection
-                .set_acceptance_criterion_text(task_id, criterion_id, text)
-                .map_err(connected_error),
+            Self::Connected { connection, .. } => {
+                let before = connection.last_queued_command_id();
+                let result = connection
+                    .set_acceptance_criterion_text(task_id, criterion_id, text)
+                    .map_err(connected_error);
+                if result.is_ok() {
+                    self.record_rich_outcome(before);
+                }
+                result
+            }
         }
     }
 
@@ -1033,9 +1269,16 @@ impl Backend {
             Self::Local(client) => {
                 client.set_acceptance_criterion_completed(task_id, criterion_id, completed)
             }
-            Self::Connected { connection, .. } => connection
-                .set_acceptance_criterion_completed(task_id, criterion_id, completed)
-                .map_err(connected_error),
+            Self::Connected { connection, .. } => {
+                let before = connection.last_queued_command_id();
+                let result = connection
+                    .set_acceptance_criterion_completed(task_id, criterion_id, completed)
+                    .map_err(connected_error);
+                if result.is_ok() {
+                    self.record_rich_outcome(before);
+                }
+                result
+            }
         }
     }
 
@@ -1049,9 +1292,16 @@ impl Backend {
             Self::Local(client) => {
                 client.move_acceptance_criterion(task_id, criterion_id, position)
             }
-            Self::Connected { connection, .. } => connection
-                .move_acceptance_criterion(task_id, criterion_id, position)
-                .map_err(connected_error),
+            Self::Connected { connection, .. } => {
+                let before = connection.last_queued_command_id();
+                let result = connection
+                    .move_acceptance_criterion(task_id, criterion_id, position)
+                    .map_err(connected_error);
+                if result.is_ok() {
+                    self.record_rich_outcome(before);
+                }
+                result
+            }
         }
     }
 
@@ -1062,9 +1312,16 @@ impl Backend {
     ) -> Result<Vec<AcceptanceCriterionDto>, ClientError> {
         match self {
             Self::Local(client) => client.remove_acceptance_criterion(task_id, criterion_id),
-            Self::Connected { connection, .. } => connection
-                .remove_acceptance_criterion(task_id, criterion_id)
-                .map_err(connected_error),
+            Self::Connected { connection, .. } => {
+                let before = connection.last_queued_command_id();
+                let result = connection
+                    .remove_acceptance_criterion(task_id, criterion_id)
+                    .map_err(connected_error);
+                if result.is_ok() {
+                    self.record_rich_outcome(before);
+                }
+                result
+            }
         }
     }
 
@@ -1087,6 +1344,68 @@ impl Backend {
             Self::Connected { connection, .. } => connection
                 .list_attachments(owner_kind, owner_id)
                 .map_err(connected_error),
+        }
+    }
+
+    /// Unacknowledged uploads for one owner. Local mode has no staging queue,
+    /// so it always returns an empty list; connected mode reads the replica.
+    pub fn pending_attachments(
+        &self,
+        owner_kind: &str,
+        owner_id: &str,
+    ) -> Result<Vec<PendingAttachmentDto>, ClientError> {
+        match self {
+            Self::Local(_) => Ok(Vec::new()),
+            Self::Connected { connection, .. } => connection
+                .staged_attachments(owner_kind, owner_id)
+                .map_err(connected_error),
+        }
+    }
+
+    /// Number of staged uploads the server has not accepted yet.
+    pub fn pending_attachment_count(&self) -> Result<i64, ClientError> {
+        match self {
+            Self::Local(_) => Ok(0),
+            Self::Connected { connection, .. } => connection
+                .pending_attachment_upload_count()
+                .map_err(connected_error),
+        }
+    }
+
+    /// One staged upload by attachment id, across owners.
+    ///
+    /// Preview uses this to label bytes that still live in local staging as
+    /// pending instead of implying they are accepted server content.
+    pub fn pending_attachment(
+        &self,
+        attachment_id: &str,
+    ) -> Result<Option<PendingAttachmentDto>, ClientError> {
+        match self {
+            Self::Local(_) => Ok(None),
+            Self::Connected { connection, .. } => Ok(connection
+                .pending_attachment_uploads()
+                .map_err(connected_error)?
+                .into_iter()
+                .find(|pending| pending.attachment.id == attachment_id)),
+        }
+    }
+
+    /// Durable state of one queued command, with its conflict reason when the
+    /// outbox recorded a permanent rejection.
+    #[allow(dead_code)]
+    pub fn command_outcome(&self, command_id: &str) -> MutationOutcome {
+        match self {
+            Self::Local(_) => MutationOutcome::Accepted,
+            Self::Connected { connection, .. } => command_outcome(connection, command_id),
+        }
+    }
+
+    /// Identity of the most recent command this connected process queued.
+    #[allow(dead_code)]
+    pub fn last_queued_command_id(&self) -> Option<String> {
+        match self {
+            Self::Local(_) => None,
+            Self::Connected { connection, .. } => connection.last_queued_command_id(),
         }
     }
 
@@ -1191,12 +1510,14 @@ impl Backend {
     }
 
     /// Directory used for explicit attachment exports and viewer handoff.
+    ///
+    /// Connected mode has no server filesystem access, so exports use a
+    /// process-scoped private temp directory. It is created with 0700 on Unix
+    /// and never reused across processes.
     pub fn attachment_export_dir(&self) -> Result<std::path::PathBuf, ClientError> {
         match self {
             Self::Local(client) => Ok(client.attachment_store_root().join("exports")),
-            Self::Connected { .. } => Err(unavailable(
-                "attachment viewing is not available in connected mode in this build",
-            )),
+            Self::Connected { .. } => connected_export_dir(),
         }
     }
 
@@ -1208,6 +1529,63 @@ impl Backend {
             Self::Connected { .. } => Err(unavailable(
                 "changing a project workflow requires the local authoritative workspace",
             )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_state_mapping_never_promotes_unknown_state_to_success() {
+        assert_eq!(
+            outcome_from_state(Some("cmd".into()), Some("accepted"), None),
+            MutationOutcome::Accepted
+        );
+        assert_eq!(
+            outcome_from_state(Some("cmd".into()), Some("pending"), None),
+            MutationOutcome::Pending {
+                command_id: Some("cmd".into()),
+                state: "pending".into()
+            }
+        );
+        assert!(matches!(
+            outcome_from_state(
+                Some("cmd".into()),
+                Some("conflict"),
+                Some("stale revision".into())
+            ),
+            MutationOutcome::Conflict { ref reason, .. } if reason == "stale revision"
+        ));
+        // Missing state and unexpected states fail closed as pending.
+        assert_eq!(
+            outcome_from_state(Some("cmd".into()), None, None),
+            MutationOutcome::Pending {
+                command_id: Some("cmd".into()),
+                state: "unavailable".into()
+            }
+        );
+        assert_eq!(
+            outcome_from_state(Some("cmd".into()), Some("superseded"), None),
+            MutationOutcome::Pending {
+                command_id: Some("cmd".into()),
+                state: "superseded".into()
+            }
+        );
+    }
+
+    #[test]
+    fn connected_export_directory_is_process_scoped_and_private() {
+        let first = super::connected_export_dir().unwrap();
+        let second = super::connected_export_dir().unwrap();
+        assert_eq!(first, second, "one directory per process");
+        assert!(first.is_dir());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&first).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o700, "export directory must be private");
         }
     }
 }

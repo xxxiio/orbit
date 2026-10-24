@@ -372,6 +372,93 @@ mod authoritative_task_tests {
         ));
     }
     #[test]
+    fn connected_task_commands_append_parity_activities_in_order() {
+        let mut store = AuthorityStore::open(Path::new(":memory:")).unwrap();
+        store.enroll("device-a", &"a".repeat(40)).unwrap();
+        store
+            .authority_task_command(
+                "device-a",
+                command(
+                    "create-t",
+                    0,
+                    TaskAction::Create {
+                        task_id: "t1".into(),
+                        title: "Alpha".into(),
+                        project_id: None,
+                    },
+                ),
+            )
+            .unwrap();
+        let status = command(
+            "status-t",
+            1,
+            TaskAction::ChangeStatus {
+                task_id: "t1".into(),
+                status: "ready".into(),
+            },
+        );
+        store
+            .authority_task_command("device-a", status.clone())
+            .unwrap();
+        store
+            .authority_task_command(
+                "device-a",
+                command(
+                    "plan-t",
+                    2,
+                    TaskAction::SetPlanning {
+                        task_id: "t1".into(),
+                        estimated_minutes: Some(30),
+                        earliest_start_at_ms: None,
+                        deadline_at_ms: None,
+                    },
+                ),
+            )
+            .unwrap();
+
+        let rows: Vec<(String, String, String, String)> = {
+            let mut stmt = store
+                .conn
+                .prepare(
+                    "SELECT id, activity_kind, origin_kind, origin_value FROM activities \
+                     ORDER BY sequence",
+                )
+                .unwrap();
+            stmt.query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+        };
+        assert_eq!(
+            rows.iter().map(|row| row.0.as_str()).collect::<Vec<_>>(),
+            ["activity-create-t", "activity-status-t", "activity-plan-t"]
+        );
+        assert_eq!(
+            rows.iter().map(|row| row.1.as_str()).collect::<Vec<_>>(),
+            ["created", "status_changed", "updated"]
+        );
+        assert!(
+            rows.iter()
+                .all(|row| row.2 == "external" && row.3 == "device-a")
+        );
+
+        // Duplicate commands return the receipt before the activity append.
+        assert!(
+            store
+                .authority_task_command("device-a", status)
+                .unwrap()
+                .duplicate
+        );
+        let count: i64 = store
+            .conn
+            .query_row("SELECT COUNT(*) FROM activities", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 3);
+    }
+
+    #[test]
     fn task_rename_and_project_assignment_are_authoritative_and_retry_safe() {
         let mut store = AuthorityStore::open(Path::new(":memory:")).unwrap();
         store.enroll("device-a", &"a".repeat(40)).unwrap();
@@ -1116,5 +1203,367 @@ mod database_mode_isolation_tests {
         assert_eq!(count, 0);
         drop(check);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+mod authoritative_task_detail_tests {
+    use crate::AuthoritativeHost;
+    use crate::AuthorityError;
+    use crate::domain_commands::{AcceptanceCriteriaAction, TaskAction, TaskCommand, TaskRecord};
+
+    fn command(id: &str, revision: i64, action: TaskAction) -> TaskCommand {
+        TaskCommand {
+            command_id: id.into(),
+            expected_revision: revision,
+            action,
+        }
+    }
+
+    fn create(host: &mut AuthoritativeHost, id: &str) {
+        host.task_command(
+            "device-a",
+            command(
+                &format!("create-{id}"),
+                0,
+                TaskAction::Create {
+                    task_id: id.into(),
+                    title: "Original".into(),
+                    project_id: None,
+                },
+            ),
+        )
+        .expect("create task");
+    }
+
+    #[test]
+    fn set_details_are_accepted_once_and_invalid_priority_has_no_ledger_entry() {
+        let mut host = AuthoritativeHost::open(":memory:").unwrap();
+        create(&mut host, "task-1");
+        let details = command(
+            "details-1",
+            1,
+            TaskAction::SetDetails {
+                task_id: "task-1".into(),
+                description: "Rich description".into(),
+                priority: Some("high".into()),
+                labels: vec!["backend".into(), "api".into()],
+            },
+        );
+        let first = host
+            .task_command("device-a", details.clone())
+            .expect("set details");
+        assert_eq!((first.revision, first.duplicate), (2, false));
+        assert_eq!(first.task.description, "Rich description");
+        assert_eq!(first.task.priority.as_deref(), Some("high"));
+        assert_eq!(first.task.labels, ["api", "backend"]);
+        // The connected create appended a Created activity; the rich detail
+        // command appends its own Updated activity after it.
+        assert_eq!(host.application_queries().activities().unwrap().len(), 2);
+        let activity = &host.application_queries().activities().unwrap()[1];
+        assert_eq!(
+            activity.subject().to_owned(),
+            orbit_domain::ActivitySubject::Task(orbit_domain::TaskId::new("task-1").unwrap())
+        );
+        assert!(matches!(
+            activity.origin(),
+            orbit_domain::ActivityOrigin::External(actor) if actor == "device-a"
+        ));
+
+        let duplicate = host
+            .task_command("device-a", details)
+            .expect("duplicate details receipt");
+        assert_eq!((duplicate.revision, duplicate.duplicate), (2, true));
+        assert_eq!(host.application_queries().activities().unwrap().len(), 2);
+        assert_eq!(host.snapshot().unwrap().0, 2);
+
+        let before = host.snapshot().unwrap().0;
+        let rejected = host.task_command(
+            "device-a",
+            command(
+                "details-bad-priority",
+                2,
+                TaskAction::SetDetails {
+                    task_id: "task-1".into(),
+                    description: "Never stored".into(),
+                    priority: Some("whenever".into()),
+                    labels: Vec::new(),
+                },
+            ),
+        );
+        assert!(matches!(rejected, Err(AuthorityError::Invalid(_))));
+        assert_eq!(host.snapshot().unwrap().0, before);
+        assert_eq!(
+            host.task_record("task-1").unwrap().unwrap().description,
+            "Rich description"
+        );
+    }
+
+    #[test]
+    fn acceptance_operations_are_ordered_idempotent_and_never_change_status() {
+        let mut host = AuthoritativeHost::open(":memory:").unwrap();
+        create(&mut host, "task-1");
+        let add_first = command(
+            "ac-add-first",
+            1,
+            TaskAction::AcceptanceCriteria {
+                task_id: "task-1".into(),
+                change: AcceptanceCriteriaAction::Add {
+                    criterion_id: "ac-1".into(),
+                    text: "Works offline".into(),
+                },
+            },
+        );
+        assert_eq!(
+            host.task_command("device-a", add_first.clone())
+                .unwrap()
+                .revision,
+            2
+        );
+        host.task_command(
+            "device-a",
+            command(
+                "ac-add-second",
+                2,
+                TaskAction::AcceptanceCriteria {
+                    task_id: "task-1".into(),
+                    change: AcceptanceCriteriaAction::Add {
+                        criterion_id: "ac-2".into(),
+                        text: "Syncs safely".into(),
+                    },
+                },
+            ),
+        )
+        .unwrap();
+        let completed = host
+            .task_command(
+                "device-a",
+                command(
+                    "ac-complete",
+                    3,
+                    TaskAction::AcceptanceCriteria {
+                        task_id: "task-1".into(),
+                        change: AcceptanceCriteriaAction::SetCompleted {
+                            criterion_id: "ac-2".into(),
+                            completed: true,
+                        },
+                    },
+                ),
+            )
+            .unwrap();
+        assert_eq!(completed.revision, 4);
+        assert_eq!(host.task_record("task-1").unwrap().unwrap().status, "inbox");
+        host.task_command(
+            "device-a",
+            command(
+                "ac-complete-first",
+                4,
+                TaskAction::AcceptanceCriteria {
+                    task_id: "task-1".into(),
+                    change: AcceptanceCriteriaAction::SetCompleted {
+                        criterion_id: "ac-1".into(),
+                        completed: true,
+                    },
+                },
+            ),
+        )
+        .unwrap();
+        let all_complete = host
+            .acceptance_criteria(&orbit_domain::TaskId::new("task-1").unwrap())
+            .unwrap();
+        assert!(all_complete.all_completed());
+        assert_eq!(host.task_record("task-1").unwrap().unwrap().status, "inbox");
+        host.task_command(
+            "device-a",
+            command(
+                "ac-reorder",
+                5,
+                TaskAction::AcceptanceCriteria {
+                    task_id: "task-1".into(),
+                    change: AcceptanceCriteriaAction::Reorder {
+                        criterion_id: "ac-2".into(),
+                        position: 0,
+                    },
+                },
+            ),
+        )
+        .unwrap();
+        let removed = host
+            .task_command(
+                "device-a",
+                command(
+                    "ac-remove",
+                    6,
+                    TaskAction::AcceptanceCriteria {
+                        task_id: "task-1".into(),
+                        change: AcceptanceCriteriaAction::Remove {
+                            criterion_id: "ac-1".into(),
+                        },
+                    },
+                ),
+            )
+            .unwrap();
+        assert_eq!(removed.revision, 7);
+        let criteria = host
+            .acceptance_criteria(&orbit_domain::TaskId::new("task-1").unwrap())
+            .unwrap();
+        assert_eq!(criteria.len(), 1);
+        assert_eq!(criteria.items()[0].id().as_str(), "ac-2");
+        assert!(criteria.items()[0].is_completed());
+        assert_eq!(host.task_record("task-1").unwrap().unwrap().status, "inbox");
+
+        // Retrying the first command id returns the original receipt even
+        // though the criteria list has moved on.
+        let duplicate = host
+            .task_command("device-a", add_first)
+            .expect("duplicate acceptance receipt");
+        assert_eq!((duplicate.revision, duplicate.duplicate), (2, true));
+        assert_eq!(
+            host.acceptance_criteria(&orbit_domain::TaskId::new("task-1").unwrap())
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(host.snapshot().unwrap().0, 7);
+    }
+
+    #[test]
+    fn raw_and_rich_task_actions_replay_into_one_snapshot() {
+        let mut host = AuthoritativeHost::open(":memory:").unwrap();
+        create(&mut host, "task-1");
+        host.task_command(
+            "device-a",
+            command(
+                "details",
+                1,
+                TaskAction::SetDetails {
+                    task_id: "task-1".into(),
+                    description: "Snapshot description".into(),
+                    priority: Some("urgent".into()),
+                    labels: vec!["release".into()],
+                },
+            ),
+        )
+        .unwrap();
+        host.task_command(
+            "device-a",
+            command(
+                "acceptance",
+                2,
+                TaskAction::AcceptanceCriteria {
+                    task_id: "task-1".into(),
+                    change: AcceptanceCriteriaAction::Add {
+                        criterion_id: "ac-1".into(),
+                        text: "Ready".into(),
+                    },
+                },
+            ),
+        )
+        .unwrap();
+        let changed = host
+            .task_command(
+                "device-a",
+                command(
+                    "status",
+                    3,
+                    TaskAction::ChangeStatus {
+                        task_id: "task-1".into(),
+                        status: "ready".into(),
+                    },
+                ),
+            )
+            .unwrap();
+        assert_eq!(changed.task.status, "ready");
+        assert_eq!(changed.task.description, "Snapshot description");
+
+        let (revision, _, _, tasks, _) = host.snapshot().unwrap();
+        assert_eq!(revision, 4);
+        let task = tasks.iter().find(|task| task.id == "task-1").unwrap();
+        assert_eq!(task.status, "ready");
+        assert_eq!(task.description, "Snapshot description");
+        assert_eq!(task.priority.as_deref(), Some("urgent"));
+        assert_eq!(task.labels, ["release"]);
+        assert_eq!(
+            host.tasks().unwrap().1[0].description,
+            "Snapshot description"
+        );
+    }
+
+    #[test]
+    fn old_task_payloads_deserialize_and_new_records_serialize_additively() {
+        let old = serde_json::json!({
+            "id": "task-1",
+            "title": "Original",
+            "status": "inbox",
+            "estimated_minutes": null,
+            "earliest_start_at_ms": null,
+            "deadline_at_ms": null
+        });
+        let record: TaskRecord = serde_json::from_value(old).unwrap();
+        assert_eq!(record.description, "");
+        assert_eq!(record.priority, None);
+        assert!(record.labels.is_empty());
+
+        let old_action: TaskAction = serde_json::from_value(serde_json::json!({
+            "type": "rename",
+            "task_id": "task-1",
+            "title": "Renamed"
+        }))
+        .unwrap();
+        assert!(matches!(old_action, TaskAction::Rename { .. }));
+
+        let new_action: TaskAction = serde_json::from_value(serde_json::json!({
+            "type": "acceptance_criteria",
+            "task_id": "task-1",
+            "change": {
+                "operation": "set_completed",
+                "criterion_id": "ac-1",
+                "completed": true
+            }
+        }))
+        .unwrap();
+        assert!(matches!(
+            new_action,
+            TaskAction::AcceptanceCriteria {
+                change: AcceptanceCriteriaAction::SetCompleted {
+                    completed: true,
+                    ..
+                },
+                ..
+            }
+        ));
+        let details_command: TaskCommand = serde_json::from_value(serde_json::json!({
+            "command_id": "details",
+            "expected_revision": 1,
+            "action": {
+                "type": "set_details",
+                "task_id": "task-1",
+                "description": "Body",
+                "priority": null,
+                "labels": ["one"]
+            }
+        }))
+        .unwrap();
+        assert!(matches!(
+            details_command.action,
+            TaskAction::SetDetails { .. }
+        ));
+
+        let details = TaskRecord {
+            id: "task-1".into(),
+            title: "Original".into(),
+            status: "inbox".into(),
+            project_id: None,
+            milestone_id: None,
+            estimated_minutes: None,
+            earliest_start_at_ms: None,
+            deadline_at_ms: None,
+            description: "Body".into(),
+            priority: Some("low".into()),
+            labels: vec!["one".into()],
+        };
+        let json = serde_json::to_value(&details).unwrap();
+        assert_eq!(json["description"], "Body");
+        assert_eq!(json["priority"], "low");
+        assert_eq!(json["labels"], serde_json::json!(["one"]));
     }
 }

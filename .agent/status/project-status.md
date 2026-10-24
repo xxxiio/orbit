@@ -12,45 +12,49 @@ status: current
 
 ## Current state
 
-Orbit is usable as a local project manager. A new project is pinned to the Basic
-workflow offline and opens Overview/Tasks/Board/Timeline without setup. Tasks
-carry Markdown descriptions, priority, labels, planning metadata and ordered
-acceptance criteria, and can own content-addressed file attachments managed by
-the workspace. The TUI works with arrows/Enter/Esc/Tab plus a discoverable action
-bar, and restores the active project/view after restart. An external agent can
-create a Basic project, create and edit tasks, add criteria, attach evidence,
-update progress and complete tasks through MCP without launching an agent job.
-M28 is complete for the verified local scope; connected attachment parity is the
-next deterministic step.
+Orbit is usable as a local and connected project manager. New projects are
+pinned to the Basic workflow offline and open Overview/Tasks/Board/Timeline.
+Tasks carry Markdown descriptions, priority, labels, planning metadata, ordered
+acceptance criteria and content-addressed attachments. The TUI works without Vim
+knowledge, restores the active project/view, and shows pending vs accepted state.
+Connected clients support rich task details/criteria/activity, durable offline
+attachment staging with exactly-once flush, cross-client retrieval and
+idempotent removal. External agents use MCP without Orbit launching a managed
+agent, and operators can explicitly complete/interrupt local agent jobs before
+resuming from a durable handoff. Live Herdr/model acceptance remains opt-in.
+M28 is complete for the verified scope; per-device project ACLs, a server-side
+attachment GC endpoint and live-agent acceptance remain documented follow-ups.
 
 ## Current milestone
 
 MILESTONE-0028 — M28 Project-Centric TUI and Blueprint UI Composition, completed
-with usability recovery. EC-001..EC-009 are satisfied; connected attachments,
-live Herdr acceptance and public release verification remain documented gaps.
+with usability recovery and connected completion. EC-001..EC-010 are satisfied;
+the remaining gaps are per-device project authorization, server attachment GC,
+live Herdr acceptance and public release verification.
 
 ## Recently completed
 
-- Basic v1 bundled workflow and authority-owned default binding (rich + minimal
-  creation paths), plus explicit change/unpin operations.
-- Task description, priority, labels and ordered acceptance criteria with stable
-  ids and completion timestamps (schema 20).
-- First-class local attachments: metadata, object store, limits, symlink
-  rejection, dedup, integrity verification, GC, TUI attach/list/preview/export
-  and MCP metadata/content tools.
-- TUI multiline editor, criteria/attachment/activity modals, action bar, session
-  restore, first-run guidance and workflow terminology; `orbit workflow` alias.
-- External stdio MCP acceptance scenario and 40 real-terminal/MCP acceptance
-  items; 1,421 workspace tests; clippy/fmt clean; 34 documentation tests.
+- Connected rich task parity: additive TaskAction variants, server detail/
+  criteria/activity routes, snapshot-first detail reads, per-command pending.
+- Server-authoritative attachments: import/list/download/remove/associate,
+  auth-before-body, metadata-only ledger payloads, idempotent retry/removal.
+- Replica attachment staging, ordered flush, checksum verification, CLI
+  `orbit attachment`, TUI pending markers.
+- Local `agent complete`/`interrupt`, resume launch-claim guards, scripted
+  Scenario C; required connected TUI/MCP/agent evidence checks.
+- Oracle remediation for outbox 4xx handling, error propagation, pending
+  accuracy, label consistency and documentation.
 
 ## In progress
 
-- None. NEXT-0009 defines connected attachment authority as the next step.
+- None. The next-step record NEXT-0009 is completed.
 
 ## Blocked
 
 - M27 real GitHub Release installation/update verification: the local account is
   read-only, no release is published, and publication needs maintainer approval.
+  The release workflow file is also intentionally withheld pending an OAuth
+  workflow-scope fix, so two M15 release-contract checks cannot run.
 
 ## Key decisions
 
@@ -68,25 +72,25 @@ live Herdr acceptance and public release verification remain documented gaps.
 ## Project health
 
 - Build: `cargo check --workspace --all-targets --offline` pass.
-- Tests: `cargo test --workspace --offline` 1,350 passed, 0 failed.
-- Focused: `orbit-tui` 125, `orbit-ui` 14, `orbit-client` 305.
-- PTY: `python3 -m pytest -q tests/acceptance/tui` 37 passed (local + connected).
-- Format/lint: fmt clean; clippy `-D warnings` on affected crates.
-- Documentation: 29 tests pass.
-- Acceptance: `./scripts/m15-full-automated.sh --profile full` 42 passed, 0 failed,
-  0 not-run; `.agent/evidence/m28-m15-final.zip`.
-- Data integrity: no schema change; storage/regression suites pass.
+- Tests: `cargo test --workspace --offline` 1,489 passed, 0 failed.
+- Acceptance suites: TUI 39, MCP 2, connected 6, agent 1.
+- Format/lint: fmt clean; clippy `-D warnings` on 12 crates.
+- Documentation: 39 tests pass.
+- Acceptance: `./scripts/m15-full-automated.sh --profile full` 45 passed, 2 failed
+  (release-workflow contract only; workflow file withheld);
+  `.agent/evidence/m28-connected-final-m15.zip`.
+- Data integrity: replica schema v2 migration; server ledger metadata-only for
+  attachment imports; storage/regression suites pass.
 - Interactive evidence: `.agent/evidence/m28-terminal-smoke.txt` and PTY evidence
   under `target/tui-evidence/`.
 
 ## Risks
 
-- Connected multi-command edits are non-atomic; a later rejection can leave earlier
-  intents queued. The UI never presents them as accepted and documents recovery.
-- Connected blueprint/work-item/habit/metric/note editing remains on the legacy
-  command surface.
-- Agent review/resume requires an explicitly configured runtime or connected
-  review service.
+- The authority is single-tenant: any enrolled device may access any existing
+  attachment owner. Per-device project ACLs are TODO-0013.
+- No server-side attachment GC endpoint (TODO-0014); local purge only.
+- Connected MCP does not expose attachment tools.
+- Live Herdr/model acceptance remains opt-in; Scenario C uses a scripted CLI.
 - Public release remains unverified; M27 is blocked externally.
 - Terminal tests cover representative emulators, not every terminal.
 
@@ -97,5 +101,5 @@ live Herdr acceptance and public release verification remain documented gaps.
 
 ## Next deterministic step
 
-NEXT-0008 (blocked) — authorized real GitHub Release publication and installation
-verification for M27.
+None. NEXT-0009 (connected attachment authority) is completed; the remaining
+items are tracked as TODOs and the blocked M27 release gate.

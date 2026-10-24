@@ -241,6 +241,7 @@ fn format_error(error: orbit_client::authority::AuthorityError) -> String {
     match error {
         orbit_client::authority::AuthorityError::Conflict(s)
         | orbit_client::authority::AuthorityError::Invalid(s)
+        | orbit_client::authority::AuthorityError::Unauthorized(s)
         | orbit_client::authority::AuthorityError::Unavailable(s) => s,
         orbit_client::authority::AuthorityError::Transport(_) => {
             "authority server unavailable (queued changes retained)".into()

@@ -80,7 +80,16 @@ The following names are extracted from the explicit Rust registrations in `crate
 - `schedule.list`
 - `strategies.list`
 - `strategy.command`
+- `task.acceptance.add`
+- `task.acceptance.check`
+- `task.acceptance.list`
+- `task.acceptance.remove`
+- `task.acceptance.reorder`
+- `task.acceptance.update`
+- `task.activity`
 - `task.command`
+- `task.get`
+- `task.update`
 - `task.dependencies.add`
 - `task.dependencies.preview`
 - `task.dependencies.remove`
@@ -180,7 +189,7 @@ The following names are extracted from the explicit Rust registrations in `crate
 
 Orbit calls project manifests **workflows** in the TUI and in prose. The
 `blueprint.*` tools and the `orbit blueprint` command group keep their names for
-compatibility. The local registry adds explicit aliases and rich operations:
+compatibility. Both registries add explicit aliases and rich operations:
 
 | Tool | Purpose |
 |---|---|
@@ -191,18 +200,54 @@ compatibility. The local registry adds explicit aliases and rich operations:
 | `task.acceptance.list` | Ordered criteria with stable IDs and completion timestamps |
 | `task.acceptance.add` / `update` / `check` / `reorder` / `remove` | Explicit ordered-criteria operations |
 | `task.activity` | Durable semantic activity for one task, newest first |
-| `attachment.list` / `inspect` / `add` / `read` / `remove` / `associate` | Managed content-addressed attachments |
+| `attachment.list` / `inspect` / `add` / `read` / `remove` / `associate` | Managed content-addressed attachments (local registry only) |
 
-`task.get`, `task.update`, task acceptance, `task.activity`, workflow binding
-and all attachment tools are **local-authoritative only** in this build. They
-are not advertised in the connected registry: the accepted server snapshot does
-not project these fields, and the server does not accept attachment uploads.
-Calling them against a remote connection returns a typed `Unavailable` failure
-instead of a false success. `project.create` under a scoped policy still
-requires an explicit project ID inside `ORBIT_MCP_PROJECTS`.
+**Connected rich task tools are advertised.** `task.get`, `task.update`,
+`task.acceptance.*` and `task.activity` appear in the connected registry.
+
+`task.get` is snapshot-first: description, priority and labels come from the
+last accepted replica snapshot, so a connected client can load accepted detail
+values offline. If the snapshot does not contain the task, the client falls back
+to the live `GET /v1/authoritative/tasks/{id}` route. Ordered acceptance criteria
+and activity are read from their dedicated authenticated per-task routes and
+require a server connection. Connected mutations queue a canonical command and
+return the last accepted payload together with explicit state markers:
+
+| Marker | Meaning |
+|---|---|
+| `accepted` | `true` only when the server committed this exact command. It is `false` for both `pending` and `conflict`. |
+| `pending` | `true` when the command is durable outbox intent that still needs a flush. It is `false` when the command is accepted or conflicted. |
+| `disposition` | Exactly `accepted`, `pending` or `conflict`; a queued command is never labelled accepted. |
+| `server_state` | The last accepted projection: description, priority and labels for `task.update`, or the accepted criteria list for `task.acceptance.*`. It never contains the queued value, even when returned alongside `disposition: pending`. |
+| `message` | Present for `pending` and `conflict`; it names the queued command and the recovery step. |
+
+When a mutation is queued, `disposition` is `pending`, `accepted` is `false`,
+`pending` is `true` and the message names `authority.flush` as the recovery step.
+The returned task or criteria list still shows the accepted state, which may not
+include the queued change yet. If the authority permanently rejects the command,
+the same response uses `disposition: conflict` with `accepted: false` and
+`pending: false`; the message includes the command ID and reason and points at
+`authority.unresolved` / `authority.conflict_review`. Treat that as
+reconciliation work rather than retrying blindly: inspect the outbox, then
+remove or replace the staged intent explicitly. Checking criteria never changes
+task status.
+
+**Attachment tools remain local-only.** The connected registry deliberately
+does not advertise `attachment.*`: the connected CLI and TUI own staging,
+upload, cross-client retrieval and online-only removal, while connected MCP
+would have no honest attachment surface in this build. Use
+`orbit attachment add|list|inspect|export|remove|flush` against a connected
+replica instead. Attachment tools in the local registry continue to work
+against a local workspace.
+
+`workflow.apply` and workflow binding remain local-authoritative; connected
+mode reports that clearly instead of queueing an unsupported mutation.
+`project.create` under a scoped policy still requires an explicit project ID
+inside `ORBIT_MCP_PROJECTS`.
 
 No MCP operation in this group launches an agent job or a Herdr session.
-Checking or completing acceptance criteria never completes the task implicitly.
+Checking or completing acceptance criteria never completes the task implicitly,
+and no success response implies an agent launch.
 
 ## Typical workflows
 
@@ -217,10 +262,14 @@ use `workflow.list`, select an immutable version, then `blueprint.bind` (or
 declaring an action does **not** grant arbitrary shell or agent access. Basic is
 the default binding for newly created projects.
 
-**Rich local tasks:** use `task.get` and `task.update` for description, priority
-and labels; `task.acceptance.*` for ordered criteria; `task.activity` for
-history; and `attachment.*` for managed files. These are local-workspace tools
-in this build and fail closed in connected mode.
+**Rich tasks:** use `task.get` and `task.update` for description, priority and
+labels; `task.acceptance.*` for ordered criteria; and `task.activity` for
+history. These work locally and in connected mode. In connected mode,
+description, priority and labels load from the accepted snapshot (with a live
+task-detail fallback), criteria and activity are read from the server routes,
+and writes return `accepted`/`pending`/`disposition` markers until the outbox is
+flushed. Attachment tools remain local-only; use the connected CLI or TUI for
+connected attachments.
 
 **Agent operations:** job context and handoff submission are job-scoped. A reported agent success does not automatically mark the Orbit task complete.
 

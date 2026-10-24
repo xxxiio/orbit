@@ -353,6 +353,9 @@ mod tests {
             estimated_minutes: minutes,
             earliest_start_at_ms: None,
             deadline_at_ms: deadline,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn dep(id: &str, prior: &str) -> TaskDependencyEdge {

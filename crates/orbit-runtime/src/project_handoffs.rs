@@ -288,6 +288,9 @@ mod tests {
             estimated_minutes: minutes,
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn edge(t: &str, p: &str) -> TaskDependencyEdge {
@@ -407,6 +410,9 @@ mod additional_handoff_contract_tests {
             estimated_minutes: minutes,
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn edge(t: &str, p: &str) -> TaskDependencyEdge {
@@ -572,6 +578,9 @@ mod serialized_contract_tests {
             estimated_minutes: Some(10),
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     #[test]

@@ -34,6 +34,8 @@ pub enum Command {
     /// Discover deterministic planning capabilities and argument contracts.
     Capabilities(CapabilityArgs),
     Task(TaskCommand),
+    /// Attach, inspect, export, remove and flush files for an owner entity.
+    Attachment(AttachmentCommand),
     /// Manage agent jobs through the Orbit CLI (local-authoritative mode).
     Agent(AgentCommand),
     Project(ProjectCommand),
@@ -134,6 +136,69 @@ pub struct DoctorArgs {
     /// Exit non-zero when the report contains errors.
     #[arg(long, default_value_t = false)]
     pub strict: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct AttachmentCommand {
+    #[command(subcommand)]
+    pub command: AttachmentSubcommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AttachmentSubcommand {
+    /// Import a local regular file and associate it with an owner.
+    Add(AttachmentAddArgs),
+    /// List accepted attachments and, in connected mode, pending uploads.
+    List(AttachmentListArgs),
+    /// Show one attachment's metadata and verify its readable content.
+    Inspect(AttachmentInspectArgs),
+    /// Copy verified content to a new file; existing files are never overwritten.
+    Export(AttachmentExportArgs),
+    /// Remove an association (connected: pending rows are discarded locally).
+    Remove(AttachmentRemoveArgs),
+    /// Connected only: flush the outbox and staged attachment uploads.
+    Flush,
+}
+
+#[derive(Debug, Args)]
+pub struct AttachmentAddArgs {
+    /// Owner kind: task, project, work_item, knowledge or agent_job.
+    #[arg(value_name = "OWNER_KIND")]
+    pub owner_kind: String,
+    #[arg(value_name = "OWNER_ID")]
+    pub owner_id: String,
+    #[arg(value_name = "PATH")]
+    pub path: PathBuf,
+    #[arg(long)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct AttachmentListArgs {
+    #[arg(value_name = "OWNER_KIND")]
+    pub owner_kind: String,
+    #[arg(value_name = "OWNER_ID")]
+    pub owner_id: String,
+}
+
+#[derive(Debug, Args)]
+pub struct AttachmentInspectArgs {
+    #[arg(value_name = "ID")]
+    pub id: String,
+}
+
+#[derive(Debug, Args)]
+pub struct AttachmentExportArgs {
+    #[arg(value_name = "ID")]
+    pub id: String,
+    #[arg(value_name = "DESTINATION")]
+    pub destination: PathBuf,
+}
+
+#[derive(Debug, Args)]
+pub struct AttachmentRemoveArgs {
+    #[arg(value_name = "ID")]
+    pub id: String,
 }
 
 #[derive(Debug, Args)]
@@ -1357,6 +1422,24 @@ pub enum AgentSubcommand {
     },
     /// Retrieve durable handoffs for a job (no live agent required).
     Handoffs { job_id: String },
+    /// Explicitly complete the Orbit job record of a non-terminal local job.
+    /// Preserves handoffs, never completes the Orbit task, and does not stop
+    /// the external session.
+    Complete {
+        job_id: String,
+        /// Optional operator note recorded on the completion event.
+        #[arg(long, default_value = "")]
+        summary: String,
+    },
+    /// Interrupt the Orbit job record of a non-terminal local job. Handoffs and
+    /// the Orbit task are untouched; the external Herdr session is not stopped
+    /// and may keep running.
+    Interrupt {
+        job_id: String,
+        /// Optional operator reason recorded on the interrupt event.
+        #[arg(long, default_value = "")]
+        reason: String,
+    },
     /// Build a durable resume brief from the job, latest handoff and review; does not launch.
     ResumeContext { job_id: String },
     /// Start a new agent job using a terminal predecessor and its durable handoff.

@@ -220,6 +220,9 @@ mod tests {
             estimated_minutes: minutes,
             earliest_start_at_ms: None,
             deadline_at_ms: None,
+            description: String::new(),
+            priority: None,
+            labels: Vec::new(),
         }
     }
     fn edge(t: &str, p: &str) -> TaskDependencyEdge {

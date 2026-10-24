@@ -371,6 +371,7 @@ mod tests {
                     .unwrap(),
             )),
             admin_key_hash: vec![0; 32],
+            attachment_body_limit: 64 * 1024 * 1024,
         };
         let r = dispatch(
             &state,
@@ -408,6 +409,7 @@ mod rich_domain_mcp_contract {
                     .unwrap(),
             )),
             admin_key_hash: vec![0; 32],
+            attachment_body_limit: 64 * 1024 * 1024,
         }
     }
 

@@ -357,6 +357,7 @@ MILESTONE-0028
 - [x] EC-007: Focused schema, rendering, interaction and architecture tests pass with 1,350 workspace tests and 37 real-PTY acceptance items.
 - [x] EC-008: User/developer documentation and GetDone records state actual progress and remaining limitations.
 - [x] EC-009: Usability recovery: Basic default workflow, rich task details and acceptance criteria, local attachments, non-Vim navigation, workflow terminology and MCP parity for external agents.
+- [x] EC-010: Connected completion: server-authoritative rich task fields, criteria and activity; durable offline attachment staging with exactly-once flush, cross-client retrieval and idempotent removal; explicit agent job completion/interruption with resume guards.
 
 #### Evidence
 
@@ -369,10 +370,12 @@ MILESTONE-0028
 - EC-007: `cargo test --workspace --offline` 1,350 passed; 37 PTY; full M15 profile 42/42; clippy and fmt clean.
 - EC-008: TUI/blueprint/UI docs and GetDone records.
 - EC-009: `blueprints/basic.json`; schema 20 task/attachment tables; TUI 136 tests; external MCP stdio acceptance; 1,423 workspace tests; 40 PTY/MCP acceptance items.
+- EC-010: server attachment routes + replica staging; connected suite 6; connected MCP 1; scripted agent scenario 1; workspace 1,489; M15 45/47 (release workflow withheld).
 
 ##### Remaining work
 
-- Connected attachments and rich task details/criteria are local-only; they fail closed with explicit messages (NEXT-0009).
+- Authorization is single-tenant; per-device project ACLs are not implemented (TODO-0013).
+- No server-side attachment GC endpoint (TODO-0014); connected MCP keeps attachments local-only.
 - Connected multi-command edits are not atomic; inspect/recover the outbox.
 - Connected blueprint/work-item, habit, metric and note editing remains on the legacy command surface.
 - Live Herdr Agent Development launch/review acceptance is unavailable without an authorized runtime.

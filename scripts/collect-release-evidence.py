@@ -65,7 +65,7 @@ def main(argv=None):
         env['ORBIT_CONFIG'] = str(evidence / 'isolated-no-config.toml')
         results = []
 
-        def check(name, command, *, needs=(), after=(), timeout=None):
+        def check(name, command, *, needs=(), after=(), timeout=None, env_extra=None):
             missing = [tool for tool in needs if shutil.which(tool, path=env['PATH']) is None]
             blocked = [item for item in after if next((r['status'] for r in results if r['name'] == item), None) != 'passed']
             rec = {'name': name, 'command': command, 'status': 'not_run', 'exit_code': None,
@@ -78,8 +78,10 @@ def main(argv=None):
                 return
             print(f'RUN  {name}', flush=True)
             start = time.monotonic()
+            check_env = dict(env)
+            check_env.update(env_extra or {})
             try:
-                completed = subprocess.run(command, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                completed = subprocess.run(command, cwd=ROOT, env=check_env, stdout=subprocess.PIPE,
                                            stderr=subprocess.STDOUT, timeout=timeout or args.timeout,
                                            text=True, errors='replace', stdin=subprocess.DEVNULL)
                 log = completed.stdout
@@ -123,7 +125,34 @@ def main(argv=None):
         check('m25-blueprint-cli-tests', ['cargo', 'test', '-p', 'orbit-cli', 'blueprint', '--locked'], needs=('cargo',))
         if args.profile == 'full':
             check('cargo-clippy', ['cargo', 'clippy', '--workspace', '--all-targets', '--locked', '--', '-D', 'warnings'], needs=('cargo', 'cargo-clippy'))
-            check('cargo-build', ['cargo', 'build', '-p', 'orbit-cli', '-p', 'orbit-server', '--locked'], needs=('cargo',))
+            check('cargo-build', ['cargo', 'build', '-p', 'orbit-cli', '-p', 'orbit-server', '-p', 'orbit-tui', '-p', 'orbit-mcp', '--locked'], needs=('cargo',))
+            # The scripted agent lifecycle must run after the build so a missing
+            # binary fails instead of skipping and recording a vacuous pass.
+            check('agent-scenario-c',
+                  [sys.executable, '-m', 'pytest', '-q', 'tests/acceptance/agent', '-vv'],
+                  after=('cargo-build',),
+                  env_extra={'ORBIT_REQUIRE_AGENT_EVIDENCE': '1'})
+            # Connected attachment and external-MCP checks also need the
+            # compiled binaries. Their required env vars turn a missing binary
+            # into a failure rather than a skipped, vacuous pass.
+            check('connected-attachments',
+                  [sys.executable, '-m', 'pytest', '-q', 'tests/acceptance/connected', '-vv'],
+                  after=('cargo-build',),
+                  env_extra={'ORBIT_REQUIRE_CONNECTED_EVIDENCE': '1'})
+            check('connected-tui',
+                  [sys.executable, '-m', 'pytest', '-q', 'tests/acceptance/tui/test_m28_connected.py', '-vv'],
+                  after=('cargo-build',),
+                  env_extra={'ORBIT_REQUIRE_CONNECTED_TUI_EVIDENCE': '1'})
+            check('mcp-external-agent',
+                  [sys.executable, '-m', 'pytest', '-q', 'tests/acceptance/mcp/test_m28_external_agent.py', '-vv'],
+                  after=('cargo-build',),
+                  env_extra={'ORBIT_REQUIRE_MCP_EVIDENCE': '1'})
+            # Connected MCP runs against a disposable authoritative server; the
+            # required flag fails rather than skipping when binaries are absent.
+            check('connected-mcp',
+                  [sys.executable, '-m', 'pytest', '-q', 'tests/acceptance/mcp/test_m28_connected_agent.py', '-vv'],
+                  after=('cargo-build',),
+                  env_extra={'ORBIT_REQUIRE_MCP_EVIDENCE': '1'})
             check('local-cli-persistence-smoke', [sys.executable, 'tests/acceptance/local_cli_workflows.py', '--binary', 'target/debug/orbit'], after=('cargo-build',))
             check('real-release-archive-smoke', ['bash', 'tests/packaging/test_real_release_archive.sh'], needs=('cargo', 'bash', 'tar', 'sha256sum'), after=('cargo-build',))
             check('m25-blueprint-cli-help', ['target/debug/orbit', 'blueprint', '--help'], after=('cargo-build',))
@@ -160,7 +189,7 @@ def main(argv=None):
                     'architecture': platform.machine(), 'python_version': platform.python_version(),
                     'repository_manifest_sha256': hashlib.sha256((ROOT / 'Cargo.toml').read_bytes()).hexdigest(),
                     'counts': counts, 'results': results,
-                    'scope': 'Compiles and tests the Rust workspace, runs Python worker/contract suites and user-documentation contracts, exercises packaging/installation and release-archive installation contracts, verifies compiled local CLI persistence, and executes isolated local-authority, connected-authority, offline-replica, server-durability, blueprint-workflow and agent-execution acceptance. Live Herdr acceptance is opt-in via --live-herdr; TLS ingress, browser deployment and production calls are never attempted.',
+                    'scope': 'Compiles and tests the Rust workspace, runs Python worker/contract suites and user-documentation contracts, exercises packaging/installation and release-archive installation contracts, verifies compiled local CLI persistence, executes isolated local-authority, connected-authority, connected-TUI, connected-attachment, external-MCP, connected-MCP, offline-replica, server-durability, blueprint-workflow and agent-execution acceptance, and runs the scripted Herdr CLI local-agent lifecycle (Orbit-side state only). Live Herdr acceptance is opt-in via --live-herdr; TLS ingress, browser deployment and production calls are never attempted.',
                     'privacy': 'Generated logs may contain paths and unexpected identifiers; review before sharing.'}
         (evidence / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         summary = ['# Orbit M15 automated acceptance', '', f'Profile: {args.profile}', '', '| Check | Status |', '|---|---|']
@@ -170,6 +199,11 @@ def main(argv=None):
                     'Blueprint manifest inventory checks do not substitute for compiled Rust blueprint tests.',
                     'Documentation and packaging checks validate repository artifacts only; they do not install software system-wide.',
                     'The local CLI persistence smoke uses the compiled target/debug/orbit binary against disposable local data.',
+                    'The agent-scenario-c check uses a scripted Herdr CLI and proves Orbit-side lifecycle state only, not live Herdr or model behaviour.',
+                    'The connected-attachments check proves loopback server attachment import/list/download/remove against disposable replicas, including pending upload, flush and metadata-only ledger payload; it does not prove a production deployment.',
+                    'The connected-tui check drives the real TUI against a disposable authoritative server, proving pending -> flush -> accepted behavior without a production deployment.',
+                    'The connected-mcp check drives the real orbit-mcp binary over stdio against a disposable authoritative server and replica, proving connected rich-task reads, pending -> flush mutations and read-only denial; it does not create an agent job or prove a live model/Herdr.',
+                    'The mcp-external-agent check drives the real orbit-mcp binary over stdio and inspects the same workspace in the real TUI; it does not prove a live model, Herdr or remote MCP transport.',
                     'All HTTP smoke tests target temporary loopback servers and disposable databases.']
         (evidence / 'SUMMARY.md').write_text('\n'.join(summary) + '\n', encoding='utf-8')
         with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:

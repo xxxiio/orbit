@@ -37,6 +37,7 @@ impl AttachmentObjectStore {
             fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).map_err(io_error)?;
             fs::set_permissions(&staging, fs::Permissions::from_mode(0o700)).map_err(io_error)?;
         }
+        cleanup_staging(&staging);
         Ok(Self { root, max_bytes })
     }
 
@@ -164,6 +165,40 @@ impl AttachmentContentStore for AttachmentObjectStore {
             }
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
             Err(error) => Err(io_error(error)),
+        }
+    }
+}
+
+/// Best-effort removal of abandoned staging files older than 24 hours. Only
+/// regular files directly inside the staging directory are considered and
+/// symlinks are never followed or deleted, so cleanup cannot escape the store.
+fn cleanup_staging(staging: &Path) {
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    const MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+    let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(staging) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_file() {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        let Ok(modified) = modified.duration_since(UNIX_EPOCH) else {
+            continue;
+        };
+        if now.saturating_sub(modified) > MAX_AGE {
+            let _ = fs::remove_file(entry.path());
         }
     }
 }

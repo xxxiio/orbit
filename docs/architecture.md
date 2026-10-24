@@ -68,6 +68,59 @@ The modes are separate composition roots; switching modes is not peer-to-peer
 synchronization or Git event replication. No legacy relay compatibility or
 migration/import pathway is required by this greenfield architecture.
 
+### Connected rich task and attachment boundary
+
+Connected mode carries rich task fields in the accepted snapshot and uses
+dedicated authenticated routes for the aggregates and attachment data that do
+not belong in that snapshot:
+
+- `GET /v1/authoritative/snapshot` includes each task's description, priority
+  and labels, so `task.get` and the TUI can show accepted details offline;
+  `task.get` falls back to `GET /v1/authoritative/tasks/{id}` only when the
+  snapshot does not contain the task;
+- `GET /v1/authoritative/tasks/{id}/acceptance-criteria` returns the ordered
+  criteria, which are not projected into the snapshot;
+- `GET /v1/authoritative/tasks/{id}/activity` returns semantic activity, which
+  is also not projected into the snapshot;
+- attachments use their own route family:
+  `POST /v1/authoritative/attachment-import` accepts a raw, bounded body and
+  creates the attachment;
+- `GET /v1/authoritative/attachments?owner_kind=...&owner_id=...` lists accepted
+  metadata;
+- `GET /v1/authoritative/attachments/{id}/content` serves verified bytes with
+  `Content-Disposition` and `X-Content-Type-Options: nosniff`;
+- `POST /v1/authoritative/attachment-remove` and
+  `POST /v1/authoritative/attachment-associate` reuse the same canonical command
+  admission as other rich mutations.
+
+The import route authenticates the device before reading the body, applies the
+`ORBIT_ATTACHMENT_MAX_BYTES` bound before buffering, and answers `413` for an
+oversized body. Rich task and attachment writes use the normal durable command
+ledger: the command payload and `authority_history.wire` record **metadata
+only** (`kind`, attachment/entity identity, owner, filename, content type,
+size, SHA-256, object hash, description and activity identity). Attachment bytes
+are stored once in the content-addressed object store and never embedded in a
+command receipt or history row, so a large upload does not create a large
+ledger entry.
+
+In connected mode a client may hold a **staged** upload before the server has
+accepted it. The replica keeps the bytes under
+`<replica directory>/attachment-staging/<sha256>-<attachment_id>`, written with
+owner-only permissions and atomically renamed after fsync, plus a durable
+`attachment_uploads` row in `pending`, `accepted` or `conflict`. Staged bytes
+are never merged into the accepted attachment cache. Flush uploads them in
+creation order, reuses the same command identity across retries, and validates a
+server receipt against the staged checksum and size before marking the row
+accepted. Accepted content is retrieved from the server and verified against the
+response checksum and size.
+
+Connected authorization is **single-tenant**. All enrolled devices share one
+authority and one canonical entity set. There is no per-project ACL, per-user
+repository isolation or server-side attachment GC endpoint. Project allowlists
+in MCP policy and client scope checks are least-privilege conventions, not a
+security boundary between devices; deployment owners must enroll only trusted
+devices and revoke tokens when that trust changes.
+
 ### Stable dependency and service boundaries
 
 - `orbit-domain`: entities, typed identities and domain invariants.
@@ -122,6 +175,11 @@ Orbit distinguishes recovery artifacts from synchronization artifacts.
 - A local workspace backup comprises three together: the SQLite database, the
   Markdown knowledge vault (`<database>.knowledge/`) and the content-addressed
   attachment object store (`attachments/objects/` beside the database).
+- The connected server has the same three parts: its authoritative SQLite
+  database, its Markdown vault and its attachment object store beside the
+  server database. A client replica additionally owns `attachment-staging/`
+  for uploads the server has not accepted; preserve it with the replica when
+  pending uploads matter.
 - `SqliteStore::export_backup` creates a validated point-in-time SQLite snapshot for user-owned backup and portability.
 - Attachment metadata is inside SQLite; attachment bytes are immutable objects addressed by SHA-256. A database-only restore therefore preserves associations but not content.
 - Backups are written to a sibling temporary file, fsynced, then renamed into place.
