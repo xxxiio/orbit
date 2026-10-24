@@ -72,15 +72,17 @@ def test_mcp_registry_and_both_adapters_are_consistent():
 def test_terminal_paths_share_the_same_read_model():
     ui = source("crates/orbit-tui/src/planning_ui.rs")
     local = source("crates/orbit-tui/src/main.rs") + source("crates/orbit-tui/src/app.rs")
-    connected = source("crates/orbit-tui/src/connected.rs")
+    console = source("crates/orbit-tui/src/connected_ops.rs") + source("crates/orbit-tui/src/app.rs")
     assert "render_focus" in ui
     assert "render_group_focus" in ui
     assert "today_focus" in local
     assert "today_project_focus" in local
-    assert '"plan.focus"' in connected
-    assert '"plan.group"' in connected
-    assert "planning_focus::focus_task" in connected
-    assert "planning_focus::focus_group" in connected
+    assert '"plan.focus"' in console
+    assert '"plan.group"' in console
+    # Both deployments read focus through the same typed client calls.
+    assert "planning_focus" in console
+    assert ".planning_focus(" in console
+    assert ".planning_group(" in console
 
 
 def test_pure_core_has_focused_regression_coverage():

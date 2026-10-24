@@ -20,9 +20,16 @@ application services.
 Connected mode uses the same `App`/renderer over a connected `Backend`. Project
 and task reads come from the accepted replica; supported mutations queue durable
 intents and are labelled pending until server acceptance. Unsupported connected
-editing surfaces fail closed with an explanation. The legacy connected command
-palette remains available through `ORBIT_TUI_LEGACY_CONNECTED=1` while parity is
-completed.
+editing surfaces fail closed with an explanation. There is no second connected
+event loop or render tree: the palette opens the **Connected commands** console
+(`:` → *Connected commands…*), `!` opens the pending/conflict inspector, and
+`f` submits the outbox. The console covers the complete write grammar
+(project/task/habit/metric/schedule/routine/milestone/strategy/note/folder,
+batch and `resolve`) plus read-only `sync.status`, `sync.observe`,
+`note.search`/`note.cached`/`note.show`, and
+`plan.portfolio`/`plan.compare`/`plan.review`/`plan.focus`/`plan.group`.
+`plan.approve --confirm` applies exactly one previously reviewed scenario at the
+same accepted revision and reports the authoritative receipt.
 
 The shared presentation model lives in `orbit-ui`; blueprint declarations live
 in `orbit-blueprint`. The TUI owns terminal layout, focus, input, scrolling,

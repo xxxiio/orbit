@@ -1,16 +1,6 @@
 //! Read-only terminal presentation for the authoritative planning brief.
 //! The business decisions come entirely from orbit-runtime::planning_brief.
 use orbit_runtime::planning_brief::{WorkBrief, WorkBriefRequest, WorkItem, WorkItemState};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-pub fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(i64::MAX)
-}
 
 pub fn request(
     now: i64,
@@ -35,37 +25,6 @@ pub fn request(
         project_id: project,
         default_minutes: Some(30),
     })
-}
-
-pub fn parse_command(source: &str, now: i64) -> Result<Option<WorkBriefRequest>, String> {
-    let mut words = source.split_whitespace();
-    if words.next() != Some("plan.today") {
-        return Ok(None);
-    }
-    let mut hours = 12;
-    let mut limit = 20;
-    let mut project = None;
-    while let Some(arg) = words.next() {
-        match arg {
-            "--hours" => {
-                hours = words
-                    .next()
-                    .ok_or("--hours needs a value")?
-                    .parse()
-                    .map_err(|_| "--hours must be a number")?
-            }
-            "--limit" => {
-                limit = words
-                    .next()
-                    .ok_or("--limit needs a value")?
-                    .parse()
-                    .map_err(|_| "--limit must be a number")?
-            }
-            "--project" => project = Some(words.next().ok_or("--project needs an ID")?.into()),
-            _ => return Err(format!("unrecognized plan.today argument: {arg}")),
-        }
-    }
-    request(now, hours, limit, project).map(Some)
 }
 
 fn state_label(state: &WorkItemState) -> &'static str {
@@ -129,40 +88,6 @@ fn describe_item(item: &WorkItem) -> Vec<String> {
     }
     for explanation in &item.explanation {
         lines.push(format!("    Why: {}", compact(explanation, 120)));
-    }
-    lines
-}
-
-/// Render an accepted task drilldown without linking hidden project identities.
-/// Render actionable navigation suggestions without implying an accepted write.
-pub fn render_action_menu(
-    menu: &orbit_runtime::planning_actions::PlanningActionMenu,
-) -> Vec<String> {
-    let mut lines = vec![
-        format!(
-            "AVAILABLE PLANNING ACTIONS • accepted rev {}",
-            menu.revision
-        ),
-        "These are suggestions; no changes have been made".to_owned(),
-    ];
-    for (index, action) in menu.actions.iter().enumerate() {
-        let status = match action.availability {
-            orbit_runtime::planning_actions::ActionAvailability::Available => "preview",
-            orbit_runtime::planning_actions::ActionAvailability::RequiresAuthorityConfirmation => {
-                "approval required"
-            }
-            orbit_runtime::planning_actions::ActionAvailability::Unavailable => {
-                "unavailable offline"
-            }
-        };
-        lines.push(format!("  [{}] {:?} [{}]", index + 1, action.kind, status));
-        lines.push(format!("    {}", action.explanation));
-        if let Some(id) = &action.task_id {
-            lines.push(format!("    task: {id}"));
-        }
-    }
-    for notice in &menu.notices {
-        lines.push(format!("Note: {notice}"));
     }
     lines
 }
@@ -570,28 +495,6 @@ pub fn render_brief(brief: &WorkBrief) -> Vec<String> {
     result
 }
 
-pub fn parse_impact(
-    source: &str,
-    now: i64,
-) -> Result<Option<orbit_runtime::task_impact::CompletionImpactRequest>, String> {
-    let mut words = source.split_whitespace();
-    if words.next() != Some("plan.impact") {
-        return Ok(None);
-    }
-    let id = words.next().ok_or("plan.impact requires a task ID")?;
-    if id.is_empty() || words.next().is_some() {
-        return Err("usage: plan.impact <task-id>".into());
-    }
-    if now < 0 {
-        return Err("invalid evaluation time".into());
-    }
-    Ok(Some(orbit_runtime::task_impact::CompletionImpactRequest {
-        task_id: id.into(),
-        now_ms: now,
-        next_limit: 20,
-    }))
-}
-
 pub fn render_impact(report: &orbit_runtime::task_impact::CompletionImpact) -> Vec<String> {
     let mut lines = vec![
         format!("COMPLETION IMPACT • accepted revision {}", report.revision),
@@ -668,84 +571,47 @@ impl PlanningDocument {
             task_anchors: anchors,
         }
     }
-    pub fn selected_task(&self, scroll: usize) -> Option<&str> {
-        self.task_anchors
-            .iter()
-            .rev()
-            .find(|(row, _)| *row <= scroll)
-            .or_else(|| self.task_anchors.first())
-            .map(|(_, id)| id.as_str())
-    }
-    pub fn next_task(&self, scroll: usize) -> usize {
-        self.task_anchors
-            .iter()
-            .find(|(row, _)| *row > scroll)
-            .or_else(|| self.task_anchors.last())
-            .map(|(row, _)| *row)
-            .unwrap_or(scroll)
-    }
-    pub fn previous_task(&self, scroll: usize) -> usize {
-        self.task_anchors
-            .iter()
-            .rev()
-            .find(|(row, _)| *row < scroll)
-            .or_else(|| self.task_anchors.first())
-            .map(|(row, _)| *row)
-            .unwrap_or(scroll)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn parsing_is_bounded_and_explicit() {
-        assert!(
-            parse_command("plan.today --hours 4 --limit 10 --project alpha", 100)
-                .unwrap()
-                .unwrap()
-                .project_id
-                == Some("alpha".into())
-        );
-        for bad in [
-            "plan.today --hours 0",
-            "plan.today --hours 169",
-            "plan.today --limit 0",
-            "plan.today --limit 501",
-            "plan.today --hours no",
-            "plan.today --unknown",
-            "plan.today --project",
-            "plan.today --limit",
-        ] {
-            assert!(parse_command(bad, 100).is_err(), "{bad}");
+    fn request_is_bounded_and_explicit() {
+        let brief = request(100, 4, 10, Some("alpha".into())).unwrap();
+        assert_eq!(brief.project_id.as_deref(), Some("alpha"));
+        assert_eq!(brief.ends_at_ms, 100 + 4 * 3_600_000);
+        for (now, hours, limit) in [(0, 0, 10), (0, 169, 10), (0, 12, 0), (0, 12, 501)] {
+            assert!(request(now, hours, limit, None).is_err(), "{hours}/{limit}");
         }
-        assert!(parse_command("sync.status", 100).unwrap().is_none());
         assert!(request(i64::MAX, 12, 10, None).is_err());
+        assert!(request(1, 12, 10, Some("  ".into())).is_err());
     }
+
+    fn item(id: &str, state: WorkItemState) -> WorkItem {
+        WorkItem {
+            id: id.into(),
+            title: format!("Task {id}"),
+            project_id: None,
+            milestone_id: None,
+            state,
+            recommended_rank: Some(1),
+            proposed_start_ms: None,
+            proposed_end_ms: None,
+            deadline_at_ms: None,
+            blocked_by: vec![],
+            unblocks: vec![],
+            explanation: vec!["Ready".into()],
+            portfolio_rank: None,
+            same_project_downstream: 0,
+            other_project_downstream: 0,
+            immediately_unblocked: 0,
+            portfolio_reasons: vec![],
+        }
+    }
+
     #[test]
     fn navigation_indexes_only_real_task_headers() {
-        use orbit_runtime::planning_brief::WorkItem;
-        fn item(id: &str, state: WorkItemState) -> WorkItem {
-            WorkItem {
-                id: id.into(),
-                title: format!("Task {id}"),
-                project_id: None,
-                milestone_id: None,
-                state,
-                recommended_rank: Some(1),
-                proposed_start_ms: None,
-                proposed_end_ms: None,
-                deadline_at_ms: None,
-                blocked_by: vec![],
-                unblocks: vec![],
-                explanation: vec!["Ready".into()],
-                portfolio_rank: None,
-                same_project_downstream: 0,
-                other_project_downstream: 0,
-                immediately_unblocked: 0,
-                portfolio_reasons: vec![],
-            }
-        }
         let brief = WorkBrief {
             revision: 7,
             evaluated_at_ms: 100,
@@ -769,35 +635,11 @@ mod tests {
         };
         let doc = PlanningDocument::from_brief(&brief);
         assert_eq!(doc.task_anchors.len(), 2);
-        let a = doc.task_anchors[0].0;
-        let b = doc.task_anchors[1].0;
-        assert_eq!(doc.selected_task(a), Some("a"));
-        assert_eq!(doc.next_task(a), b);
-        assert_eq!(doc.previous_task(b), a);
-        assert_eq!(doc.selected_task(b), Some("b"));
-    }
-    #[test]
-    fn navigation_handles_zero_tasks() {
-        let doc = PlanningDocument {
-            lines: vec!["No tasks".into()],
-            task_anchors: vec![],
-        };
-        assert_eq!(doc.selected_task(0), None);
-        assert_eq!(doc.next_task(5), 5);
-        assert_eq!(doc.previous_task(5), 5);
-    }
-    #[test]
-    fn impact_requires_exactly_one_task_id() {
-        assert!(parse_impact("other", 100).unwrap().is_none());
-        assert!(parse_impact("plan.impact", 100).is_err());
-        assert!(parse_impact("plan.impact a b", 100).is_err());
-        assert_eq!(
-            parse_impact("plan.impact work-1", 100)
-                .unwrap()
-                .unwrap()
-                .task_id,
-            "work-1"
-        );
+        assert_eq!(doc.task_anchors[0].1, "a");
+        assert_eq!(doc.task_anchors[1].1, "b");
+        for (row, id) in &doc.task_anchors {
+            assert!(doc.lines[*row].contains(id), "{row} {id}");
+        }
     }
     #[test]
     fn labels_cover_every_planner_state() {
@@ -992,7 +834,6 @@ mod portfolio_display_tests {
                 .iter()
                 .any(|line| line.contains("cross-project leverage"))
         );
-        assert_eq!(document.selected_task(0), Some("platform-api"));
         assert_eq!(brief.items[0].state, WorkItemState::Ready);
     }
 }
@@ -1206,7 +1047,7 @@ pub fn render_scenario_review(
         );
     }
     lines.push(String::new());
-    lines.push("To execute these exact slots: :plan.approve --confirm".into());
+    lines.push("To execute these exact slots: plan.approve --confirm".into());
     lines.push("Any server revision change requires a new review".into());
     lines
 }
@@ -1332,49 +1173,11 @@ mod scenario_execution_ui_tests {
 #[cfg(test)]
 mod action_handoff_terminal_tests {
     use super::*;
-    use orbit_runtime::planning_actions::{
-        ActionAvailability, ActionDestination, ActionKind, PlanningAction, PlanningActionMenu,
-    };
+    use orbit_runtime::planning_actions::ActionDestination;
     use orbit_runtime::planning_handoff::{
         HandoffView, PlanningHandoff, PreviewInstruction, PreviewOperation,
     };
 
-    fn menu() -> PlanningActionMenu {
-        PlanningActionMenu {
-            revision: 11,
-            evaluated_at_ms: 1_000,
-            selected_task_id: Some("t".into()),
-            selected_project_id: Some("p".into()),
-            selected_milestone_id: None,
-            actions: vec![
-                PlanningAction {
-                    kind: ActionKind::InspectTask,
-                    availability: ActionAvailability::Available,
-                    task_id: Some("t".into()),
-                    project_id: Some("p".into()),
-                    milestone_id: None,
-                    prerequisite_id: None,
-                    explanation: "View task context".into(),
-                    requires_confirmation: false,
-                    mutates_authority: false,
-                    reviewed_revision: 11,
-                },
-                PlanningAction {
-                    kind: ActionKind::ReviewSchedule,
-                    availability: ActionAvailability::RequiresAuthorityConfirmation,
-                    task_id: Some("t".into()),
-                    project_id: Some("p".into()),
-                    milestone_id: None,
-                    prerequisite_id: None,
-                    explanation: "Review a calendar proposal".into(),
-                    requires_confirmation: true,
-                    mutates_authority: true,
-                    reviewed_revision: 11,
-                },
-            ],
-            notices: vec!["No mutation without approval".into()],
-        }
-    }
     fn preview(operation: PreviewOperation, confirmation: bool) -> PlanningHandoff {
         PlanningHandoff {
             revision: 11,
@@ -1392,14 +1195,6 @@ mod action_handoff_terminal_tests {
             authoritative_write_performed: false,
             notes: vec!["No authoritative write occurred".into()],
         }
-    }
-    #[test]
-    fn menus_display_stable_one_based_indices() {
-        let lines = render_action_menu(&menu()).join("\n");
-        assert!(lines.contains("[1] InspectTask"));
-        assert!(lines.contains("[2] ReviewSchedule"));
-        assert!(lines.contains("approval required"));
-        assert!(lines.contains("No mutation without approval"));
     }
     #[test]
     fn calendar_approval_handoff_is_visibly_non_executing() {

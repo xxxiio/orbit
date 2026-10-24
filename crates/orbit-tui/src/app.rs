@@ -1,6 +1,8 @@
 //! Project-centric application state. All mutations go through the local/connected backend;
 //! this module owns navigation, focus, prompts and presentation state only.
-use crate::backend::{Backend, MutationOutcome};
+use crate::backend::{Backend, MutationOutcome, PendingCommand};
+use crate::connected_actions;
+use crate::connected_ops;
 use crate::planning_ui;
 use crate::theme::Theme;
 use orbit_blueprint::{Blueprint, FieldKind};
@@ -293,6 +295,14 @@ pub enum PendingAction {
     DiscardFormChanges {
         form: Box<FormState>,
     },
+    /// Queue one reviewed connected intention (PENDING, never accepted).
+    QueueIntent {
+        intent: connected_actions::Intent,
+    },
+    /// Stage a reviewed connected batch in one replica transaction.
+    QueueBatch {
+        intents: Vec<connected_actions::Intent>,
+    },
 }
 
 /// Ordered acceptance criteria for one task, with a selectable row.
@@ -350,6 +360,37 @@ pub struct ActivityModal {
     pub scroll: u16,
 }
 
+/// Read-only conflict facts plus the user's proposed replacement command.
+///
+/// The review token is mandatory before anything can be queued: a modal with
+/// `review: None` is a fail-closed display, not permission to replace.
+#[derive(Clone, Debug)]
+pub struct ConflictModal {
+    pub command_id: String,
+    pub review_lines: Vec<String>,
+    pub replacement: String,
+    pub error: Option<String>,
+    pub review: Option<orbit_client::authority::ConflictReview>,
+}
+
+/// What a console submission resolved to. The shell applies it because the
+/// modal itself is temporarily moved out of `App` while keys are dispatched.
+#[derive(Clone, Debug)]
+pub enum ConsoleOutcome {
+    /// Read-only command output (sync status, note search, ...).
+    Lines(Vec<String>),
+    /// Rejected input; nothing was queued and the text is preserved.
+    Error(String),
+    /// A validated mutation that still needs explicit confirmation.
+    Confirm {
+        title: String,
+        body: String,
+        pending: PendingAction,
+    },
+    /// An explicit conflict review; the replacement is only queued on Enter.
+    Conflict(Box<ConflictModal>),
+}
+
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)] // Modals are short-lived and moved, never stored in bulk.
 pub enum Modal {
@@ -393,6 +434,30 @@ pub enum Modal {
         title: String,
         lines: Vec<String>,
     },
+    /// Durable queued intentions, never accepted records.
+    Pending {
+        rows: Vec<PendingCommand>,
+        selected: usize,
+        detail: String,
+        detail_scroll: usize,
+    },
+    /// Snapshot-bound review of one rejected command plus a replacement input.
+    Conflict {
+        command_id: String,
+        review_lines: Vec<String>,
+        replacement: String,
+        error: Option<String>,
+        /// `None` fails closed: Enter cannot queue without a reviewed conflict.
+        review: Option<orbit_client::authority::ConflictReview>,
+    },
+    /// Connected command console; queued intentions need confirmation.
+    Console {
+        input: String,
+        suggestions: Vec<String>,
+        selected: usize,
+        output: Vec<String>,
+        error: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -420,8 +485,15 @@ pub enum PaletteAction {
     OpenView(usize),
     Execute(AvailableAction),
     Form(FormMode),
-    SelectItem { component: usize, index: usize },
+    SelectItem {
+        component: usize,
+        index: usize,
+    },
     OpenKnowledge(String),
+    /// Inspect the durable pending/conflicted command list.
+    Pending,
+    /// Open the connected command console.
+    Console,
     Quit,
 }
 
@@ -486,6 +558,9 @@ pub struct App {
     pub planning_hours: i64,
     pub planning_project: Option<String>,
     pub today_action_menu: Option<(WorkBrief, PlanningActionMenu)>,
+    /// Snapshot-bound `plan.review` result awaiting the exact
+    /// `plan.approve --confirm`. A changed accepted revision refuses approval.
+    pub pending_scenario: Option<orbit_runtime::scenario_execution::ScenarioExecutionReview>,
     pub viewport_width: u16,
     /// A saved session could not be restored because the authority view never
     /// loaded. Navigation intent from the previous file is preserved until the
@@ -558,6 +633,7 @@ impl App {
             planning_hours: 12,
             planning_project: None,
             today_action_menu: None,
+            pending_scenario: None,
             viewport_width: 120,
             restore_skipped: false,
             history: Vec::new(),
@@ -595,6 +671,12 @@ impl App {
             &self.modal,
             Some(Modal::Palette { query, .. }) | Some(Modal::Search { query, .. })
                 if !query.trim().is_empty()
+        ) || matches!(
+            &self.modal,
+            Some(Modal::Console { input, .. }) if !input.trim().is_empty()
+        ) || matches!(
+            &self.modal,
+            Some(Modal::Conflict { replacement, .. }) if !replacement.trim().is_empty()
         )
     }
 
@@ -845,7 +927,7 @@ impl App {
                         heading: "Connected agent monitoring".into(),
                         lines: vec![
                             "Accepted agent jobs are not projected into the connected snapshot yet.".into(),
-                            "Inspection and review use the legacy connected command surface (`ORBIT_TUI_LEGACY_CONNECTED=1`).".into(),
+                            "Inspection and review use the shared shell: press `:` and choose Connected commands, or `!` for queued intentions.".into(),
                         ],
                     };
                     component.status =
@@ -2228,6 +2310,24 @@ impl App {
                 true,
             ));
         }
+        if self.client.is_connected() {
+            entries.push(entry(
+                "Pending commands".into(),
+                format!(
+                    "{} queued intention(s); none accepted yet — press ! to inspect",
+                    self.client.pending_count()
+                ),
+                PaletteAction::Pending,
+                true,
+            ));
+            entries.push(entry(
+                "Connected commands…".into(),
+                "Queue schedule, routine, milestone, strategy, habit, metric or note commands (PENDING)"
+                    .into(),
+                PaletteAction::Console,
+                true,
+            ));
+        }
         entries.push(entry(
             "Keyboard help".into(),
             "Show all navigation and action keys".into(),
@@ -2461,6 +2561,14 @@ impl App {
                 } else {
                     self.notify("Knowledge note not found", StatusKind::Warning);
                 }
+                false
+            }
+            PaletteAction::Pending => {
+                self.open_pending();
+                false
+            }
+            PaletteAction::Console => {
+                self.open_connected_console();
                 false
             }
             PaletteAction::Quit => return true,
@@ -3093,6 +3201,51 @@ impl App {
                 self.notify("Unsaved changes discarded", StatusKind::Info);
                 let _ = form;
             }
+            PendingAction::QueueIntent { intent } => {
+                match self.client.queue_connected_intent(
+                    &intent.description,
+                    intent.kind,
+                    &intent.action,
+                ) {
+                    Ok(command_id) => {
+                        let (message, kind) = self.mutation_status(format!(
+                            "{} queued as {command_id} (PENDING; not accepted; press ! to inspect)",
+                            intent.description
+                        ));
+                        self.notify(message, kind);
+                    }
+                    Err(error) => self.notify(
+                        format!("Queueing {} failed: {error}", intent.description),
+                        StatusKind::Error,
+                    ),
+                }
+            }
+            PendingAction::QueueBatch { intents } => {
+                let total = intents.len();
+                let commands: Vec<_> = intents
+                    .iter()
+                    .enumerate()
+                    .map(|(index, intent)| {
+                        (
+                            format!("{}-{index}", crate::backend::next_command_id()),
+                            intent.kind,
+                            intent.action.clone(),
+                        )
+                    })
+                    .collect();
+                match self.client.queue_connected_batch(&commands) {
+                    Ok(inserted) => {
+                        let (message, kind) = self.mutation_status(format!(
+                            "Staged {inserted}/{total} pending intention(s) in one transaction (PENDING; not accepted; press ! to inspect)"
+                        ));
+                        self.notify(message, kind);
+                    }
+                    Err(error) => self.notify(
+                        format!("{error}. No new commands were queued."),
+                        StatusKind::Error,
+                    ),
+                }
+            }
             PendingAction::ApplyPlan => {
                 let Some(plan) = self.pending_plan.clone() else {
                     self.notify("No pending plan", StatusKind::Warning);
@@ -3117,6 +3270,490 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Open the pending-command inspector. Connected deployments only: the
+    /// local authority commits synchronously and has no outbox.
+    pub fn open_pending(&mut self) {
+        if !self.client.is_connected() {
+            self.notify(
+                "Pending command inspection requires a connected replica; the local authority commits synchronously",
+                StatusKind::Warning,
+            );
+            return;
+        }
+        match self.client.pending_commands() {
+            Ok(rows) => {
+                let detail = rows
+                    .first()
+                    .map(|row| self.pending_detail_text(&row.id))
+                    .unwrap_or_else(empty_pending_detail);
+                self.modal = Some(Modal::Pending {
+                    rows,
+                    selected: 0,
+                    detail,
+                    detail_scroll: 0,
+                });
+                self.notify(
+                    "Queued intent only: [pending] and [conflict] rows are never accepted data",
+                    StatusKind::Info,
+                );
+            }
+            Err(error) => self.notify(
+                format!("Pending commands unavailable: {error}"),
+                StatusKind::Error,
+            ),
+        }
+    }
+
+    pub(crate) fn pending_detail_text(&self, id: &str) -> String {
+        self.client
+            .pending_command_detail(id)
+            .unwrap_or_else(|error| format!("Detail unavailable: {error}"))
+    }
+
+    /// Flush queued commands, then report each one's durable state. Refresh
+    /// never promotes an unacknowledged command: anything still pending or
+    /// rejected keeps its row and its warning.
+    ///
+    /// The caller owns the open modal, so this returns the refreshed rows and
+    /// the detail text for the first row instead of mutating `self.modal`.
+    pub fn pending_flush_report(&mut self, ids: &[String]) -> (Vec<PendingCommand>, String) {
+        let (message, mut kind) = match self.client.flush_pending() {
+            Ok((message, blocked)) => (
+                message,
+                if blocked {
+                    StatusKind::Warning
+                } else {
+                    StatusKind::Success
+                },
+            ),
+            Err(error) => (
+                format!("Flush failed: {}", error.message),
+                StatusKind::Error,
+            ),
+        };
+        let outcomes: Vec<String> = ids
+            .iter()
+            .map(|id| match self.client.command_outcome(id) {
+                MutationOutcome::Accepted => format!("{id}: accepted"),
+                MutationOutcome::Pending { state, .. } => format!("{id}: pending ({state})"),
+                MutationOutcome::Conflict { reason, .. } => format!("{id}: rejected — {reason}"),
+            })
+            .collect();
+        if kind == StatusKind::Success
+            && outcomes
+                .iter()
+                .any(|line| line.contains("pending") || line.contains("rejected"))
+        {
+            kind = StatusKind::Warning;
+        }
+        let uploads = self.client.pending_attachment_count().unwrap_or_default();
+        let mut text = message;
+        if !outcomes.is_empty() {
+            text.push_str(&format!(" | {}", outcomes.join("; ")));
+        }
+        if uploads > 0 {
+            text.push_str(&format!(
+                " | {uploads} staged attachment upload(s) still pending"
+            ));
+        }
+        let rows = self.client.pending_commands().unwrap_or_default();
+        let detail = rows
+            .first()
+            .map(|row| self.pending_detail_text(&row.id))
+            .unwrap_or_else(empty_pending_detail);
+        self.notify(text, kind);
+        (rows, detail)
+    }
+
+    fn conflict_review_lines(
+        &self,
+        review: &orbit_client::authority::ConflictReview,
+    ) -> Vec<String> {
+        vec![
+            format!("Command: {} ({})", review.rejected_id, review.kind),
+            format!("Local intent (NOT accepted): {}", review.rejected_action),
+            format!("Outbox position: {}", review.ordinal),
+            format!("Accepted server revision: {}", review.accepted_revision),
+            format!("Accepted history: {}", review.history_fingerprint),
+            String::new(),
+            "This command was REJECTED by the authority, not accepted.".into(),
+            "Nothing is rebased automatically. A replacement is separate pending intent; the rejected audit row is retained."
+                .into(),
+        ]
+    }
+
+    /// Snapshot-bound conflict review. When the review cannot be established the
+    /// modal still opens, but with `review: None`, so Enter refuses to queue.
+    fn build_conflict_state(&mut self, id: &str, replacement: String) -> ConflictModal {
+        match self.client.review_connected_conflict(id) {
+            Ok(review) => {
+                let mut review_lines = self.conflict_review_lines(&review);
+                if let Ok(detail) = self.client.pending_command_detail(id) {
+                    review_lines.push(String::new());
+                    review_lines.push("Recorded command state:".into());
+                    review_lines.extend(detail.lines().map(str::to_owned));
+                }
+                ConflictModal {
+                    command_id: id.to_owned(),
+                    review_lines,
+                    replacement,
+                    error: None,
+                    review: Some(review),
+                }
+            }
+            Err(error) => ConflictModal {
+                command_id: id.to_owned(),
+                review_lines: vec![
+                    format!("Command: {id}"),
+                    format!("Conflict review unavailable: {error}"),
+                    String::new(),
+                    "This command is rejected, not accepted; its pending row is preserved.".into(),
+                    "No replacement can be queued without a reviewed conflict (fail closed)."
+                        .into(),
+                ],
+                replacement,
+                error: Some("conflict review unavailable".into()),
+                review: None,
+            },
+        }
+    }
+
+    pub fn open_conflict(&mut self, id: &str) {
+        self.modal_scroll = 0;
+        let state = self.build_conflict_state(id, String::new());
+        let reviewed = state.review.is_some();
+        self.modal = Some(Modal::Conflict {
+            command_id: state.command_id,
+            review_lines: state.review_lines,
+            replacement: state.replacement,
+            error: state.error,
+            review: state.review,
+        });
+        self.notify(
+            if reviewed {
+                "Rejected command review: nothing has been accepted or auto-rebased"
+            } else {
+                "Conflict review failed; no replacement can be queued"
+            },
+            if reviewed {
+                StatusKind::Warning
+            } else {
+                StatusKind::Error
+            },
+        );
+    }
+
+    /// Validate and queue the replacement in a conflict review. Requires the
+    /// review token: no review means no queue (fail closed).
+    pub fn resolve_conflict(
+        &mut self,
+        command_id: &str,
+        review: Option<&orbit_client::authority::ConflictReview>,
+        replacement: &str,
+    ) -> Result<(String, StatusKind), String> {
+        let Some(review) = review else {
+            return Err(
+                "No reviewed conflict; replacement refused. The original pending command is preserved."
+                    .into(),
+            );
+        };
+        if replacement.trim().is_empty() {
+            return Err(
+                "Enter a replacement command, or press Esc to keep the rejected command unchanged"
+                    .into(),
+            );
+        }
+        let replacement_id = crate::backend::next_command_id();
+        let intent = connected_actions::parse_intent(replacement, &replacement_id)
+            .map_err(|error| format!("Replacement rejected; nothing was queued: {error}"))?;
+        self.client
+            .resolve_connected_conflict(review, &replacement_id, intent.kind, &intent.action)
+            .map_err(|error| {
+                format!("Conflict replacement rejected; the original command is preserved: {error}")
+            })?;
+        Ok(self.mutation_status(format!(
+            "{command_id} replaced by {replacement_id} (PENDING; not accepted); the rejected audit row is retained"
+        )))
+    }
+
+    /// Open the connected command console. Local deployments have no outbox or
+    /// connected transport, so the entry stays absent there.
+    pub fn open_connected_console(&mut self) {
+        if !self.client.is_connected() {
+            self.notify(
+                "Connected commands require a connected deployment; local edits use the normal forms",
+                StatusKind::Warning,
+            );
+            return;
+        }
+        self.modal_scroll = 0;
+        self.modal = Some(Modal::Console {
+            input: String::new(),
+            suggestions: self.console_suggestions(""),
+            selected: 0,
+            output: vec![
+                "Connected commands queue PENDING intentions; nothing is accepted until the server acknowledges it."
+                    .into(),
+                "Read-only: sync.status · sync.observe · note.search <q> · note.sync · note.cached · note.show <id|path>"
+                    .into(),
+                "Read-only planning: plan.portfolio · plan.compare · plan.review · plan.focus <task> · plan.group --project <id>"
+                    .into(),
+                "Approval: plan.review first, then plan.approve --confirm at the same accepted revision".into(),
+            ],
+            error: None,
+        });
+    }
+
+    /// Filter the shared command grammar for the console suggestion list.
+    pub fn console_suggestions(&self, query: &str) -> Vec<String> {
+        let prefix = query
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_lowercase();
+        let mut seen = std::collections::BTreeSet::new();
+        console_commands()
+            .into_iter()
+            .filter(|command| seen.insert(*command))
+            .filter(|command| prefix.is_empty() || command.to_lowercase().contains(&prefix))
+            .take(12)
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// Resolve one console line. Read-only commands return output immediately;
+    /// mutations come back as a confirmation so nothing is queued on Enter
+    /// alone. Invalid input never queues anything.
+    pub fn console_run(&mut self, source: &str) -> ConsoleOutcome {
+        let source = source.trim();
+        if source.is_empty() {
+            return ConsoleOutcome::Error("Enter a command or press Esc to close".into());
+        }
+        match source {
+            "sync.status" => {
+                return ConsoleOutcome::Lines(vec![
+                    self.client
+                        .connected_sync_report()
+                        .unwrap_or_else(|error| format!("Sync status unavailable: {error}")),
+                ]);
+            }
+            "note.sync" => {
+                return ConsoleOutcome::Lines(match self.client.connected_sync_notes() {
+                    Ok(message) => vec![message],
+                    Err(error) => vec![format!(
+                        "Note synchronization failed; previous accepted mirror preserved: {error}"
+                    )],
+                });
+            }
+            "note.cached" => {
+                return ConsoleOutcome::Lines(match self.client.connected_cached_notes() {
+                    Ok(lines) => lines,
+                    Err(error) => vec![format!("Cached notes unavailable: {error}")],
+                });
+            }
+            _ => {}
+        }
+        if let Some(query) = source.strip_prefix("note.search ") {
+            return match self.client.connected_notes_search(query.trim()) {
+                Ok(lines) => ConsoleOutcome::Lines(lines),
+                Err(error) => ConsoleOutcome::Lines(vec![format!("Note search failed: {error}")]),
+            };
+        }
+        // Read-only planning analyses, context views, note reads, live sync
+        // observation and explicit scenario approval. Parsing is pure and
+        // revision-fenced; only `plan.approve --confirm` can write.
+        let accepted_revision = if source
+            .split_whitespace()
+            .next()
+            .is_some_and(|op| op.starts_with("plan.") && op != "plan.approve")
+        {
+            self.client.accepted_revision().ok()
+        } else {
+            None
+        };
+        match connected_ops::parse(
+            source,
+            now_ms(),
+            accepted_revision,
+            &crate::backend::next_command_id(),
+        ) {
+            Ok(Some(command)) => return self.console_run_connected(command),
+            Ok(None) => {}
+            Err(error) => return ConsoleOutcome::Error(error),
+        }
+        if let Some(script) = source.strip_prefix("batch ") {
+            return match connected_actions::parse_batch(script, crate::backend::next_command_id) {
+                Ok(intents) => ConsoleOutcome::Confirm {
+                    title: "Queue connected batch".into(),
+                    body: format!(
+                        "{}\n\nNothing is accepted: every command is queued PENDING in the durable outbox and the accepted workspace stays unchanged.",
+                        connected_actions::batch_preview(&intents).join("\n")
+                    ),
+                    pending: PendingAction::QueueBatch { intents },
+                },
+                Err(error) => {
+                    ConsoleOutcome::Error(format!("Batch rejected; no command was queued: {error}"))
+                }
+            };
+        }
+        if let Some(tail) = source.strip_prefix("resolve ") {
+            let mut parts = tail.splitn(2, ' ');
+            let id = parts.next().unwrap_or_default().trim();
+            let replacement = parts.next().unwrap_or_default().trim();
+            if id.is_empty() || replacement.is_empty() {
+                return ConsoleOutcome::Error(
+                    "usage: resolve <rejected-command-id> <replacement-command>".into(),
+                );
+            }
+            if let Err(error) =
+                connected_actions::parse_intent(replacement, &crate::backend::next_command_id())
+            {
+                return ConsoleOutcome::Error(format!(
+                    "Replacement rejected; nothing was queued: {error}"
+                ));
+            }
+            let state = self.build_conflict_state(id, replacement.to_owned());
+            return ConsoleOutcome::Conflict(Box::new(state));
+        }
+        match connected_actions::parse_intent(source, &crate::backend::next_command_id()) {
+            Ok(intent) => ConsoleOutcome::Confirm {
+                title: "Queue connected command".into(),
+                body: format!(
+                    "{}.\n\nThis is queued PENDING in the durable outbox — not accepted. The accepted workspace does not change until the server acknowledges it.",
+                    intent.description
+                ),
+                pending: PendingAction::QueueIntent { intent },
+            },
+            Err(error) => ConsoleOutcome::Error(error),
+        }
+    }
+
+    /// Apply one parsed [`connected_ops::Command`]. Read-only commands return
+    /// output immediately; approval consumes the reviewed scenario and reports
+    /// the authoritative receipt. Nothing here queues an intention.
+    fn console_run_connected(&mut self, command: connected_ops::Command) -> ConsoleOutcome {
+        use connected_ops::Command;
+        match command {
+            Command::Portfolio(request) => match self.client.connected_portfolio(&request) {
+                Ok(report) => ConsoleOutcome::Lines(planning_ui::render_portfolio(&report)),
+                Err(error) => ConsoleOutcome::Error(format!("Cannot inspect portfolio: {error}")),
+            },
+            Command::Compare(request) => match self.client.connected_scenario_compare(&request) {
+                Ok(report) => ConsoleOutcome::Lines(planning_ui::render_scenarios(&report)),
+                Err(error) => {
+                    ConsoleOutcome::Error(format!("Cannot compare planning alternatives: {error}"))
+                }
+            },
+            Command::Review(request) => match self.client.connected_scenario_review(&request) {
+                Ok(review) => {
+                    let mut lines = planning_ui::render_scenario_review(&review);
+                    lines.push(String::new());
+                    lines.push(
+                        "Approve these exact slots with: plan.approve --confirm (any revision change requires a new review)"
+                            .into(),
+                    );
+                    self.pending_scenario = Some(review);
+                    ConsoleOutcome::Lines(lines)
+                }
+                Err(error) => {
+                    // A refused review leaves nothing approvable behind.
+                    self.pending_scenario = None;
+                    ConsoleOutcome::Error(format!("Scenario review rejected: {error}"))
+                }
+            },
+            Command::Approve => {
+                // Consume the review either way: a stale or refused approval
+                // must not be retried without a fresh review.
+                let review = self.pending_scenario.take();
+                match (review, self.client.accepted_revision()) {
+                    (None, _) => ConsoleOutcome::Error(
+                        "No reviewed scenario is awaiting approval; use plan.review first".into(),
+                    ),
+                    (Some(_), Err(error)) => ConsoleOutcome::Error(format!(
+                        "Approval requires the accepted revision: {error}"
+                    )),
+                    (Some(review), Ok(revision)) => {
+                        match connected_ops::approve_request(Some(&review), revision) {
+                            Ok(request) => {
+                                match self.client.connected_apply_approved_schedule(&request) {
+                                    Ok(receipt) => {
+                                        ConsoleOutcome::Lines(vec![connected_ops::receipt_line(
+                                            &receipt,
+                                        )])
+                                    }
+                                    Err(error) => ConsoleOutcome::Error(format!(
+                                        "{error}; no retry without a fresh review"
+                                    )),
+                                }
+                            }
+                            Err(error) => ConsoleOutcome::Error(error),
+                        }
+                    }
+                }
+            }
+            Command::FocusTask(request) => match self.task_focus_lines(request.task_id) {
+                Ok(lines) => ConsoleOutcome::Lines(lines),
+                Err(error) => ConsoleOutcome::Error(format!("Task context unavailable: {error}")),
+            },
+            Command::FocusGroup(request) => {
+                match self.project_focus_lines(request.project_id, request.milestone_id) {
+                    Ok(lines) => ConsoleOutcome::Lines(lines),
+                    Err(error) => {
+                        ConsoleOutcome::Error(format!("Project context unavailable: {error}"))
+                    }
+                }
+            }
+            Command::NoteShow(target) => match self.client.connected_note_show(&target) {
+                Ok(lines) => ConsoleOutcome::Lines(lines),
+                Err(error) => ConsoleOutcome::Error(format!("Note read failed: {error}")),
+            },
+            Command::ObserveSync => match self.client.connected_observe_sync_report() {
+                Ok(line) => ConsoleOutcome::Lines(vec![line]),
+                Err(error) => ConsoleOutcome::Error(error),
+            },
+        }
+    }
+
+    /// Read-only accepted task focus shared by `v` and `plan.focus`.
+    fn task_focus_lines(&mut self, task_id: String) -> Result<Vec<String>, String> {
+        let request = planning_ui::request(now_ms(), self.planning_hours, 100, None)?;
+        let brief = self.client.work_brief(&request).map_err(|e| e.message)?;
+        let focus = self
+            .client
+            .planning_focus(
+                &brief,
+                &orbit_runtime::planning_focus::FocusRequest {
+                    task_id,
+                    max_neighbors: 12,
+                },
+            )
+            .map_err(|e| e.message)?;
+        Ok(planning_ui::render_focus(&focus))
+    }
+
+    /// Read-only accepted project focus shared by `G` and `plan.group`.
+    fn project_focus_lines(
+        &mut self,
+        project_id: String,
+        milestone_id: Option<String>,
+    ) -> Result<Vec<String>, String> {
+        let request =
+            planning_ui::request(now_ms(), self.planning_hours, 100, Some(project_id.clone()))?;
+        let brief = self.client.work_brief(&request).map_err(|e| e.message)?;
+        let group = self
+            .client
+            .planning_group(
+                &brief,
+                &orbit_runtime::planning_focus::GroupFocusRequest {
+                    project_id,
+                    milestone_id,
+                    max_tasks: 12,
+                },
+            )
+            .map_err(|e| e.message)?;
+        Ok(planning_ui::render_group_focus(&group))
     }
 
     pub fn preview_plan(&mut self) {
@@ -3202,21 +3839,7 @@ impl App {
             self.notify("Select a task first", StatusKind::Warning);
             return;
         };
-        let result = (|| -> Result<Vec<String>, String> {
-            let request = planning_ui::request(now_ms(), self.planning_hours, 100, None)?;
-            let brief = self.client.work_brief(&request).map_err(|e| e.message)?;
-            let focus = self
-                .client
-                .planning_focus(
-                    &brief,
-                    &orbit_runtime::planning_focus::FocusRequest {
-                        task_id,
-                        max_neighbors: 12,
-                    },
-                )
-                .map_err(|error| error.message)?;
-            Ok(planning_ui::render_focus(&focus))
-        })();
+        let result = self.task_focus_lines(task_id);
         match result {
             Ok(lines) => {
                 self.modal = Some(Modal::Message {
@@ -3391,21 +4014,7 @@ impl App {
                 .and_then(|row| row.project_id.clone())
                 .or_else(|| self.planning_project.clone())
                 .ok_or("Select a task assigned to a project, or filter Today by project")?;
-            let request =
-                planning_ui::request(now_ms(), self.planning_hours, 100, Some(project_id.clone()))?;
-            let brief = self.client.work_brief(&request).map_err(|e| e.message)?;
-            let group = self
-                .client
-                .planning_group(
-                    &brief,
-                    &orbit_runtime::planning_focus::GroupFocusRequest {
-                        project_id,
-                        milestone_id: None,
-                        max_tasks: 12,
-                    },
-                )
-                .map_err(|e| e.message)?;
-            Ok(planning_ui::render_group_focus(&group))
+            self.project_focus_lines(project_id, None)
         })();
         match result {
             Ok(lines) => {
@@ -4358,7 +4967,7 @@ impl App {
             FormMode::NewWorkItemKind { project_id } => {
                 if self.client.is_connected() {
                     self.notify(
-                        "Work-item creation requires the connected command surface",
+                        "Work-item creation requires the connected console (`:`, then Connected commands)",
                         StatusKind::Warning,
                     );
                     return None;
@@ -5047,7 +5656,7 @@ impl App {
         if self.client.is_connected() {
             if !Self::form_value(form, "objective").trim().is_empty() {
                 return Err(
-                    "connected mode cannot queue project objectives yet; create the project, then use the connected command surface"
+                    "connected mode cannot queue project objectives yet; create the project, then use the connected console (`:`, then Connected commands)"
                         .into(),
                 );
             }
@@ -5736,6 +6345,41 @@ fn has_word_start(haystack: &str, needle: &str) -> bool {
                 .is_none_or(|character| !character.is_alphanumeric());
         before_is_boundary && haystack[index..].starts_with(needle)
     })
+}
+
+/// Placeholder detail text: an empty inspector proves nothing was queued.
+fn empty_pending_detail() -> String {
+    "No pending commands. Nothing is queued and nothing was accepted by this view.".into()
+}
+
+/// Every command template the connected console accepts, without descriptions.
+/// The grammar itself stays in `connected_actions`.
+fn console_commands() -> Vec<&'static str> {
+    let mut commands = vec![
+        "batch <command; command>",
+        "resolve <rejected-command-id> <replacement-command>",
+        "sync.status",
+        "sync.observe",
+        "note.search <query>",
+        "note.show <note-id|path.md>",
+        "note.sync",
+        "note.cached",
+        "plan.portfolio [--limit N] [--project ID]",
+        "plan.compare [--minutes N] [--pin ID] [--exclude ID] [--alt-minutes N]",
+        "plan.review [--hours N] [--baseline]",
+        "plan.approve --confirm",
+        "plan.focus <task-id>",
+        "plan.group --project <id> [--milestone <id>]",
+    ];
+    for section in connected_actions::Section::ALL {
+        for line in connected_actions::help(section) {
+            let command = line.split(" — ").next().unwrap_or(line).trim();
+            if !command.is_empty() {
+                commands.push(command);
+            }
+        }
+    }
+    commands
 }
 
 fn is_subsequence(haystack: &str, needle: &str) -> bool {

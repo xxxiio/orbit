@@ -68,7 +68,7 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
     let summary = if app.client.is_connected() {
         Some((
             format!(
-                "   CONNECTED{}{} · {} projects · {} pending",
+                "   CONNECTED{}{} · {} projects · {} pending · ! inspect",
                 if app.workspace_error.is_some() {
                     " [offline/stale]"
                 } else {
@@ -1963,8 +1963,13 @@ fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
     // truncated; a key reminder is only added when it fits beside it.
     let used = quit.chars().count() + app.status.text.chars().count() + 2;
     let room = width.saturating_sub(used);
-    let hint = [status_hint(app, rows[1].width), short_status_hint(app)]
+    let connected_hint = app
+        .client
+        .is_connected()
+        .then_some("! pending · f flush · : commands");
+    let hint = connected_hint
         .into_iter()
+        .chain([status_hint(app, rows[1].width), short_status_hint(app)])
         .find(|text| text.chars().count() + 3 <= room);
     let mut spans = vec![
         Span::styled(quit, style),
@@ -2492,6 +2497,220 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                 inner,
             );
         }
+        Modal::Pending {
+            rows,
+            selected,
+            detail,
+            detail_scroll,
+        } => {
+            let block = modal_block(
+                &format!("Pending commands · {} queued (not accepted)", rows.len()),
+                app,
+            );
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(3),
+                    Constraint::Length(6),
+                    Constraint::Length(1),
+                ])
+                .split(inner);
+            let items = if rows.is_empty() {
+                vec![ListItem::new(Line::from(Span::styled(
+                    "No pending commands. Nothing is queued.",
+                    app.theme.muted(),
+                )))]
+            } else {
+                rows.iter()
+                    .enumerate()
+                    .map(|(index, row)| {
+                        let is_selected = index == *selected;
+                        let tag = if row.conflict {
+                            "[conflict]"
+                        } else {
+                            "[pending]"
+                        };
+                        ListItem::new(Line::from(vec![
+                            Span::styled(
+                                if is_selected { "▸ " } else { "  " },
+                                if is_selected {
+                                    app.theme.accent()
+                                } else {
+                                    app.theme.muted()
+                                },
+                            ),
+                            Span::styled(tag, app.theme.warning()),
+                            Span::styled(
+                                format!(" {:<10}", truncate_ellipsis(&row.kind, 10)),
+                                app.theme.muted(),
+                            ),
+                            Span::styled(
+                                row.summary.clone(),
+                                if is_selected {
+                                    app.theme.selected()
+                                } else {
+                                    app.theme.text()
+                                },
+                            ),
+                        ]))
+                    })
+                    .collect()
+            };
+            render_selectable_list(frame, chunks[0], items, *selected);
+            frame.render_widget(
+                Paragraph::new(detail.clone())
+                    .wrap(Wrap { trim: false })
+                    .scroll(((*detail_scroll).min(u16::MAX as usize) as u16, 0)),
+                chunks[1],
+            );
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    "f flush · c review conflict · Enter detail · r refresh · Esc close · queued ≠ accepted",
+                    app.theme.muted(),
+                ))),
+                chunks[2],
+            );
+        }
+        Modal::Conflict {
+            review_lines,
+            replacement,
+            error,
+            ..
+        } => {
+            let block = modal_block("Conflict review · rejected, not accepted", app);
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(5),
+                    Constraint::Length(2),
+                    Constraint::Length(1),
+                ])
+                .split(inner);
+            frame.render_widget(
+                Paragraph::new(
+                    review_lines
+                        .iter()
+                        .cloned()
+                        .map(Line::from)
+                        .collect::<Vec<_>>(),
+                )
+                .wrap(Wrap { trim: false })
+                .scroll((app.modal_scroll.min(u16::MAX as usize) as u16, 0)),
+                chunks[0],
+            );
+            let input = Line::from(vec![
+                Span::styled("> replacement: ", app.theme.accent()),
+                Span::styled(replacement.clone(), app.theme.title()),
+                Span::styled("_", app.theme.muted()),
+            ]);
+            let message = error
+                .clone()
+                .map(|error| Span::styled(error, app.theme.danger()))
+                .unwrap_or_else(|| {
+                    Span::styled(
+                        "A replacement is new pending intent, never an accepted change.",
+                        app.theme.muted(),
+                    )
+                });
+            frame.render_widget(
+                Paragraph::new(vec![input, Line::from(message)]).wrap(Wrap { trim: false }),
+                chunks[1],
+            );
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    "Enter validate + queue PENDING replacement · Ctrl+U clear · Esc cancel (original kept)",
+                    app.theme.muted(),
+                ))),
+                chunks[2],
+            );
+        }
+        Modal::Console {
+            input,
+            suggestions,
+            selected,
+            output,
+            error,
+        } => {
+            let block = modal_block("Connected commands · queued intents are PENDING", app);
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(2),
+                    Constraint::Min(3),
+                    Constraint::Length(7),
+                    Constraint::Length(1),
+                ])
+                .split(inner);
+            let mut prompt = vec![Line::from(vec![
+                Span::styled("> ", app.theme.accent()),
+                Span::styled(input.clone(), app.theme.title()),
+                Span::styled("_", app.theme.muted()),
+            ])];
+            prompt.push(Line::from(Span::styled(
+                error
+                    .clone()
+                    .unwrap_or_else(|| "Enter validates · Tab fills a suggestion".into()),
+                if error.is_some() {
+                    app.theme.danger()
+                } else {
+                    app.theme.muted()
+                },
+            )));
+            frame.render_widget(Paragraph::new(prompt).wrap(Wrap { trim: false }), chunks[0]);
+            let output = output
+                .iter()
+                .rev()
+                .take(usize::from(chunks[1].height).max(1))
+                .rev()
+                .cloned()
+                .map(Line::from)
+                .collect::<Vec<_>>();
+            frame.render_widget(
+                Paragraph::new(output)
+                    .wrap(Wrap { trim: false })
+                    .scroll((app.modal_scroll.min(u16::MAX as usize) as u16, 0)),
+                chunks[1],
+            );
+            let items = suggestions
+                .iter()
+                .enumerate()
+                .map(|(index, suggestion)| {
+                    let is_selected = index == *selected;
+                    ListItem::new(Line::from(vec![
+                        Span::styled(
+                            if is_selected { "▸ " } else { "  " },
+                            if is_selected {
+                                app.theme.accent()
+                            } else {
+                                app.theme.muted()
+                            },
+                        ),
+                        Span::styled(
+                            suggestion.clone(),
+                            if is_selected {
+                                app.theme.selected()
+                            } else {
+                                app.theme.muted()
+                            },
+                        ),
+                    ]))
+                })
+                .collect::<Vec<_>>();
+            render_selectable_list(frame, chunks[2], items, *selected);
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    "Enter run · Tab fill · ↑/↓ suggest · Ctrl+U clear · Esc close · nothing is accepted on queue",
+                    app.theme.muted(),
+                ))),
+                chunks[3],
+            );
+        }
     }
 }
 
@@ -2870,6 +3089,8 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
         Line::from("/                 search"),
         Line::from("r                 refresh accepted data"),
         Line::from("f                 connected mode: flush pending commands"),
+        Line::from("!                 connected mode: inspect pending and rejected commands"),
+        Line::from(": Connected commands…  queue schedule/routine/note commands (PENDING)"),
         Line::from("D                 toggle details"),
         Line::from("?                 this help"),
         Line::from("q                 quit when not typing in a field"),
@@ -3021,6 +3242,11 @@ fn modal_size(area: Rect, modal: &Modal) -> (u16, u16) {
         Modal::Activity(state) => (state.items.len() as u16 + 8)
             .min(area.height.saturating_sub(4))
             .max(10),
+        Modal::Pending { rows, .. } => (rows.len() as u16 + 12)
+            .min(area.height.saturating_sub(4))
+            .max(14),
+        Modal::Conflict { .. } => area.height.saturating_sub(4).clamp(14, 28),
+        Modal::Console { .. } => area.height.saturating_sub(4).clamp(14, 26),
         _ => 18,
     };
     (width, height)

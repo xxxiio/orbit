@@ -52,14 +52,21 @@ accepted project/task rows. Press `f` (or choose **Flush pending commands**) to
 submit the outbox, then `r` to load the accepted server state. Project/task
 creation and task status, rename, planning, scope, dependency, rich-detail and
 acceptance-criteria actions use this path. Connected project settings,
-workflow/work-item, habit, metric and note editing still report that they
-require the connected command surface.
+workflow/work-item, habit, metric and note editing are available through the
+**Connected commands** console: press `:` and choose *Connected commands…*.
+The console accepts the same canonical grammar as the shared shell, queues every
+write as **PENDING**, and never treats a queued intention as accepted state.
+
+Press `!` to open the pending and conflict inspector. It lists durable queued
+commands and staged uploads with their `pending`/`conflict` state, the canonical
+payload and any last error. `r` reloads the list, `f` submits the selected
+command and `c` opens a snapshot-bound conflict review; a replacement is only
+queued after `Enter` on that review. Rejected commands stay visible until you
+explicitly resolve or keep them.
 
 Multi-field connected edits can queue more than one intent. If the server rejects
-a later intent, earlier intents can remain queued; inspect the outbox with the
-legacy connected surface or CLI before retrying. For compatibility while connected parity is completed, set
-`ORBIT_TUI_LEGACY_CONNECTED=1` to launch the previous connected command palette.
-It remains server-authoritative and preserves the outbox.
+a later intent, earlier intents can remain queued; inspect the outbox with `!` or
+the CLI before retrying.
 
 ## First run and empty states
 
@@ -143,6 +150,8 @@ pinned workflow version or says `generated default`.
 | `/` | Search |
 | `r` | Refresh accepted data |
 | `f` | Connected mode: flush pending commands |
+| `!` | Connected mode: inspect pending and rejected commands |
+| `:` then *Connected commands…* | Connected command console (queued intentions, read-only status/notes/planning) |
 | `D` | Toggle details (wide) or open details (narrow) |
 | `?` | Keyboard help |
 | `q` | Quit from any non-text screen |
@@ -298,6 +307,24 @@ The palette includes:
 - bundled workflow install/apply;
 - refresh, help and quit.
 
+In connected mode the palette also lists **Pending commands** (the same list as
+`!`) and **Connected commands…**, which opens one console modal inside the
+shared shell. The console accepts:
+
+- write grammar for projects, tasks, habits, metrics, schedules, routines,
+  milestones, strategies, notes and folders, including `batch` and `resolve`;
+- read-only `sync.status`, `sync.observe`, `note.search`, `note.cached`,
+  `note.show <note-id|path.md>`, `plan.portfolio`, `plan.compare`,
+  `plan.review`, `plan.focus <task-id>` and
+  `plan.group --project <id> [--milestone <id>]`;
+- `plan.approve --confirm`, which applies exactly one previously reviewed
+  scenario. It fails closed without a review or when the accepted revision has
+  changed, and reports the authoritative receipt revision.
+
+Read-only console commands return output inline and never queue anything. Every
+write is shown for explicit confirmation and is queued as a durable **PENDING**
+intention; rejected commands stay inspectable in `!`.
+
 Actions are disabled with a reason when they are unavailable. A workflow can
 *mention* an action in presentation metadata, but that never enables it; the
 renderer derives the offer from the selected item and the application services.
@@ -351,12 +378,12 @@ Server-side attachment garbage collection is not exposed to clients, so the loca
 **Clean up unreferenced attachment content** action is unavailable in connected
 mode.
 
-Changing a project's workflow/work-item configuration still reports that it
-requires the connected command surface. Multi-field connected edits can queue
-more than one intent; if the server rejects a later intent, earlier intents can
-remain queued. For compatibility while connected parity is completed, set
-`ORBIT_TUI_LEGACY_CONNECTED=1` to launch the previous connected command palette.
-It remains server-authoritative and preserves the outbox.
+Changing a project's workflow/work-item configuration reports that it requires
+the connected console. Multi-field connected edits can queue more than one
+intent; if the server rejects a later intent, earlier intents can remain queued.
+Open `!` to inspect them, or run the connected console (`:` → *Connected
+commands…*) to queue the remaining changes. Nothing is accepted until the server
+acknowledges it.
 
 ## Agent monitoring
 
@@ -367,9 +394,9 @@ execution state: it does not complete the Orbit task. Review/resume is shown as
 a disabled action when no explicitly configured agent runtime or connected review
 service is available, with the reason visible. Starting or resuming an agent is
 never implicit. Connected mode does not yet project accepted agent jobs into the shared
-snapshot, so the Agents view says so explicitly. The legacy connected command
-surface remains available with `ORBIT_TUI_LEGACY_CONNECTED=1` for connected agent
-transport operations.
+snapshot, so the Agents view says so explicitly. Connected agent transport
+operations use the same **Connected commands** console (`:`); there is no
+separate connected presentation.
 
 ## Feedback and uncertainty
 

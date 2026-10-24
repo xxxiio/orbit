@@ -32,10 +32,19 @@ def test_shared_deployment_selection_is_used_by_client_adapters():
 
 
 def test_connected_tui_cannot_open_embedded_authority():
-    connected = source("crates/orbit-tui/src/connected.rs")
-    assert "AuthoritativeHost::open(" not in connected
-    assert "SqliteStore::open(" not in connected
-    assert "OrbitClient::open(" not in connected
+    # The legacy connected event loop is retired; the connected TUI is the
+    # shared shell over the connected backend plus the console operations module.
+    console = source("crates/orbit-tui/src/connected_ops.rs")
+    backend = source("crates/orbit-tui/src/backend.rs")
+    app = source("crates/orbit-tui/src/app.rs")
+    for text in (console, backend, app):
+        assert "AuthoritativeHost::open(" not in text
+        assert "SqliteStore::open(" not in text
+    assert "OrbitClient::open(" not in console
+    assert "OrbitClient::open(" not in app
+    # The connected constructor goes through the remote client, never a local store.
+    assert "AuthorityConnection::remote(" in backend
+    assert "mod connected;" not in source("crates/orbit-tui/src/main.rs")
 
 
 def test_remote_client_cannot_open_authoritative_database():

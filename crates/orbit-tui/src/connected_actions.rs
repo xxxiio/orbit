@@ -37,42 +37,6 @@ impl Section {
         Self::Notes,
         Self::Outbox,
     ];
-    pub fn key(self) -> &'static str {
-        match self {
-            Self::Projects => "projects",
-            Self::Tasks => "tasks",
-            Self::Habits => "habits",
-            Self::Metrics => "metrics",
-            Self::Schedule => "schedule",
-            Self::Routines => "routines",
-            Self::Milestones => "milestones",
-            Self::Strategies => "strategies",
-            Self::Notes => "notes",
-            Self::Outbox => "outbox",
-        }
-    }
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::Projects => "Projects",
-            Self::Tasks => "Tasks",
-            Self::Habits => "Habits",
-            Self::Metrics => "Metrics",
-            Self::Schedule => "Schedule",
-            Self::Routines => "Routines",
-            Self::Milestones => "Milestones",
-            Self::Strategies => "Strategies",
-            Self::Notes => "Markdown notes",
-            Self::Outbox => "Unresolved commands",
-        }
-    }
-    pub fn next(self) -> Self {
-        let pos = Self::ALL.iter().position(|s| *s == self).unwrap_or(0);
-        Self::ALL[(pos + 1) % Self::ALL.len()]
-    }
-    pub fn previous(self) -> Self {
-        let pos = Self::ALL.iter().position(|s| *s == self).unwrap_or(0);
-        Self::ALL[(pos + Self::ALL.len() - 1) % Self::ALL.len()]
-    }
 }
 
 /// Tokenization supports single and double quoted arguments and escaped
@@ -805,6 +769,7 @@ pub fn help(section: Section) -> &'static [&'static str] {
         ],
         Section::Notes => &[
             "note.search <query...> — browse accepted server notes",
+            "note.show <note-id|vault-relative-path.md> — read one accepted note body",
             "note.create <note-id> <relative-path.md> <markdown-body...>",
             "note.update <note-id> <expected-body> <replacement-body>",
             "note.move <note-id> <old-path.md> <new-path.md> <expected-body>",
@@ -819,69 +784,6 @@ pub fn help(section: Section) -> &'static [&'static str] {
             "folder.move <old-folder> <new-folder>",
             "Review pending and rejected commands; resolve <command-id> <new-command>",
         ],
-    }
-}
-
-pub fn records(snapshot: &Value, section: Section, outbox: &[Value]) -> Vec<Value> {
-    if section == Section::Outbox {
-        return outbox.to_vec();
-    }
-    snapshot
-        .get(section.key())
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-}
-
-/// Single-line previews deliberately identify every entry by its canonical ID
-/// so the user can use that identity in an explicit mutation command.
-pub fn summarize(section: Section, row: &Value) -> String {
-    let id = row
-        .get("id")
-        .or_else(|| row.get("command_id"))
-        .and_then(Value::as_str)
-        .unwrap_or("?");
-    let caption = row
-        .get("title")
-        .or_else(|| row.get("name"))
-        .or_else(|| row.get("objective"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let status = row
-        .get("status")
-        .or_else(|| row.get("state"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    match section {
-        Section::Schedule => format!(
-            "{id}  {caption}  {}–{}",
-            row.get("starts_at_ms").unwrap_or(&Value::Null),
-            row.get("ends_at_ms").unwrap_or(&Value::Null)
-        ),
-        Section::Milestones => format!(
-            "{id}  {caption}  [{status}]  project={}",
-            row.get("project_id").and_then(Value::as_str).unwrap_or("?")
-        ),
-        Section::Strategies => format!(
-            "{}  {}  {caption}",
-            row.get("project_id").and_then(Value::as_str).unwrap_or("?"),
-            row.get("mode").and_then(Value::as_str).unwrap_or("")
-        ),
-        Section::Routines => format!(
-            "{id}  {caption}  habits={}",
-            row.get("habit_ids")
-                .and_then(Value::as_array)
-                .map_or(0, Vec::len)
-        ),
-        Section::Notes => format!(
-            "{id}  {caption}  {}",
-            row.get("path").and_then(Value::as_str).unwrap_or("")
-        ),
-        Section::Outbox => format!(
-            "{id}  {status}  {}",
-            row.get("kind").and_then(Value::as_str).unwrap_or("")
-        ),
-        _ => format!("{id}  {caption}  {status}"),
     }
 }
 
@@ -1011,171 +913,6 @@ pub fn batch_preview(intents: &[Intent]) -> Vec<String> {
     for (index, intent) in intents.iter().enumerate() {
         lines.push(format!("{}. {}", index + 1, intent.description));
         lines.push(format!("   {}", intent.action));
-    }
-    lines
-}
-
-/// Non-mutating command templates selected from an accepted record. The user
-/// still edits, reviews and explicitly confirms the final command before any
-/// durable intent is queued. The template is never itself a command receipt.
-pub fn edit_templates(section: Section, record: &Value) -> Vec<(String, String)> {
-    let id = record.get("id").and_then(Value::as_str).unwrap_or("");
-    let project = record
-        .get("project_id")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    if id.is_empty() && section != Section::Strategies {
-        return Vec::new();
-    }
-    match section {
-        Section::Habits => vec![(
-            "Record occurrence".into(),
-            format!("habit.record <occurrence-id> {id} <occurred-at-ms>"),
-        )],
-        Section::Metrics => vec![(
-            "Record observation".into(),
-            format!("metric.record {id} <observed-at-ms> <value>"),
-        )],
-        Section::Tasks => vec![
-            ("Rename".into(), format!("task.rename {id} ")),
-            (
-                "Change status".into(),
-                format!("task.status {id} in_progress"),
-            ),
-            ("Assign project".into(), format!("task.project {id} -")),
-            ("Assign milestone".into(), format!("task.milestone {id} -")),
-            ("Plan".into(), format!("task.plan {id} 30 - -")),
-        ],
-        Section::Schedule => vec![
-            (
-                "Move".into(),
-                format!(
-                    "schedule.move {id} {}",
-                    record
-                        .get("starts_at_ms")
-                        .and_then(Value::as_i64)
-                        .unwrap_or(0)
-                ),
-            ),
-            (
-                "Resize".into(),
-                format!(
-                    "schedule.resize {id} {}",
-                    record
-                        .get("duration_minutes")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(30)
-                ),
-            ),
-            ("Rename".into(), format!("schedule.rename {id} ")),
-            (
-                "Change target".into(),
-                format!("schedule.target {id} standalone -"),
-            ),
-            ("Delete".into(), format!("schedule.delete {id}")),
-        ],
-        Section::Routines => vec![
-            ("Rename".into(), format!("routine.rename {id} ")),
-            (
-                "Change habits".into(),
-                format!(
-                    "routine.habits {id} {}",
-                    record
-                        .get("habit_ids")
-                        .and_then(Value::as_array)
-                        .map(|items| items
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .collect::<Vec<_>>()
-                            .join(","))
-                        .filter(|value| !value.is_empty())
-                        .unwrap_or_else(|| "-".into())
-                ),
-            ),
-            ("Delete".into(), format!("routine.delete {id}")),
-        ],
-        Section::Milestones => vec![
-            ("Rename".into(), format!("milestone.rename {id} ")),
-            (
-                "Change status".into(),
-                format!("milestone.status {id} in_progress"),
-            ),
-            (
-                "Move to project".into(),
-                format!("milestone.project {id} {project}"),
-            ),
-            ("Delete".into(), format!("milestone.delete {id}")),
-        ],
-        Section::Notes => {
-            let path = record.get("path").and_then(Value::as_str).unwrap_or("");
-            if path.is_empty() {
-                return Vec::new();
-            }
-            vec![(
-                "Move note".into(),
-                format!("note.move {id} {path} <new-path.md> <expected-body>"),
-            )]
-        }
-        Section::Strategies => {
-            let project = record
-                .get("project_id")
-                .and_then(Value::as_str)
-                .unwrap_or("");
-            if project.is_empty() {
-                return Vec::new();
-            }
-            vec![
-                ("Objective".into(), format!("strategy.objective {project} ")),
-                (
-                    "Signals".into(),
-                    format!("strategy.signals {project} tasks,milestones"),
-                ),
-                (
-                    "Criterion".into(),
-                    format!("strategy.criterion {project} <key> satisfied"),
-                ),
-            ]
-        }
-        _ => Vec::new(),
-    }
-}
-
-/// Print a concise read-only detail summary. Fields are never inferred from
-/// pending intents; callers must only supply an accepted snapshot record.
-pub fn detail_lines(section: Section, record: &Value) -> Vec<String> {
-    let mut lines = Vec::new();
-    lines.push(format!("Accepted {} record", section.title()));
-    if let Some(map) = record.as_object() {
-        for (key, value) in map {
-            match value {
-                Value::Null => lines.push(format!("{key}: —")),
-                Value::Array(rows) => {
-                    lines.push(format!("{key}: {} item(s)", rows.len()));
-                    for (i, row) in rows.iter().enumerate().take(30) {
-                        lines.push(format!("  {}. {}", i + 1, row));
-                    }
-                    if rows.len() > 30 {
-                        lines.push("  … more items omitted".into());
-                    }
-                }
-                Value::Object(_) => {
-                    lines.push(format!("{key}:"));
-                    if let Ok(text) = serde_json::to_string_pretty(value) {
-                        lines.extend(text.lines().map(|line| format!("  {line}")));
-                    }
-                }
-                Value::String(value) => lines.push(format!("{key}: {value}")),
-                _ => lines.push(format!("{key}: {value}")),
-            }
-        }
-    }
-    let edits = edit_templates(section, record);
-    if !edits.is_empty() {
-        lines.push(String::new());
-        lines.push("Available edit templates (: command to execute):".into());
-        for (idx, (label, command)) in edits.iter().enumerate() {
-            lines.push(format!(" {}. {} — :{}", idx + 1, label, command));
-        }
     }
     lines
 }
@@ -1402,13 +1139,5 @@ mod tests {
             )
             .is_err()
         );
-    }
-    #[test]
-    fn snapshots_are_accepted_only() {
-        let data = json!({"schedule":[{"id":"slot","title":"one"}],"routines":[],"milestones":[]});
-        let unresolved = vec![json!({"command_id":"pending","state":"pending"})];
-        assert_eq!(records(&data, Section::Schedule, &unresolved).len(), 1);
-        assert!(records(&data, Section::Milestones, &unresolved).is_empty());
-        assert_eq!(records(&data, Section::Outbox, &unresolved).len(), 1);
     }
 }

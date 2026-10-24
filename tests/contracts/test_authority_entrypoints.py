@@ -12,10 +12,17 @@ def test_cli_has_single_local_authority():
     assert "fn set_habit_active_cli(" not in source
 
 def test_clients_do_not_own_connected_authority():
-    source = (ROOT / "crates/orbit-tui/src/connected.rs").read_text()
-    assert "AuthorityReplica" in source
-    assert "AuthoritativeHost::open" not in source
-    assert "SqliteStore::open" not in source
+    backend = (ROOT / "crates/orbit-tui/src/backend.rs").read_text()
+    assert "AuthorityConnection::remote(" in backend
+    assert not (ROOT / "crates/orbit-tui/src/connected.rs").exists()
+    for path in (
+        "crates/orbit-tui/src/backend.rs",
+        "crates/orbit-tui/src/app.rs",
+        "crates/orbit-tui/src/connected_ops.rs",
+    ):
+        source = (ROOT / path).read_text()
+        assert "AuthoritativeHost::open" not in source, path
+        assert "SqliteStore::open" not in source, path
 
 def test_runtime_owns_storage():
     source = (ROOT / "crates/orbit-runtime/src/store.rs").read_text()

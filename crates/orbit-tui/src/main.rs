@@ -2,10 +2,8 @@
 //! deployments; blueprint views resolve through shared `orbit-ui` contracts.
 mod app;
 mod backend;
-#[allow(dead_code)]
-mod connected;
-#[allow(dead_code)]
 mod connected_actions;
+mod connected_ops;
 mod planning_ui;
 mod render;
 mod terminal;
@@ -28,11 +26,6 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let deployment = orbit_client::deployment::from_env().map_err(|error| error.to_string())?;
-    if let orbit_client::deployment::Deployment::Connected { replica, server } = &deployment
-        && std::env::var("ORBIT_TUI_LEGACY_CONNECTED").ok().as_deref() == Some("1")
-    {
-        return connected::run(replica.to_string_lossy().into_owned(), server.to_string());
-    }
     let mut app = App::open_deployment(deployment)?;
     ui_state::restore(&mut app);
     let mut session = terminal::TerminalSession::enter()?;
@@ -222,6 +215,7 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
         KeyCode::Char('?') => app.modal = Some(Modal::Help),
         KeyCode::Char(':') => app.open_palette(),
         KeyCode::Char('/') => app.open_search(),
+        KeyCode::Char('!') if app.client.is_connected() => app.open_pending(),
         KeyCode::Char('r') => app.refresh_current(),
         KeyCode::Char('f') if app.client.is_connected() => {
             let action =
@@ -418,11 +412,18 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                 | Modal::QuitConfirm { .. }
                 | Modal::Criteria(_)
                 | Modal::Attachments(_)
+                | Modal::Console { .. }
         )
     {
         if matches!(modal, Modal::Help) {
             app.modal = None;
             return Ok(false);
+        }
+        if matches!(modal, Modal::Conflict { .. } | Modal::Pending { .. }) {
+            // Restore the modal so unsaved conflict/console text still needs
+            // the same confirmation as a dirty form.
+            app.modal = Some(modal);
+            return Ok(app.request_quit());
         }
         return Ok(app.request_quit());
     }
@@ -1030,6 +1031,225 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
             KeyCode::PageUp => app.modal_scroll = app.modal_scroll.saturating_sub(10),
             _ => {}
         },
+        Modal::Pending {
+            rows,
+            selected,
+            detail,
+            detail_scroll,
+        } => match code {
+            KeyCode::Esc => {
+                keep = false;
+                app.notify(
+                    "Pending inspector closed; queued intentions are preserved",
+                    StatusKind::Info,
+                );
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if !rows.is_empty() {
+                    *selected = (*selected + 1).min(rows.len() - 1);
+                }
+                *detail = rows
+                    .get(*selected)
+                    .map(|row| app.pending_detail_text(&row.id))
+                    .unwrap_or_else(|| "No pending commands.".into());
+                *detail_scroll = 0;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                *selected = selected.saturating_sub(1);
+                *detail = rows
+                    .get(*selected)
+                    .map(|row| app.pending_detail_text(&row.id))
+                    .unwrap_or_else(|| "No pending commands.".into());
+                *detail_scroll = 0;
+            }
+            KeyCode::PageDown => *detail_scroll = detail_scroll.saturating_add(5),
+            KeyCode::PageUp => *detail_scroll = detail_scroll.saturating_sub(5),
+            KeyCode::Enter => {
+                *detail = rows
+                    .get(*selected)
+                    .map(|row| app.pending_detail_text(&row.id))
+                    .unwrap_or_else(|| "No pending commands.".into());
+                *detail_scroll = 0;
+            }
+            KeyCode::Char('r') => match app.client.pending_commands() {
+                Ok(fresh) => {
+                    *selected = (*selected).min(fresh.len().saturating_sub(1));
+                    *detail = fresh
+                        .get(*selected)
+                        .map(|row| app.pending_detail_text(&row.id))
+                        .unwrap_or_else(|| "No pending commands.".into());
+                    *rows = fresh;
+                    *detail_scroll = 0;
+                }
+                Err(error) => app.notify(
+                    format!("Pending commands unavailable: {error}"),
+                    StatusKind::Error,
+                ),
+            },
+            KeyCode::Char('f') => {
+                let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
+                let (fresh, fresh_detail) = app.pending_flush_report(&ids);
+                *selected = (*selected).min(fresh.len().saturating_sub(1));
+                *rows = fresh;
+                *detail = fresh_detail;
+                *detail_scroll = 0;
+            }
+            KeyCode::Char('c') => {
+                let target = rows
+                    .get(*selected)
+                    .map(|row| (row.id.clone(), row.conflict));
+                match target {
+                    Some((id, true)) => {
+                        keep = false;
+                        app.open_conflict(&id);
+                    }
+                    Some((_, false)) => app.notify(
+                        "That command is pending, not rejected; only a rejected command can be reviewed",
+                        StatusKind::Warning,
+                    ),
+                    None => app.notify("No pending command selected", StatusKind::Warning),
+                }
+            }
+            _ => {}
+        },
+        Modal::Conflict {
+            command_id,
+            replacement,
+            error,
+            review,
+            ..
+        } => {
+            if modifiers.contains(KeyModifiers::CONTROL) {
+                if matches!(code, KeyCode::Char('u')) {
+                    replacement.clear();
+                    *error = None;
+                }
+            } else {
+                match code {
+                    KeyCode::Esc => {
+                        keep = false;
+                        app.notify(
+                            "Conflict review cancelled; the rejected command is preserved",
+                            StatusKind::Info,
+                        );
+                    }
+                    KeyCode::Enter => {
+                        match app.resolve_conflict(command_id, review.as_ref(), replacement) {
+                            Ok((message, kind)) => {
+                                keep = false;
+                                app.notify(message, kind);
+                            }
+                            Err(message) => *error = Some(message),
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        replacement.pop();
+                        *error = None;
+                    }
+                    KeyCode::Char(character) => {
+                        replacement.push(character);
+                        *error = None;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Modal::Console {
+            input,
+            suggestions,
+            selected,
+            output,
+            error,
+        } => {
+            if modifiers.contains(KeyModifiers::CONTROL) {
+                if matches!(code, KeyCode::Char('u')) {
+                    input.clear();
+                    *suggestions = app.console_suggestions(input);
+                    *selected = 0;
+                    *error = None;
+                }
+            } else {
+                match code {
+                    KeyCode::Esc => keep = false,
+                    KeyCode::Down => {
+                        *selected = (*selected + 1).min(suggestions.len().saturating_sub(1))
+                    }
+                    KeyCode::Up => *selected = selected.saturating_sub(1),
+                    KeyCode::PageDown => {
+                        *selected = (*selected + 8).min(suggestions.len().saturating_sub(1))
+                    }
+                    KeyCode::PageUp => *selected = selected.saturating_sub(8),
+                    KeyCode::Tab => {
+                        if let Some(suggestion) = suggestions.get(*selected) {
+                            *input = suggestion.clone();
+                            *suggestions = app.console_suggestions(input);
+                            *selected = 0;
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        input.pop();
+                        *suggestions = app.console_suggestions(input);
+                        *selected = 0;
+                        *error = None;
+                    }
+                    KeyCode::Enter => {
+                        if input.trim().is_empty() {
+                            if let Some(suggestion) = suggestions.get(*selected).cloned() {
+                                *input = suggestion;
+                                *suggestions = app.console_suggestions(input);
+                                *selected = 0;
+                            }
+                        } else {
+                            let source = input.clone();
+                            match app.console_run(&source) {
+                                app::ConsoleOutcome::Lines(lines) => {
+                                    input.clear();
+                                    *suggestions = app.console_suggestions(input);
+                                    *selected = 0;
+                                    *error = None;
+                                    output.extend(lines);
+                                    if output.len() > 200 {
+                                        output.drain(0..output.len() - 200);
+                                    }
+                                }
+                                app::ConsoleOutcome::Error(message) => {
+                                    *error = Some(message);
+                                }
+                                app::ConsoleOutcome::Confirm {
+                                    title,
+                                    body,
+                                    pending,
+                                } => {
+                                    keep = false;
+                                    app.modal = Some(Modal::Confirm {
+                                        title,
+                                        body,
+                                        pending,
+                                    });
+                                }
+                                app::ConsoleOutcome::Conflict(state) => {
+                                    keep = false;
+                                    app.modal = Some(Modal::Conflict {
+                                        command_id: state.command_id,
+                                        review_lines: state.review_lines,
+                                        replacement: state.replacement,
+                                        error: state.error,
+                                        review: state.review,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Char(character) => {
+                        input.push(character);
+                        *suggestions = app.console_suggestions(input);
+                        *selected = 0;
+                        *error = None;
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
     if keep {
         app.modal = Some(modal);
@@ -3081,6 +3301,36 @@ mod m29_connected_task_detail_tests {
         (app, path)
     }
 
+    /// Connected replica with no credentials: every network call fails locally,
+    /// so queued/offline behaviour is exercised without a server.
+    fn offline_app(kind: &str) -> (App, std::path::PathBuf) {
+        let path = replica_path(kind);
+        let backend = crate::backend::Backend::open_connected_with_identity(
+            &path,
+            "https://example.invalid",
+            None,
+        )
+        .expect("connected backend");
+        let app = App::open_with_backend(backend).expect("connected app");
+        (app, path)
+    }
+
+    fn rendered(app: &mut App, width: u16, height: u16) -> String {
+        let mut terminal =
+            Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| crate::render::draw(frame, app))
+            .unwrap();
+        (0..terminal.backend().buffer().area.height)
+            .map(|y| {
+                (0..terminal.backend().buffer().area.width)
+                    .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn snapshot() -> serde_json::Value {
         serde_json::json!({
             "revision": 4_i64,
@@ -3489,6 +3739,469 @@ mod m29_connected_task_detail_tests {
         assert!(state.items.is_empty());
         assert!(state.pending.is_empty());
 
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn queued_connected_intent_is_pending_and_not_accepted() {
+        let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
+        let (mut app, path) = connected_app(&authority.base, "queue-inspect");
+        assert_eq!(app.client.pending_count(), 0);
+        assert!(app.client.list_projects().unwrap().is_empty());
+
+        let intent = crate::connected_actions::parse_intent(
+            "project.create queued-project Queued project",
+            "generated",
+        )
+        .expect("intent");
+        app.execute_pending(app::PendingAction::QueueIntent { intent });
+
+        assert_eq!(app.client.pending_count(), 1);
+        assert_eq!(app.status.kind, StatusKind::Pending, "{}", app.status.text);
+        let status = app.status.text.to_lowercase();
+        assert!(status.contains("pending"), "{}", app.status.text);
+        assert!(status.contains("not accepted"), "{}", app.status.text);
+        assert!(!app.status.text.contains("Accepted"));
+
+        let rows = app.client.pending_commands().expect("pending rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].kind, "project");
+        assert_eq!(rows[0].status, "pending");
+        assert!(!rows[0].conflict);
+        assert!(rows[0].summary.contains("queued-project"), "{:?}", rows[0]);
+        assert!(rows[0].payload.contains("Queued project"));
+
+        // The accepted projection and project list are unchanged.
+        assert!(app.client.list_projects().unwrap().is_empty());
+        assert!(
+            app.client
+                .workspace_view_data()
+                .unwrap()
+                .projects
+                .is_empty()
+        );
+
+        let detail = app.client.pending_command_detail(&rows[0].id).unwrap();
+        assert!(detail.contains("state: pending"), "{detail}");
+        assert!(detail.contains("accepted receipt: none"), "{detail}");
+
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn flush_without_server_keeps_the_command_pending_and_inspectable() {
+        let (mut app, path) = offline_app("flush-offline");
+        let intent =
+            crate::connected_actions::parse_intent("task.create Offline task", "generated")
+                .expect("intent");
+        app.execute_pending(app::PendingAction::QueueIntent { intent });
+        let id = app.client.last_queued_command_id().expect("queued id");
+        assert_eq!(app.client.pending_count(), 1);
+
+        let (rows, detail) = app.pending_flush_report(std::slice::from_ref(&id));
+        assert_eq!(rows.len(), 1, "a failed flush must not drop the row");
+        assert_eq!(rows[0].id, id);
+        assert!(
+            app.status.text.contains("Flush failed"),
+            "{}",
+            app.status.text
+        );
+        assert!(matches!(
+            app.client.command_outcome(&id),
+            crate::backend::MutationOutcome::Pending { .. }
+        ));
+        assert!(detail.contains("state: pending"), "{detail}");
+        assert_eq!(app.client.pending_count(), 1);
+
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn staged_attachment_appears_as_its_own_pending_row() {
+        let (mut app, path) = offline_app("pending-attachment-row");
+        let source = std::env::temp_dir().join(format!(
+            "orbit-tui-pending-row-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&source, b"staged bytes").unwrap();
+        app.client
+            .import_attachment(
+                "task".into(),
+                "task-1".into(),
+                source.to_string_lossy().into_owned(),
+                None,
+            )
+            .expect("staged upload");
+
+        let rows = app.client.pending_commands().expect("pending rows");
+        let row = rows
+            .iter()
+            .find(|row| row.kind == "attachment")
+            .expect("attachment row");
+        assert!(!row.conflict);
+        assert_eq!(row.status, "pending");
+        assert!(row.summary.contains("upload"), "{row:?}");
+        let detail = app.client.pending_command_detail(&row.id).unwrap();
+        assert!(detail.contains("never accepted by the server"), "{detail}");
+        assert_eq!(app.client.pending_count(), 1);
+
+        let _ = std::fs::remove_file(&source);
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn pending_modal_shows_pending_tag_and_never_claims_acceptance() {
+        let (mut app, path) = offline_app("pending-render");
+        let intent =
+            crate::connected_actions::parse_intent("project.create p-render Queued project", "gen")
+                .expect("intent");
+        app.execute_pending(app::PendingAction::QueueIntent { intent });
+
+        app.open_pending();
+        assert!(
+            matches!(app.modal, Some(Modal::Pending { .. })),
+            "{}",
+            app.status.text
+        );
+        for (width, height) in [(60_u16, 18_u16), (120, 35), (160, 45)] {
+            let text = rendered(&mut app, width, height);
+            assert!(text.contains("[pending]"), "{width}x{height}:\n{text}");
+            assert!(text.contains("not accepted"), "{width}x{height}:\n{text}");
+            // Only the modal surface is checked: the background shell may
+            // legitimately describe a stale accepted view.
+            let modal_lines: Vec<&str> = text
+                .lines()
+                .filter(|line| line.contains('║') || line.contains("Pending commands ·"))
+                .collect();
+            assert!(
+                !modal_lines.iter().any(|line| line.contains("Accepted")),
+                "{width}x{height}:\n{text}"
+            );
+        }
+
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn console_rejects_invalid_input_and_fails_closed_without_a_review() {
+        let (mut app, path) = offline_app("console-validation");
+        assert!(matches!(
+            app.console_run("not.a.command"),
+            crate::app::ConsoleOutcome::Error(_)
+        ));
+        assert_eq!(app.client.pending_count(), 0);
+
+        assert!(matches!(
+            app.console_run("batch task.create Good; schedule.resize blocked 0"),
+            crate::app::ConsoleOutcome::Error(_)
+        ));
+        assert_eq!(app.client.pending_count(), 0);
+
+        let outcome = app.console_run("resolve unknown-command task.create Replacement");
+        let crate::app::ConsoleOutcome::Conflict(state) = outcome else {
+            panic!("resolve must open a conflict review");
+        };
+        assert!(
+            state.review.is_none(),
+            "no review token can be established offline"
+        );
+        assert!(
+            state
+                .review_lines
+                .join("\n")
+                .contains("rejected, not accepted"),
+            "{:?}",
+            state.review_lines
+        );
+        let error = app
+            .resolve_conflict(&state.command_id, state.review.as_ref(), &state.replacement)
+            .unwrap_err();
+        assert!(error.to_lowercase().contains("review"), "{error}");
+        assert_eq!(app.client.pending_count(), 0);
+
+        // A valid console command still only opens a confirmation; nothing is
+        // queued before the user confirms.
+        match app.console_run("task.create Valid task") {
+            crate::app::ConsoleOutcome::Confirm { body, .. } => {
+                let body = body.to_lowercase();
+                assert!(body.contains("pending"), "{body}");
+                assert!(body.contains("not accepted"), "{body}");
+            }
+            other => panic!("expected a confirmation, got {other:?}"),
+        }
+        assert_eq!(app.client.pending_count(), 0);
+
+        app.open_connected_console();
+        assert!(matches!(app.modal, Some(Modal::Console { .. })));
+        for (width, height) in [(60_u16, 18_u16), (160, 45)] {
+            let text = rendered(&mut app, width, height);
+            assert!(
+                text.contains("Connected commands"),
+                "{width}x{height}:\n{text}"
+            );
+            assert!(text.contains("PENDING"), "{width}x{height}:\n{text}");
+        }
+        app.modal = None;
+
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn conflict_review_is_explicit_and_preserves_the_rejected_row() {
+        let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
+        let (mut app, path) = connected_app(&authority.base, "conflict-review");
+        let intent = crate::connected_actions::parse_intent(
+            "project.create conflicted-project Rejected",
+            "generated",
+        )
+        .expect("intent");
+        app.execute_pending(app::PendingAction::QueueIntent { intent });
+        let id = app.client.last_queued_command_id().expect("queued id");
+
+        // The loopback authority declares no command route, so the flush gets a
+        // permanent rejection and the command becomes conflicted.
+        let flush = orbit_ui::AvailableAction::enabled("flush_pending", "Flush", None);
+        assert!(!app.execute_action(flush));
+        assert!(
+            app.client
+                .pending_commands()
+                .unwrap()
+                .iter()
+                .any(|row| row.id == id && row.conflict),
+            "the rejected row must remain visible: {}",
+            app.status.text
+        );
+
+        app.open_conflict(&id);
+        let Some(Modal::Conflict {
+            review,
+            review_lines,
+            ..
+        }) = app.modal.as_ref()
+        else {
+            panic!("conflict modal missing: {}", app.status.text);
+        };
+        assert!(review.is_some(), "{}", review_lines.join("\n"));
+        let text = review_lines.join("\n");
+        assert!(text.contains("REJECTED"), "{text}");
+        assert!(text.contains("not accepted"), "{text}");
+        assert!(text.contains("Accepted server revision"), "{text}");
+        // No auto-rebase and no accepted claim: accepted projects stay empty
+        // and the rejected row is still queued.
+        assert_eq!(app.client.list_projects().unwrap().len(), 0);
+        assert!(
+            app.client
+                .pending_commands()
+                .unwrap()
+                .iter()
+                .any(|row| row.id == id)
+        );
+
+        let text = rendered(&mut app, 120, 35);
+        assert!(text.contains("rejected, not accepted"), "{text}");
+        let narrow = rendered(&mut app, 60, 18);
+        assert!(narrow.contains("rejected, not accepted"), "{narrow}");
+
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn local_deployment_has_no_pending_or_console_surface() {
+        let path = replica_path("local-pending");
+        let backend = crate::backend::Backend::open_local(&path).expect("local backend");
+        let mut app = App::open_with_backend(backend).expect("local app");
+
+        let labels: Vec<String> = app
+            .palette_entries("")
+            .into_iter()
+            .map(|entry| entry.label)
+            .collect();
+        assert!(
+            !labels.iter().any(|label| label == "Pending commands"),
+            "{labels:?}"
+        );
+        assert!(
+            !labels
+                .iter()
+                .any(|label| label.contains("Connected commands")),
+            "{labels:?}"
+        );
+
+        let error = app.client.pending_commands().unwrap_err();
+        assert!(error.contains("connected"), "{error}");
+        let error = app.client.pending_command_detail("anything").unwrap_err();
+        assert!(error.contains("connected"), "{error}");
+
+        app.open_pending();
+        assert!(app.modal.is_none());
+        assert!(app.status.text.contains("connected"), "{}", app.status.text);
+
+        let intent =
+            crate::connected_actions::parse_intent("task.create Local", "generated").unwrap();
+        let error = app
+            .client
+            .queue_connected_intent("task.create", intent.kind, &intent.action)
+            .unwrap_err();
+        assert!(error.contains("connected"), "{error}");
+
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn console_planning_reads_fail_closed_without_accepted_state() {
+        let (mut app, path) = offline_app("console-plan-readonly");
+        for command in [
+            "plan.portfolio",
+            "plan.compare",
+            "plan.review",
+            "plan.focus task-1",
+            "plan.group --project p",
+        ] {
+            match app.console_run(command) {
+                crate::app::ConsoleOutcome::Error(error) => {
+                    assert!(error.contains("No accepted snapshot"), "{command}: {error}");
+                }
+                other => panic!("{command} must fail closed offline, got {other:?}"),
+            }
+        }
+        assert_eq!(app.client.pending_count(), 0);
+        assert!(
+            app.pending_scenario.is_none(),
+            "no scenario became approvable"
+        );
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn console_approval_requires_an_explicit_review() {
+        let (mut app, path) = offline_app("console-approve");
+        match app.console_run("plan.approve --confirm") {
+            crate::app::ConsoleOutcome::Error(error) => {
+                assert!(error.contains("plan.review"), "{error}");
+            }
+            other => panic!("approval without a review must fail closed, got {other:?}"),
+        }
+        match app.console_run("plan.approve") {
+            crate::app::ConsoleOutcome::Error(error) => {
+                assert!(error.contains("--confirm"), "{error}");
+            }
+            other => panic!("implicit approval must be rejected, got {other:?}"),
+        }
+        assert_eq!(app.client.pending_count(), 0);
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn console_portfolio_compare_and_focus_read_only_the_accepted_snapshot() {
+        let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
+        let (mut app, path) = connected_app(&authority.base, "console-plan-reads");
+        assert_eq!(app.client.accepted_revision().unwrap(), 4);
+
+        for (command, heading) in [
+            ("plan.portfolio", "PROJECT-AWARE NEXT ACTIONS"),
+            ("plan.compare", "WHAT-IF PLANNING"),
+        ] {
+            match app.console_run(command) {
+                crate::app::ConsoleOutcome::Lines(lines) => {
+                    let text = lines.join("\n");
+                    assert!(text.contains(heading), "{command}: {text}");
+                    assert!(
+                        text.to_lowercase().contains("read-only"),
+                        "{command}: {text}"
+                    );
+                }
+                other => panic!("{command} must be a read-only report, got {other:?}"),
+            }
+        }
+
+        match app.console_run("plan.focus task-1") {
+            crate::app::ConsoleOutcome::Lines(lines) => {
+                let text = lines.join("\n");
+                assert!(text.contains("TASK FOCUS"), "{text}");
+                assert!(text.contains("task-1"), "{text}");
+            }
+            other => panic!("plan.focus must be read-only, got {other:?}"),
+        }
+
+        // Read-only analyses never queue and never become approvable.
+        assert_eq!(app.client.pending_count(), 0);
+        assert!(app.pending_scenario.is_none());
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn console_note_show_and_sync_observe_fail_closed_offline() {
+        let (mut app, path) = offline_app("console-note-show");
+        match app.console_run("note.show docs/plan.md") {
+            crate::app::ConsoleOutcome::Error(error) => {
+                assert!(error.contains("no cached copy"), "{error}");
+            }
+            other => panic!("offline note.show must not invent content, got {other:?}"),
+        }
+        match app.console_run("note.show ../escape.md") {
+            crate::app::ConsoleOutcome::Error(error) => {
+                assert!(error.contains("invalid vault-relative"), "{error}");
+            }
+            other => panic!("path traversal must be rejected, got {other:?}"),
+        }
+        assert!(matches!(
+            app.console_run("note.show"),
+            crate::app::ConsoleOutcome::Error(_)
+        ));
+        match app.console_run("sync.observe") {
+            crate::app::ConsoleOutcome::Error(error) => {
+                assert!(error.contains("Live sync observation"), "{error}");
+            }
+            other => panic!("offline sync.observe must fail closed, got {other:?}"),
+        }
+        assert!(
+            matches!(
+                app.console_run("sync.status"),
+                crate::app::ConsoleOutcome::Lines(_)
+            ),
+            "the cached sync report stays available offline"
+        );
+        assert_eq!(app.client.pending_count(), 0);
+        drop(app);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn console_batch_preview_queues_nothing_until_confirmed() {
+        let (mut app, path) = offline_app("console-batch");
+        let outcome = app.console_run(
+            "batch task.create First; task.create Second; routine.create morning - Morning",
+        );
+        let crate::app::ConsoleOutcome::Confirm { pending, body, .. } = outcome else {
+            panic!("a valid batch must be previewed, got {outcome:?}");
+        };
+        assert!(body.contains("PENDING"), "{body}");
+        assert_eq!(app.client.pending_count(), 0, "preview stages nothing");
+
+        app.execute_pending(pending);
+        assert_eq!(app.client.pending_count(), 3);
+        let rows = app.client.pending_commands().unwrap();
+        assert_eq!(rows.len(), 3, "batch staging stays atomic");
+        assert!(
+            rows.iter()
+                .all(|row| row.status == "pending" && !row.conflict)
+        );
+        assert!(app.client.list_projects().unwrap().is_empty());
         drop(app);
         let _ = std::fs::remove_file(&path);
     }

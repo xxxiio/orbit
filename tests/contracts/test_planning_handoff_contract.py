@@ -20,17 +20,22 @@ def test_shared_dispatcher_and_revision_checks():
                  'select_from_menu']:
         assert compact(term) in src, term
 
-def test_tui_modes_offer_selectable_index_and_revision_checks():
-    local=compact(read('crates/orbit-tui/src/main.rs') + read('crates/orbit-tui/src/app.rs'))
-    remote=compact(read('crates/orbit-tui/src/connected.rs'))
-    for src in (local,remote):
-        assert 'select_from_menu' in src
-        assert 'render_handoff' in src
-        assert 'PreviewOperation::CompletionImpact' in src
-    assert compact('latest.revision!=brief.revision') in local
-    assert compact('current!=brief.revision') in remote
-    assert 'app.today_select_action' in local
-    assert 'self.select_planning_action' in remote
+def test_shared_shell_owns_the_only_tui_handoff_surface():
+    # The legacy connected event loop is retired. One shared shell serves both
+    # deployments, so the selectable-index and revision checks exist in exactly
+    # one implementation and no connected module may re-implement them.
+    shell = compact(read('crates/orbit-tui/src/main.rs') + read('crates/orbit-tui/src/app.rs'))
+    for term in ['select_from_menu', 'render_handoff',
+                 'PreviewOperation::CompletionImpact',
+                 'latest.revision!=brief.revision', 'app.today_select_action']:
+        assert term in shell, term
+    entry = read('crates/orbit-tui/src/main.rs')
+    assert 'mod connected;' not in entry
+    assert not (ROOT / 'crates/orbit-tui/src/connected.rs').exists()
+    for path in ('crates/orbit-tui/src/connected_ops.rs', 'crates/orbit-tui/src/backend.rs'):
+        owner = compact(read(path))
+        assert 'render_handoff' not in owner, path
+        assert 'select_from_menu' not in owner, path
 
 def test_machine_adapters_do_not_enqueue_from_handoff():
     sources=[compact(read(path)) for path in (

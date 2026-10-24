@@ -71,7 +71,9 @@ checking that something was emitted at all.
 - project/task lifecycle and blueprint bind/work-item edit/transition with
   restart persistence;
 - `test_m28_connected.py`: disposable authoritative server, connected header,
-  pending project/task, `f` flush, accepted refresh and clean exit.
+  pending project/task, `!` pending inspector, `f` flush, accepted refresh and
+  clean exit. The connected console (`:` → *Connected commands…*) is the only
+  connected presentation; there is no separate connected shell or launch flag.
 
 The harness treats these as target behaviour. A failure is reported as a
 failure rather than hidden by relaxing the assertion.

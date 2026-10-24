@@ -7,6 +7,7 @@
 //! command; a missing identity or state fails closed as pending, never success.
 
 use orbit_client::OrbitClient;
+use orbit_client::authority::{CommandKind, ConflictReview};
 use orbit_client::unified::{AuthorityConnection, CommandDisposition};
 use orbit_client::{
     AcceptanceCriterionDto, ActivityDto, AttachmentDto, ClientError, ClientErrorCode,
@@ -16,7 +17,12 @@ use orbit_client::{
     SetProjectStatusRequest, SetTaskPlanningRequest, SetTaskStatusRequest, TaskDto,
     TaskPlanProposalDto, WorkflowDescriptorDto,
 };
-use orbit_runtime::domain_commands::{ProjectCommand, TaskAction, TaskCommand};
+use orbit_runtime::domain_commands::{ProjectCommand, TaskAction, TaskCommand, TaskRecord};
+use orbit_runtime::planning_approval::{ApprovedScheduleReceipt, ApprovedScheduleRequest};
+use orbit_runtime::planning_scenarios::{ScenarioCompareRequest, ScenarioComparison};
+use orbit_runtime::portfolio_actions::{self, PortfolioActionReport, PortfolioActionRequest};
+use orbit_runtime::scenario_execution::{ScenarioExecutionRequest, ScenarioExecutionReview};
+use orbit_runtime::task_dependencies::TaskDependencyEdge;
 use std::path::Path;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -34,6 +40,25 @@ fn next_id(prefix: &str) -> String {
         std::process::id(),
         ID_SEQUENCE.fetch_add(1, Ordering::Relaxed)
     )
+}
+
+/// A fresh durable command identity for a queued intention. Keeping the
+/// generator here means the shell and the backend never mint competing ids.
+pub(crate) fn next_command_id() -> String {
+    next_id("command")
+}
+
+/// Human text for a unified connection error. The typed error stays intact at
+/// the client boundary; this is only the message a TUI row can display.
+fn describe_connection_error(error: &orbit_client::unified::ClientConnectionError) -> String {
+    use orbit_client::unified::ClientConnectionError;
+    match error {
+        ClientConnectionError::Local(error) => error.message.clone(),
+        ClientConnectionError::Unavailable(message) => message.clone(),
+        ClientConnectionError::Unsupported(message) => (*message).to_owned(),
+        ClientConnectionError::Serialization(error) => error.to_string(),
+        other => format!("{other:?}"),
+    }
 }
 
 fn unavailable(message: impl Into<String>) -> ClientError {
@@ -87,6 +112,132 @@ impl MutationOutcome {
     pub fn needs_attention(&self) -> bool {
         !self.is_accepted()
     }
+}
+
+/// One row the pending-command inspector can show without exposing UI types.
+///
+/// A row is durable local intent only: `[pending]` or `[conflict]`. It is never
+/// an accepted workspace record, even after a refresh.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingCommand {
+    /// Command identity, or the attachment id for a staged upload.
+    pub id: String,
+    /// Command family (`task`, `schedule`, `attachment`, ...).
+    pub kind: String,
+    /// Durable outbox state (`pending` or `conflict`).
+    pub status: String,
+    /// Permanent rejection that needs explicit reconciliation.
+    pub conflict: bool,
+    /// Short human summary derived from the canonical action payload.
+    pub summary: String,
+    /// Canonical action payload, or staged-upload metadata.
+    pub payload: String,
+}
+
+/// A short, stable one-line summary of a queued canonical action. This is
+/// presentation text only; it never claims acceptance.
+fn pending_summary(kind: &str, action: &serde_json::Value) -> String {
+    let verb = action
+        .get("type")
+        .or_else(|| action.get("kind"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("command");
+    let identity = [
+        "project_id",
+        "task_id",
+        "block_id",
+        "routine_id",
+        "milestone_id",
+        "habit_id",
+        "metric_id",
+        "note_id",
+        "occurrence_id",
+        "path",
+    ]
+    .iter()
+    .find_map(|key| action.get(*key).and_then(serde_json::Value::as_str));
+    let caption = action
+        .get("title")
+        .or_else(|| action.get("name"))
+        .or_else(|| action.get("objective"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    match (identity, caption.is_empty()) {
+        (Some(id), false) => format!("{kind} {verb} {id} · {caption}"),
+        (Some(id), true) => format!("{kind} {verb} {id}"),
+        (None, false) => format!("{kind} {verb} · {caption}"),
+        (None, true) => format!("{kind} {verb}"),
+    }
+}
+
+/// One accepted Markdown note, rendered for a read-only console line.
+fn describe_note(note: &orbit_runtime::knowledge_service::KnowledgeDocumentInfo) -> String {
+    format!("{} — {} ({})", note.title, note.path, note.id)
+}
+
+/// Append one accepted note body, truncating only for display. A truncation is
+/// labelled so a body never looks complete when it is not.
+fn push_note_body(lines: &mut Vec<String>, body: &str) {
+    const LIMIT: usize = 200;
+    let body_lines: Vec<&str> = body.lines().collect();
+    for line in body_lines.iter().take(LIMIT) {
+        lines.push((*line).to_owned());
+    }
+    if body_lines.len() > LIMIT {
+        lines.push(format!(
+            "… {} more line(s) omitted",
+            body_lines.len() - LIMIT
+        ));
+    }
+}
+
+/// Render one note's provenance and body. `provenance` must distinguish
+/// accepted server state from the labelled offline mirror.
+fn push_note_read(
+    lines: &mut Vec<String>,
+    provenance: &str,
+    note: &orbit_runtime::knowledge_service::KnowledgeDocumentInfo,
+    body: &str,
+) {
+    lines.push(format!("{provenance} note: {}", note.title));
+    lines.push(format!("id: {} • path: {}", note.id, note.path));
+    lines.push(String::new());
+    push_note_body(lines, body);
+}
+
+/// One-line replica health shared by `sync.status` (cached) and `sync.observe`
+/// (live comparison). The two commands differ only in which report they read.
+fn format_sync_report(report: &orbit_client::sync_health::WorkspaceSyncReport) -> String {
+    let health = &report.health;
+    let blocked = report
+        .domains
+        .blocking_head()
+        .map(|(id, family, _)| format!(" first={family}:{id}"))
+        .unwrap_or_default();
+    format!(
+        "Sync {:?} | accepted {:?} | live {:?} | pending {} | conflicts {}{} | mirror {} | next {:?}",
+        health.primary,
+        health.accepted_revision,
+        health.observed_server_revision,
+        health.pending_count,
+        health.conflict_count,
+        blocked,
+        if health.markdown_mirror_complete {
+            "complete"
+        } else {
+            "incomplete"
+        },
+        health.actions
+    )
+}
+
+/// The accepted snapshot's revision, which every read-only planning analysis
+/// and every approval is fenced against.
+fn snapshot_revision(snapshot: &serde_json::Value) -> Result<i64, String> {
+    snapshot
+        .get("revision")
+        .and_then(serde_json::Value::as_i64)
+        .ok_or_else(|| "Accepted snapshot is missing its revision".to_owned())
 }
 
 fn outcome_from_disposition(
@@ -301,7 +452,7 @@ impl Backend {
                         reason,
                     } => (
                         format!(
-                            "Flush blocked after accepting {accepted} command(s): {command_id} was rejected. {reason}. Inspect the outbox and resolve it with the CLI or legacy connected command surface."
+                            "Flush blocked after accepting {accepted} command(s): {command_id} was rejected. {reason}. Inspect the outbox with `!` and resolve it with `resolve <command-id> <command>` in the connected console (or the CLI)."
                         ),
                         true,
                     ),
@@ -333,6 +484,596 @@ impl Backend {
                         .unwrap_or(0)
                 }),
         }
+    }
+
+    /// Every durable but unaccepted intention: ordered outbox commands plus
+    /// staged attachment uploads, in their own rows. Never accepted data.
+    pub fn pending_commands(&self) -> Result<Vec<PendingCommand>, String> {
+        let Self::Connected { connection, .. } = self else {
+            return Err(
+                "pending command inspection requires a connected replica; the local authority commits synchronously"
+                    .into(),
+            );
+        };
+        let mut rows = Vec::new();
+        for row in connection
+            .unresolved_commands()
+            .map_err(|error| describe_connection_error(&error))?
+        {
+            let id = row
+                .get("command_id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            if id.is_empty() {
+                continue;
+            }
+            let kind = row
+                .get("kind")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("command")
+                .to_owned();
+            let status = row
+                .get("state")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("pending")
+                .to_owned();
+            let action = row
+                .get("action")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            rows.push(PendingCommand {
+                id: id.to_owned(),
+                conflict: status == "conflict",
+                summary: pending_summary(&kind, &action),
+                payload: action.to_string(),
+                kind,
+                status,
+            });
+        }
+        for upload in connection
+            .pending_attachment_uploads()
+            .map_err(|error| describe_connection_error(&error))?
+        {
+            let attachment = &upload.attachment;
+            rows.push(PendingCommand {
+                id: attachment.id.clone(),
+                kind: "attachment".into(),
+                conflict: upload.state == "conflict",
+                status: upload.state.clone(),
+                summary: format!(
+                    "upload {} → {}:{}",
+                    attachment.filename, attachment.owner_kind, attachment.owner_id
+                ),
+                payload: serde_json::json!({
+                    "filename": attachment.filename,
+                    "content_type": attachment.content_type,
+                    "size_bytes": attachment.size_bytes,
+                    "owner_kind": attachment.owner_kind,
+                    "owner_id": attachment.owner_id,
+                    "checksum": attachment.checksum,
+                })
+                .to_string(),
+            });
+        }
+        Ok(rows)
+    }
+
+    /// Read-only inspection of one durable intention. Reports the recorded
+    /// state, last error, conflict marker and any accepted receipt. A missing
+    /// identity is stated explicitly instead of being treated as accepted.
+    pub fn pending_command_detail(&self, id: &str) -> Result<String, String> {
+        let Self::Connected { connection, .. } = self else {
+            return Err(
+                "pending command detail requires a connected replica; the local authority commits synchronously"
+                    .into(),
+            );
+        };
+        let mut lines = Vec::new();
+        match connection
+            .command_status(id)
+            .map_err(|error| describe_connection_error(&error))?
+        {
+            Some(status) => {
+                let kind = status
+                    .get("kind")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("command");
+                let state = status
+                    .get("state")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("unknown");
+                lines.push(format!("command: {id}"));
+                lines.push(format!("kind: {kind}"));
+                lines.push(format!("state: {state}"));
+                lines.push("attempts: not recorded by this replica".into());
+                if let Some(revision) = status.get("expected_revision").and_then(|v| v.as_i64()) {
+                    lines.push(format!("expected revision: {revision}"));
+                }
+                if let Some(action) = status.get("action") {
+                    lines.push(format!("local intent: {action}"));
+                }
+                if let Some(reason) = status
+                    .pointer("/receipt/error")
+                    .and_then(serde_json::Value::as_str)
+                {
+                    lines.push(format!("last error: {reason}"));
+                }
+                if state == "conflict" {
+                    lines.push(
+                        "conflict: yes — the authority permanently rejected this command; it stays queued until you explicitly submit a reviewed replacement"
+                            .into(),
+                    );
+                }
+                match connection.accepted_receipt(id) {
+                    Ok(Some(receipt)) => lines.push(format!("accepted receipt: {receipt}")),
+                    Ok(None) => lines.push("accepted receipt: none (not accepted)".into()),
+                    Err(error) => lines.push(format!(
+                        "accepted receipt: unavailable ({})",
+                        describe_connection_error(&error)
+                    )),
+                }
+            }
+            None => {
+                let staged = connection
+                    .pending_attachment_uploads()
+                    .map_err(|error| describe_connection_error(&error))?
+                    .into_iter()
+                    .find(|upload| upload.attachment.id == id);
+                match staged {
+                    Some(upload) => {
+                        let attachment = upload.attachment;
+                        lines.push(format!("staged upload: {}", attachment.id));
+                        lines.push(format!(
+                            "owner: {}:{}",
+                            attachment.owner_kind, attachment.owner_id
+                        ));
+                        lines.push(format!("filename: {}", attachment.filename));
+                        lines.push(format!("content type: {}", attachment.content_type));
+                        lines.push(format!("size: {} bytes", attachment.size_bytes));
+                        lines.push(format!("checksum: {}", attachment.checksum));
+                        lines.push(format!("state: {}", upload.state));
+                        lines.push(match upload.last_error {
+                            Some(error) => format!("last error: {error}"),
+                            None => "last error: none recorded".into(),
+                        });
+                        lines.push(
+                            "This content is staged locally only; it was never accepted by the server."
+                                .into(),
+                        );
+                    }
+                    None => {
+                        lines.push(format!("No durable command or staged upload with id {id}."));
+                        lines.push(
+                            "A missing identity is not acceptance; refresh the accepted snapshot to check for a receipt."
+                                .into(),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(lines.join("\n"))
+    }
+
+    /// Queue one user-reviewed intention. The returned identity is durable
+    /// local intent: it is pending, not accepted.
+    pub fn queue_connected_intent(
+        &mut self,
+        description: &str,
+        kind: CommandKind,
+        action: &serde_json::Value,
+    ) -> Result<String, String> {
+        let Self::Connected {
+            connection,
+            pending,
+        } = self
+        else {
+            return Err("queueing connected intentions requires a connected replica".into());
+        };
+        let command_id = next_command_id();
+        connection
+            .queue_intent(&command_id, kind, action)
+            .map_err(|error| {
+                format!(
+                    "Unable to queue {description}: {}",
+                    describe_connection_error(&error)
+                )
+            })?;
+        *pending = Some(MutationOutcome::Pending {
+            command_id: Some(command_id.clone()),
+            state: "pending".into(),
+        });
+        Ok(command_id)
+    }
+
+    /// Stage a reviewed batch atomically in the replica outbox. Returns how
+    /// many commands were newly staged; none are accepted.
+    pub fn queue_connected_batch(
+        &mut self,
+        intents: &[(String, CommandKind, serde_json::Value)],
+    ) -> Result<usize, String> {
+        let Self::Connected {
+            connection,
+            pending,
+        } = self
+        else {
+            return Err("queueing connected intentions requires a connected replica".into());
+        };
+        let inserted = connection.queue_intent_batch(intents).map_err(|error| {
+            format!(
+                "Workflow staging rejected: {}",
+                describe_connection_error(&error)
+            )
+        })?;
+        *pending = Some(MutationOutcome::Pending {
+            command_id: intents.first().map(|(id, _, _)| id.clone()),
+            state: "pending".into(),
+        });
+        Ok(inserted)
+    }
+
+    /// Review a rejected command against accepted history. Live review is
+    /// preferred; the replica's stored review is used when offline. Either way
+    /// the returned token is snapshot-bound and must not be auto-rebased.
+    pub fn review_connected_conflict(&mut self, id: &str) -> Result<ConflictReview, String> {
+        let Self::Connected { connection, .. } = self else {
+            return Err("conflict review requires a connected replica".into());
+        };
+        match connection.review_conflict_online(id) {
+            Ok(review) => Ok(review),
+            Err(live) => connection.conflict_review(id).map_err(|replica| {
+                format!(
+                    "conflict review unavailable: live review failed ({}); replica review failed ({})",
+                    describe_connection_error(&live),
+                    describe_connection_error(&replica)
+                )
+            }),
+        }
+    }
+
+    /// Replace one reviewed conflict with a fresh pending command. The review
+    /// token is mandatory; nothing is queued without it and the rejected audit
+    /// row is retained.
+    pub fn resolve_connected_conflict(
+        &mut self,
+        review: &ConflictReview,
+        replacement_id: &str,
+        kind: CommandKind,
+        action: &serde_json::Value,
+    ) -> Result<CommandDisposition, String> {
+        let Self::Connected {
+            connection,
+            pending,
+        } = self
+        else {
+            return Err("conflict resolution requires a connected replica".into());
+        };
+        let disposition = connection
+            .resolve_reviewed_conflict(review, replacement_id, kind, action)
+            .map_err(|error| {
+                format!(
+                    "conflict replacement rejected: {}",
+                    describe_connection_error(&error)
+                )
+            })?;
+        *pending = Some(match disposition {
+            CommandDisposition::Pending => MutationOutcome::Pending {
+                command_id: Some(replacement_id.to_owned()),
+                state: "pending".into(),
+            },
+            _ => MutationOutcome::Accepted,
+        });
+        Ok(disposition)
+    }
+
+    /// Read-only replica sync report for connected deployments. Offline state
+    /// is never reported as synchronized with an unobserved live server.
+    pub fn connected_sync_report(&self) -> Result<String, String> {
+        let Self::Connected { connection, .. } = self else {
+            return Err("sync status requires a connected replica".into());
+        };
+        let report = connection
+            .workspace_sync_report()
+            .map_err(|error| describe_connection_error(&error))?;
+        Ok(format_sync_report(&report))
+    }
+
+    /// Compare the cached replica report with a live authority observation.
+    /// The same domains are compared; only the live observation can report
+    /// whether the server has advanced since this replica last refreshed.
+    pub fn connected_observe_sync_report(&mut self) -> Result<String, String> {
+        let Self::Connected { connection, .. } = self else {
+            return Err("sync observation requires a connected replica".into());
+        };
+        let report = connection
+            .observe_workspace_sync_report()
+            .map_err(|error| {
+                format!(
+                    "Live sync observation unavailable (use sync.status for the cached report): {}",
+                    describe_connection_error(&error)
+                )
+            })?;
+        Ok(format_sync_report(&report))
+    }
+
+    /// Search accepted server Markdown; when the server is unreachable, fall
+    /// back to the local accepted mirror and label it as cached and stale.
+    pub fn connected_notes_search(&self, query: &str) -> Result<Vec<String>, String> {
+        let Self::Connected { connection, .. } = self else {
+            return Err("note search requires a connected replica".into());
+        };
+        if query.trim().is_empty() || query.len() > 512 {
+            return Err("note.search requires a nonempty query of at most 512 characters".into());
+        }
+        let mut lines = Vec::new();
+        match connection.markdown_search(query, 100) {
+            Ok(notes) => {
+                lines.push(format!(
+                    "{} accepted server note(s) for {query:?}; pending edits excluded",
+                    notes.len()
+                ));
+                lines.extend(notes.iter().map(describe_note));
+            }
+            Err(live) => {
+                let notes = connection
+                    .search_cached_markdown(query, 100)
+                    .map_err(|cached| {
+                        format!(
+                            "note search unavailable: live search failed ({}); cached search failed ({})",
+                            describe_connection_error(&live),
+                            describe_connection_error(&cached)
+                        )
+                    })?;
+                lines.push(format!(
+                    "OFFLINE: {} cached accepted note(s) for {query:?}; the mirror may be stale and excludes pending edits",
+                    notes.len()
+                ));
+                lines.extend(notes.iter().map(describe_note));
+            }
+        }
+        Ok(lines)
+    }
+
+    /// Refresh the local accepted Markdown mirror from the server.
+    pub fn connected_sync_notes(&mut self) -> Result<String, String> {
+        let Self::Connected { connection, .. } = self else {
+            return Err("note synchronization requires a connected replica".into());
+        };
+        let count = connection
+            .sync_markdown_mirror()
+            .map_err(|error| describe_connection_error(&error))?;
+        Ok(format!(
+            "{count} server-accepted Markdown note(s) mirrored atomically; deleted and moved notes reconciled; pending edits untouched"
+        ))
+    }
+
+    /// Every note in the local accepted mirror without contacting the server.
+    pub fn connected_cached_notes(&self) -> Result<Vec<String>, String> {
+        let Self::Connected { connection, .. } = self else {
+            return Err("cached note browsing requires a connected replica".into());
+        };
+        let notes = connection
+            .cached_markdown_inventory(500)
+            .map_err(|error| describe_connection_error(&error))?;
+        let mut lines = vec![format!(
+            "{} cached accepted Markdown note(s); the offline mirror may be stale",
+            notes.len()
+        )];
+        lines.extend(notes.iter().map(describe_note));
+        Ok(lines)
+    }
+
+    /// Read one accepted Markdown body by immutable note id or vault-relative
+    /// path. A connected note read is accepted server state; when the server is
+    /// unreachable only the labelled accepted mirror is used, and a missing
+    /// mirror copy fails instead of inventing content.
+    pub fn connected_note_show(&self, target: &str) -> Result<Vec<String>, String> {
+        let target = target.trim();
+        if target.is_empty() || target.len() > 1024 {
+            return Err("note.show requires a note ID or a vault-relative .md path".into());
+        }
+        let Self::Connected { connection, .. } = self else {
+            return Err("note.show requires a connected replica".into());
+        };
+        let is_path = target.contains('/') || target.to_ascii_lowercase().ends_with(".md");
+        if is_path
+            && (target.contains('\\')
+                || target.contains('\0')
+                || target.starts_with('/')
+                || target
+                    .split('/')
+                    .any(|part| part.is_empty() || part.starts_with('.')))
+        {
+            return Err(format!("invalid vault-relative note path: {target:?}"));
+        }
+        let mut lines = Vec::new();
+        if is_path {
+            match connection.markdown_document(target) {
+                Ok(body) => match connection.cached_markdown_inventory(500) {
+                    Ok(notes) => {
+                        let info = notes.into_iter().find(|note| note.path == target);
+                        match info {
+                            Some(note) => {
+                                push_note_read(&mut lines, "Accepted server", &note, &body)
+                            }
+                            None => {
+                                lines.push(format!("Accepted server Markdown note {target}"));
+                                lines.push(String::new());
+                                push_note_body(&mut lines, &body);
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        lines.push(format!("Accepted server Markdown note {target}"));
+                        lines.push(String::new());
+                        push_note_body(&mut lines, &body);
+                    }
+                },
+                Err(live) => {
+                    let cached = connection
+                        .cached_markdown_inventory(500)
+                        .ok()
+                        .and_then(|notes| notes.into_iter().find(|note| note.path == target));
+                    match cached {
+                        Some(note) => match connection.cached_markdown_by_id(&note.id) {
+                            Ok(Some((info, body))) => {
+                                push_note_read(&mut lines, "OFFLINE cached", &info, &body)
+                            }
+                            _ => {
+                                return Err(format!(
+                                    "note.show unavailable: live read failed ({}); no cached copy exists",
+                                    describe_connection_error(&live)
+                                ));
+                            }
+                        },
+                        None => {
+                            return Err(format!(
+                                "note.show unavailable: live read failed ({}); no cached copy exists",
+                                describe_connection_error(&live)
+                            ));
+                        }
+                    }
+                }
+            }
+        } else {
+            match connection.markdown_by_id(target) {
+                Ok(Some((note, body))) => {
+                    push_note_read(&mut lines, "Accepted server", &note, &body)
+                }
+                Ok(None) => {
+                    return Err(format!("No accepted Markdown note with id {target}"));
+                }
+                Err(live) => match connection.cached_markdown_by_id(target) {
+                    Ok(Some((note, body))) => {
+                        push_note_read(&mut lines, "OFFLINE cached", &note, &body)
+                    }
+                    _ => {
+                        return Err(format!(
+                            "note.show unavailable: live read failed ({}); no cached copy exists",
+                            describe_connection_error(&live)
+                        ));
+                    }
+                },
+            }
+        }
+        Ok(lines)
+    }
+
+    /// The accepted snapshot revision. Read-only planning analyses and any
+    /// approval are fenced against this exact value.
+    pub fn accepted_revision(&self) -> Result<i64, String> {
+        let snapshot = self.connected_snapshot()?;
+        snapshot_revision(&snapshot)
+    }
+
+    fn connected_snapshot(&self) -> Result<serde_json::Value, String> {
+        let Self::Connected { connection, .. } = self else {
+            return Err("accepted planning state requires a connected replica".into());
+        };
+        connection
+            .snapshot()
+            .map_err(|error| describe_connection_error(&error))?
+            .ok_or_else(|| "No accepted snapshot yet; refresh while online first".to_owned())
+    }
+
+    /// The one accepted task graph every read-only planning analysis uses.
+    fn accepted_task_graph(
+        &self,
+    ) -> Result<(i64, Vec<TaskRecord>, Vec<TaskDependencyEdge>), String> {
+        let snapshot = self.connected_snapshot()?;
+        let revision = snapshot_revision(&snapshot)?;
+        let tasks: Vec<TaskRecord> = serde_json::from_value(
+            snapshot
+                .get("tasks")
+                .cloned()
+                .ok_or_else(|| "Accepted snapshot missing tasks".to_owned())?,
+        )
+        .map_err(|error| format!("Accepted snapshot tasks unavailable: {error}"))?;
+        let edges: Vec<TaskDependencyEdge> = serde_json::from_value(
+            snapshot
+                .get("task_dependencies")
+                .cloned()
+                .ok_or_else(|| "Accepted snapshot missing task dependencies".to_owned())?,
+        )
+        .map_err(|error| format!("Accepted snapshot dependencies unavailable: {error}"))?;
+        Ok((revision, tasks, edges))
+    }
+
+    /// Read-only project-aware next actions over the accepted snapshot.
+    pub fn connected_portfolio(
+        &self,
+        request: &PortfolioActionRequest,
+    ) -> Result<PortfolioActionReport, String> {
+        let (revision, tasks, edges) = self.accepted_task_graph()?;
+        portfolio_actions::recommend_portfolio_actions(revision, &tasks, &edges, request)
+            .map_err(str::to_owned)
+    }
+
+    /// Read-only what-if comparison over the accepted snapshot. The request is
+    /// revision-bound; a changed revision fails instead of comparing stale data.
+    pub fn connected_scenario_compare(
+        &self,
+        request: &ScenarioCompareRequest,
+    ) -> Result<ScenarioComparison, String> {
+        let (revision, tasks, edges) = self.accepted_task_graph()?;
+        if request.expected_revision != revision {
+            return Err(
+                "Accepted revision changed: compare again against the current accepted state"
+                    .into(),
+            );
+        }
+        orbit_runtime::planning_scenarios::compare_scenarios(revision, &tasks, &edges, request)
+            .map_err(str::to_owned)
+    }
+
+    /// Read-only, online reconstruction of a scenario as exact calendar slots.
+    /// The returned review is snapshot-bound and must be approved separately.
+    pub fn connected_scenario_review(
+        &self,
+        request: &ScenarioExecutionRequest,
+    ) -> Result<ScenarioExecutionReview, String> {
+        let revision = self.accepted_revision()?;
+        let Self::Connected { connection, .. } = self else {
+            return Err("scenario review requires a connected replica".into());
+        };
+        let review = connection
+            .review_scenario_execution(request)
+            .map_err(|error| {
+                format!(
+                    "Scenario review requires live authority: {}",
+                    describe_connection_error(&error)
+                )
+            })?;
+        // Fail closed: a review that is not read-only, is fenced to another
+        // revision, describes another command, or omits reviewed slots cannot
+        // be approved.
+        if !review.read_only
+            || review.review.expected_revision != revision
+            || review.review.command_id != request.command_id
+            || review.review.scheduled_slots.len() != review.plan.items.len()
+        {
+            return Err("Authoritative scenario review contract mismatch".into());
+        }
+        Ok(review)
+    }
+
+    /// Apply exactly one reviewed and explicitly approved schedule. This is a
+    /// synchronous authoritative write, never a queued intention; a rejection
+    /// requires a fresh review.
+    pub fn connected_apply_approved_schedule(
+        &mut self,
+        request: &ApprovedScheduleRequest,
+    ) -> Result<ApprovedScheduleReceipt, String> {
+        let Self::Connected { connection, .. } = self else {
+            return Err("approving a schedule requires a connected replica".into());
+        };
+        connection
+            .apply_approved_scenario_schedule(request)
+            .map_err(|error| {
+                format!(
+                    "Plan execution rejected: {}",
+                    describe_connection_error(&error)
+                )
+            })
     }
 
     fn record_disposition(&mut self, disposition: &CommandDisposition) {
@@ -460,7 +1201,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.list_knowledge(),
             Self::Connected { .. } => Err(unavailable(
-                "connected mode note browsing uses the legacy command surface",
+                "connected mode note browsing uses the connected console (`:`): note.search, note.cached or note.show",
             )),
         }
     }
@@ -801,7 +1542,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.configure_project_strategy(request),
             Self::Connected { .. } => Err(unavailable(
-                "project strategy editing requires the connected command surface",
+                "project strategy editing requires the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -813,7 +1554,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.set_project_status(request),
             Self::Connected { .. } => Err(unavailable(
-                "project status editing requires the connected command surface",
+                "project status editing requires the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -842,7 +1583,7 @@ impl Backend {
                 client.change_project_evidence(project_id, kind, evidence_id, bind)
             }
             Self::Connected { .. } => Err(unavailable(
-                "evidence editing requires the connected command surface",
+                "evidence editing requires the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -851,7 +1592,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.set_metric_target(target),
             Self::Connected { .. } => Err(unavailable(
-                "metric targets require the connected command surface",
+                "metric targets require the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -867,7 +1608,7 @@ impl Backend {
                 client.record_metric_observation(metric_id, observed_at_ms, value)
             }
             Self::Connected { .. } => Err(unavailable(
-                "metric observations require the connected command surface",
+                "metric observations require the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -879,7 +1620,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.create_knowledge(request),
             Self::Connected { .. } => Err(unavailable(
-                "note creation requires the connected command surface",
+                "note creation requires the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -891,7 +1632,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.record_habit_occurrence(request),
             Self::Connected { .. } => Err(unavailable(
-                "habit recording requires the connected command surface",
+                "habit recording requires the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -904,7 +1645,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.create_habit(request),
             Self::Connected { .. } => Err(unavailable(
-                "habit creation requires the connected command surface",
+                "habit creation requires the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -917,7 +1658,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.habit_history(habit_id),
             Self::Connected { .. } => Err(unavailable(
-                "connected mode habit history uses the legacy command surface",
+                "connected mode habit history uses the connected console (`:`): habit.create or habit.record",
             )),
         }
     }
@@ -929,7 +1670,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.install_bundled_blueprint(id),
             Self::Connected { .. } => Err(unavailable(
-                "blueprint installation requires the connected command surface",
+                "blueprint installation requires the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -943,7 +1684,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.bind_project_blueprint(project_id, blueprint_id, version),
             Self::Connected { .. } => Err(unavailable(
-                "blueprint binding requires the connected command surface",
+                "blueprint binding requires the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -1003,7 +1744,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.create_blueprint_work_item(project_id, kind, properties),
             Self::Connected { .. } => Err(unavailable(
-                "work-item creation requires the connected command surface",
+                "work-item creation requires the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -1019,7 +1760,7 @@ impl Backend {
                 client.update_blueprint_work_item(id, expected_revision, changes)
             }
             Self::Connected { .. } => Err(unavailable(
-                "work-item editing requires the connected command surface",
+                "work-item editing requires the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -1033,7 +1774,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.transition_blueprint_work_item(id, to, expected_revision),
             Self::Connected { .. } => Err(unavailable(
-                "workflow transitions require the connected command surface",
+                "workflow transitions require the connected console (`:`, then Connected commands)",
             )),
         }
     }
@@ -1156,7 +1897,7 @@ impl Backend {
         match self {
             Self::Local(client) => client.apply_task_plan(_plan),
             Self::Connected { .. } => Err(unavailable(
-                "task-plan application requires the connected command surface",
+                "task-plan application requires the connected console (`:`, then Connected commands)",
             )),
         }
     }

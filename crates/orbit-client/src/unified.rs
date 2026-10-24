@@ -1042,6 +1042,52 @@ impl AuthorityConnection {
         }
     }
 
+    /// The last accepted snapshot, if this client has one. This is a thin alias
+    /// for [`Self::accepted_snapshot`] used by frontends that only need to
+    /// distinguish "accepted state observed" from "no snapshot yet".
+    pub fn snapshot(&self) -> Result<Option<Value>, ClientConnectionError> {
+        self.accepted_snapshot()
+    }
+
+    /// Durably queue one canonical intention in the connected replica.
+    ///
+    /// This is a direct passthrough to the replica outbox: embedded authority
+    /// commits synchronously and therefore has no outbox to queue into. A
+    /// successful return means the intention is pending locally, never that the
+    /// server accepted it.
+    pub fn queue_intent(
+        &mut self,
+        id: &str,
+        kind: CommandKind,
+        action: &Value,
+    ) -> Result<(), ClientConnectionError> {
+        match self {
+            Self::Embedded(_) => Err(ClientConnectionError::Unsupported(
+                "embedded authority commits commands immediately and keeps no outbox",
+            )),
+            Self::Remote { replica, .. } => {
+                replica.queue_command(id, kind, action)?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Stage a complete user-reviewed workflow in one replica transaction.
+    ///
+    /// Staging is atomic locally; remote execution remains ordered and may
+    /// commit a partial prefix. Nothing is accepted by staging alone.
+    pub fn queue_intent_batch(
+        &mut self,
+        commands: &[(String, CommandKind, Value)],
+    ) -> Result<usize, ClientConnectionError> {
+        match self {
+            Self::Embedded(_) => Err(ClientConnectionError::Unsupported(
+                "embedded authority commits commands immediately and keeps no outbox",
+            )),
+            Self::Remote { replica, .. } => Ok(replica.queue_workflow(commands)?),
+        }
+    }
+
     pub fn converge(
         &mut self,
     ) -> Result<crate::authority::ConvergenceCycle, ClientConnectionError> {
@@ -1433,6 +1479,37 @@ impl AuthorityConnection {
                 .markdown_by_id(id)
                 .map_err(|_| ClientConnectionError::Unsupported("invalid Markdown ID")),
             Self::Remote { replica, .. } => Ok(replica.cached_markdown(id)?),
+        }
+    }
+
+    /// Search the locally cached accepted Markdown mirror. Results may be
+    /// stale and never include pending outbox edits.
+    pub fn search_cached_markdown(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<orbit_runtime::knowledge_service::KnowledgeDocumentInfo>, ClientConnectionError>
+    {
+        match self {
+            Self::Embedded(_) => Err(ClientConnectionError::Unsupported(
+                "embedded mode reads canonical Markdown directly; there is no mirror cache",
+            )),
+            Self::Remote { replica, .. } => Ok(replica.search_cached_markdown(query, limit)?),
+        }
+    }
+
+    /// Every note in the locally cached accepted Markdown mirror. Completeness
+    /// is reported separately by [`Self::markdown_mirror_status`].
+    pub fn cached_markdown_inventory(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<orbit_runtime::knowledge_service::KnowledgeDocumentInfo>, ClientConnectionError>
+    {
+        match self {
+            Self::Embedded(_) => Err(ClientConnectionError::Unsupported(
+                "embedded mode reads canonical Markdown directly; there is no mirror cache",
+            )),
+            Self::Remote { replica, .. } => Ok(replica.cached_markdown_inventory(limit)?),
         }
     }
 

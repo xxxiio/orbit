@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from pty_harness import CTRL_Q, ENTER, TuiSession, Workspace, strip_ansi  # noqa: E402
+from pty_harness import CTRL_Q, ENTER, ESC, TuiSession, Workspace, strip_ansi  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 SERVER = Path(os.environ.get("ORBIT_SERVER_BIN", ROOT / "target" / "debug" / "orbit-server"))
@@ -146,12 +146,44 @@ def test_connected_shell_pending_flush_and_acceptance(connected_workspace):
         session.wait_for_screen_text("CONNECTED", timeout=8.0, description="connected header")
         session.send(b"gp", note="Projects")
         session.wait_for_screen_text("0 pending", timeout=5.0, description="zero pending")
+
+        # The connected console is one modal in the shared shell, reachable from
+        # the shared palette; no legacy launch flag or second event loop exists.
+        session.send(b":", note="command palette")
+        session.send_text("connected commands")
+        session.wait_for_screen_text("Connected commands", timeout=5.0, description="console entry")
+        session.send(ENTER, note="open connected console")
+        session.wait_for_screen_text(
+            "queued intents are PENDING", timeout=5.0, description="connected console"
+        )
+        session.send(ESC, note="close connected console")
+        session.wait_until_screen(
+            lambda view: "queued intents are PENDING" not in view,
+            timeout=5.0,
+            description="connected console closes",
+        )
+
         session.send(b"c", note="new project form")
         session.wait_for_screen_text("New project", timeout=8.0, description="project form")
         session.send_text("Connected Project")
         session.send(ENTER, note="queue project")
         session.wait_for_text("not accepted yet", timeout=8.0, description="pending project")
         assert "0 project(s)" in session.screen_text, session.screen_text
+
+        session.send(b"!", note="pending inspector")
+        session.wait_for_screen_text(
+            "Pending commands", timeout=8.0, description="pending inspector"
+        )
+        session.wait_for_screen_text(
+            "not accepted", timeout=8.0, description="pending inspector keeps intent unaccepted"
+        )
+        assert "0 project(s)" in session.screen_text, session.screen_text
+        session.send(ESC, note="close pending inspector")
+        session.wait_until_screen(
+            lambda view: "Pending commands" not in view,
+            timeout=5.0,
+            description="pending inspector closes",
+        )
 
         session.send(b"f", note="flush outbox")
         session.send(b"r", note="refresh accepted")
