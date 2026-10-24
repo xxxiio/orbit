@@ -1,0 +1,381 @@
+{
+  "binary": {
+    "exists": true,
+    "mtime_iso": "2026-10-24T10:15:32Z",
+    "mtime_ns": 1792836932459819134,
+    "path": "/home/xliu/dev/orbit/target/debug/orbit-tui",
+    "size_bytes": 176916208
+  },
+  "caveats": [
+    "PTY wall-clock includes process scheduling, terminal emulation and harness polling",
+    "interaction latency only; not a benchmark claim",
+    "Rust debug binary unless ORBIT_TUI_BIN points at a release build",
+    "later operations run with warm OS caches inside each repeat",
+    "p90 over a small number of samples is the maximum for n=5"
+  ],
+  "fixture_counts": {
+    "activities": 1062,
+    "agent_jobs": 8,
+    "attachments": 6,
+    "distinct_pinned_versions": 5,
+    "pinned_blueprints": [
+      {
+        "id": "basic",
+        "version": 1
+      },
+      {
+        "id": "basic",
+        "version": 1
+      },
+      {
+        "id": "basic",
+        "version": 1
+      },
+      {
+        "id": "basic",
+        "version": 1
+      },
+      {
+        "id": "basic",
+        "version": 1
+      },
+      {
+        "id": "development",
+        "version": 2
+      },
+      {
+        "id": "development",
+        "version": 2
+      },
+      {
+        "id": "development",
+        "version": 2
+      },
+      {
+        "id": "development",
+        "version": 2
+      },
+      {
+        "id": "research",
+        "version": 2
+      },
+      {
+        "id": "research",
+        "version": 2
+      },
+      {
+        "id": "learning",
+        "version": 2
+      },
+      {
+        "id": "learning",
+        "version": 2
+      },
+      {
+        "id": "habits",
+        "version": 2
+      },
+      {
+        "id": "habits",
+        "version": 2
+      },
+      {
+        "id": "basic",
+        "version": 1
+      },
+      {
+        "id": "basic",
+        "version": 1
+      },
+      {
+        "id": "basic",
+        "version": 1
+      },
+      {
+        "id": "basic",
+        "version": 1
+      },
+      {
+        "id": "basic",
+        "version": 1
+      }
+    ],
+    "projects": 20,
+    "tasks": 200,
+    "tasks_by_status": {
+      "blocked": 16,
+      "cancelled": 11,
+      "deferred": 9,
+      "done": 46,
+      "in_progress": 30,
+      "inbox": 9,
+      "planned": 7,
+      "ready": 23,
+      "review": 23,
+      "waiting": 26
+    },
+    "tasks_with_deadline": 200,
+    "tasks_with_estimate": 200,
+    "tasks_with_priority": 200
+  },
+  "generated_at": "2026-10-24T10:16:33Z",
+  "git_dirty": true,
+  "git_revision": "3111f5c815902022b7a035473a18c4d52a24bd43",
+  "method": {
+    "barriers": "input-order barriers use the g prefix hint; no sleeps are used as assertions",
+    "harness": "tests/acceptance/tui/pty_harness.py TuiSession (real binary)",
+    "percentile": "nearest-rank p90",
+    "session_order": "cold start -> search -> project switch -> task detail -> scroll -> quick edit -> refresh -> view switch",
+    "units": "milliseconds of PTY wall-clock time",
+    "workspace_reset": "tui-state.json removed before each launch"
+  },
+  "operations": {
+    "cold_start_first_frame": {
+      "100x30": {
+        "count": 5,
+        "max_ms": 102.558,
+        "median_ms": 101.21,
+        "min_ms": 96.562,
+        "p90_ms": 102.558,
+        "samples_ms": [
+          102.558,
+          101.92,
+          101.21,
+          99.034,
+          96.562
+        ]
+      },
+      "160x45": {
+        "count": 5,
+        "max_ms": 108.265,
+        "median_ms": 101.677,
+        "min_ms": 97.876,
+        "p90_ms": 108.265,
+        "samples_ms": [
+          103.754,
+          97.876,
+          108.265,
+          98.936,
+          101.677
+        ]
+      }
+    },
+    "open_task_detail": {
+      "100x30": {
+        "count": 5,
+        "max_ms": 4.34,
+        "median_ms": 4.163,
+        "min_ms": 4.092,
+        "p90_ms": 4.34,
+        "samples_ms": [
+          4.34,
+          4.163,
+          4.281,
+          4.092,
+          4.158
+        ]
+      },
+      "160x45": {
+        "count": 5,
+        "max_ms": 5.724,
+        "median_ms": 5.296,
+        "min_ms": 5.048,
+        "p90_ms": 5.724,
+        "samples_ms": [
+          5.201,
+          5.4,
+          5.724,
+          5.296,
+          5.048
+        ]
+      }
+    },
+    "project_switch_open_leave_open_next": {
+      "100x30": {
+        "count": 5,
+        "max_ms": 84.132,
+        "median_ms": 82.585,
+        "min_ms": 81.275,
+        "p90_ms": 84.132,
+        "samples_ms": [
+          84.106,
+          84.132,
+          82.585,
+          81.275,
+          82.064
+        ]
+      },
+      "160x45": {
+        "count": 5,
+        "max_ms": 90.92,
+        "median_ms": 88.53,
+        "min_ms": 85.531,
+        "p90_ms": 90.92,
+        "samples_ms": [
+          90.92,
+          85.716,
+          88.592,
+          88.53,
+          85.531
+        ]
+      }
+    },
+    "refresh_project": {
+      "100x30": {
+        "count": 5,
+        "max_ms": 22.162,
+        "median_ms": 19.899,
+        "min_ms": 19.469,
+        "p90_ms": 22.162,
+        "samples_ms": [
+          22.162,
+          19.56,
+          19.899,
+          19.469,
+          19.929
+        ]
+      },
+      "160x45": {
+        "count": 5,
+        "max_ms": 28.361,
+        "median_ms": 25.145,
+        "min_ms": 24.588,
+        "p90_ms": 28.361,
+        "samples_ms": [
+          25.145,
+          28.361,
+          24.588,
+          25.4,
+          24.838
+        ]
+      }
+    },
+    "save_quick_edit_title": {
+      "100x30": {
+        "count": 5,
+        "max_ms": 83.892,
+        "median_ms": 82.606,
+        "min_ms": 81.448,
+        "p90_ms": 83.892,
+        "samples_ms": [
+          83.892,
+          82.13,
+          81.448,
+          82.779,
+          82.606
+        ]
+      },
+      "160x45": {
+        "count": 5,
+        "max_ms": 92.242,
+        "median_ms": 87.331,
+        "min_ms": 86.782,
+        "p90_ms": 92.242,
+        "samples_ms": [
+          92.242,
+          87.272,
+          87.331,
+          86.782,
+          88.157
+        ]
+      }
+    },
+    "scroll_task_table_20_rows": {
+      "100x30": {
+        "count": 5,
+        "max_ms": 104.93,
+        "median_ms": 104.195,
+        "min_ms": 103.935,
+        "p90_ms": 104.93,
+        "samples_ms": [
+          104.93,
+          104.351,
+          104.053,
+          103.935,
+          104.195
+        ]
+      },
+      "160x45": {
+        "count": 5,
+        "max_ms": 106.666,
+        "median_ms": 106.261,
+        "min_ms": 105.749,
+        "p90_ms": 106.666,
+        "samples_ms": [
+          106.666,
+          106.448,
+          105.749,
+          106.148,
+          106.261
+        ]
+      }
+    },
+    "search_open_query_first_result": {
+      "100x30": {
+        "count": 5,
+        "max_ms": 62.164,
+        "median_ms": 60.023,
+        "min_ms": 59.64,
+        "p90_ms": 62.164,
+        "samples_ms": [
+          60.46,
+          62.164,
+          59.775,
+          59.64,
+          60.023
+        ]
+      },
+      "160x45": {
+        "count": 5,
+        "max_ms": 62.891,
+        "median_ms": 62.138,
+        "min_ms": 61.555,
+        "p90_ms": 62.891,
+        "samples_ms": [
+          61.834,
+          62.138,
+          62.891,
+          61.555,
+          62.204
+        ]
+      }
+    },
+    "switch_blueprint_view": {
+      "100x30": {
+        "count": 5,
+        "max_ms": 21.923,
+        "median_ms": 21.459,
+        "min_ms": 20.938,
+        "p90_ms": 21.923,
+        "samples_ms": [
+          20.938,
+          21.445,
+          21.683,
+          21.459,
+          21.923
+        ]
+      },
+      "160x45": {
+        "count": 5,
+        "max_ms": 80.611,
+        "median_ms": 77.6,
+        "min_ms": 76.032,
+        "p90_ms": 80.611,
+        "samples_ms": [
+          76.032,
+          76.489,
+          79.697,
+          77.6,
+          80.611
+        ]
+      }
+    }
+  },
+  "repeat": 5,
+  "schema": "m29-perf-baseline/v1",
+  "sizes": [
+    "100x30",
+    "160x45"
+  ],
+  "workspace": "/tmp/opencode/m29-after-20261024T100915Z"
+}

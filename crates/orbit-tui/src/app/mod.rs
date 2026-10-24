@@ -83,6 +83,15 @@ pub struct App {
     /// Last painted maximum detail scroll. Kept in the app so upward scrolling
     /// from an over-scrolled value moves immediately instead of looking dead.
     pub detail_max_scroll: std::cell::Cell<usize>,
+    /// Detail pane model cache. The docked pane is redrawn every frame at the
+    /// wide breakpoint; its backend reads only rerun when the subject or the
+    /// accepted data changes.
+    pub(crate) detail_cache: std::cell::RefCell<Option<(DetailCacheKey, Option<DetailModel>)>>,
+    pub(crate) detail_revision: std::cell::Cell<u64>,
+    #[cfg(test)]
+    pub(crate) detail_cache_builds: std::cell::Cell<u64>,
+    #[cfg(test)]
+    pub(crate) workspace_refreshes: std::cell::Cell<u64>,
     pub modal_scroll: usize,
     pub sidebar_selection: usize,
     pub modal: Option<Modal>,
@@ -155,6 +164,12 @@ impl App {
             scroll: 0,
             detail_scroll: 0,
             detail_max_scroll: std::cell::Cell::new(0),
+            detail_cache: std::cell::RefCell::new(None),
+            detail_revision: std::cell::Cell::new(0),
+            #[cfg(test)]
+            detail_cache_builds: std::cell::Cell::new(0),
+            #[cfg(test)]
+            workspace_refreshes: std::cell::Cell::new(0),
             modal_scroll: 0,
             sidebar_selection: 0,
             modal: None,

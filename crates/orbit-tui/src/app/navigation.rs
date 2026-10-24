@@ -85,6 +85,10 @@ impl App {
     }
 
     pub fn refresh_workspace(&mut self) {
+        #[cfg(test)]
+        self.workspace_refreshes
+            .set(self.workspace_refreshes.get().wrapping_add(1));
+        self.invalidate_detail_cache();
         // Capture the cursor before the accepted data is replaced, otherwise
         // restore_cursor has nothing stable to resolve the selected id against.
         self.sync_cursor();
@@ -337,6 +341,48 @@ impl App {
         }
     }
 
+    /// Refresh after a quick edit changed only one task's title.
+    ///
+    /// The open project is re-resolved (one scoped read) and the one task row in
+    /// the already-loaded workspace snapshot is patched in place. Re-reading the
+    /// whole workspace here would repeat per-project evidence, habit history,
+    /// knowledge and agent-job reads that a title edit cannot change. Priority
+    /// changes can reorder Today/Next and deliberately keep the full refresh.
+    pub fn refresh_after_task_title(&mut self, task_id: &str, title: &str) {
+        self.invalidate_detail_cache();
+        if self.screen == Screen::Project {
+            self.refresh_project();
+        } else {
+            self.refresh_current();
+        }
+        let Some(workspace) = &mut self.workspace else {
+            return;
+        };
+        let mut found = false;
+        for task in workspace.tasks.iter_mut().chain(workspace.inbox.iter_mut()) {
+            if task.id == task_id {
+                task.title = title.to_owned();
+                found = true;
+            }
+        }
+        if let Some(brief) = &mut self.planning_brief {
+            for item in &mut brief.items {
+                if item.id == task_id {
+                    item.title = title.to_owned();
+                }
+            }
+            self.planning = Some(planning_ui::PlanningDocument::from_brief(brief));
+        }
+        if found {
+            // Pure rebuild from the patched snapshot; no backend reads.
+            self.rebuild_global_views();
+        } else {
+            // The task was not in this snapshot (for example it is outside the
+            // bounded project list): fall back to the full refresh.
+            self.refresh_workspace();
+        }
+    }
+
     pub fn open_project(&mut self, project_id: &str) {
         self.push_history();
         self.open_project_internal(project_id, false);
@@ -363,6 +409,7 @@ impl App {
     }
 
     fn open_project_internal(&mut self, project_id: &str, record_history: bool) {
+        self.invalidate_detail_cache();
         if record_history {
             self.push_history();
         }
@@ -406,6 +453,7 @@ impl App {
     }
 
     pub fn refresh_project(&mut self) {
+        self.invalidate_detail_cache();
         let Some(state) = &self.project else {
             return;
         };
@@ -490,7 +538,47 @@ impl App {
         }
     }
 
+    /// Invalidate the cached detail pane model. Any refresh, mutation or
+    /// navigation that can change the pane's subject calls this; the cache key
+    /// also covers identity changes, but an in-place refresh keeps the same
+    /// identity, so the revision is what forces a rebuild there.
+    pub(crate) fn invalidate_detail_cache(&self) {
+        self.detail_revision
+            .set(self.detail_revision.get().wrapping_add(1));
+    }
+
+    fn detail_cache_key(&self) -> DetailCacheKey {
+        let project = self.project.as_ref();
+        DetailCacheKey {
+            screen: self.screen,
+            project_id: project.map(|project| project.id.clone()),
+            view_id: project
+                .and_then(|project| project.views.get(project.active_view))
+                .map(|view| view.id.clone()),
+            projects_selection: self.projects_selection,
+            active_component: self.active_component,
+            selected: self.selected,
+            selected_id: self.selected_item().map(|item| item.id.clone()),
+            revision: self.detail_revision.get(),
+        }
+    }
+
     pub fn detail_model(&self) -> Option<DetailModel> {
+        let key = self.detail_cache_key();
+        if let Some((cached_key, cached)) = self.detail_cache.borrow().as_ref()
+            && *cached_key == key
+        {
+            return cached.clone();
+        }
+        let detail = self.build_detail_model();
+        *self.detail_cache.borrow_mut() = Some((key, detail.clone()));
+        detail
+    }
+
+    fn build_detail_model(&self) -> Option<DetailModel> {
+        #[cfg(test)]
+        self.detail_cache_builds
+            .set(self.detail_cache_builds.get() + 1);
         if self.screen == Screen::Projects {
             return self
                 .selected_project()
@@ -541,6 +629,7 @@ impl App {
     }
 
     pub fn switch_view(&mut self, delta: isize) {
+        self.invalidate_detail_cache();
         let Some(state) = &mut self.project else {
             return;
         };
@@ -561,6 +650,7 @@ impl App {
     }
 
     pub fn switch_view_by_index(&mut self, index: usize) {
+        self.invalidate_detail_cache();
         let Some(state) = &mut self.project else {
             return;
         };
@@ -593,6 +683,7 @@ impl App {
     }
 
     fn go_screen_internal(&mut self, screen: Screen, record_history: bool) {
+        self.invalidate_detail_cache();
         if record_history && self.screen != screen {
             self.push_history();
         }

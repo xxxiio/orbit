@@ -475,3 +475,20 @@ pub(crate) struct CursorState {
     pub(crate) selected_id: Vec<Option<String>>,
     pub(crate) scroll: Vec<usize>,
 }
+
+/// Identity of the detail pane's current subject. A cached [`DetailModel`] is
+/// only reused while every input that can change it stays equal; the revision
+/// covers in-place refreshes that keep the same subject but replace its data.
+///
+/// [`DetailModel`]: orbit_ui::model::DetailModel
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DetailCacheKey {
+    pub(crate) screen: Screen,
+    pub(crate) project_id: Option<String>,
+    pub(crate) view_id: Option<String>,
+    pub(crate) projects_selection: usize,
+    pub(crate) active_component: usize,
+    pub(crate) selected: usize,
+    pub(crate) selected_id: Option<String>,
+    pub(crate) revision: u64,
+}

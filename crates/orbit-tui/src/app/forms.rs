@@ -1204,7 +1204,35 @@ impl App {
         match result {
             Ok(()) => {
                 if self.status.kind != StatusKind::Pending {
-                    self.refresh_after_mutation();
+                    match &form.mode {
+                        // A quick edit only changes one task's title/priority. It
+                        // must not trigger a whole-workspace re-read.
+                        FormMode::QuickEditTask { task_id } => {
+                            let title = Self::form_value(&form, "title").trim().to_owned();
+                            let priority = Self::form_value(&form, "priority").trim().to_owned();
+                            // Only a title change is fully local to the project
+                            // view and the in-memory snapshot. A priority change
+                            // can reorder Today/Next, which needs the full
+                            // planning refresh.
+                            let priority_changed = self
+                                .workspace
+                                .as_ref()
+                                .and_then(|workspace| {
+                                    workspace
+                                        .tasks
+                                        .iter()
+                                        .find(|task| task.id == *task_id)
+                                        .map(|row| row.priority != priority)
+                                })
+                                .unwrap_or(true);
+                            if priority_changed {
+                                self.refresh_after_mutation();
+                            } else {
+                                self.refresh_after_task_title(task_id, &title);
+                            }
+                        }
+                        _ => self.refresh_after_mutation(),
+                    }
                 }
                 self.reopen_after_mutation(&form.mode);
             }
