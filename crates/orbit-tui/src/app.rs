@@ -1099,6 +1099,52 @@ impl App {
         self.current_component()?.selected(self.selected)
     }
 
+    /// Stable identity of the selected row, used for durable navigation state.
+    pub fn current_selected_id(&self) -> Option<String> {
+        self.selected_item().map(|item| item.id.clone())
+    }
+
+    /// Restore the active component, selection and scroll offsets from durable
+    /// navigation state without touching domain data.
+    ///
+    /// Selection prefers a stable identifier (so reordered rows still resolve),
+    /// then the saved index, and always lands on a valid row: index `0` for an
+    /// empty component. Scroll offsets are clamped to the restored selection.
+    pub fn restore_selection(
+        &mut self,
+        selected_id: Option<&str>,
+        index: Option<usize>,
+        active_component: Option<usize>,
+        scroll: Option<usize>,
+        detail_scroll: Option<usize>,
+    ) {
+        let count = self.component_count();
+        self.active_component = active_component
+            .unwrap_or(self.active_component)
+            .min(count.saturating_sub(1));
+        let len = self
+            .current_component()
+            .map(|component| component.selection.len())
+            .unwrap_or(0);
+        let by_id = selected_id.and_then(|id| {
+            self.current_component()
+                .and_then(|component| component.selection.iter().position(|item| item.id == id))
+        });
+        self.selected = by_id.or(index).unwrap_or(0).min(len.saturating_sub(1));
+        let scroll = scroll.unwrap_or(0);
+        self.scroll = if len == 0 {
+            scroll
+        } else {
+            scroll.min(self.selected)
+        };
+        if let Some(detail_scroll) = detail_scroll {
+            self.detail_scroll = detail_scroll;
+        }
+        if count > 0 {
+            self.sync_cursor();
+        }
+    }
+
     pub fn detail_model(&self) -> Option<DetailModel> {
         if self.screen == Screen::Projects {
             return self
