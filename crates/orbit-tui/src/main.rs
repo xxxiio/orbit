@@ -1808,7 +1808,13 @@ mod m28_render_tests {
     #[test]
     fn tui_sources_do_not_open_storage_or_spawn_commands() {
         for source in [
-            include_str!("app.rs"),
+            include_str!("app/mod.rs"),
+            include_str!("app/state.rs"),
+            include_str!("app/navigation.rs"),
+            include_str!("app/selection.rs"),
+            include_str!("app/actions.rs"),
+            include_str!("app/forms.rs"),
+            include_str!("app/connected.rs"),
             include_str!("render.rs"),
             include_str!("theme.rs"),
         ] {
