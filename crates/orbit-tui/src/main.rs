@@ -262,6 +262,8 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<b
         },
         KeyCode::Char('a') | KeyCode::Char('s') => app.open_action_menu(),
         KeyCode::Char('e') => app.edit_selected(),
+        KeyCode::Char('E') => app.quick_edit_selected(),
+        KeyCode::Char('S') => app.open_status_menu(),
         KeyCode::Char('K') => {
             if let Some(item) = app.selected_item()
                 && item.kind == orbit_ui::model::ItemKind::Task
@@ -474,7 +476,7 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                         .get(form.focused)
                         .is_some_and(|field| matches!(field.kind, FormFieldKind::Multiline));
                     if multiline {
-                        form.error = None;
+                        form.clear_error_for_focused();
                         if let Some(field) = form.fields.get_mut(form.focused) {
                             text_insert(field, '\n');
                         }
@@ -504,7 +506,7 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                     form.focused = form.focused.saturating_sub(1);
                 }
                 KeyCode::Left | KeyCode::Right => {
-                    form.error = None;
+                    form.clear_error_for_focused();
                     let delta = if matches!(code, KeyCode::Right) {
                         1
                     } else {
@@ -543,7 +545,7 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                     }
                 }
                 KeyCode::Home | KeyCode::End => {
-                    form.error = None;
+                    form.clear_error_for_focused();
                     let end = matches!(code, KeyCode::End);
                     if let Some(field) = form.fields.get_mut(form.focused)
                         && matches!(
@@ -555,7 +557,7 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                     }
                 }
                 KeyCode::Delete => {
-                    form.error = None;
+                    form.clear_error_for_focused();
                     if let Some(field) = form.fields.get_mut(form.focused)
                         && matches!(
                             field.kind,
@@ -567,7 +569,7 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                     }
                 }
                 KeyCode::Char(' ') => {
-                    form.error = None;
+                    form.clear_error_for_focused();
                     if let Some(field) = form.fields.get_mut(form.focused) {
                         match field.kind {
                             FormFieldKind::Boolean => {
@@ -589,7 +591,7 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                     }
                 }
                 KeyCode::Backspace => {
-                    form.error = None;
+                    form.clear_error_for_focused();
                     if let Some(field) = form.fields.get_mut(form.focused)
                         && matches!(
                             field.kind,
@@ -601,7 +603,7 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
                     }
                 }
                 KeyCode::Char(character) => {
-                    form.error = None;
+                    form.clear_error_for_focused();
                     if let Some(field) = form.fields.get_mut(form.focused)
                         && matches!(
                             field.kind,
@@ -652,11 +654,31 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
             KeyCode::Up | KeyCode::Char('k') => {
                 *selected = selected.saturating_sub(1);
             }
+            KeyCode::PageDown => {
+                *selected = (*selected + 8).min(actions.len().saturating_sub(1));
+            }
+            KeyCode::PageUp => {
+                *selected = selected.saturating_sub(8);
+            }
             KeyCode::Enter => {
                 let action = actions.get(*selected).cloned();
-                keep = false;
                 if let Some(action) = action {
-                    app.execute_action(action);
+                    if !action.enabled {
+                        // Keep the menu open: the reason is shown for this row,
+                        // and nothing is executed.
+                        app.notify(
+                            action
+                                .disabled_reason
+                                .clone()
+                                .unwrap_or_else(|| format!("{} is unavailable", action.label)),
+                            StatusKind::Warning,
+                        );
+                    } else {
+                        keep = false;
+                        app.execute_action(action);
+                    }
+                } else {
+                    keep = false;
                 }
             }
             _ => {}
@@ -665,39 +687,69 @@ fn handle_modal(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result
             query,
             entries,
             selected,
-        } => match code {
-            KeyCode::Esc => keep = false,
-            KeyCode::Down => *selected = (*selected + 1).min(entries.len().saturating_sub(1)),
-            KeyCode::Up => *selected = selected.saturating_sub(1),
-            KeyCode::Backspace => {
-                query.pop();
-                *entries = app.palette_entries(query);
-                *selected = 0;
-            }
-            KeyCode::Char(character) => {
-                query.push(character);
-                *entries = app.palette_entries(query);
-                *selected = 0;
-            }
-            KeyCode::Enter => {
-                let action = entries.get(*selected).map(|entry| entry.action.clone());
-                keep = false;
-                if let Some(action) = action {
-                    if matches!(action, app::PaletteAction::Quit) {
-                        app.modal = Some(Modal::Palette {
-                            query: query.clone(),
-                            entries: entries.clone(),
-                            selected: *selected,
-                        });
-                        return Ok(app.request_quit());
+        } => {
+            if modifiers.contains(KeyModifiers::CONTROL) {
+                // Ctrl+U clears the query; other control chords are commands,
+                // never query text.
+                if matches!(code, KeyCode::Char('u')) {
+                    query.clear();
+                    *entries = app.palette_entries(query);
+                    *selected = 0;
+                }
+            } else {
+                match code {
+                    KeyCode::Esc => keep = false,
+                    KeyCode::Down => {
+                        *selected = (*selected + 1).min(entries.len().saturating_sub(1))
                     }
-                    if app.execute_palette_action(action) {
-                        return Ok(true);
+                    KeyCode::Up => *selected = selected.saturating_sub(1),
+                    KeyCode::PageDown => {
+                        *selected = (*selected + 8).min(entries.len().saturating_sub(1))
                     }
+                    KeyCode::PageUp => *selected = selected.saturating_sub(8),
+                    KeyCode::Backspace => {
+                        query.pop();
+                        *entries = app.palette_entries(query);
+                        *selected = 0;
+                    }
+                    KeyCode::Char(character) => {
+                        query.push(character);
+                        *entries = app.palette_entries(query);
+                        *selected = 0;
+                    }
+                    KeyCode::Enter => {
+                        let entry = entries.get(*selected).cloned();
+                        match entry {
+                            Some(entry) if !entry.enabled => {
+                                app.notify(
+                                    format!(
+                                        "{} is unavailable: {}",
+                                        entry.label, entry.description
+                                    ),
+                                    StatusKind::Warning,
+                                );
+                            }
+                            Some(entry) => {
+                                keep = false;
+                                if matches!(entry.action, app::PaletteAction::Quit) {
+                                    app.modal = Some(Modal::Palette {
+                                        query: query.clone(),
+                                        entries: entries.clone(),
+                                        selected: *selected,
+                                    });
+                                    return Ok(app.request_quit());
+                                }
+                                if app.execute_palette_action(entry.action) {
+                                    return Ok(true);
+                                }
+                            }
+                            None => keep = false,
+                        }
+                    }
+                    _ => {}
                 }
             }
-            _ => {}
-        },
+        }
         Modal::Help => match code {
             KeyCode::Esc | KeyCode::Char('?') => keep = false,
             KeyCode::Down | KeyCode::Char('j') => {
@@ -3642,7 +3694,7 @@ mod m28_scroll_tests {
         app.modal = Some(Modal::Help);
         let before = text(&mut app, 60, 18);
         assert!(!before.contains("Ctrl+Q / Ctrl+C"), "{before}");
-        for _ in 0..3 {
+        for _ in 0..4 {
             handle_key(&mut app, KeyCode::PageDown, KeyModifiers::NONE).unwrap();
         }
         let after = text(&mut app, 60, 18);
@@ -4998,7 +5050,7 @@ mod m28_usability_recovery_tests {
 #[cfg(test)]
 mod m29_layout_presentation_tests {
     use super::*;
-    use app::FocusPane;
+    use app::{FocusPane, FormMode};
     use orbit_ui::model::{KanbanColumnModel, ListItemModel, SelectionItem, TableRowModel};
     use orbit_ui::{ComponentBody, LoadStatus, ResolvedComponent};
     use ratatui::style::Modifier;
@@ -5410,6 +5462,297 @@ mod m29_layout_presentation_tests {
             "selection lost after refresh: {after}"
         );
         assert!(after.contains("columns 2-4 of 9"), "{after}");
+    }
+
+    #[test]
+    fn compact_bar_ranks_task_actions_and_never_repeats_a_key() {
+        let mut app = project_app("m29-bar");
+        switch_to(&mut app, "board");
+        app.selected = 0;
+        let rendered = render(&mut app, 120, 35);
+        let line = rendered
+            .lines()
+            .find(|line| line.contains("Actions:"))
+            .unwrap_or_else(|| panic!("no action bar:\n{rendered}"));
+        for expected in ["Open", "Edit", "Status", "a more actions", "q quit"] {
+            assert!(line.contains(expected), "missing {expected}: {line}");
+        }
+        let payload = line
+            .split_once("Actions:")
+            .map(|(_, rest)| rest)
+            .unwrap_or(line);
+        let keys: Vec<&str> = payload
+            .split(" · ")
+            .filter_map(|part| {
+                let part = part.trim();
+                if part.starts_with("a more") || part == "q quit" {
+                    None
+                } else {
+                    part.split_whitespace().next()
+                }
+            })
+            .collect();
+        assert!(!keys.is_empty(), "no ranked actions in {line}");
+        let mut unique = keys.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), keys.len(), "duplicate key in {line}");
+    }
+
+    fn agent_job_selection() -> SelectionItem {
+        SelectionItem {
+            id: "job-1".into(),
+            kind: orbit_ui::ItemKind::AgentJob,
+            title: "Nightly run".into(),
+            subtitle: "running".into(),
+            status: "running".into(),
+            fields: Vec::new(),
+            allowed_statuses: Vec::new(),
+            allowed_transitions: Vec::new(),
+            revision: None,
+        }
+    }
+
+    #[test]
+    fn disabled_action_shows_its_reason_and_enter_does_not_run_it() {
+        let mut app = base_app("m29-disabled");
+        show_only(
+            &mut app,
+            ResolvedComponent {
+                id: "jobs".into(),
+                title: "Agent jobs".into(),
+                component_type: "agent_jobs".into(),
+                status: LoadStatus::Ready,
+                body: ComponentBody::AgentJobs { jobs: Vec::new() },
+                selection: vec![agent_job_selection()],
+            },
+        );
+        app.selected = 0;
+        app.open_action_menu();
+        let Some(Modal::ActionMenu {
+            actions,
+            selected,
+            primary,
+            ..
+        }) = &mut app.modal
+        else {
+            panic!("action menu");
+        };
+        *selected = actions
+            .iter()
+            .position(|action| action.id == "review_agent")
+            .expect("review action");
+        assert!(*primary < actions.len(), "disabled action belongs to More");
+        let rendered = render(&mut app, 120, 40);
+        assert!(rendered.contains("Suggested"), "{rendered}");
+        assert!(rendered.contains("More actions"), "{rendered}");
+        assert!(
+            rendered.contains("— Review/resume requires an explicitly configured"),
+            "{rendered}"
+        );
+        handle_key(&mut app, KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        assert!(
+            matches!(app.modal, Some(Modal::ActionMenu { .. })),
+            "disabled action must keep the menu open"
+        );
+        assert!(
+            app.status.text.contains("explicitly configured"),
+            "{}",
+            app.status.text
+        );
+    }
+
+    #[test]
+    fn palette_ranking_prefers_prefix_and_keeps_recents_for_an_empty_query() {
+        let mut app = project_app("m29-palette-rank");
+        let project_id = app.project.as_ref().unwrap().id.clone();
+        let project_name = app.project.as_ref().unwrap().name.clone();
+
+        let ranked = app.palette_entries("pro");
+        assert_eq!(ranked[0].label, "Projects", "{:?}", ranked[0].label);
+        assert!(ranked[1].label.to_lowercase().contains("project"));
+
+        let quit = app.palette_entries("qui");
+        assert_eq!(quit[0].label, "Quit", "{:?}", quit[0].label);
+
+        app.execute_palette_action(app::PaletteAction::OpenProject(project_id));
+        let recent = app.palette_entries("");
+        assert_eq!(
+            recent[0].recent_rank,
+            Some(0),
+            "the opened project should be the first recent entry: {:?}",
+            recent[0].label
+        );
+        assert!(recent[0].label.contains(&project_name), "{:?}", recent[0]);
+    }
+
+    #[test]
+    fn palette_refuses_a_disabled_entry_and_keeps_the_query() {
+        let mut app = base_app("m29-palette-disabled");
+        show_only(
+            &mut app,
+            ResolvedComponent {
+                id: "jobs".into(),
+                title: "Agent jobs".into(),
+                component_type: "agent_jobs".into(),
+                status: LoadStatus::Ready,
+                body: ComponentBody::AgentJobs { jobs: Vec::new() },
+                selection: vec![agent_job_selection()],
+            },
+        );
+        app.selected = 0;
+        app.open_palette();
+        let Some(Modal::Palette {
+            entries, selected, ..
+        }) = &mut app.modal
+        else {
+            panic!("palette");
+        };
+        *selected = entries
+            .iter()
+            .position(|entry| !entry.enabled)
+            .expect("disabled palette entry");
+        handle_key(&mut app, KeyCode::Enter, KeyModifiers::NONE).unwrap();
+        let Some(Modal::Palette { query, .. }) = &app.modal else {
+            panic!("palette should stay open");
+        };
+        assert!(query.is_empty());
+        assert!(
+            app.status.text.contains("unavailable") && app.status.text.contains("Review/resume"),
+            "{}",
+            app.status.text
+        );
+    }
+
+    #[test]
+    fn quick_edit_edits_title_and_priority_through_existing_commands() {
+        let mut app = project_app("m29-quick");
+        switch_to(&mut app, "board");
+        app.selected = 0;
+        let item = app.selected_item().cloned().expect("task selection");
+        let task_id = item.id.clone();
+        let entries = app.palette_entries("");
+        assert!(
+            entries.iter().any(|entry| entry.label == "Quick edit"),
+            "palette should offer quick edit"
+        );
+        handle_key(&mut app, KeyCode::Char('E'), KeyModifiers::NONE).unwrap();
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("quick edit form");
+        };
+        assert!(
+            matches!(form.mode, FormMode::QuickEditTask { .. }),
+            "{:?}",
+            form.mode
+        );
+        let keys: Vec<&str> = form.fields.iter().map(|field| field.key.as_str()).collect();
+        assert_eq!(&keys[..2], ["title", "priority"], "{keys:?}");
+        form.fields[0].value = "Quick edited title".into();
+        form.fields[0].cursor = form.fields[0].value.chars().count();
+        form.fields[1].value = "high".into();
+        form.dirty = true;
+        app.submit_form(form);
+        let task = app.client.task_detail(&task_id).unwrap();
+        assert_eq!(task.title, "Quick edited title");
+        assert_eq!(task.priority.as_deref(), Some("high"));
+        assert!(
+            app.status.text.contains("Quick edit saved"),
+            "{}",
+            app.status.text
+        );
+    }
+
+    #[test]
+    fn edit_task_puts_everyday_fields_first_and_planning_last() {
+        let mut app = project_app("m29-order");
+        switch_to(&mut app, "board");
+        app.selected = 0;
+        let task_id = app.selected_item().unwrap().id.clone();
+        app.start_form(FormMode::EditTask { task_id });
+        let Some(Modal::Form(form)) = &app.modal else {
+            panic!("edit form");
+        };
+        let keys: Vec<&str> = form.fields.iter().map(|field| field.key.as_str()).collect();
+        assert_eq!(&keys[..4], ["title", "priority", "description", "labels"]);
+        assert_eq!(
+            &keys[4..],
+            ["project", "milestone", "estimate", "earliest", "deadline"]
+        );
+    }
+
+    #[test]
+    fn invalid_submission_marks_and_focuses_the_field_without_losing_input() {
+        let mut app = project_app("m29-invalid");
+        switch_to(&mut app, "board");
+        app.selected = 0;
+        let task_id = app.selected_item().unwrap().id.clone();
+        app.start_form(FormMode::EditTask { task_id });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("edit form");
+        };
+        let description_index = form
+            .fields
+            .iter()
+            .position(|field| field.key == "description")
+            .unwrap();
+        form.fields[0].value.clear();
+        form.fields[description_index].value = "keep this text".into();
+        form.dirty = true;
+        app.submit_form(form);
+        let Some(Modal::Form(form)) = &app.modal else {
+            panic!("form should stay open");
+        };
+        assert_eq!(form.invalid, Some(0));
+        assert_eq!(form.focused, 0);
+        assert!(form.error.as_deref().unwrap_or("").contains("Title"));
+        assert_eq!(
+            App::form_value(form, "description"),
+            "keep this text",
+            "typed values must survive a validation failure"
+        );
+        let rendered = render(&mut app, 120, 40);
+        assert!(rendered.contains("! Title"), "{rendered}");
+        // Editing the failing field clears its error; other fields do not.
+        handle_key(&mut app, KeyCode::Char('X'), KeyModifiers::NONE).unwrap();
+        let Some(Modal::Form(form)) = &app.modal else {
+            panic!("form");
+        };
+        assert_eq!(form.invalid, None);
+        assert!(form.error.is_none());
+        assert_eq!(App::form_value(form, "description"), "keep this text");
+    }
+
+    #[test]
+    fn focused_multiline_field_shows_several_lines_around_the_caret() {
+        let mut app = project_app("m29-multiline");
+        switch_to(&mut app, "board");
+        app.selected = 0;
+        let task_id = app.selected_item().unwrap().id.clone();
+        app.start_form(FormMode::EditTask { task_id });
+        let Some(Modal::Form(mut form)) = app.modal.take() else {
+            panic!("edit form");
+        };
+        let index = form
+            .fields
+            .iter()
+            .position(|field| field.key == "description")
+            .unwrap();
+        form.focused = index;
+        form.fields[index].value = "line one\nline two\nline three\nline four".into();
+        form.fields[index].cursor = form.fields[index].value.chars().count();
+        form.dirty = true;
+        app.modal = Some(Modal::Form(form));
+        let rendered = render(&mut app, 120, 40);
+        assert!(rendered.contains("line two"), "{rendered}");
+        assert!(rendered.contains("line four"), "{rendered}");
+        assert!(
+            !rendered.contains("more line(s)"),
+            "focused multiline text should not collapse to a suffix: {rendered}"
+        );
+        assert!(
+            rendered.contains('▏'),
+            "the caret should be visible: {rendered}"
+        );
     }
 
     #[test]

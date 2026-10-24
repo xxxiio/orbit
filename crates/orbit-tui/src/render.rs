@@ -1848,69 +1848,29 @@ fn property_lines<'a>(
     lines
 }
 
-/// Keys that directly execute a contextual action. Only actions with a real
-/// binding appear with a key hint; everything else is reachable from the
-/// action menu.
-fn action_hotkey(id: &str) -> Option<&'static str> {
-    match id {
-        "open" | "open_knowledge" => Some("Enter"),
-        "create_task" => Some("c"),
-        "edit_task" | "edit_project" | "edit_work_item" | "edit_task_details" => Some("e"),
-        "set_task_status" | "complete_task" => Some("s"),
-        "manage_acceptance_criteria" => Some("K"),
-        "task_activity" => Some("H"),
-        "attach_file" => Some("i"),
-        "open_attachments" => Some("F"),
-        "change_workflow" | "apply_basic_workflow" => Some("W"),
-        "add_dependency" => Some("d"),
-        "remove_dependency" => Some("D"),
-        "refresh" => Some("r"),
-        "search" => Some("/"),
-        "command_palette" => Some("Ctrl+P"),
-        "help" => Some("?"),
-        _ => None,
-    }
-}
-
-/// Bottom action bar: the most useful executable operations for the current
-/// selection, each with a real key binding when one exists.
+/// Bottom action bar: at most three high-value operations for the current
+/// selection, each with its real key, then the stable `a more actions` and
+/// `q quit` entries. Disabled actions never appear here; the menu explains them.
 fn draw_action_bar(frame: &mut Frame, area: Rect, app: &App) {
     let width = usize::from(area.width);
-    let actions = app.available_actions();
+    let actions = app.compact_actions();
+    let suffix = " · a more actions · q quit";
     let mut spans = vec![Span::styled(" Actions: ", app.theme.title())];
     let mut used = " Actions: ".chars().count();
-    // Keep room for the trailing hint so the bar never ends mid-word.
-    let reserve = " · a more actions".chars().count();
-    let limit = if width < 70 { 2 } else { 4 };
-    let mut shown = 0;
-    for action in actions.iter().filter(|action| action.enabled) {
-        let Some(key) = action_hotkey(&action.id) else {
-            continue;
-        };
-        if shown == limit {
-            break;
-        }
-        let entry = format!("{key} {} ", action.label);
+    for (shown, entry) in actions.iter().enumerate() {
+        let rendered = format!("{} {} ", entry.key, entry.label);
         let separator = if shown > 0 { 3 } else { 0 };
-        if shown > 0 && used + separator + entry.chars().count() > width.saturating_sub(reserve) {
+        if used + separator + rendered.chars().count() + suffix.chars().count() > width {
             break;
         }
         if shown > 0 {
             spans.push(Span::styled(" · ", app.theme.muted()));
         }
-        spans.push(Span::styled(format!("{key} "), app.theme.accent()));
-        spans.push(Span::styled(action.label.clone(), app.theme.text()));
-        used += separator + entry.chars().count();
-        shown += 1;
+        spans.push(Span::styled(format!("{} ", entry.key), app.theme.accent()));
+        spans.push(Span::styled(entry.label.clone(), app.theme.text()));
+        used += separator + rendered.chars().count();
     }
-    if shown == 0 {
-        spans.push(Span::styled(
-            "Enter open · a actions · / search · ? help",
-            app.theme.muted(),
-        ));
-    } else {
-        spans.push(Span::styled(" · a more actions", app.theme.muted()));
-    }
+    spans.push(Span::styled(suffix, app.theme.muted()));
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
@@ -2013,43 +1973,83 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
         Modal::ActionMenu {
             title,
             actions,
+            primary,
             selected,
         } => {
             let block = modal_block(&format!("Actions · {title}"), app);
             let inner = block.inner(popup);
             frame.render_widget(block, popup);
-            let items = actions
-                .iter()
-                .enumerate()
-                .map(|(index, action)| {
-                    let marker = if index == *selected { "▸ " } else { "  " };
-                    let style = if !action.enabled {
-                        app.theme.muted()
-                    } else if index == *selected {
-                        app.theme.selected()
-                    } else {
-                        app.theme.text()
-                    };
-                    let suffix = action
-                        .disabled_reason
-                        .as_ref()
-                        .map(|reason| format!("  — {reason}"))
-                        .unwrap_or_default();
-                    ListItem::new(Line::from(vec![
-                        Span::styled(
-                            marker,
-                            if index == *selected {
-                                app.theme.accent()
-                            } else {
-                                app.theme.muted()
-                            },
-                        ),
-                        Span::styled(action.label.clone(), style),
-                        Span::styled(suffix, app.theme.muted()),
-                    ]))
-                })
-                .collect::<Vec<_>>();
-            render_selectable_list(frame, inner, items, *selected);
+            let grouped = *primary > 0 && *primary < actions.len();
+            let mut items: Vec<ListItem> = Vec::new();
+            let mut selected_line = *selected;
+            if grouped {
+                items.push(ListItem::new(Line::from(Span::styled(
+                    " Suggested",
+                    app.theme.title(),
+                ))));
+                selected_line += 1;
+                if *selected >= *primary {
+                    selected_line += 1;
+                }
+            }
+            for (index, action) in actions.iter().enumerate() {
+                if grouped && index == *primary {
+                    items.push(ListItem::new(Line::from(Span::styled(
+                        " More actions",
+                        app.theme.title(),
+                    ))));
+                }
+                let is_selected = index == *selected;
+                let marker = if is_selected { "▸ " } else { "  " };
+                let label_style = if !action.enabled {
+                    app.theme.muted()
+                } else if is_selected {
+                    app.theme.selected()
+                } else {
+                    app.theme.text()
+                };
+                // Only advertise a key when it identifies this row uniquely.
+                let hotkey = crate::app::App::action_hotkey(&action.id).filter(|key| {
+                    actions
+                        .iter()
+                        .filter(|other| crate::app::App::action_hotkey(&other.id) == Some(*key))
+                        .count()
+                        == 1
+                });
+                let key_text = hotkey
+                    .map(|key| format!("{key:<6}"))
+                    .unwrap_or_else(|| " ".repeat(6));
+                let reason = action
+                    .disabled_reason
+                    .as_ref()
+                    .map(|reason| format!("  — {reason}"))
+                    .unwrap_or_default();
+                items.push(ListItem::new(Line::from(vec![
+                    Span::styled(
+                        marker,
+                        if is_selected {
+                            app.theme.accent()
+                        } else {
+                            app.theme.muted()
+                        },
+                    ),
+                    Span::styled(key_text, app.theme.accent()),
+                    Span::styled(action.label.clone(), label_style),
+                    Span::styled(reason, app.theme.muted()),
+                ])));
+            }
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1), Constraint::Length(1)])
+                .split(inner);
+            render_selectable_list(frame, rows[0], items, selected_line);
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    " Enter run selected · ↑/↓/PgUp/PgDn scroll · Esc close · dimmed rows explain why",
+                    app.theme.muted(),
+                ))),
+                rows[1],
+            );
         }
         Modal::Palette {
             query,
@@ -2061,18 +2061,37 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
             frame.render_widget(block, popup);
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Length(2), Constraint::Min(1)])
+                .constraints([
+                    Constraint::Length(2),
+                    Constraint::Min(1),
+                    Constraint::Length(1),
+                ])
                 .split(inner);
             frame.render_widget(
                 Paragraph::new(Line::from(vec![
                     Span::styled("> ", app.theme.accent()),
                     Span::styled(query.clone(), app.theme.title()),
                     Span::styled("_", app.theme.muted()),
+                    Span::styled(
+                        if query.is_empty() {
+                            "  type to filter · recent destinations first"
+                        } else {
+                            "  prefix · word · fuzzy · substring"
+                        },
+                        app.theme.muted(),
+                    ),
                 ])),
                 chunks[0],
             );
             let items = palette_lines(app, entries, *selected);
             render_selectable_list(frame, chunks[1], items, *selected);
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    " Enter run enabled entry · ↑/↓ select · Ctrl+U clear · Esc close",
+                    app.theme.muted(),
+                ))),
+                chunks[2],
+            );
         }
         Modal::Help => draw_help(frame, popup, app),
         Modal::Detail(detail) => {
@@ -2430,148 +2449,314 @@ fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_form(frame: &mut Frame, area: Rect, app: &App, form: &FormState) {
-    let block = modal_block(&form.title, app);
+    let block = form_block(form, area.width, app);
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    let mut lines = Vec::new();
-    lines.push(Line::from(Span::styled(
-        form.hint.clone(),
-        app.theme.muted(),
-    )));
-    if let Some(error) = &form.error {
-        lines.push(Line::from(Span::styled(
-            format!("error: {error}"),
-            app.theme.danger(),
-        )));
+    if inner.height == 0 || inner.width == 0 {
+        return;
     }
-    lines.push(Line::from(""));
     // Labels share one column, but the column yields to the value on narrow
     // terminals instead of pushing the value past the border.
     let label_width = usize::from(inner.width).saturating_sub(8).clamp(10, 22);
-    let value_room = usize::from(inner.width).saturating_sub(label_width + 4);
-    let visible_fields = usize::from(inner.height.saturating_sub(6)).max(1);
-    let start = if form.focused >= visible_fields {
-        form.focused + 1 - visible_fields
-    } else {
-        0
-    };
-    for (index, field) in form
-        .fields
-        .iter()
-        .enumerate()
-        .skip(start)
-        .take(visible_fields)
-    {
+    let value_room = usize::from(inner.width)
+        .saturating_sub(label_width + 4)
+        .max(4);
+    let mut blocks: Vec<Vec<Line>> = Vec::new();
+    for (index, field) in form.fields.iter().enumerate() {
         let focused = index == form.focused;
-        let marker = if focused { "▸ " } else { "  " };
-        let label_style = if focused {
+        let invalid = form.invalid == Some(index);
+        let marker = if invalid {
+            "! "
+        } else if focused {
+            "▸ "
+        } else {
+            "  "
+        };
+        let label_style = if invalid {
+            app.theme.danger()
+        } else if focused {
             app.theme.accent()
         } else {
             app.theme.muted()
         };
-        let mut spans = vec![
-            Span::styled(marker, label_style),
-            Span::styled(
-                format!(
-                    "{:<label_width$}",
-                    truncate_ellipsis(&field.label, label_width)
-                ),
-                label_style,
-            ),
-        ];
-        match &field.kind {
-            FormFieldKind::Boolean => {
-                let checked = field.value == "true";
-                spans.push(Span::styled(
-                    if checked { "[x] yes" } else { "[ ] no" },
-                    if focused {
-                        app.theme.selected()
-                    } else {
-                        app.theme.text()
-                    },
-                ));
-            }
-            FormFieldKind::Choice(choices) => {
-                let current = choices
-                    .iter()
-                    .find(|choice| choice.value == field.value)
-                    .map(|choice| choice.label.as_str())
-                    .unwrap_or(if field.value.is_empty() {
-                        "—"
-                    } else {
-                        field.value.as_str()
-                    });
-                spans.push(Span::styled(
-                    format!("‹ {} ›", truncate_ellipsis(current, value_room)),
-                    if focused {
-                        app.theme.selected()
-                    } else {
-                        app.theme.text()
-                    },
-                ));
-            }
-            FormFieldKind::Text | FormFieldKind::Integer => {
-                let shown = if field.value.is_empty() {
-                    field.hint.as_str()
+        let label = format!(
+            "{:<label_width$}",
+            truncate_ellipsis(&field.label, label_width)
+        );
+        let value_style = if focused {
+            app.theme.selected()
+        } else {
+            app.theme.text()
+        };
+        let mut field_lines = Vec::new();
+        if focused && matches!(field.kind, FormFieldKind::Multiline) {
+            // Show a small window of wrapped lines around the caret instead of
+            // hiding everything behind a `(+N more lines)` suffix.
+            let (rows, caret_row, caret_col) =
+                multiline_preview(&field.value, field.cursor, value_room, 4);
+            for (row_index, row) in rows.iter().enumerate() {
+                let lead = if row_index == 0 {
+                    vec![
+                        Span::styled(marker, label_style),
+                        Span::styled(label.clone(), label_style),
+                    ]
                 } else {
-                    field.value.as_str()
+                    vec![Span::styled(
+                        format!("  {}", " ".repeat(label_width)),
+                        app.theme.muted(),
+                    )]
                 };
-                spans.push(Span::styled(
-                    truncate_ellipsis(shown, value_room),
-                    if field.value.is_empty() {
-                        app.theme.muted()
-                    } else if focused {
-                        app.theme.selected()
-                    } else {
-                        app.theme.text()
-                    },
-                ));
-                if focused {
-                    spans.push(Span::styled("_", app.theme.muted()));
-                }
-            }
-            FormFieldKind::Multiline => {
-                let first_line = field.value.lines().next().unwrap_or("");
                 let shown = if field.value.is_empty() {
                     field.hint.clone()
-                } else if first_line.is_empty() {
-                    "⏎".to_owned()
+                } else if row_index == caret_row {
+                    insert_caret(row, caret_col)
                 } else {
-                    first_line.to_owned()
+                    row.clone()
                 };
-                let mut text = shown;
-                if field.value.contains('\n') {
-                    text.push_str(&format!(
-                        "  (+{} more line(s))",
-                        field.value.lines().count().saturating_sub(1)
+                let style = if field.value.is_empty() {
+                    app.theme.muted()
+                } else if row_index == caret_row {
+                    app.theme.selected()
+                } else {
+                    app.theme.text()
+                };
+                let mut spans = lead;
+                spans.push(Span::styled(shown, style));
+                if row_index == 0 && field.required {
+                    spans.push(Span::styled(" *", app.theme.warning()));
+                }
+                field_lines.push(Line::from(spans));
+            }
+        } else {
+            let mut spans = vec![
+                Span::styled(marker, label_style),
+                Span::styled(label, label_style),
+            ];
+            match &field.kind {
+                FormFieldKind::Boolean => {
+                    let checked = field.value == "true";
+                    spans.push(Span::styled(
+                        if checked { "[x] yes" } else { "[ ] no" },
+                        if focused {
+                            app.theme.selected()
+                        } else {
+                            app.theme.text()
+                        },
                     ));
                 }
-                spans.push(Span::styled(
-                    truncate_ellipsis(&text, value_room),
-                    if field.value.is_empty() {
-                        app.theme.muted()
-                    } else if focused {
-                        app.theme.selected()
+                FormFieldKind::Choice(choices) => {
+                    let current = choices
+                        .iter()
+                        .find(|choice| choice.value == field.value)
+                        .map(|choice| choice.label.as_str())
+                        .unwrap_or(if field.value.is_empty() {
+                            "—"
+                        } else {
+                            field.value.as_str()
+                        });
+                    spans.push(Span::styled(
+                        format!("‹ {} ›", truncate_ellipsis(current, value_room)),
+                        value_style,
+                    ));
+                }
+                FormFieldKind::Text | FormFieldKind::Integer => {
+                    let shown = if field.value.is_empty() {
+                        field.hint.as_str()
                     } else {
-                        app.theme.text()
-                    },
-                ));
-                if focused {
-                    spans.push(Span::styled("_", app.theme.muted()));
+                        field.value.as_str()
+                    };
+                    spans.push(Span::styled(
+                        truncate_ellipsis(shown, value_room),
+                        if field.value.is_empty() {
+                            app.theme.muted()
+                        } else {
+                            value_style
+                        },
+                    ));
+                    if focused {
+                        spans.push(Span::styled("_", app.theme.muted()));
+                    }
+                }
+                FormFieldKind::Multiline => {
+                    let first_line = field.value.lines().next().unwrap_or("");
+                    let shown = if field.value.is_empty() {
+                        field.hint.clone()
+                    } else if first_line.is_empty() {
+                        "⏎".to_owned()
+                    } else {
+                        first_line.to_owned()
+                    };
+                    let mut text = shown;
+                    if field.value.contains('\n') {
+                        text.push_str(&format!(
+                            "  (+{} more line(s))",
+                            field.value.lines().count().saturating_sub(1)
+                        ));
+                    }
+                    spans.push(Span::styled(
+                        truncate_ellipsis(&text, value_room),
+                        if field.value.is_empty() {
+                            app.theme.muted()
+                        } else {
+                            value_style
+                        },
+                    ));
                 }
             }
+            if field.required {
+                spans.push(Span::styled(" *", app.theme.warning()));
+            }
+            field_lines.push(Line::from(spans));
         }
-        if field.required {
-            spans.push(Span::styled(" *", app.theme.warning()));
+        if invalid && let Some(error) = &form.error {
+            field_lines.push(Line::from(Span::styled(
+                format!("    ! {error}"),
+                app.theme.danger(),
+            )));
         }
-        lines.push(Line::from(spans));
+        blocks.push(field_lines);
     }
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "Tab/Shift+Tab field · ←/→ or Space choose/toggle · Enter next/submit · Ctrl+S save · Esc cancel",
+
+    let mut header: Vec<Line> = vec![Line::from(Span::styled(
+        form.hint.clone(),
         app.theme.muted(),
-    )));
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+    ))];
+    if form.error.is_some()
+        && form.invalid.is_none()
+        && let Some(error) = &form.error
+    {
+        header.push(Line::from(Span::styled(
+            format!("error: {error}"),
+            app.theme.danger(),
+        )));
+    }
+    header.push(Line::from(""));
+    let footer = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            " Ctrl+S Save · Esc Cancel · Tab next field · Enter saves (adds a line in multi-line)",
+            app.theme.muted(),
+        )),
+    ];
+    let budget = usize::from(inner.height)
+        .saturating_sub(header.len() + footer.len())
+        .max(1);
+    let total: usize = blocks.iter().map(Vec::len).sum();
+    let mut start_line = 0;
+    if total > budget {
+        let focus_start: usize = blocks
+            .iter()
+            .take(form.focused.min(blocks.len()))
+            .map(Vec::len)
+            .sum();
+        let focus_end = focus_start + blocks.get(form.focused).map(Vec::len).unwrap_or(0);
+        if focus_end > budget {
+            start_line = (focus_end - budget).min(total - budget);
+        }
+        if focus_start < start_line {
+            start_line = focus_start;
+        }
+    }
+    let mut lines = header;
+    lines.extend(blocks.into_iter().flatten().skip(start_line).take(budget));
+    lines.extend(footer);
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+fn form_block(form: &FormState, width: u16, app: &App) -> Block<'static> {
+    let title_room = usize::from(width).saturating_sub(34).clamp(12, 64);
+    let title = truncate_ellipsis(&form.title, title_room);
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(app.theme.focused_border())
+        .title_top(Line::from(Span::styled(
+            format!(" {title} "),
+            app.theme.accent(),
+        )))
+        .title_top(
+            Line::from(vec![
+                Span::styled("Save ", app.theme.success()),
+                Span::styled("Ctrl+S", app.theme.muted()),
+                Span::styled("  ·  ", app.theme.muted()),
+                Span::styled("Cancel ", app.theme.warning()),
+                Span::styled("Esc ", app.theme.muted()),
+            ])
+            .right_aligned(),
+        )
+}
+
+/// A caret that is visible without colour or a blinking terminal cursor.
+fn insert_caret(row: &str, column: usize) -> String {
+    let mut characters: Vec<char> = row.chars().collect();
+    let column = column.min(characters.len());
+    characters.insert(column, '▏');
+    characters.into_iter().collect()
+}
+
+/// Rows around the caret for a focused multi-line field: character wrapping
+/// keeps the caret column exact, and the window guarantees the caret is shown.
+fn multiline_preview(
+    value: &str,
+    cursor: usize,
+    width: usize,
+    max_rows: usize,
+) -> (Vec<String>, usize, usize) {
+    let width = width.max(1);
+    let max_rows = max_rows.max(1);
+    let lines: Vec<&str> = value.split('\n').collect();
+    let mut caret_line = 0;
+    let mut caret_column = cursor;
+    let mut line_start = 0;
+    for (index, line) in lines.iter().enumerate() {
+        let length = line.chars().count();
+        if cursor <= line_start + length {
+            caret_line = index;
+            caret_column = cursor.saturating_sub(line_start);
+            break;
+        }
+        line_start += length + 1;
+    }
+    let mut rows: Vec<String> = Vec::new();
+    let mut row_of_line: Vec<usize> = Vec::new();
+    for line in &lines {
+        row_of_line.push(rows.len());
+        let characters: Vec<char> = line.chars().collect();
+        if characters.is_empty() {
+            rows.push(String::new());
+        } else {
+            for chunk in characters.chunks(width) {
+                rows.push(chunk.iter().collect());
+            }
+        }
+    }
+    let line_length = lines
+        .get(caret_line)
+        .map(|line| line.chars().count())
+        .unwrap_or(0);
+    let line_rows = if line_length == 0 {
+        1
+    } else {
+        line_length.div_ceil(width)
+    };
+    let row_in_line = if line_length == 0 {
+        0
+    } else {
+        (caret_column / width).min(line_rows - 1)
+    };
+    let caret_row = row_of_line.get(caret_line).copied().unwrap_or(0) + row_in_line;
+    let caret_row_column = caret_column.saturating_sub(row_in_line * width);
+    let start = caret_row
+        .saturating_sub(max_rows.saturating_sub(2))
+        .min(rows.len().saturating_sub(max_rows));
+    let end = (start + max_rows).min(rows.len());
+    (
+        rows.get(start..end)
+            .map(<[String]>::to_vec)
+            .unwrap_or_default(),
+        caret_row.saturating_sub(start),
+        caret_row_column,
+    )
 }
 
 fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
@@ -2608,6 +2793,8 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
         Line::from("a or s            contextual action menu"),
         Line::from("c / C             new task / workflow item"),
         Line::from("e                 edit selected task, project or workflow item"),
+        Line::from("E                 quick edit a task (title, priority, next status)"),
+        Line::from("S                 status transitions for the selected task"),
         Line::from("K                 acceptance criteria for the selected task"),
         Line::from("H                 activity history for the selected task"),
         Line::from("i / F             attach a file / list attachments"),
@@ -2667,9 +2854,15 @@ fn palette_lines<'a>(app: &App, entries: &[PaletteEntry], selected: usize) -> Ve
             } else {
                 app.theme.text()
             };
-            ListItem::new(Line::from(vec![
+            let mut spans = vec![
                 Span::styled(
-                    if selected { "▸ " } else { "  " },
+                    if selected {
+                        "▸ "
+                    } else if !entry.enabled {
+                        "× "
+                    } else {
+                        "  "
+                    },
                     if selected {
                         app.theme.accent()
                     } else {
@@ -2677,8 +2870,19 @@ fn palette_lines<'a>(app: &App, entries: &[PaletteEntry], selected: usize) -> Ve
                     },
                 ),
                 Span::styled(entry.label.clone(), style),
-                Span::styled(format!("  {}", entry.description), app.theme.muted()),
-            ]))
+            ];
+            if entry.recent_rank.is_some() {
+                spans.push(Span::styled("  ↺ recent", app.theme.accent()));
+            }
+            spans.push(Span::styled(
+                format!("  {}", entry.description),
+                if entry.enabled {
+                    app.theme.muted()
+                } else {
+                    app.theme.warning()
+                },
+            ));
+            ListItem::new(Line::from(spans))
         })
         .collect()
 }

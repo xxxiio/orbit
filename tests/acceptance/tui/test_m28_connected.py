@@ -166,10 +166,10 @@ def test_connected_shell_pending_flush_and_acceptance(connected_workspace):
         session.wait_for_screen_text("New task", timeout=8.0, description="task form")
         session.send_text("Connected task")
         for _ in range(3):
-            session.send(b"\t", note="focus earliest")
-        session.send_text("1000")
-        session.send(b"\t", note="focus estimate")
+            session.send(b"\t", note="focus estimate")
         session.send_text("30")
+        session.send(b"\t", note="focus earliest")
+        session.send_text("1000")
         session.send(ENTER, note="queue task")
         session.wait_for_text("not accepted yet", timeout=8.0, description="pending task")
         session.send(b"f", note="flush task")

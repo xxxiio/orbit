@@ -133,6 +133,12 @@ pub enum FormMode {
     EditTask {
         task_id: String,
     },
+    /// Compact everyday task edit: title, priority and (when the workflow
+    /// offers exactly one next step) status. Advanced planning stays in
+    /// `EditTask`.
+    QuickEditTask {
+        task_id: String,
+    },
     EditTaskDetails {
         task_id: String,
     },
@@ -201,7 +207,21 @@ pub struct FormState {
     pub fields: Vec<FormField>,
     pub focused: usize,
     pub error: Option<String>,
+    /// Index of the field that failed validation. When set, the renderer marks
+    /// that row and moves focus there instead of showing only a banner.
+    pub invalid: Option<usize>,
     pub dirty: bool,
+}
+
+impl FormState {
+    /// A validation error only describes the field it was raised for, so typing
+    /// in that field clears it. Moving the caret to another field keeps it.
+    pub fn clear_error_for_focused(&mut self) {
+        if self.invalid == Some(self.focused) {
+            self.invalid = None;
+            self.error = None;
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -296,6 +316,7 @@ pub struct ActivityModal {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)] // Modals are short-lived and moved, never stored in bulk.
 pub enum Modal {
     Form(FormState),
     Confirm {
@@ -306,6 +327,9 @@ pub enum Modal {
     ActionMenu {
         title: String,
         actions: Vec<AvailableAction>,
+        /// Actions before this index form the "Suggested" group; the rest are
+        /// the complete list. Rendering uses it only for grouping.
+        primary: usize,
         selected: usize,
     },
     Palette {
@@ -342,6 +366,16 @@ pub struct PaletteEntry {
     pub description: String,
     pub action: PaletteAction,
     pub enabled: bool,
+    /// Position in the in-memory recent-destinations MRU, if this entry is one.
+    pub recent_rank: Option<usize>,
+}
+
+/// One entry in the compact action bar. The full label stays in the action menu
+/// and palette; the bar uses a short label so three actions fit.
+#[derive(Clone, Debug)]
+pub struct CompactAction {
+    pub key: String,
+    pub label: String,
 }
 
 #[derive(Clone, Debug)]
@@ -422,6 +456,9 @@ pub struct App {
     history: Vec<NavigationState>,
     cursors: BTreeMap<String, CursorState>,
     last_submission: Option<(String, Instant)>,
+    /// Most-recently opened destinations (screens, projects, views, notes).
+    /// Deliberately in memory only: the palette is a session aid, not state.
+    recent_destinations: Vec<String>,
 }
 
 impl App {
@@ -487,6 +524,7 @@ impl App {
             history: Vec::new(),
             cursors: BTreeMap::new(),
             last_submission: None,
+            recent_destinations: Vec::new(),
         };
         app.refresh_workspace();
         Ok(app)
@@ -1259,6 +1297,15 @@ impl App {
             Some(item) => actions::contextual(Some(item), project_scope),
             None => Vec::new(),
         };
+        if let Some(item) = self.selected_item()
+            && item.kind == ItemKind::Task
+        {
+            let mut quick =
+                AvailableAction::enabled("quick_edit_task", "Quick edit", Some(item.id.clone()));
+            quick.description =
+                "Edit the title and priority, plus the next status when there is only one".into();
+            push_unique_action(&mut actions, quick);
+        }
         if self.client.is_connected() {
             push_unique_action(
                 &mut actions,
@@ -1366,6 +1413,7 @@ impl App {
                         | "attach_file"
                         | "open_attachments"
                         | "edit_task"
+                        | "quick_edit_task"
                         | "edit_task_details"
                         | "manage_acceptance_criteria"
                         | "task_activity"
@@ -1389,6 +1437,188 @@ impl App {
             });
         }
         actions
+    }
+
+    /// Real key bindings for actions. Only keys the shell actually handles are
+    /// listed, so a bar or menu hint can always be pressed. Actions without a
+    /// direct key stay reachable from the action menu and palette.
+    pub fn action_hotkey(id: &str) -> Option<&'static str> {
+        match id {
+            "open" | "open_knowledge" => Some("Enter"),
+            "create_task" => Some("c"),
+            "create_work_item" => Some("C"),
+            "edit_task" | "edit_project" | "edit_work_item" => Some("e"),
+            "quick_edit_task" => Some("E"),
+            "manage_acceptance_criteria" => Some("K"),
+            "task_activity" => Some("H"),
+            "attach_file" => Some("i"),
+            "open_attachments" => Some("F"),
+            "change_workflow" | "apply_basic_workflow" => Some("W"),
+            "record_habit" => Some("Space"),
+            "record_metric" => Some("o"),
+            "set_metric_target" => Some("t"),
+            "refresh" => Some("r"),
+            "search" => Some("/"),
+            "command_palette" => Some("Ctrl+P"),
+            "help" => Some("?"),
+            "flush_pending" => Some("f"),
+            "toggle_detail" => Some("D"),
+            _ => None,
+        }
+    }
+
+    /// Short labels for the compact bar. The action menu and palette always
+    /// keep the full, unambiguous label.
+    pub fn short_label(id: &str) -> &'static str {
+        match id {
+            "open" | "open_knowledge" => "Open",
+            "edit_task" | "edit_work_item" | "edit_project" => "Edit",
+            "edit_task_details" => "Details",
+            "quick_edit_task" => "Quick edit",
+            "set_task_status" | "complete_task" => "Status",
+            "create_task" => "New",
+            "create_work_item" => "New item",
+            "search" => "Search",
+            "refresh" => "Refresh",
+            "change_workflow" | "bind_blueprint" | "apply_basic_workflow" => "Workflow",
+            "manage_acceptance_criteria" => "Criteria",
+            "task_activity" => "Activity",
+            "attach_file" => "Attach",
+            "open_attachments" => "Files",
+            "record_habit" => "Record",
+            "record_metric" => "Log",
+            "set_metric_target" => "Target",
+            "command_palette" => "Palette",
+            "inspect_agent" => "Inspect",
+            "inspect_dependencies" => "Deps",
+            "help" => "Help",
+            _ => "Action",
+        }
+    }
+
+    /// Ordered ids by context. The compact bar shows at most the first three
+    /// that are enabled and have a real key; the action menu uses this list to
+    /// build its "Suggested" group.
+    fn primary_action_ids(&self) -> Vec<&'static str> {
+        if self.screen == Screen::Projects && self.selected_project().is_some() {
+            return vec!["open", "edit_project", "change_workflow"];
+        }
+        if let Some(item) = self.selected_item() {
+            return match item.kind {
+                ItemKind::Task => vec![
+                    "open",
+                    "edit_task",
+                    "quick_edit_task",
+                    "set_task_status",
+                    "complete_task",
+                ],
+                ItemKind::WorkItem => vec!["open", "edit_work_item", "attach_file"],
+                ItemKind::Habit => vec!["open", "record_habit"],
+                ItemKind::Knowledge => vec!["open", "open_knowledge"],
+                ItemKind::Metric => vec!["open", "record_metric", "set_metric_target"],
+                ItemKind::AgentJob => vec!["open", "inspect_agent"],
+                ItemKind::Project => vec!["open", "edit_project", "change_workflow", "create_task"],
+                _ => Vec::new(),
+            };
+        }
+        if self.screen == Screen::Project {
+            vec!["create_task", "create_work_item", "edit_project", "refresh"]
+        } else {
+            vec!["create_task", "search", "refresh"]
+        }
+    }
+
+    /// Bar order: the three most useful operations for the current selection.
+    /// `status` is a synthetic entry that opens the status actions, so its key
+    /// does not collide with any concrete "Move to …" action.
+    fn bar_priority_ids(&self) -> Vec<&'static str> {
+        if self.screen == Screen::Projects && self.selected_project().is_some() {
+            return vec!["open", "edit_project", "change_workflow"];
+        }
+        if let Some(item) = self.selected_item() {
+            return match item.kind {
+                ItemKind::Task => vec!["open", "edit_task", "status"],
+                ItemKind::WorkItem => vec!["open", "edit_work_item", "attach_file"],
+                ItemKind::Habit => vec!["open", "record_habit"],
+                ItemKind::Knowledge => vec!["open", "open_knowledge"],
+                ItemKind::Metric => vec!["open", "record_metric", "set_metric_target"],
+                ItemKind::AgentJob => vec!["open", "inspect_agent"],
+                ItemKind::Project => vec!["open", "edit_project", "change_workflow"],
+                _ => Vec::new(),
+            };
+        }
+        vec!["create_task", "search", "refresh"]
+    }
+
+    pub fn compact_actions(&self) -> Vec<CompactAction> {
+        let actions = self.available_actions();
+        let mut out: Vec<CompactAction> = Vec::new();
+        let mut keys: Vec<String> = Vec::new();
+        for id in self.bar_priority_ids() {
+            let action = if id == "status" {
+                actions
+                    .iter()
+                    .find(|action| action.enabled && action.id == "set_task_status")
+            } else {
+                actions
+                    .iter()
+                    .find(|action| action.enabled && action.id == id)
+            };
+            let Some(action) = action.cloned() else {
+                continue;
+            };
+            let (key, label) = if id == "status" {
+                ("S".to_owned(), "Status".to_owned())
+            } else {
+                let Some(key) = Self::action_hotkey(&action.id) else {
+                    continue;
+                };
+                (key.to_owned(), Self::short_label(&action.id).to_owned())
+            };
+            if keys.contains(&key) {
+                continue;
+            }
+            keys.push(key.clone());
+            out.push(CompactAction { key, label });
+            if out.len() == 3 {
+                break;
+            }
+        }
+        if out.is_empty() {
+            for action in actions.iter().filter(|action| action.enabled) {
+                let Some(key) = Self::action_hotkey(&action.id) else {
+                    continue;
+                };
+                if keys.contains(&key.to_owned()) {
+                    continue;
+                }
+                keys.push(key.to_owned());
+                out.push(CompactAction {
+                    key: key.to_owned(),
+                    label: Self::short_label(&action.id).to_owned(),
+                });
+                if out.len() == 3 {
+                    break;
+                }
+            }
+        }
+        out
+    }
+
+    fn menu_actions(&self) -> (Vec<AvailableAction>, usize) {
+        let primary_ids = self.primary_action_ids();
+        let mut suggested = Vec::new();
+        let mut rest = Vec::new();
+        for action in self.available_actions() {
+            if action.enabled && primary_ids.contains(&action.id.as_str()) {
+                suggested.push(action);
+            } else {
+                rest.push(action);
+            }
+        }
+        let split = suggested.len();
+        suggested.extend(rest);
+        (suggested, split)
     }
 
     pub fn move_selection(&mut self, delta: isize) {
@@ -1634,6 +1864,19 @@ impl App {
         }
     }
 
+    pub fn quick_edit_selected(&mut self) {
+        let Some(item) = self.selected_item() else {
+            self.notify("Select a task to quick edit", StatusKind::Warning);
+            return;
+        };
+        if item.kind != ItemKind::Task {
+            self.notify("Quick edit applies to tasks", StatusKind::Warning);
+            return;
+        }
+        let task_id = item.id.clone();
+        self.start_form(FormMode::QuickEditTask { task_id });
+    }
+
     fn start_edit_work_item(&mut self, item_id: &str) {
         let Some(project) = &self.project else {
             self.notify("Open a project first", StatusKind::Warning);
@@ -1669,7 +1912,7 @@ impl App {
     }
 
     pub fn open_action_menu(&mut self) {
-        let actions = self.available_actions();
+        let (actions, primary) = self.menu_actions();
         if actions.is_empty() {
             self.notify(
                 "No contextual actions for this selection",
@@ -1683,6 +1926,41 @@ impl App {
                 .map(|item| item.title.clone())
                 .unwrap_or_else(|| "Project actions".into()),
             actions,
+            primary,
+            selected: 0,
+        });
+    }
+
+    /// `S` opens the status transitions for the selected task. The compact bar
+    /// advertises `S Status`; this is what that key actually does, so the hint
+    /// never promises a direct mutation.
+    pub fn open_status_menu(&mut self) {
+        let Some(item) = self.selected_item() else {
+            self.notify("Select a task to change its status", StatusKind::Warning);
+            return;
+        };
+        if item.kind != ItemKind::Task {
+            self.notify("Status changes apply to tasks", StatusKind::Warning);
+            return;
+        }
+        let title = item.title.clone();
+        let actions: Vec<AvailableAction> = self
+            .available_actions()
+            .into_iter()
+            .filter(|action| action.id == "set_task_status" || action.id == "complete_task")
+            .collect();
+        if actions.is_empty() {
+            self.notify(
+                "No status change is available for this task",
+                StatusKind::Info,
+            );
+            return;
+        }
+        let primary = actions.len();
+        self.modal = Some(Modal::ActionMenu {
+            title: format!("Status · {title}"),
+            actions,
+            primary,
             selected: 0,
         });
     }
@@ -1719,6 +1997,15 @@ impl App {
     }
 
     pub fn palette_entries(&self, query: &str) -> Vec<PaletteEntry> {
+        let entry = |label: String, description: String, action: PaletteAction, enabled: bool| {
+            PaletteEntry {
+                label,
+                description,
+                action,
+                enabled,
+                recent_rank: None,
+            }
+        };
         let mut entries = vec![
             palette_nav("Home / Today", "Global planning aggregation", Screen::Home),
             palette_nav("Inbox", "Untriaged tasks", Screen::Inbox),
@@ -1726,25 +2013,25 @@ impl App {
             palette_nav("Agents", "Agent execution monitoring", Screen::Agents),
         ];
         for project in self.projects.iter().take(30) {
-            entries.push(PaletteEntry {
-                label: format!("Open project: {}", project.name),
-                description: format!("{} · {}", project.mode, project.status),
-                action: PaletteAction::OpenProject(project.id.clone()),
-                enabled: true,
-            });
+            entries.push(entry(
+                format!("Open project: {}", project.name),
+                format!("{} · {}", project.mode, project.status),
+                PaletteAction::OpenProject(project.id.clone()),
+                true,
+            ));
         }
         if let Some(state) = &self.project {
             for (index, view) in state.views.iter().enumerate() {
-                entries.push(PaletteEntry {
-                    label: format!("View: {}", view.title),
-                    description: if view.generated {
+                entries.push(entry(
+                    format!("View: {}", view.title),
+                    if view.generated {
                         "Generated default view".into()
                     } else {
                         format!("{} components", view.components.len())
                     },
-                    action: PaletteAction::OpenView(index),
-                    enabled: true,
-                });
+                    PaletteAction::OpenView(index),
+                    true,
+                ));
             }
         }
         let mut seen = std::collections::BTreeSet::new();
@@ -1752,111 +2039,272 @@ impl App {
             if !seen.insert((action.id.clone(), action.payload.clone())) {
                 continue;
             }
-            entries.push(PaletteEntry {
-                label: action.label.clone(),
-                description: action
+            entries.push(entry(
+                action.label.clone(),
+                action
                     .disabled_reason
                     .clone()
                     .unwrap_or_else(|| action.description.clone()),
-                action: PaletteAction::Execute(action.clone()),
-                enabled: action.enabled,
-            });
+                PaletteAction::Execute(action.clone()),
+                action.enabled,
+            ));
         }
-        entries.push(PaletteEntry {
-            label: "New project".into(),
-            description: "Create a project with a structured form".into(),
-            action: PaletteAction::Form(FormMode::NewProject),
-            enabled: true,
-        });
-        entries.push(PaletteEntry {
-            label: "New task".into(),
-            description: "Create a task with project, estimate and deadline".into(),
-            action: PaletteAction::Form(FormMode::NewTask {
+        entries.push(entry(
+            "New project".into(),
+            "Create a project with a structured form".into(),
+            PaletteAction::Form(FormMode::NewProject),
+            true,
+        ));
+        entries.push(entry(
+            "New task".into(),
+            "Create a task with project, estimate and deadline".into(),
+            PaletteAction::Form(FormMode::NewTask {
                 project_id: self
                     .project
                     .as_ref()
                     .filter(|_| self.screen == Screen::Project)
                     .map(|project| project.id.clone()),
             }),
-            enabled: true,
-        });
+            true,
+        ));
         if !self.client.is_connected() {
-            entries.push(PaletteEntry {
-                label: "New knowledge note".into(),
-                description: "Capture a Markdown note".into(),
-                action: PaletteAction::Form(FormMode::NewKnowledge),
-                enabled: true,
-            });
-            entries.push(PaletteEntry {
-                label: "Install bundled blueprint".into(),
-                description: "development, research, learning or habits".into(),
-                action: PaletteAction::Form(FormMode::InstallBlueprint),
-                enabled: true,
-            });
+            entries.push(entry(
+                "New knowledge note".into(),
+                "Capture a Markdown note".into(),
+                PaletteAction::Form(FormMode::NewKnowledge),
+                true,
+            ));
+            entries.push(entry(
+                "Install bundled blueprint".into(),
+                "development, research, learning or habits".into(),
+                PaletteAction::Form(FormMode::InstallBlueprint),
+                true,
+            ));
             if let Some(state) = &self.project {
-                entries.push(PaletteEntry {
-                    label: "Bind blueprint version".into(),
-                    description: "Explicitly pin a published blueprint version".into(),
-                    action: PaletteAction::Form(FormMode::BindBlueprint {
+                entries.push(entry(
+                    "Bind blueprint version".into(),
+                    "Explicitly pin a published blueprint version".into(),
+                    PaletteAction::Form(FormMode::BindBlueprint {
                         project_id: state.id.clone(),
                     }),
-                    enabled: true,
-                });
+                    true,
+                ));
             }
         }
         if !self.client.is_connected()
             && let Some(state) = &self.project
         {
-            entries.push(PaletteEntry {
-                label: "Unbind project evidence".into(),
-                description: "Remove a habit or metric binding".into(),
-                action: PaletteAction::Form(FormMode::BindEvidence {
+            entries.push(entry(
+                "Unbind project evidence".into(),
+                "Remove a habit or metric binding".into(),
+                PaletteAction::Form(FormMode::BindEvidence {
                     project_id: state.id.clone(),
                     unbind: true,
                 }),
-                enabled: true,
-            });
+                true,
+            ));
         }
-        entries.push(PaletteEntry {
-            label: "Keyboard help".into(),
-            description: "Show all navigation and action keys".into(),
-            action: PaletteAction::Execute(AvailableAction::enabled("help", "Help", None)),
-            enabled: true,
-        });
-        entries.push(PaletteEntry {
-            label: "Quit".into(),
-            description: "Leave Orbit".into(),
-            action: PaletteAction::Quit,
-            enabled: true,
-        });
-        let needle = query.trim().to_lowercase();
-        entries
+        entries.push(entry(
+            "Keyboard help".into(),
+            "Show all navigation and action keys".into(),
+            PaletteAction::Execute(AvailableAction::enabled("help", "Help", None)),
+            true,
+        ));
+        entries.push(entry(
+            "Quit".into(),
+            "Leave Orbit".into(),
+            PaletteAction::Quit,
+            true,
+        ));
+        let mut entries: Vec<PaletteEntry> = entries
             .into_iter()
-            .filter(|entry| {
-                needle.is_empty()
-                    || entry.label.to_lowercase().contains(&needle)
-                    || entry.description.to_lowercase().contains(&needle)
+            .map(|mut entry| {
+                entry.recent_rank = self.palette_destination_key(&entry.action).and_then(|key| {
+                    self.recent_destinations
+                        .iter()
+                        .position(|recent| recent == &key)
+                });
+                entry
             })
-            .collect()
+            .collect();
+        let needle = query.trim().to_lowercase();
+        if needle.is_empty() {
+            // MRU first, then the stable construction order.
+            entries.sort_by_key(|entry| entry.recent_rank.unwrap_or(usize::MAX));
+            return entries;
+        }
+        let mut scored: Vec<(usize, i64, PaletteEntry)> = entries
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                let score = palette_match_score(&entry.label, &entry.description, &needle)?;
+                let boost = self.palette_context_boost(&entry.action);
+                Some((index, score - boost, entry))
+            })
+            .collect();
+        // Stable tie-break by construction order keeps the list deterministic.
+        scored.sort_by_key(|(index, score, _)| (*score, *index));
+        scored.into_iter().map(|(_, _, entry)| entry).collect()
+    }
+
+    /// MRU key for a destination action. Mutations and commands are never
+    /// recorded; only places the user actually opened.
+    fn palette_destination_key(&self, action: &PaletteAction) -> Option<String> {
+        match action {
+            PaletteAction::Go(screen) => Some(format!("screen:{screen:?}")),
+            PaletteAction::OpenProject(id) => Some(format!("project:{id}")),
+            PaletteAction::OpenView(index) => Some(match &self.project {
+                Some(project) => format!(
+                    "view:{}:{}",
+                    project.id,
+                    project
+                        .views
+                        .get(*index)
+                        .map(|view| view.id.as_str())
+                        .unwrap_or("")
+                ),
+                None => format!("view:*:{index}"),
+            }),
+            PaletteAction::OpenKnowledge(id) => Some(format!("note:{id}")),
+            PaletteAction::SelectItem { component, index } => {
+                if self.active_component == *component && self.selected == *index {
+                    self.selected_item().map(|item| format!("item:{}", item.id))
+                } else {
+                    None
+                }
+            }
+            PaletteAction::Execute(action)
+                if action.enabled && matches!(action.id.as_str(), "open" | "open_knowledge") =>
+            {
+                Some(format!(
+                    "open:{}",
+                    action.payload.as_deref().unwrap_or_default()
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    /// A small ranking nudge (never more than half a match tier) for actions
+    /// that belong to the current project, view, screen or selection.
+    fn palette_context_boost(&self, action: &PaletteAction) -> i64 {
+        let selected = self.selected_item();
+        let selected_id = selected.map(|item| item.id.as_str());
+        match action {
+            PaletteAction::Go(screen) if *screen == self.screen => 40,
+            PaletteAction::OpenProject(id)
+                if self
+                    .project
+                    .as_ref()
+                    .is_some_and(|project| &project.id == id) =>
+            {
+                40
+            }
+            PaletteAction::OpenView(index)
+                if self
+                    .project
+                    .as_ref()
+                    .is_some_and(|project| project.active_view == *index) =>
+            {
+                40
+            }
+            PaletteAction::SelectItem { component, index }
+                if self.active_component == *component && self.selected == *index =>
+            {
+                50
+            }
+            PaletteAction::OpenKnowledge(id)
+                if selected_id.is_some_and(|selected| selected == id) =>
+            {
+                40
+            }
+            PaletteAction::Execute(action) => {
+                if selected_id.is_some() && action.payload.as_deref() == selected_id {
+                    50
+                } else if let Some(item) = selected {
+                    let relevant = match item.kind {
+                        ItemKind::Task => matches!(
+                            action.id.as_str(),
+                            "open"
+                                | "edit_task"
+                                | "quick_edit_task"
+                                | "set_task_status"
+                                | "complete_task"
+                        ),
+                        ItemKind::WorkItem => {
+                            matches!(action.id.as_str(), "open" | "edit_work_item")
+                        }
+                        ItemKind::Metric => matches!(
+                            action.id.as_str(),
+                            "open" | "record_metric" | "set_metric_target"
+                        ),
+                        ItemKind::Habit => matches!(action.id.as_str(), "open" | "record_habit"),
+                        _ => false,
+                    };
+                    if relevant { 30 } else { 0 }
+                } else if matches!(action.id.as_str(), "create_task" | "search" | "refresh") {
+                    20
+                } else {
+                    0
+                }
+            }
+            PaletteAction::Form(FormMode::NewTask {
+                project_id: Some(id),
+            }) if self
+                .project
+                .as_ref()
+                .is_some_and(|project| &project.id == id) =>
+            {
+                20
+            }
+            _ => 0,
+        }
     }
 
     pub fn execute_palette_action(&mut self, action: PaletteAction) -> bool {
-        match action {
-            PaletteAction::Go(screen) => self.go_screen(screen),
-            PaletteAction::OpenProject(id) => self.open_project(&id),
+        // A disabled entry is listed so the reason is discoverable, but Enter
+        // must never run it.
+        if let PaletteAction::Execute(action) = &action
+            && !action.enabled
+        {
+            self.notify(
+                action
+                    .disabled_reason
+                    .clone()
+                    .unwrap_or_else(|| format!("{} is unavailable", action.label)),
+                StatusKind::Warning,
+            );
+            return false;
+        }
+        let destination = self.palette_destination_key(&action);
+        let result = match action {
+            PaletteAction::Go(screen) => {
+                self.go_screen(screen);
+                false
+            }
+            PaletteAction::OpenProject(id) => {
+                self.open_project(&id);
+                false
+            }
             PaletteAction::OpenView(index) => {
                 if self.screen != Screen::Project {
+                    self.notify("Open a project before choosing a view", StatusKind::Info);
                     return false;
                 }
                 self.switch_view_by_index(index);
+                false
             }
-            PaletteAction::Execute(action) => return self.execute_action(action),
-            PaletteAction::Form(mode) => self.start_form(mode),
+            PaletteAction::Execute(action) => self.execute_action(action),
+            PaletteAction::Form(mode) => {
+                self.start_form(mode);
+                false
+            }
             PaletteAction::SelectItem { component, index } => {
                 self.active_component = component;
                 self.selected = index;
                 self.focus = FocusPane::Workspace;
                 self.open_detail();
+                false
             }
             PaletteAction::OpenKnowledge(id) => {
                 if let Ok(notes) = self.client.list_knowledge()
@@ -1878,10 +2326,16 @@ impl App {
                 } else {
                     self.notify("Knowledge note not found", StatusKind::Warning);
                 }
+                false
             }
             PaletteAction::Quit => return true,
+        };
+        if let Some(key) = destination {
+            self.recent_destinations.retain(|recent| recent != &key);
+            self.recent_destinations.insert(0, key);
+            self.recent_destinations.truncate(5);
         }
-        false
+        result
     }
 
     pub fn execute_action(&mut self, action: AvailableAction) -> bool {
@@ -1929,6 +2383,14 @@ impl App {
                 {
                     let task_id = item.id.clone();
                     self.start_form(FormMode::EditTask { task_id });
+                }
+            }
+            "quick_edit_task" => {
+                if let Some(item) = self.selected_item()
+                    && item.kind == ItemKind::Task
+                {
+                    let task_id = item.id.clone();
+                    self.start_form(FormMode::QuickEditTask { task_id });
                 }
             }
             "add_dependency" => {
@@ -3331,6 +3793,7 @@ impl App {
                     ),
                 ],
                 focused: 0,
+                invalid: None,
                 error: None,
                 dirty: false,
             }),
@@ -3350,11 +3813,12 @@ impl App {
                         false,
                     ),
                     Self::text_field("milestone", "Milestone", "", false, "optional ID"),
-                    Self::integer_field("earliest", "Earliest start", "", false, "epoch ms"),
                     Self::integer_field("estimate", "Estimate", "", false, "minutes"),
+                    Self::integer_field("earliest", "Earliest start", "", false, "epoch ms"),
                     Self::integer_field("deadline", "Deadline", "", false, "epoch ms"),
                 ],
                 focused: 0,
+                invalid: None,
                 error: None,
                 dirty: false,
             }),
@@ -3363,12 +3827,39 @@ impl App {
                 let task = tasks.iter().find(|task| task.id == task_id)?;
                 Some(FormState {
                     title: format!("Edit task · {}", task.title),
-                    hint: "Rename and set supported planning fields".into(),
+                    hint: "Everyday fields first; planning and scope are further down".into(),
                     mode: FormMode::EditTask {
                         task_id: task_id.clone(),
                     },
                     fields: vec![
                         Self::text_field("title", "Title", task.title.clone(), true, "required"),
+                        Self::choice_field(
+                            "priority",
+                            "Priority",
+                            task.priority.clone().unwrap_or_default(),
+                            vec![
+                                Self::form_choice("", "(unset)"),
+                                Self::form_choice("low", "low"),
+                                Self::form_choice("medium", "medium"),
+                                Self::form_choice("high", "high"),
+                                Self::form_choice("urgent", "urgent"),
+                            ],
+                            false,
+                        ),
+                        Self::multiline_field(
+                            "description",
+                            "Description",
+                            task.description.clone(),
+                            false,
+                            "Markdown text",
+                        ),
+                        Self::text_field(
+                            "labels",
+                            "Labels",
+                            task.labels.join(", "),
+                            false,
+                            "comma separated",
+                        ),
                         Self::choice_field(
                             "project",
                             "Project",
@@ -3410,35 +3901,61 @@ impl App {
                             false,
                             "epoch ms",
                         ),
-                        Self::multiline_field(
-                            "description",
-                            "Description",
-                            task.description.clone(),
-                            false,
-                            "Markdown text",
-                        ),
-                        Self::choice_field(
-                            "priority",
-                            "Priority",
-                            task.priority.clone().unwrap_or_default(),
-                            vec![
-                                Self::form_choice("", "(unset)"),
-                                Self::form_choice("low", "low"),
-                                Self::form_choice("medium", "medium"),
-                                Self::form_choice("high", "high"),
-                                Self::form_choice("urgent", "urgent"),
-                            ],
-                            false,
-                        ),
-                        Self::text_field(
-                            "labels",
-                            "Labels",
-                            task.labels.join(", "),
-                            false,
-                            "comma separated",
-                        ),
                     ],
                     focused: 0,
+                    invalid: None,
+                    error: None,
+                    dirty: false,
+                })
+            }
+            FormMode::QuickEditTask { task_id } => {
+                let task = self.task_dto(&task_id)?;
+                let next_status = self
+                    .selected_item()
+                    .filter(|item| item.id == task_id)
+                    .map(|item| item.allowed_statuses.clone())
+                    .unwrap_or_default();
+                let mut fields = vec![
+                    Self::text_field("title", "Title", task.title.clone(), true, "required"),
+                    Self::choice_field(
+                        "priority",
+                        "Priority",
+                        task.priority.clone().unwrap_or_default(),
+                        vec![
+                            Self::form_choice("", "(unset)"),
+                            Self::form_choice("low", "low"),
+                            Self::form_choice("medium", "medium"),
+                            Self::form_choice("high", "high"),
+                            Self::form_choice("urgent", "urgent"),
+                        ],
+                        false,
+                    ),
+                ];
+                // Offer a status field only when the workflow leaves exactly
+                // one next step; otherwise the full action menu is the honest
+                // place to choose.
+                if next_status.len() == 1 && next_status[0] != task.status {
+                    let next = next_status[0].clone();
+                    fields.push(Self::choice_field(
+                        "status",
+                        "Status",
+                        "",
+                        vec![
+                            Self::form_choice("", format!("keep {}", task.status)),
+                            Self::form_choice(next.clone(), format!("move to {next}")),
+                        ],
+                        false,
+                    ));
+                }
+                Some(FormState {
+                    title: format!("Quick edit · {}", task.title),
+                    hint: "Title and priority; Ctrl+S saves and Esc cancels".into(),
+                    mode: FormMode::QuickEditTask {
+                        task_id: task_id.clone(),
+                    },
+                    fields,
+                    focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3483,6 +4000,7 @@ impl App {
                         ),
                     ],
                     focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3497,6 +4015,7 @@ impl App {
                     },
                     fields: vec![Self::text_field("text", "Criterion", "", true, "required")],
                     focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3522,6 +4041,7 @@ impl App {
                         "required",
                     )],
                     focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3541,6 +4061,7 @@ impl App {
                     Self::text_field("description", "Caption", "", false, "optional"),
                 ],
                 focused: 0,
+                invalid: None,
                 error: None,
                 dirty: false,
             }),
@@ -3558,6 +4079,7 @@ impl App {
                     "required",
                 )],
                 focused: 0,
+                invalid: None,
                 error: None,
                 dirty: false,
             }),
@@ -3579,6 +4101,7 @@ impl App {
                     Self::integer_field("version", "Version", "", false, "optional"),
                 ],
                 focused: 0,
+                invalid: None,
                 error: None,
                 dirty: false,
             }),
@@ -3620,6 +4143,7 @@ impl App {
                         true,
                     )],
                     focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3661,6 +4185,7 @@ impl App {
                         true,
                     )],
                     focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3711,6 +4236,7 @@ impl App {
                         ),
                     ],
                     focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3759,6 +4285,7 @@ impl App {
                         true,
                     )],
                     focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3777,6 +4304,7 @@ impl App {
                 },
                 fields: Self::work_item_fields(&blueprint, &kind)?,
                 focused: 0,
+                invalid: None,
                 error: None,
                 dirty: false,
             }),
@@ -3818,6 +4346,7 @@ impl App {
                     },
                     fields,
                     focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3831,6 +4360,7 @@ impl App {
                     Self::text_field("body", "Body", "", false, "Markdown"),
                 ],
                 focused: 0,
+                invalid: None,
                 error: None,
                 dirty: false,
             }),
@@ -3849,6 +4379,7 @@ impl App {
                     true,
                 )],
                 focused: 0,
+                invalid: None,
                 error: None,
                 dirty: false,
             }),
@@ -3875,6 +4406,7 @@ impl App {
                         true,
                     )],
                     focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3914,6 +4446,7 @@ impl App {
                         ),
                     ],
                     focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3942,6 +4475,7 @@ impl App {
                         Self::integer_field("value", "Value", "", true, "integer"),
                     ],
                     focused: 0,
+                    invalid: None,
                     error: None,
                     dirty: false,
                 })
@@ -3969,6 +4503,7 @@ impl App {
                     Self::text_field("id", "Evidence ID", "", true, "habit or metric ID"),
                 ],
                 focused: 0,
+                invalid: None,
                 error: None,
                 dirty: false,
             }),
@@ -4007,6 +4542,7 @@ impl App {
     }
 
     fn form_error(&mut self, mut form: FormState, error: impl Into<String>) {
+        form.invalid = None;
         form.error = Some(error.into());
         self.modal = Some(Modal::Form(form));
     }
@@ -4022,35 +4558,71 @@ impl App {
             return;
         }
         self.last_submission = Some((key, Instant::now()));
-        let mut validation_error = None;
-        for field in &form.fields {
+        let mut validation_error: Option<(usize, String)> = None;
+        for (index, field) in form.fields.iter().enumerate() {
             if field.required && field.value.trim().is_empty() {
-                validation_error = Some(format!("{} is required", field.label));
+                validation_error = Some((index, format!("{} is required", field.label)));
                 break;
             }
             if matches!(field.kind, FormFieldKind::Integer)
                 && !field.value.trim().is_empty()
                 && field.value.trim().parse::<i64>().is_err()
             {
-                validation_error = Some(format!("{} must be an integer", field.label));
+                validation_error = Some((index, format!("{} must be an integer", field.label)));
                 break;
             }
             if let FormFieldKind::Choice(choices) = &field.kind
                 && (!field.value.trim().is_empty() || field.required)
                 && !choices.iter().any(|choice| choice.value == field.value)
             {
-                validation_error = Some(format!("{} is not a valid choice", field.label));
+                validation_error = Some((index, format!("{} is not a valid choice", field.label)));
                 break;
             }
         }
-        if let Some(error) = validation_error {
-            self.form_error(form, error);
+        // Cross-field planning check stays next to the field that has to change.
+        if validation_error.is_none()
+            && let (Some(earliest), Some(deadline)) = (
+                form.fields
+                    .iter()
+                    .position(|field| field.key == "earliest")
+                    .and_then(|index| {
+                        Self::form_value(&form, "earliest")
+                            .trim()
+                            .parse::<i64>()
+                            .ok()
+                            .map(|value| (index, value))
+                    }),
+                form.fields
+                    .iter()
+                    .position(|field| field.key == "deadline")
+                    .and_then(|index| {
+                        Self::form_value(&form, "deadline")
+                            .trim()
+                            .parse::<i64>()
+                            .ok()
+                            .map(|value| (index, value))
+                    }),
+            )
+            && earliest.1 > deadline.1
+        {
+            validation_error = Some((
+                deadline.0,
+                "Earliest start must not be after the deadline".to_owned(),
+            ));
+        }
+        if let Some((index, error)) = validation_error {
+            let mut form = form;
+            form.invalid = Some(index);
+            form.focused = index;
+            form.error = Some(error);
+            self.modal = Some(Modal::Form(form));
             return;
         }
         let result = match form.mode.clone() {
             FormMode::NewProject => self.submit_new_project(&form),
             FormMode::NewTask { .. } => self.submit_new_task(&form),
             FormMode::EditTask { task_id } => self.submit_edit_task(&form, &task_id),
+            FormMode::QuickEditTask { task_id } => self.submit_quick_edit_task(&form, &task_id),
             FormMode::EditTaskDetails { task_id } => self.submit_edit_task_details(&form, &task_id),
             FormMode::AddCriterion { task_id } => self.submit_add_criterion(&form, &task_id),
             FormMode::EditCriterion {
@@ -4144,6 +4716,52 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// Quick edit deliberately reuses the same commands as the full forms:
+    /// rename, rich-detail update and status transition. No new mutation API.
+    fn submit_quick_edit_task(&mut self, form: &FormState, task_id: &str) -> Result<(), String> {
+        let current = self
+            .task_dto(task_id)
+            .ok_or_else(|| "task no longer exists".to_owned())?;
+        let title = Self::form_value(form, "title").trim().to_owned();
+        let priority_raw = Self::form_value(form, "priority").trim().to_owned();
+        let priority = (!priority_raw.is_empty()).then_some(priority_raw);
+        let mut changed = false;
+        if title != current.title {
+            self.client
+                .rename_task(task_id.to_owned(), title)
+                .map_err(|error| error.message)?;
+            changed = true;
+        }
+        if priority != current.priority {
+            self.client
+                .update_task_details(
+                    task_id.to_owned(),
+                    current.description.clone(),
+                    priority,
+                    current.labels.clone(),
+                )
+                .map_err(|error| error.message)?;
+            changed = true;
+        }
+        let status = Self::form_value(form, "status").trim().to_owned();
+        if !status.is_empty() && status != current.status {
+            self.client
+                .set_task_status(SetTaskStatusRequest {
+                    id: task_id.to_owned(),
+                    status: status.clone(),
+                })
+                .map_err(|error| error.message)?;
+            changed = true;
+        }
+        if !changed {
+            self.notify("No quick-edit changes to save", StatusKind::Info);
+            return Ok(());
+        }
+        let (message, kind) = self.mutation_status("Quick edit saved");
+        self.notify(message, kind);
+        Ok(())
     }
 
     fn submit_edit_task_details(&mut self, form: &FormState, task_id: &str) -> Result<(), String> {
@@ -4900,7 +5518,59 @@ pub fn palette_nav(label: &str, description: &str, screen: Screen) -> PaletteEnt
         description: description.into(),
         action: PaletteAction::Go(screen),
         enabled: true,
+        recent_rank: None,
     }
+}
+
+/// Deterministic palette ranking. Tiers are 100 apart so a context boost can
+/// reorder near-equals without letting a weaker match beat a stronger one:
+/// label prefix, word start, subsequence, substring, description.
+fn palette_match_score(label: &str, description: &str, needle: &str) -> Option<i64> {
+    let label = label.to_lowercase();
+    let description = description.to_lowercase();
+    if label.starts_with(needle) {
+        return Some(0);
+    }
+    if has_word_start(&label, needle) {
+        return Some(100);
+    }
+    if is_subsequence(&label, needle) {
+        return Some(200);
+    }
+    if label.contains(needle) {
+        return Some(300);
+    }
+    if description.contains(needle) {
+        return Some(400);
+    }
+    // Multi-word queries may match across words in either text.
+    let tokens: Vec<&str> = needle.split_whitespace().collect();
+    if tokens.len() > 1
+        && tokens
+            .iter()
+            .all(|token| label.contains(token) || description.contains(token))
+    {
+        return Some(500);
+    }
+    None
+}
+
+fn has_word_start(haystack: &str, needle: &str) -> bool {
+    haystack.char_indices().any(|(index, _)| {
+        let before_is_boundary = index == 0
+            || haystack[..index]
+                .chars()
+                .next_back()
+                .is_none_or(|character| !character.is_alphanumeric());
+        before_is_boundary && haystack[index..].starts_with(needle)
+    })
+}
+
+fn is_subsequence(haystack: &str, needle: &str) -> bool {
+    let mut characters = haystack.chars();
+    needle
+        .chars()
+        .all(|wanted| characters.any(|candidate| candidate == wanted))
 }
 
 pub fn now_ms() -> i64 {

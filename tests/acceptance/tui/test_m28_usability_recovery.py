@@ -111,15 +111,14 @@ def test_basic_task_details_criteria_attachment_and_restart(sessions, tmp_path):
     session.send(b"e", note="edit task")
     session.wait_for_screen_text("Edit task", timeout=8.0, description="edit form")
 
-    # Focus order: title, project, milestone, estimate, earliest, deadline,
-    # description. Tab to the multi-line description and type two lines.
-    for _ in range(6):
-        session.send(b"\t", note="next field")
+    # Everyday field order: title, priority, description, labels, then project
+    # and planning. Set priority first, then write two description lines.
+    session.send(b"\t", note="priority field")
+    session.send(b"\x1b[C", note="select low priority")
+    session.send(b"\t", note="description field")
     session.send_text("Line one")
     session.send(ENTER, note="newline in description")
     session.send_text("Line two")
-    session.send(b"\t", note="priority field")
-    session.send(b"\x1b[C", note="select low priority")
     session.send(b"\t", note="labels field")
     session.send_text("smoke")
     session.send(CTRL_S, note="save task details")

@@ -676,8 +676,8 @@ def test_project_form_objective_and_validation_do_not_create_partial_rows(tui_fa
     session.send(b"c", note="invalid task form")
     session.wait_for_screen_text("New task", timeout=8.0, description="task form")
     session.send_text("Should not exist")
-    for _ in range(4):
-        session.send(b"\t", note="focus next field")
+    for _ in range(3):
+        session.send(b"\t", note="focus estimate")
     session.send_text("0")
     session.send(ENTER, note="submit invalid estimate")
     session.wait_for_screen_text(

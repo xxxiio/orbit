@@ -12,10 +12,12 @@ The shell has three regions:
 - **Details** — the selected item's properties, dependencies and available
   actions. On narrow terminals details open as a modal.
 
-Below them, a one-line action bar lists executable actions for the current
-selection **with their real keys**, and a status line reports the last accepted,
+Below them, a one-line action bar lists the three most useful executable
+operations for the current selection **with their real keys**, followed by
+`a more actions` and `q quit`, and a status line reports the last accepted,
 pending, rejected, stale or unavailable result. The bar never advertises an
-action that the application cannot authorize.
+action that the application cannot authorize; disabled actions stay in the
+action menu with an explicit reason.
 
 The layout adapts to the terminal:
 
@@ -122,6 +124,8 @@ pinned workflow version or says `generated default`.
 | `c` | New task (or new project on the Projects screen) |
 | `C` | New workflow work item (choose kind, then declared fields) |
 | `e` | Edit the selected task, project or work item |
+| `E` | Quick edit the selected task: title, priority and the next status when there is only one |
+| `S` | Status transitions for the selected task |
 | `K` | Acceptance criteria for the selected task |
 | `H` | Activity history for the selected task |
 | `i` | Attach a file to the selected task, project or work item |
@@ -257,19 +261,34 @@ losing data.
 ## Structured forms
 
 Project, task, knowledge, work-item and workflow operations use a structured
-form rather than a single encoded string. `Tab`/`Shift+Tab` moves between
-fields; `←`/`→` selects a choice or boolean; printable keys edit text; `Enter`
-submits (or inserts a newline in a multi-line field); `Ctrl+S` saves from any
-field; `Esc` cancels. Validation errors keep the form and all entered values
-visible. The project form includes an optional objective and an already-installed
-workflow version; the task form includes project, milestone, estimate (minutes),
-deadline (Unix epoch milliseconds), description, priority and labels. Workflow
-work-item forms are generated from the pinned schema.
+form rather than a single encoded string. The task edit form puts everyday
+fields first (title, priority, description, labels) and scope/planning last.
+`Tab`/`Shift+Tab` moves between fields; `←`/`→` selects a choice or boolean;
+printable keys edit text; `Enter` submits (or inserts a newline in a multi-line
+field); `Ctrl+S` saves from any field; `Esc` cancels. The title bar shows the
+explicit Save and Cancel affordances and the footer repeats their keys.
+Validation errors mark the offending field with `!` and a message, move focus
+to it, and keep every entered value. A focused multi-line field shows several
+wrapped lines around the caret instead of hiding them behind a count. The
+project form includes an optional objective and an already-installed workflow
+version; workflow work-item forms are generated from the pinned schema.
 
 ## Contextual actions and the command palette
 
-The action menu and command palette share the same action catalogue. The
-palette includes:
+The compact action bar shows at most three context-ranked operations with their
+real keys, then `a more actions` and `q quit`. Disabled actions never appear
+there; the action menu keeps them visible in a dimmed "More actions" group with
+their reason and refuses to run them. The action menu groups suggested actions
+first and scrolls with the selection.
+
+The action menu and command palette share the same action catalogue. Palette
+matching is deterministic: label prefix, then word start, subsequence and
+substring, with current-screen/project/selection actions slightly boosted and a
+stable tie-break. Destinations you open are remembered for the session and
+appear first when the query is empty; `Ctrl+U` clears the query. Disabled
+entries stay listed with their reason but Enter never runs them.
+
+The palette includes:
 
 - global destinations and open projects;
 - the current project's views;
