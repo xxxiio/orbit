@@ -91,27 +91,37 @@ fn focus_from_name(name: &str) -> Option<FocusPane> {
 }
 
 /// Best-effort load. Never fails the application.
+///
+/// Absent or unknown versions are accepted (an absent `version` reads as `0`,
+/// the pre-versioning schema); a version newer than [`UI_STATE_VERSION`] is
+/// ignored because its fields may no longer mean what this build expects.
 pub fn load() -> Option<UiState> {
     let path = state_path()?;
     let raw = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&raw).ok()
+    let state: UiState = serde_json::from_str(&raw).ok()?;
+    if state.version > UI_STATE_VERSION {
+        return None;
+    }
+    Some(state)
 }
 
 /// Persist the current navigation intent. Errors are reported to the caller so
 /// the shell can surface a warning without losing the session.
+///
+/// The file is replaced atomically through a fsynced sibling temporary file so a
+/// crash mid-write cannot leave a truncated session behind. When the authority
+/// view never loaded (`app.workspace.is_none()`) or a restore was skipped
+/// (`app.restore_skipped`), the previous file's navigation is preserved instead
+/// of being overwritten with the empty fallback state.
 pub fn save(app: &App) -> Result<(), String> {
     let Some(path) = state_path() else {
         return Ok(());
     };
-    let state = UiState {
+    let mut state = UiState {
         version: UI_STATE_VERSION,
         screen: Some(screen_name(app.screen).to_owned()),
         project_id: app.project.as_ref().map(|project| project.id.clone()),
-        view_id: app
-            .project
-            .as_ref()
-            .and_then(|project| project.views.get(project.active_view))
-            .map(|view| view.id.clone()),
+        view_id: app.current_view().map(|view| view.id.clone()),
         focus: Some(focus_name(app.focus).to_owned()),
         sidebar_selection: Some(app.sidebar_selection),
         projects_selection: Some(app.projects_selection),
@@ -121,11 +131,48 @@ pub fn save(app: &App) -> Result<(), String> {
         scroll: Some(app.scroll),
         detail_scroll: Some(app.detail_scroll),
     };
+    if (app.workspace.is_none() || app.restore_skipped)
+        && let Some(previous) = load()
+    {
+        // The shell is an empty fallback, not user intent: keep the last good
+        // navigation rather than erasing a still-valid session. A deliberate
+        // navigation clears `restore_skipped`, so Home is still remembered.
+        state.screen = previous.screen.or(state.screen);
+        state.project_id = previous.project_id.or(state.project_id);
+        state.view_id = previous.view_id.or(state.view_id);
+        state.focus = previous.focus.or(state.focus);
+        state.sidebar_selection = previous.sidebar_selection.or(state.sidebar_selection);
+        state.projects_selection = previous.projects_selection.or(state.projects_selection);
+        state.active_component = previous.active_component.or(state.active_component);
+        state.selected_id = previous.selected_id.or(state.selected_id);
+        state.selected_index = previous.selected_index.or(state.selected_index);
+        state.scroll = previous.scroll.or(state.scroll);
+        state.detail_scroll = previous.detail_scroll.or(state.detail_scroll);
+    }
     let serialized = serde_json::to_string_pretty(&state).map_err(|error| error.to_string())?;
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+        && !parent.exists()
+    {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    std::fs::write(&path, serialized).map_err(|error| error.to_string())
+    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+    let written = write_durably(&temporary, serialized.as_bytes())
+        .and_then(|()| std::fs::rename(&temporary, &path).map_err(|error| error.to_string()));
+    if written.is_err() {
+        // Never leave a partial or stale temp file behind.
+        let _ = std::fs::remove_file(&temporary);
+    }
+    written
+}
+
+/// Write and fsync a file so the rename that publishes it is durable.
+fn write_durably(path: &std::path::Path, contents: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let mut file = std::fs::File::create(path).map_err(|error| error.to_string())?;
+    file.write_all(contents)
+        .map_err(|error| error.to_string())?;
+    file.sync_all().map_err(|error| error.to_string())
 }
 
 /// Restore navigation intent after the workspace has loaded. Missing projects
@@ -135,6 +182,7 @@ pub fn save(app: &App) -> Result<(), String> {
 /// project resets focus and selection, then the saved focus, component,
 /// selection and scroll offsets are applied.
 pub fn restore(app: &mut App) {
+    app.restore_skipped = false;
     let Some(state) = load() else {
         return;
     };
@@ -144,25 +192,35 @@ pub fn restore(app: &mut App) {
     let focus = state.focus.as_deref().and_then(focus_from_name);
     let project_id = state.project_id.as_deref();
     let wants_project = matches!(screen, None | Some(Screen::Project));
+    let workspace_missing = app.workspace.is_none();
+    let project_available = project_id.is_some_and(|id| app.project_exists(id));
     if wants_project
         && let Some(project_id) = project_id
-        && app.project_exists(project_id)
+        && project_available
     {
         app.open_project_restored(project_id, state.view_id.as_deref());
-        if let Some(focus) = focus {
-            app.focus = focus;
-        }
     } else if let Some(screen) = screen {
-        // A saved project whose authority record is gone falls back to the list.
+        // A saved project whose authority record is gone falls back to the
+        // project list, or to Home when the authority view never loaded.
         let screen = if screen == Screen::Project {
-            Screen::Projects
+            if workspace_missing {
+                Screen::Home
+            } else {
+                Screen::Projects
+            }
         } else {
             screen
         };
         app.go_screen(screen);
-        if let Some(focus) = focus {
-            app.focus = focus;
-        }
+    }
+    // The previous session is still valid; only the authority view is missing,
+    // so keep its navigation until the user navigates or opens a project
+    // (which clears the flag).
+    if workspace_missing && wants_project && project_id.is_some() && !project_available {
+        app.restore_skipped = true;
+    }
+    if let Some(focus) = focus {
+        app.focus = focus;
     }
     if let Some(index) = state.sidebar_selection {
         app.sidebar_selection = index.min(app.sidebar_len().saturating_sub(1));
@@ -174,6 +232,7 @@ pub fn restore(app: &mut App) {
         state.selected_id.as_deref(),
         state.selected_index,
         state.active_component,
+        state.view_id.as_deref(),
         state.scroll,
         state.detail_scroll,
     );

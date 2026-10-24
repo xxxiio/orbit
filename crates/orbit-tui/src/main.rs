@@ -67,16 +67,43 @@ fn navigation_signature(app: &App) -> String {
     )
 }
 
+/// Flush pending navigation state once. A failed write stays pending until the
+/// next navigation change so a broken state directory cannot warn on every tick.
+fn flush_navigation(app: &mut App, saved_signature: &mut String, dirty: &mut bool) {
+    if !*dirty {
+        return;
+    }
+    let signature = navigation_signature(app);
+    match ui_state::save(app) {
+        Ok(()) => {
+            *dirty = false;
+            *saved_signature = signature;
+        }
+        Err(error) => {
+            *dirty = false;
+            app.notify(
+                format!("Session state not saved: {error}"),
+                StatusKind::Warning,
+            );
+        }
+    }
+}
+
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
 ) -> Result<(), String> {
-    let mut last_signature = navigation_signature(app);
+    // Writes are debounced: a signature change only marks the session dirty and
+    // the idle poll timeout (or exit) flushes it, so held keys and bursts of
+    // navigation cost one write instead of one per keypress.
+    let mut saved_signature = navigation_signature(app);
+    let mut dirty = false;
     loop {
         terminal
             .draw(|frame| render::draw(frame, app))
             .map_err(err)?;
         if !event::poll(Duration::from_millis(200)).map_err(err)? {
+            flush_navigation(app, &mut saved_signature, &mut dirty);
             continue;
         }
         let Event::Key(key) = event::read().map_err(err)? else {
@@ -96,17 +123,11 @@ fn event_loop(
         if handle_key(app, key.code, key.modifiers)? {
             break;
         }
-        let signature = navigation_signature(app);
-        if signature != last_signature {
-            last_signature = signature;
-            if let Err(error) = ui_state::save(app) {
-                app.notify(
-                    format!("Session state not saved: {error}"),
-                    StatusKind::Warning,
-                );
-            }
+        if navigation_signature(app) != saved_signature {
+            dirty = true;
         }
     }
+    flush_navigation(app, &mut saved_signature, &mut dirty);
     Ok(())
 }
 
@@ -3986,6 +4007,38 @@ mod m28_usability_recovery_tests {
         App::open(database.to_string_lossy().into_owned()).unwrap()
     }
 
+    /// Temp database that removes itself (and its WAL sidecars) once every
+    /// `App` opened on it has been dropped. Declare it before the apps so the
+    /// connection closes first: SQLite can recreate the file on close.
+    struct TempDatabase {
+        path: std::path::PathBuf,
+    }
+
+    impl TempDatabase {
+        fn new(stem: &str) -> Self {
+            let path = temp_path(stem, "sqlite");
+            let _ = std::fs::remove_file(&path);
+            Self { path }
+        }
+
+        fn path(&self) -> &std::path::Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempDatabase {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+            for suffix in ["-wal", "-shm"] {
+                let mut path = self.path.as_os_str().to_owned();
+                path.push(suffix);
+                let _ = std::fs::remove_file(std::path::PathBuf::from(path));
+            }
+            // Attachment content lives in a sibling directory.
+            let _ = std::fs::remove_dir_all(self.path.with_extension("knowledge"));
+        }
+    }
+
     /// Create a task directly (the form path deduplicates rapid submissions)
     /// and refresh the active project view.
     fn create_task(app: &mut App, project_id: &str, title: &str) -> String {
@@ -4032,12 +4085,11 @@ mod m28_usability_recovery_tests {
     fn session_state_round_trips_active_project_and_view() {
         let _guard = state_env_lock();
         let state_file = temp_path("state", "json");
-        let database = temp_path("session", "sqlite");
-        let _ = std::fs::remove_file(&database);
+        let database = TempDatabase::new("session");
         // SAFETY: the module lock keeps this variable private to the test.
         unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
 
-        let mut app = session_app(&database);
+        let mut app = session_app(database.path());
         let project_id = submit_project(&mut app, "Session");
         create_task(&mut app, &project_id, "First");
         let target = create_task(&mut app, &project_id, "Target");
@@ -4063,7 +4115,7 @@ mod m28_usability_recovery_tests {
         assert_eq!(loaded.detail_scroll, Some(3));
         assert_eq!(loaded.focus.as_deref(), Some("detail"));
 
-        let mut restored = session_app(&database);
+        let mut restored = session_app(database.path());
         ui_state::restore(&mut restored);
         assert_eq!(restored.screen, Screen::Project);
         assert_eq!(
@@ -4098,17 +4150,16 @@ mod m28_usability_recovery_tests {
     fn session_state_focus_survives_project_restore() {
         let _guard = state_env_lock();
         let state_file = temp_path("state-focus", "json");
-        let database = temp_path("session-focus", "sqlite");
-        let _ = std::fs::remove_file(&database);
+        let database = TempDatabase::new("session-focus");
         // SAFETY: the module lock keeps this variable private to the test.
         unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
 
-        let mut app = session_app(&database);
+        let mut app = session_app(database.path());
         submit_project(&mut app, "Focus");
         app.focus = FocusPane::Sidebar;
         ui_state::save(&app).unwrap();
 
-        let mut restored = session_app(&database);
+        let mut restored = session_app(database.path());
         ui_state::restore(&mut restored);
         assert_eq!(restored.screen, Screen::Project);
         assert_eq!(restored.focus, FocusPane::Sidebar);
@@ -4121,12 +4172,11 @@ mod m28_usability_recovery_tests {
     fn session_state_restores_selection_by_id_over_a_stale_index() {
         let _guard = state_env_lock();
         let state_file = temp_path("state-reorder", "json");
-        let database = temp_path("session-reorder", "sqlite");
-        let _ = std::fs::remove_file(&database);
+        let database = TempDatabase::new("session-reorder");
         // SAFETY: the module lock keeps this variable private to the test.
         unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
 
-        let mut app = session_app(&database);
+        let mut app = session_app(database.path());
         let project_id = submit_project(&mut app, "Reorder");
         create_task(&mut app, &project_id, "First");
         create_task(&mut app, &project_id, "Second");
@@ -4150,7 +4200,7 @@ mod m28_usability_recovery_tests {
         )
         .unwrap();
 
-        let mut restored = session_app(&database);
+        let mut restored = session_app(database.path());
         ui_state::restore(&mut restored);
         assert_eq!(
             restored.current_view().map(|view| view.id.clone()),
@@ -4171,12 +4221,11 @@ mod m28_usability_recovery_tests {
     fn session_state_clamps_when_the_selected_item_is_gone() {
         let _guard = state_env_lock();
         let state_file = temp_path("state-gone", "json");
-        let database = temp_path("session-gone", "sqlite");
-        let _ = std::fs::remove_file(&database);
+        let database = TempDatabase::new("session-gone");
         // SAFETY: the module lock keeps this variable private to the test.
         unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
 
-        let mut app = session_app(&database);
+        let mut app = session_app(database.path());
         let project_id = submit_project(&mut app, "Gone");
         create_task(&mut app, &project_id, "First");
         let target = create_task(&mut app, &project_id, "Second");
@@ -4196,7 +4245,7 @@ mod m28_usability_recovery_tests {
         )
         .unwrap();
 
-        let mut restored = session_app(&database);
+        let mut restored = session_app(database.path());
         ui_state::restore(&mut restored);
         let len = restored
             .current_component()
@@ -4219,40 +4268,58 @@ mod m28_usability_recovery_tests {
     fn session_state_falls_back_to_view_zero_when_the_view_is_gone() {
         let _guard = state_env_lock();
         let state_file = temp_path("state-view", "json");
-        let database = temp_path("session-view", "sqlite");
-        let _ = std::fs::remove_file(&database);
+        let database = TempDatabase::new("session-view");
         // SAFETY: the module lock keeps this variable private to the test.
         unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
 
-        let mut app = session_app(&database);
+        let mut app = session_app(database.path());
         let project_id = submit_project(&mut app, "Views");
-        let target = create_task(&mut app, &project_id, "First");
+        create_task(&mut app, &project_id, "First");
         let first_view = app
             .project
             .as_ref()
             .and_then(|project| project.views.first())
             .map(|view| view.id.clone())
             .expect("first view");
+        let first_component_len = app
+            .project
+            .as_ref()
+            .and_then(|project| project.views.first())
+            .and_then(|view| view.components.first())
+            .map(|component| component.selection.len())
+            .unwrap_or(0);
         std::fs::write(
             &state_file,
             format!(
-                r#"{{"project_id":"{project_id}","view_id":"retired-view","active_component":0,"selected_id":"{target}","selected_index":0}}"#
+                r#"{{"project_id":"{project_id}","view_id":"retired-view","active_component":0,"selected_id":"retired-row","selected_index":99,"scroll":5}}"#
             ),
         )
         .unwrap();
 
-        let mut restored = session_app(&database);
+        let mut restored = session_app(database.path());
         ui_state::restore(&mut restored);
         assert_eq!(
             restored.current_view().map(|view| view.id.clone()),
             Some(first_view),
             "a missing view id lands on view 0"
         );
-        let len = restored
-            .current_component()
-            .map(|component| component.selection.len())
-            .unwrap_or(0);
-        assert!(restored.selected < len.max(1), "selection stays valid");
+        // The retired view's component/index must not carry over: view 0 clamps
+        // its own saved index to a real row of its first component.
+        assert_eq!(restored.active_component, 0);
+        assert_eq!(
+            restored.selected,
+            first_component_len.saturating_sub(1),
+            "a stale index from another view is clamped to view 0"
+        );
+        assert_eq!(
+            restored.selected_item().is_some(),
+            first_component_len > 0,
+            "selection validity matches the component's row count"
+        );
+        assert_eq!(
+            restored.scroll, 0,
+            "a scroll captured in another view is not applied"
+        );
 
         unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
         let _ = std::fs::remove_file(&state_file);
@@ -4262,12 +4329,11 @@ mod m28_usability_recovery_tests {
     fn session_state_restores_non_project_screen_and_selection() {
         let _guard = state_env_lock();
         let state_file = temp_path("state-home", "json");
-        let database = temp_path("session-home", "sqlite");
-        let _ = std::fs::remove_file(&database);
+        let database = TempDatabase::new("session-home");
         // SAFETY: the module lock keeps this variable private to the test.
         unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
 
-        let mut app = session_app(&database);
+        let mut app = session_app(database.path());
         let project_id = submit_project(&mut app, "Home");
         create_task(&mut app, &project_id, "One");
         let target = create_task(&mut app, &project_id, "Two");
@@ -4280,7 +4346,7 @@ mod m28_usability_recovery_tests {
         app.focus = FocusPane::Sidebar;
         ui_state::save(&app).unwrap();
 
-        let mut restored = session_app(&database);
+        let mut restored = session_app(database.path());
         ui_state::restore(&mut restored);
         assert_eq!(restored.screen, Screen::Home);
         assert_eq!(restored.focus, FocusPane::Sidebar);
@@ -4298,14 +4364,13 @@ mod m28_usability_recovery_tests {
     fn session_state_ignores_corrupt_and_partial_files() {
         let _guard = state_env_lock();
         let state_file = temp_path("state-corrupt", "json");
-        let database = temp_path("session-corrupt", "sqlite");
-        let _ = std::fs::remove_file(&database);
+        let database = TempDatabase::new("session-corrupt");
         // SAFETY: the module lock keeps this variable private to the test.
         unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
 
         std::fs::write(&state_file, "{not json").unwrap();
         assert!(ui_state::load().is_none(), "corrupt state is ignored");
-        let mut app = session_app(&database);
+        let mut app = session_app(database.path());
         ui_state::restore(&mut app);
         assert_eq!(app.screen, Screen::Home);
         assert_eq!(app.selected, 0);
@@ -4327,13 +4392,12 @@ mod m28_usability_recovery_tests {
     fn session_state_ignores_unknown_screen_and_focus_names() {
         let _guard = state_env_lock();
         let state_file = temp_path("state-unknown", "json");
-        let database = temp_path("session-unknown", "sqlite");
-        let _ = std::fs::remove_file(&database);
+        let database = TempDatabase::new("session-unknown");
         // SAFETY: the module lock keeps this variable private to the test.
         unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
 
         let project_id = {
-            let mut app = session_app(&database);
+            let mut app = session_app(database.path());
             submit_project(&mut app, "Unknown")
         };
         std::fs::write(
@@ -4341,7 +4405,7 @@ mod m28_usability_recovery_tests {
             format!(r#"{{"screen":"nowhere","project_id":"{project_id}","focus":"ceiling"}}"#),
         )
         .unwrap();
-        let mut app = session_app(&database);
+        let mut app = session_app(database.path());
         ui_state::restore(&mut app);
         // The unknown screen name is ignored; the saved project still restores
         // and the unknown focus name falls back to the default pane.
@@ -4360,12 +4424,11 @@ mod m28_usability_recovery_tests {
     fn session_state_clamps_sidebar_and_projects_selections() {
         let _guard = state_env_lock();
         let state_file = temp_path("state-clamp", "json");
-        let database = temp_path("session-clamp", "sqlite");
-        let _ = std::fs::remove_file(&database);
+        let database = TempDatabase::new("session-clamp");
         // SAFETY: the module lock keeps this variable private to the test.
         unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
 
-        let mut app = session_app(&database);
+        let mut app = session_app(database.path());
         submit_project(&mut app, "Clamp");
         std::fs::write(
             &state_file,
@@ -4373,7 +4436,7 @@ mod m28_usability_recovery_tests {
         )
         .unwrap();
 
-        let mut restored = session_app(&database);
+        let mut restored = session_app(database.path());
         ui_state::restore(&mut restored);
         assert_eq!(restored.screen, Screen::Projects);
         assert_eq!(restored.focus, FocusPane::Sidebar);
@@ -4386,12 +4449,22 @@ mod m28_usability_recovery_tests {
 
     #[test]
     fn selection_restore_tolerates_empty_views_and_missing_components() {
-        let mut app = app();
+        let database = TempDatabase::new("selection-restore");
+        let mut app = session_app(database.path());
         app.screen = Screen::Home;
         app.home.components.clear();
-        app.restore_selection(Some("missing"), Some(5), Some(5), Some(3), Some(2));
+        let home_view = app.home.id.clone();
+        app.restore_selection(
+            Some("missing"),
+            Some(5),
+            Some(5),
+            Some(home_view.as_str()),
+            Some(3),
+            Some(2),
+        );
         assert_eq!(app.active_component, 0);
         assert_eq!(app.selected, 0);
+        assert_eq!(app.scroll, 3, "scroll applies for a component with no rows");
         assert_eq!(app.detail_scroll, 2);
 
         app.home.components = vec![orbit_ui::ResolvedComponent {
@@ -4402,10 +4475,522 @@ mod m28_usability_recovery_tests {
             body: orbit_ui::ComponentBody::List { items: Vec::new() },
             selection: Vec::new(),
         }];
-        app.restore_selection(Some("missing"), Some(5), Some(2), Some(1), None);
+        app.restore_selection(
+            Some("missing"),
+            Some(5),
+            Some(2),
+            Some("another-view"),
+            Some(1),
+            None,
+        );
         assert_eq!(app.active_component, 0);
         assert_eq!(app.selected, 0);
         assert_eq!(app.detail_scroll, 2);
-        assert_eq!(app.scroll, 1);
+        assert_eq!(
+            app.scroll, 0,
+            "a scroll from another view is not applied to this component"
+        );
+
+        app.restore_selection(
+            Some("missing"),
+            Some(5),
+            Some(0),
+            Some(home_view.as_str()),
+            Some(1),
+            None,
+        );
+        assert_eq!(app.scroll, 1, "matching view and component keep the scroll");
+    }
+
+    /// M1: background refreshes after a restore must not reset the restored row.
+    #[test]
+    fn session_state_survives_project_refresh_after_restore() {
+        let _guard = state_env_lock();
+        let state_file = temp_path("state-refresh", "json");
+        let database = TempDatabase::new("session-refresh");
+        // SAFETY: the module lock keeps this variable private to the test.
+        unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
+
+        let mut app = session_app(database.path());
+        let project_id = submit_project(&mut app, "Refresh");
+        create_task(&mut app, &project_id, "First");
+        let target = create_task(&mut app, &project_id, "Target");
+        let (view_index, component_index, row) =
+            locate_project_selection(&app, &target).expect("selectable task row");
+        app.switch_view_by_index(view_index);
+        app.active_component = component_index;
+        app.selected = row;
+        app.scroll = row;
+        app.detail_scroll = 4;
+        app.focus = FocusPane::Detail;
+        ui_state::save(&app).unwrap();
+
+        let mut restored = session_app(database.path());
+        ui_state::restore(&mut restored);
+        assert_eq!(
+            restored.current_selected_id().as_deref(),
+            Some(target.as_str())
+        );
+
+        restored.refresh_project();
+        assert!(
+            restored
+                .project
+                .as_ref()
+                .expect("project")
+                .stale_error
+                .is_none(),
+            "refresh_project failed, so the restore assertions would be vacuous"
+        );
+        assert_eq!(
+            restored.current_selected_id().as_deref(),
+            Some(target.as_str()),
+            "refresh_project reset the restored row"
+        );
+        assert_eq!(restored.active_component, component_index);
+        assert_eq!(restored.scroll, row);
+        assert_eq!(restored.focus, FocusPane::Detail);
+
+        restored.refresh_after_mutation();
+        assert!(
+            restored
+                .project
+                .as_ref()
+                .expect("project")
+                .stale_error
+                .is_none(),
+            "refresh_after_mutation failed, so the restore assertions would be vacuous"
+        );
+        assert_eq!(
+            restored.current_selected_id().as_deref(),
+            Some(target.as_str()),
+            "refresh_after_mutation reset the restored row"
+        );
+        assert_eq!(restored.active_component, component_index);
+        assert_eq!(restored.scroll, row);
+        assert_eq!(restored.focus, FocusPane::Detail);
+
+        unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
+        let _ = std::fs::remove_file(&state_file);
+    }
+
+    /// M2: leaving and re-entering the restored view keeps the saved row.
+    #[test]
+    fn session_state_keeps_selection_after_switching_views() {
+        let _guard = state_env_lock();
+        let state_file = temp_path("state-switch", "json");
+        let database = TempDatabase::new("session-switch");
+        // SAFETY: the module lock keeps this variable private to the test.
+        unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
+
+        let mut app = session_app(database.path());
+        let project_id = submit_project(&mut app, "Switch");
+        create_task(&mut app, &project_id, "First");
+        let target = create_task(&mut app, &project_id, "Target");
+        let (view_index, component_index, row) =
+            locate_project_selection(&app, &target).expect("selectable task row");
+        app.switch_view_by_index(view_index);
+        app.active_component = component_index;
+        app.selected = row;
+        let view_count = app
+            .project
+            .as_ref()
+            .map(|project| project.views.len())
+            .unwrap_or(0);
+        assert!(view_count > 1, "need a second view to switch to");
+        ui_state::save(&app).unwrap();
+
+        let mut restored = session_app(database.path());
+        ui_state::restore(&mut restored);
+        let other = (view_index + 1) % view_count;
+        restored.switch_view_by_index(other);
+        restored.switch_view_by_index(view_index);
+        assert_eq!(
+            restored.current_selected_id().as_deref(),
+            Some(target.as_str()),
+            "the restored row was lost after a view round-trip"
+        );
+        assert_eq!(restored.active_component, component_index);
+
+        unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
+        let _ = std::fs::remove_file(&state_file);
+    }
+
+    /// M3/F1: a stale component index must not hide a row that still exists in
+    /// another component of the same view.
+    #[test]
+    fn session_state_finds_the_row_when_the_saved_component_is_stale() {
+        let _guard = state_env_lock();
+        let state_file = temp_path("state-stale-component", "json");
+        let database = TempDatabase::new("session-stale-component");
+        // SAFETY: the module lock keeps this variable private to the test.
+        unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
+
+        let mut app = session_app(database.path());
+        let project_id = submit_project(&mut app, "Stale component");
+        create_task(&mut app, &project_id, "First");
+        create_task(&mut app, &project_id, "Second");
+        let target = create_task(&mut app, &project_id, "Third");
+        let (view_index, component_index, row) =
+            locate_project_selection(&app, &target).expect("selectable task row");
+        let view = app
+            .project
+            .as_ref()
+            .and_then(|project| project.views.get(view_index))
+            .expect("view");
+        let view_id = view.id.clone();
+        let component_count = view.components.len();
+        assert!(component_count > 1, "need another component to point at");
+        let stale_component = (component_index + 1) % component_count;
+        assert_ne!(stale_component, component_index);
+        std::fs::write(
+            &state_file,
+            format!(
+                r#"{{"project_id":"{project_id}","view_id":"{view_id}","active_component":{stale_component},"selected_id":"{target}","selected_index":0,"scroll":2}}"#
+            ),
+        )
+        .unwrap();
+
+        let mut restored = session_app(database.path());
+        ui_state::restore(&mut restored);
+        assert_eq!(
+            restored.current_view().map(|view| view.id.clone()),
+            Some(view_id)
+        );
+        assert_eq!(
+            restored.active_component, component_index,
+            "the owning component must win over the stale saved index"
+        );
+        assert_eq!(
+            restored.current_selected_id().as_deref(),
+            Some(target.as_str())
+        );
+        assert_eq!(restored.selected, row);
+        assert_eq!(
+            restored.scroll, 0,
+            "a scroll offset from another component is not applied"
+        );
+
+        unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
+        let _ = std::fs::remove_file(&state_file);
+    }
+
+    /// F9: scroll for a component without rows (text/detail) is real state and
+    /// must round-trip, not just clamp to a selection.
+    #[test]
+    fn session_state_round_trips_scroll_for_a_non_selectable_component() {
+        let _guard = state_env_lock();
+        let state_file = temp_path("state-scroll", "json");
+        let database = TempDatabase::new("session-scroll");
+        // SAFETY: the module lock keeps this variable private to the test.
+        unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
+
+        let mut app = session_app(database.path());
+        let project_id = submit_project(&mut app, "Scroll");
+        create_task(&mut app, &project_id, "First");
+        // Only Text/Detail bodies render `app.scroll`; a metric would make the
+        // round-trip assertion vacuous.
+        let (view_index, component_index) = app
+            .project
+            .as_ref()
+            .and_then(|project| {
+                project
+                    .views
+                    .iter()
+                    .enumerate()
+                    .find_map(|(view, resolved)| {
+                        resolved
+                            .components
+                            .iter()
+                            .position(|component| {
+                                component.selection.is_empty()
+                                    && matches!(
+                                        component.body,
+                                        orbit_ui::ComponentBody::Text { .. }
+                                            | orbit_ui::ComponentBody::Detail { .. }
+                                    )
+                            })
+                            .map(|component| (view, component))
+                    })
+            })
+            .expect("a text or detail component");
+        app.switch_view_by_index(view_index);
+        app.active_component = component_index;
+        app.selected = 0;
+        app.scroll = 7;
+        ui_state::save(&app).unwrap();
+
+        let loaded = ui_state::load().expect("state file");
+        assert_eq!(loaded.active_component, Some(component_index));
+        assert_eq!(loaded.selected_id, None);
+        assert_eq!(loaded.selected_index, Some(0));
+        assert_eq!(loaded.scroll, Some(7));
+
+        let mut restored = session_app(database.path());
+        ui_state::restore(&mut restored);
+        let component = restored.current_component().expect("component restored");
+        assert!(
+            component.selection.is_empty(),
+            "the saved component has no rows"
+        );
+        assert!(
+            matches!(
+                component.body,
+                orbit_ui::ComponentBody::Text { .. } | orbit_ui::ComponentBody::Detail { .. }
+            ),
+            "the restored component must be one that renders app.scroll"
+        );
+        assert_eq!(restored.active_component, component_index);
+        assert_eq!(restored.selected, 0);
+        assert_eq!(
+            restored.scroll, 7,
+            "scroll for a text pane was not restored"
+        );
+
+        unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
+        let _ = std::fs::remove_file(&state_file);
+    }
+
+    /// A pre-versioning file (no `version`) still restores project, view, focus.
+    #[test]
+    fn session_state_accepts_a_pre_versioning_file() {
+        let _guard = state_env_lock();
+        let state_file = temp_path("state-v0", "json");
+        let database = TempDatabase::new("session-v0");
+        // SAFETY: the module lock keeps this variable private to the test.
+        unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
+
+        let mut app = session_app(database.path());
+        let project_id = submit_project(&mut app, "Legacy");
+        create_task(&mut app, &project_id, "First");
+        let view_index = app
+            .project
+            .as_ref()
+            .map(|project| project.views.len())
+            .unwrap_or(0)
+            .saturating_sub(1);
+        let view_id = app
+            .project
+            .as_ref()
+            .and_then(|project| project.views.get(view_index))
+            .map(|view| view.id.clone())
+            .expect("view id");
+        std::fs::write(
+            &state_file,
+            format!(
+                r#"{{"screen":"project","project_id":"{project_id}","view_id":"{view_id}","focus":"sidebar"}}"#
+            ),
+        )
+        .unwrap();
+
+        let loaded = ui_state::load().expect("v0 state loads");
+        assert_eq!(loaded.version, 0);
+        assert_eq!(loaded.active_component, None);
+
+        let mut restored = session_app(database.path());
+        ui_state::restore(&mut restored);
+        assert_eq!(restored.screen, Screen::Project);
+        assert_eq!(
+            restored.project.as_ref().map(|project| project.id.clone()),
+            Some(project_id)
+        );
+        assert_eq!(
+            restored.current_view().map(|view| view.id.clone()),
+            Some(view_id)
+        );
+        assert_eq!(restored.focus, FocusPane::Sidebar);
+
+        unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
+        let _ = std::fs::remove_file(&state_file);
+    }
+
+    /// F5: a newer schema is forward-incompatible and must be ignored.
+    #[test]
+    fn session_state_ignores_a_newer_schema_version() {
+        let _guard = state_env_lock();
+        let state_file = temp_path("state-future", "json");
+        let database = TempDatabase::new("session-future");
+        // SAFETY: the module lock keeps this variable private to the test.
+        unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
+
+        let project_id = {
+            let mut app = session_app(database.path());
+            submit_project(&mut app, "Future")
+        };
+        std::fs::write(
+            &state_file,
+            format!(
+                r#"{{"version":{},"screen":"project","project_id":"{project_id}","selected_id":"x"}}"#,
+                ui_state::UI_STATE_VERSION + 1
+            ),
+        )
+        .unwrap();
+        assert!(ui_state::load().is_none(), "a newer schema is ignored");
+
+        let mut app = session_app(database.path());
+        ui_state::restore(&mut app);
+        assert_eq!(app.screen, Screen::Home);
+        assert!(app.project.is_none());
+
+        unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
+        let _ = std::fs::remove_file(&state_file);
+    }
+
+    /// F2: a failed workspace load must not erase the last good session.
+    #[test]
+    fn session_state_preserves_the_session_when_the_workspace_fails_to_load() {
+        let _guard = state_env_lock();
+        let state_file = temp_path("state-failed-load", "json");
+        let database = TempDatabase::new("session-failed-load");
+        // SAFETY: the module lock keeps this variable private to the test.
+        unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
+
+        let mut app = session_app(database.path());
+        let project_id = submit_project(&mut app, "Failed load");
+        let target = create_task(&mut app, &project_id, "Target");
+        let (view_index, component_index, row) =
+            locate_project_selection(&app, &target).expect("selectable task row");
+        app.switch_view_by_index(view_index);
+        app.active_component = component_index;
+        app.selected = row;
+        app.focus = FocusPane::Detail;
+        ui_state::save(&app).unwrap();
+        let view_id = app.current_view().map(|view| view.id.clone());
+
+        // The authority view never loaded: the shell is an empty fallback.
+        let mut failed = session_app(database.path());
+        failed.workspace = None;
+        failed.screen = Screen::Home;
+        ui_state::save(&failed).unwrap();
+
+        let merged = ui_state::load().expect("merged state");
+        assert_eq!(merged.version, ui_state::UI_STATE_VERSION);
+        assert_eq!(merged.project_id.as_deref(), Some(project_id.as_str()));
+        assert_eq!(merged.view_id, view_id);
+        assert_eq!(merged.selected_id.as_deref(), Some(target.as_str()));
+        assert_eq!(merged.selected_index, Some(row));
+        assert_eq!(merged.active_component, Some(component_index));
+        assert_eq!(merged.screen.as_deref(), Some("project"));
+        assert_eq!(merged.focus.as_deref(), Some("detail"));
+
+        unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
+        let _ = std::fs::remove_file(&state_file);
+    }
+
+    /// F2: a missing saved project lands on Home after a failed load and on the
+    /// Projects list when the workspace did load.
+    #[test]
+    fn session_state_missing_project_lands_home_after_a_failed_load() {
+        let _guard = state_env_lock();
+        let state_file = temp_path("state-missing-project", "json");
+        let database = TempDatabase::new("session-missing-project");
+        // SAFETY: the module lock keeps this variable private to the test.
+        unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
+
+        std::fs::write(
+            &state_file,
+            r#"{"screen":"project","project_id":"missing-project"}"#,
+        )
+        .unwrap();
+
+        let mut loaded = session_app(database.path());
+        ui_state::restore(&mut loaded);
+        assert_eq!(loaded.screen, Screen::Projects);
+
+        let mut failed = session_app(database.path());
+        failed.workspace = None;
+        ui_state::restore(&mut failed);
+        assert_eq!(failed.screen, Screen::Home);
+        assert!(failed.project.is_none());
+
+        unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
+        let _ = std::fs::remove_file(&state_file);
+    }
+
+    /// N1: a session whose restore was skipped must survive the authority
+    /// recovering while the user never reopens the project, and a deliberate
+    /// Home visit must still persist Home.
+    #[test]
+    fn session_state_survives_a_skipped_restore_after_recovery() {
+        let _guard = state_env_lock();
+        let state_file = temp_path("state-skipped-restore", "json");
+        let database = TempDatabase::new("session-skipped-restore");
+        // SAFETY: the module lock keeps this variable private to the test.
+        unsafe { std::env::set_var("ORBIT_TUI_STATE", &state_file) };
+
+        let mut app = session_app(database.path());
+        let project_id = submit_project(&mut app, "Skipped");
+        create_task(&mut app, &project_id, "First");
+        let target = create_task(&mut app, &project_id, "Target");
+        let (view_index, component_index, row) =
+            locate_project_selection(&app, &target).expect("selectable task row");
+        app.switch_view_by_index(view_index);
+        app.active_component = component_index;
+        app.selected = row;
+        app.focus = FocusPane::Detail;
+        ui_state::save(&app).unwrap();
+        let view_id = app.current_view().map(|view| view.id.clone());
+
+        // Launch where the authority view never loads: the restore is skipped.
+        let mut failed = session_app(database.path());
+        failed.workspace = None;
+        failed.projects.clear();
+        failed.project_details.clear();
+        ui_state::restore(&mut failed);
+        assert!(failed.restore_skipped, "a skipped restore must be recorded");
+        assert_eq!(failed.screen, Screen::Home);
+        assert!(failed.project.is_none());
+
+        // The authority recovers, but the user never reopens the project.
+        failed.refresh_workspace();
+        assert!(failed.workspace.is_some(), "authority view recovered");
+        assert!(failed.project.is_none());
+        ui_state::save(&failed).unwrap();
+
+        let preserved = ui_state::load().expect("state file");
+        assert_eq!(preserved.project_id.as_deref(), Some(project_id.as_str()));
+        assert_eq!(preserved.view_id, view_id);
+        assert_eq!(preserved.selected_id.as_deref(), Some(target.as_str()));
+        assert_eq!(preserved.selected_index, Some(row));
+        assert_eq!(preserved.active_component, Some(component_index));
+        assert_eq!(
+            preserved.screen.as_deref(),
+            Some("project"),
+            "the skipped session must survive a successful refresh"
+        );
+
+        // The next launch restores the project and the row.
+        let mut restored = session_app(database.path());
+        ui_state::restore(&mut restored);
+        assert_eq!(restored.screen, Screen::Project);
+        assert_eq!(
+            restored.project.as_ref().map(|project| project.id.clone()),
+            Some(project_id)
+        );
+        assert_eq!(
+            restored.current_selected_id().as_deref(),
+            Some(target.as_str())
+        );
+
+        // A deliberate Home visit is still remembered.
+        restored.go_screen(Screen::Home);
+        ui_state::save(&restored).unwrap();
+        assert_eq!(
+            ui_state::load().expect("state file").screen.as_deref(),
+            Some("home"),
+            "a deliberate Home visit must persist Home"
+        );
+
+        // Deliberate navigation also releases a skipped restore.
+        failed.go_screen(Screen::Projects);
+        assert!(!failed.restore_skipped);
+        ui_state::save(&failed).unwrap();
+        assert_eq!(
+            ui_state::load().expect("state file").screen.as_deref(),
+            Some("projects")
+        );
+
+        unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
+        let _ = std::fs::remove_file(&state_file);
     }
 }

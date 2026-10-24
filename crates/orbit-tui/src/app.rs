@@ -415,6 +415,10 @@ pub struct App {
     pub planning_project: Option<String>,
     pub today_action_menu: Option<(WorkBrief, PlanningActionMenu)>,
     pub viewport_width: u16,
+    /// A saved session could not be restored because the authority view never
+    /// loaded. Navigation intent from the previous file is preserved until the
+    /// user opens a project or navigates deliberately.
+    pub restore_skipped: bool,
     history: Vec<NavigationState>,
     cursors: BTreeMap<String, CursorState>,
     last_submission: Option<(String, Instant)>,
@@ -479,6 +483,7 @@ impl App {
             planning_project: None,
             today_action_menu: None,
             viewport_width: 120,
+            restore_skipped: false,
             history: Vec::new(),
             cursors: BTreeMap::new(),
             last_submission: None,
@@ -959,6 +964,7 @@ impl App {
         {
             project.active_view = index;
         }
+        self.clamp_component();
     }
 
     fn open_project_internal(&mut self, project_id: &str, record_history: bool) {
@@ -995,6 +1001,7 @@ impl App {
         });
         self.screen = Screen::Project;
         self.focus = FocusPane::Workspace;
+        self.restore_skipped = false;
         self.active_component = 0;
         self.selected = 0;
         self.scroll = 0;
@@ -1109,36 +1116,87 @@ impl App {
     ///
     /// Selection prefers a stable identifier (so reordered rows still resolve),
     /// then the saved index, and always lands on a valid row: index `0` for an
-    /// empty component. Scroll offsets are clamped to the restored selection.
+    /// empty component. A changed component layout does not lose a row: the id
+    /// is resolved across every component of the current view. Scroll offsets
+    /// are clamped to the restored selection and only applied when `view_id`
+    /// and the saved component index both still describe the active view.
     pub fn restore_selection(
         &mut self,
         selected_id: Option<&str>,
         index: Option<usize>,
         active_component: Option<usize>,
+        view_id: Option<&str>,
         scroll: Option<usize>,
         detail_scroll: Option<usize>,
     ) {
+        /// Stale detail offsets must not scroll a restored pane out of view.
+        const MAX_DETAIL_SCROLL: usize = 500;
         let count = self.component_count();
-        self.active_component = active_component
+        let saved_component = active_component
             .unwrap_or(self.active_component)
             .min(count.saturating_sub(1));
-        let len = self
-            .current_component()
-            .map(|component| component.selection.len())
-            .unwrap_or(0);
-        let by_id = selected_id.and_then(|id| {
-            self.current_component()
-                .and_then(|component| component.selection.iter().position(|item| item.id == id))
+        // A saved offset only describes the view it was captured in.
+        let same_view = view_id.is_some_and(|id| {
+            self.current_view()
+                .is_some_and(|view| view.id.as_str() == id)
         });
-        self.selected = by_id.or(index).unwrap_or(0).min(len.saturating_sub(1));
-        let scroll = scroll.unwrap_or(0);
-        self.scroll = if len == 0 {
-            scroll
-        } else {
-            scroll.min(self.selected)
-        };
+        // Prefer the saved component (it keeps the saved scroll), then fall
+        // back to the owning component anywhere in this view. Never switch
+        // views: a row from another view is not a valid restore target.
+        let located = selected_id.and_then(|id| {
+            let view = self.current_view()?;
+            view.components
+                .get(saved_component)
+                .and_then(|component| {
+                    component
+                        .selection
+                        .iter()
+                        .position(|item| item.id == id)
+                        .map(|row| (saved_component, row))
+                })
+                .or_else(|| {
+                    view.components
+                        .iter()
+                        .enumerate()
+                        .find_map(|(component_index, component)| {
+                            component
+                                .selection
+                                .iter()
+                                .position(|item| item.id == id)
+                                .map(|row| (component_index, row))
+                        })
+                })
+        });
+        match located {
+            Some((component, row)) => {
+                self.active_component = component;
+                self.selected = row;
+                self.scroll = if same_view && component == saved_component {
+                    scroll.unwrap_or(0).min(row)
+                } else {
+                    0
+                };
+            }
+            None => {
+                let len = self
+                    .current_view()
+                    .and_then(|view| view.components.get(saved_component))
+                    .map(|component| component.selection.len())
+                    .unwrap_or(0);
+                self.active_component = saved_component;
+                self.selected = index.unwrap_or(0).min(len.saturating_sub(1));
+                let scroll = scroll.unwrap_or(0);
+                self.scroll = if !same_view {
+                    0
+                } else if len == 0 {
+                    scroll
+                } else {
+                    scroll.min(self.selected)
+                };
+            }
+        }
         if let Some(detail_scroll) = detail_scroll {
-            self.detail_scroll = detail_scroll;
+            self.detail_scroll = detail_scroll.min(MAX_DETAIL_SCROLL);
         }
         if count > 0 {
             self.sync_cursor();
@@ -1471,6 +1529,9 @@ impl App {
         self.sync_cursor();
         self.screen = screen;
         self.focus = FocusPane::Workspace;
+        // Navigating is deliberate intent, so a skipped restore no longer owns
+        // the session file (a normal Home visit must persist Home).
+        self.restore_skipped = false;
         self.prefix = None;
         self.sidebar_selection = match screen {
             Screen::Home => 0,
