@@ -4,7 +4,7 @@
 ┃Today / Next              ┃│  ○ Wire the task table       │
 ┃TODAY / NEXT  •  accepted ┃│  ○ Reconnect the replica     │
 ┃revision 50  •  evaluated ┃│  ~ Map the command palette   │
-┃1792848419194             ┃│  ~ Audit sync retries        │
+┃1792850149767             ┃│  ~ Audit sync retries        │
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛╰──────────────────────────────╯
 ╭ Projects ──────────────────╮╭ Inbox ─────────────────────╮
 │              3             ││              1             │
@@ -15,4 +15,4 @@
 │        Ready       ││                                    │
 ╰────────────────────╯╰────────────────────────────────────╯
  Actions: c New · / Search · r Refresh · a more · q quit
- Ctrl+Q quit · q quit (not typing)  Ready • ? help • : palet
+ Ctrl+Q quit · q quit (not typing)  Ready • ? help • : comma

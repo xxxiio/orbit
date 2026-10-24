@@ -2,7 +2,7 @@
 ╭ Orbit ────────────╮┏ Today / Next • 12h • [/] horizon ━━━━━━━━━━━━━━┓╭ Today / Next tasks ─────────────────────────────────╮╭ Details ───────────────────────╮
 │▸ » Home / Today   │┃Today / Next                                    ┃│  ○ Wire the task table  planned                     ││Select an item to see           │
 │    Inbox          │┃TODAY / NEXT  •  accepted revision 50  •        ┃│  ○ Reconnect the replica  planned                   ││properties, dependencies and    │
-│    Projects       │┃evaluated 1792848419827                         ┃│  ~ Map the command palette  deferred                ││actions.                        │
+│    Projects       │┃evaluated 1792850150401                         ┃│  ~ Map the command palette  deferred                ││actions.                        │
 │    Agents         │┃Capacity 720min  •  proposed 75min  •  schedule ┃│  ~ Audit sync retries  deferred                     ││                                │
 │    Atlas Console ○│┃2  ready 0  blocked 0  deferred 7  completed 2  ┃│  ~ Harden the offline queue  deferred               ││                                │
 │    Beacon Sync ●  │┃PORTFOLIO • 2 actionable accepted task(s) • 0   ┃│  ~ Review attachment staging  deferred              ││                                │
@@ -12,10 +12,10 @@
 │                   │┃milliseconds                                    ┃│  ✓ Document the connected console  done             ││                                │
 │                   │┃                                                ┃│  ✓ Cancel the old export path  done                 ││                                │
 │                   │┃SCHEDULED  task-capture-02  Wire the task table ┃│                                                     ││                                │
-│                   │┃Proposed slot: 1792848419827 → 1792851119827    ┃│                                                     ││                                │
+│                   │┃Proposed slot: 1792850150401 → 1792852850401    ┃│                                                     ││                                │
 │                   │┃(milliseconds UTC)                              ┃│                                                     ││                                │
-│                   │┃    Project: project-1792848418704-3862692-0    ┃│                                                     ││                                │
-│                   │┃    Deadline: 1793021218686                     ┃│                                                     ││                                │
+│                   │┃    Project: project-1792850149273-3914829-0    ┃│                                                     ││                                │
+│                   │┃    Deadline: 1793022949254                     ┃│                                                     ││                                │
 │                   │┃Portfolio #1 • immediately unlocks 0 •          ┃│                                                     ││                                │
 │                   │┃same-project downstream 0 • cross-project       ┃│                                                     ││                                │
 │                   │┃downstream 0                                    ┃│                                                     ││                                │
@@ -42,4 +42,4 @@
 │                   ││                                      ││                                                               ││                                │
 ╰───────────────────╯╰──────────────────────────────────────╯╰───────────────────────────────────────────────────────────────╯╰────────────────────────────────╯
  Actions: c New · / Search · r Refresh · a more actions · q quit
- Ctrl+Q quit · q quit (not typing)  Ready • ? help • : palette • g h/i/p/a navigate   j/k select · Tab focus · D details · Esc back
+ Ctrl+Q quit · q quit (not typing)  Ready • ? help • : commands   j/k select · Tab focus · D details · Esc back

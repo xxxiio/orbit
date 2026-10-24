@@ -9,9 +9,9 @@
 │    Cipher Notes ○ │┃  Audit sy║status: in_progress                                                                           ║ctionable   false              │
 │                   │┃  Harden t║readiness: inprogress                                                                         ║stimate     90m                │
 │                   │┃  Review a║actionable: false                                                                             ║ue          2026-10-25         │
-│                   │┃  Document║estimate: 90m                                                                                 ║eadline     2026-10-25 13:26Z  │
+│                   │┃  Document║estimate: 90m                                                                                 ║eadline     2026-10-25 13:55Z  │
 │                   │┃          ║due: 2026-10-25                                                                               ║ttachments  none               │
-│                   │┃          ║deadline: 2026-10-25 13:26Z                                                                   ║                               │
+│                   │┃          ║deadline: 2026-10-25 13:55Z                                                                   ║                               │
 │                   │┃          ║Attachments: none                                                                             ║CTIONS 19 · press a            │
 │                   │┃          ║                                                                                              ║                               │
 │                   │┃          ║Actions (press a to run)                                                                      ║                               │

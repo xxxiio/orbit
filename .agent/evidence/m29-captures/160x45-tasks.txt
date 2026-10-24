@@ -9,7 +9,7 @@
 │    Cipher Notes ○ │┃  Audit sync retries                                                   ◐ review             2026-10-27 ┃│actionable   false              │
 │                   │┃  Harden the offline queue                                             ▶ in_progre…         2026-10-28 ┃│estimate     90m                │
 │                   │┃  Review attachment staging                                            ! blocked            2026-10-29 ┃│due          2026-10-25         │
-│                   │┃  Document the connected console                                       ✓ done               2026-10-30 ┃│deadline     2026-10-25 13:26Z  │
+│                   │┃  Document the connected console                                       ✓ done               2026-10-30 ┃│deadline     2026-10-25 13:55Z  │
 │                   │┃                                                                                                       ┃│Attachments  none               │
 │                   │┃                                                                                                       ┃│                                │
 │                   │┃                                                                                                       ┃│ACTIONS 19 · press a            │

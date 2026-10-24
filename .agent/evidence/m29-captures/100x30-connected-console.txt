@@ -27,4 +27,4 @@ ev╔ Connected commands · queued intents are PENDING ════════�
 │ ║Enter run · Tab fill · ↑/↓ suggest · Ctrl+U clear · Esc close · nothing is accepted on queue  ║ │
 ╰─╚══════════════════════════════════════════════════════════════════════════════════════════════╝─╯
  Actions: c New · / Search · r Refresh · a more actions · q quit
- Ctrl+Q quit · q quit (not typing)  Ready • ? help • : palette • g h/i/p/a navigate
+ Ctrl+Q quit · q quit (not typing)  Ready • ? help • : commands   ! pending · f flush · : commands

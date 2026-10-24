@@ -9,7 +9,7 @@
 │    Cipher Notes ○ │┃                                                                                                       ┃│actionable   true               │
 │                   │┃                                                                                                       ┃│estimate     45m                │
 │                   │┃                                                                                                       ┃│due          2026-10-26         │
-│                   │┃                                                                                                       ┃│deadline     2026-10-26 13:26Z  │
+│                   │┃                                                                                                       ┃│deadline     2026-10-26 13:55Z  │
 │                   │┃                                                                                                       ┃│Attachments  none               │
 │                   │┃                                                                                                       ┃│                                │
 │                   │┃                                                                                                       ┃│ACTIONS 17 · press a            │

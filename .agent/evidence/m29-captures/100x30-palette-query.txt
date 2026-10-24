@@ -2,7 +2,7 @@
 ╭ Orbit ─────────────╮┏ Today / Next • 12h • [/] horizon ━┓╭ Today / Next tasks ───────────────────╮
 │▸ » Home / Today    │┃Today / Next                       ┃│  ○ Wire the task table                │
 │    Inbox           │┃TODAY / NEXT  •  accepted revision ┃│  ○ Reconnect the replica              │
-│    Projects        │┃50  •  evaluated 1792848431432     ┃│  ~ Map the command palette            │
+│    Projects        │┃50  •  evaluated 1792850161998     ┃│  ~ Map the command palette            │
 │    Agents          │┃Capacity 720min  •  proposed 75min ┃│  ~ Audit sync retries                 │
 │    Atlas Console ○ │┃•  schedule 2  ready 0  blocked 0  ┃│  ~ Harden the offline queue           │
 │    Beacon Sync ●   │┃deferred 7  completed 2            ┃│  ~ Review attachment staging          │
@@ -27,4 +27,4 @@
 │                    ││                           ││                                               │
 ╰────────────────────╯╰───────────────────────────╯╰───────────────────────────────────────────────╯
  Actions: c New · / Search · r Refresh · a more actions · q quit
- Ctrl+Q quit · q quit (not typing)  Ready • ? help • : palette • g h/i/p/a navigate
+ Ctrl+Q quit · q quit (not typing)  Ready • ? help • : commands   Tab focus · D details

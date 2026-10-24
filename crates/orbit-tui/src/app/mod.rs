@@ -190,7 +190,7 @@ impl App {
             sidebar_selection: 0,
             modal: None,
             status: StatusMessage {
-                text: "Ready • ? help • : palette • g h/i/p/a navigate".into(),
+                text: "Ready • ? help • : commands".into(),
                 kind: StatusKind::Info,
             },
             prefix: None,

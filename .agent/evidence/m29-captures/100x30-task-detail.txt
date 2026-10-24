@@ -8,7 +8,7 @@
 │ ║actionable: false                                                                             ║ ┃
 │ ║estimate: 90m                                                                                 ║ ┃
 │ ║due: 2026-10-25                                                                               ║ ┃
-│ ║deadline: 2026-10-25 13:26Z                                                                   ║ ┃
+│ ║deadline: 2026-10-25 13:55Z                                                                   ║ ┃
 │ ║Attachments: none                                                                             ║ ┃
 │ ║                                                                                              ║ ┃
 │ ║Actions (press a to run)                                                                      ║ ┃

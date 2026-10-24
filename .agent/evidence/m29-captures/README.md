@@ -61,12 +61,9 @@ when `orbit-server` cannot be built or started.
   the selected row still uses the `▸` rail.
 - Below 76 columns only one pane is visible; the row above it reads
   `▸ Workspace │ Sidebar │ Tab switch · D details`.
-- From 76 columns the sidebar is shown. At 120 columns and wider the detail pane is always
-  docked and `D` toggles it (hiding it returns focus to the workspace); below 120 there is
-  no room to dock, so `D`/`Enter` opens the detail overlay instead.
-- Detail models are built only while the pane is visible. After widening from a narrow
-  terminal, the first frame after a selection may show a placeholder until the next
-  input or refresh.
+- From 76 columns the sidebar is shown. Details dock from 120 columns only while the active
+  component still gets its readable minimum width; if docking would squeeze it the pane is
+  refused (unless the detail pane owns focus), and `D`/`Enter` opens the detail overlay.
 - The action bar is the second-to-last row; the status line is the last row.
 - Connected captures show `CONNECTED … N pending · ! inspect` when the header can fit it;
   the 60x18 connected capture is the narrow case where it is dropped. Every queued row is
