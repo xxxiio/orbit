@@ -82,9 +82,9 @@ two jobs:
   projects / 40 tasks: launch, Home/Projects, open a project, switch views,
   search, scroll and quit. It is not the performance workload.
 - `test_full_fixture_measured_shape_launch` is the **measured fixture**: 20
-  projects / 200 tasks, the shape `perf_probe.py` builds with `--full` (its
-  default). It is opt-in with `ORBIT_TUI_FULL_FIXTURE=1`, asserts the measured
-  shape before launching, and only then drives the same session.
+  projects / 200 tasks built with the probe's defaults (activity target 1000,
+  6 attachments, 8 agent jobs). It is opt-in with `ORBIT_TUI_FULL_FIXTURE=1`,
+  asserts those counts before launching, and only then drives the same session.
 
 `test_m29_workflows.py` completes the targeted M29 workflow coverage:
 

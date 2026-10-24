@@ -247,8 +247,15 @@ impl App {
 
     /// Report the exact per-command disposition instead of inferring success
     /// from a quiet client. Key handlers in `main` use this too.
+    ///
+    /// Every mutation path funnels through this method, so it is also the one
+    /// chokepoint that re-reads the durable pending sum. A connected mutation
+    /// can queue a command or stage an upload without touching accepted state;
+    /// leaving the cached count stale would let the header claim `0 pending`
+    /// while durable intent exists.
     pub(crate) fn mutation_status(&mut self, text: impl Into<String>) -> (String, StatusKind) {
         let connected = self.client.is_connected();
+        self.refresh_pending_count();
         describe_mutation_outcome(self.client.take_outcome(), connected, text.into())
     }
 

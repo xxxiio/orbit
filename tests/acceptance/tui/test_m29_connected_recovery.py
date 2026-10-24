@@ -43,6 +43,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pty_harness import CTRL_Q, ENTER, ESC, TuiSession, Workspace  # noqa: E402
+from settle import wait_until_settled  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 SERVER = Path(os.environ.get("ORBIT_SERVER_BIN", ROOT / "target" / "debug" / "orbit-server"))
@@ -343,10 +344,16 @@ def test_connected_offline_queue_and_conflict_recovery(connected_workspace):
         )
         assert "[pending] project" in receipt_screen, receipt_screen
         session.send(ESC, note="close pending inspector")
-        session.wait_until_screen(
-            lambda view: "Pending commands" not in view,
+        wait_until_settled(
+            session,
+            lambda view: (
+                "Pending commands" not in view
+                and "CONNECTED" in view
+                and "0 project(s)" in view
+                and "1 pending" in view
+            ),
             timeout=8.0,
-            description="pending inspector closes",
+            description="pending inspector closes and the Projects screen repaints",
         )
 
         # ------------------------------------------------------------------
@@ -453,10 +460,15 @@ def test_connected_offline_queue_and_conflict_recovery(connected_workspace):
         # A valid replacement closes the modal as durable pending intent. The
         # resulting status line is longer than the viewport renders, so verify
         # the explicit durable rows rather than relying on clipped copy.
-        session.wait_until_screen(
-            lambda view: "Conflict review" not in view,
+        wait_until_settled(
+            session,
+            lambda view: (
+                "Conflict review" not in view
+                and "CONNECTED" in view
+                and "1 project(s)" in view
+            ),
             timeout=WAIT,
-            description="conflict review closes after a valid replacement",
+            description="conflict review closes and the Projects screen repaints",
         )
         replacement_command_id = _pending_command_id(workspace)
         assert replacement_command_id != conflicted_id, (

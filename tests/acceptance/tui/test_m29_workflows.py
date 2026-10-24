@@ -57,6 +57,7 @@ from pty_harness import (  # noqa: E402
     TuiSession,
     Workspace,
 )
+from settle import wait_until_settled  # noqa: E402
 
 CTRL_S = b"\x13"
 
@@ -444,6 +445,21 @@ def _board_marked_prefix(screen_text: str, prefixes: list[str]) -> str | None:
     return None
 
 
+def _board_settled(
+    screen_text: str, prefixes: list[str], selected: str | None = None
+) -> bool:
+    """A settled board frame: the body and the selected card are painted.
+
+    A closed modal's title disappears before the board below it is repainted,
+    so "modal title absent" alone can sample a half-painted frame.
+    """
+    return (
+        "Task board" in screen_text
+        and "Actions:" in screen_text
+        and (selected is None or _board_marked_prefix(screen_text, prefixes) == selected)
+    )
+
+
 def _board_selected_column(screen_text: str) -> str | None:
     for line in screen_text.splitlines():
         if "▾" not in line:
@@ -800,10 +816,12 @@ def test_everyday_task_editing_workflow(session_factory, tmp_path):
     session.wait_for_screen_text(
         "Task updated", timeout=10.0, description="full edit ack"
     )
-    session.wait_until_screen(
-        lambda view: "Everyday fields first" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "Everyday fields first" not in view
+        and _board_settled(view, [prefix], prefix),
         timeout=10.0,
-        description="edit form to close",
+        description="edit form closes and the board repaints with the same card",
     )
     stored = _task_row(workspace, task_id)
     assert stored[3] == "First line of context\nSecond line of context", stored
@@ -837,10 +855,12 @@ def test_everyday_task_editing_workflow(session_factory, tmp_path):
     )
     assert [row[0] for row in criteria] == ["Offline acceptance run passes"], criteria
     session.send(ESC, note="close acceptance criteria")
-    session.wait_until_screen(
-        lambda view: "Acceptance criteria ·" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "Acceptance criteria ·" not in view
+        and _board_settled(view, [prefix], prefix),
         timeout=8.0,
-        description="criteria modal to close",
+        description="criteria modal closes and the board repaints",
     )
 
     # Status: S lists the real workflow targets and executes the first one.
@@ -879,10 +899,12 @@ def test_everyday_task_editing_workflow(session_factory, tmp_path):
         f"Evidence: {session.evidence_dir}"
     )
     session.send(ESC, note="close the detail modal")
-    session.wait_until_screen(
-        lambda view: " · detail" not in view,
+    wait_until_settled(
+        session,
+        lambda view: " · detail" not in view
+        and _board_settled(view, [prefix], prefix),
         timeout=8.0,
-        description="detail modal to close",
+        description="detail modal closes and the board repaints",
     )
     _wait_board_card_selected(session, prefix)
 
@@ -900,10 +922,12 @@ def test_everyday_task_editing_workflow(session_factory, tmp_path):
         f"Evidence: {session.evidence_dir}"
     )
     session.send(ESC, note="close the activity modal")
-    session.wait_until_screen(
-        lambda view: "Activity ·" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "Activity ·" not in view
+        and _board_settled(view, [prefix], prefix),
         timeout=8.0,
-        description="activity modal to close",
+        description="activity modal closes and the board repaints",
     )
     _wait_board_card_selected(session, prefix)
 
@@ -918,7 +942,8 @@ def test_everyday_task_editing_workflow(session_factory, tmp_path):
         "Discard unsaved changes?", timeout=8.0, description="discard confirmation"
     )
     session.send(b"n", note="keep editing")
-    session.wait_until_screen(
+    wait_until_settled(
+        session,
         lambda view: "Discard unsaved changes?" not in view and " unsafe" in view,
         timeout=8.0,
         description="form restored with the unsaved text",
@@ -932,10 +957,13 @@ def test_everyday_task_editing_workflow(session_factory, tmp_path):
         "Discard unsaved changes?", timeout=8.0, description="second discard prompt"
     )
     session.send(b"y", note="confirm discarding the form")
-    session.wait_until_screen(
-        lambda view: "Discard unsaved changes?" not in view and "Edit task" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "Discard unsaved changes?" not in view
+        and "Edit task" not in view
+        and _board_settled(view, [prefix], prefix),
         timeout=8.0,
-        description="form closes after discarding",
+        description="form closes after discarding and the board repaints",
     )
     _wait_board_card_selected(session, prefix)
     # The discarded edit must not have been persisted.
@@ -1343,10 +1371,13 @@ def _assert_confirmation_then_preserved(
         f"screen:\n{session.screen_text}\nEvidence: {session.evidence_dir}"
     )
     session.send(b"n", note="cancel the quit and keep editing")
-    session.wait_until_screen(
-        lambda view: "Quit Orbit?" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "Quit Orbit?" not in view
+        and still_visible(view)
+        and preserved_text in view,
         timeout=5.0,
-        description=f"quit confirmation to close on {surface}",
+        description=f"quit confirmation to close and {surface} to repaint",
     )
     assert session.alive, f"{surface}: n ended the application"
     session.wait_until_screen(

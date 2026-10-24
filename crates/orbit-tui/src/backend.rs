@@ -1012,6 +1012,15 @@ impl Backend {
         snapshot_revision(&snapshot)
     }
 
+    /// Fail closed when the replica has never observed accepted state.
+    ///
+    /// Accepted-list calls must share the same message as `plan.*`: an empty
+    /// projection with no snapshot means "nothing has been accepted here yet",
+    /// not "the authority is empty".
+    fn require_accepted_snapshot(&self) -> Result<(), ClientError> {
+        self.accepted_revision().map(|_| ()).map_err(unavailable)
+    }
+
     fn connected_snapshot(&self) -> Result<serde_json::Value, String> {
         let Self::Connected { connection, .. } = self else {
             return Err("accepted planning state requires a connected replica".into());
@@ -1244,10 +1253,13 @@ impl Backend {
     ) -> Result<Vec<orbit_runtime::authority_routines::RoutineRecord>, ClientError> {
         match self {
             Self::Local(_) => Err(unavailable(CONNECTED_LIST_REQUIRES_CONNECTED)),
-            Self::Connected { connection, .. } => connection
-                .routines()
-                .map_err(connected_error)
-                .and_then(|rows| decode_accepted_rows(rows, "routines")),
+            Self::Connected { connection, .. } => {
+                self.require_accepted_snapshot()?;
+                connection
+                    .routines()
+                    .map_err(connected_error)
+                    .and_then(|rows| decode_accepted_rows(rows, "routines"))
+            }
         }
     }
 
@@ -1257,10 +1269,13 @@ impl Backend {
     ) -> Result<Vec<orbit_runtime::authority_strategy::StrategyRecord>, ClientError> {
         match self {
             Self::Local(_) => Err(unavailable(CONNECTED_LIST_REQUIRES_CONNECTED)),
-            Self::Connected { connection, .. } => connection
-                .strategies()
-                .map_err(connected_error)
-                .and_then(|rows| decode_accepted_rows(rows, "strategies")),
+            Self::Connected { connection, .. } => {
+                self.require_accepted_snapshot()?;
+                connection
+                    .strategies()
+                    .map_err(connected_error)
+                    .and_then(|rows| decode_accepted_rows(rows, "strategies"))
+            }
         }
     }
 
@@ -1270,10 +1285,13 @@ impl Backend {
     ) -> Result<Vec<orbit_runtime::authority_milestones::MilestoneRecord>, ClientError> {
         match self {
             Self::Local(_) => Err(unavailable(CONNECTED_LIST_REQUIRES_CONNECTED)),
-            Self::Connected { connection, .. } => connection
-                .milestones()
-                .map_err(connected_error)
-                .and_then(|rows| decode_accepted_rows(rows, "milestones")),
+            Self::Connected { connection, .. } => {
+                self.require_accepted_snapshot()?;
+                connection
+                    .milestones()
+                    .map_err(connected_error)
+                    .and_then(|rows| decode_accepted_rows(rows, "milestones"))
+            }
         }
     }
 
@@ -1283,10 +1301,13 @@ impl Backend {
     ) -> Result<Vec<orbit_runtime::authority_schedule::ScheduleRecord>, ClientError> {
         match self {
             Self::Local(_) => Err(unavailable(CONNECTED_LIST_REQUIRES_CONNECTED)),
-            Self::Connected { connection, .. } => connection
-                .schedule()
-                .map_err(connected_error)
-                .and_then(|rows| decode_accepted_rows(rows, "schedule")),
+            Self::Connected { connection, .. } => {
+                self.require_accepted_snapshot()?;
+                connection
+                    .schedule()
+                    .map_err(connected_error)
+                    .and_then(|rows| decode_accepted_rows(rows, "schedule"))
+            }
         }
     }
 

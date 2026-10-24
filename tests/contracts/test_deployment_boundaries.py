@@ -97,6 +97,90 @@ def test_connected_tui_cannot_open_embedded_authority():
     assert not (TUI / "connected.rs").exists()
 
 
+FORBIDDEN_CONNECTED_CONSTRUCTORS = (
+    "AuthorityConnection::embedded(",
+    "EmbeddedAuthorityClient",
+    "AuthoritativeHost::open",
+    "SqliteStore::open",
+    "OrbitClient::open(",
+)
+
+
+def connected_guard_modules():
+    """Every production module that participates in the connected shell."""
+    paths = [
+        TUI / "backend.rs",
+        TUI / "connected_ops.rs",
+        TUI / "connected_actions.rs",
+    ]
+    for directory in ("app", "input", "render"):
+        paths.extend(sorted((TUI / directory).rglob("*.rs")))
+    return paths
+
+
+def test_every_connected_module_forbids_embedded_constructors():
+    """Adding an embedded constructor anywhere in the shell must fail here.
+
+    The M29 gate probe added `AuthorityConnection::embedded(path, ...)` (and
+    `EmbeddedAuthorityClient::open` / `Backend::open_local`) to connected code
+    and the suite stayed green. This guard names every owner module, not only
+    `backend.rs`.
+    """
+    files = connected_guard_modules()
+    rels = {path.relative_to(ROOT).as_posix() for path in files}
+    for expected in (
+        "crates/orbit-tui/src/backend.rs",
+        "crates/orbit-tui/src/app/connected.rs",
+        "crates/orbit-tui/src/app/mod.rs",
+        "crates/orbit-tui/src/input/modal.rs",
+        "crates/orbit-tui/src/render/shell.rs",
+        "crates/orbit-tui/src/connected_ops.rs",
+        "crates/orbit-tui/src/connected_actions.rs",
+    ):
+        assert expected in rels, f"guard baseline module disappeared: {expected}"
+
+    for path in files:
+        text = compact(path.read_text(encoding="utf-8"))
+        rel = path.relative_to(ROOT).as_posix()
+        for forbidden in FORBIDDEN_CONNECTED_CONSTRUCTORS:
+            assert compact(forbidden) not in text, (
+                f"{rel} must not construct an embedded authority: {forbidden}"
+            )
+
+
+def test_local_backend_constructor_is_confined_to_selection_and_definition():
+    """`Backend::open_local` only appears at deployment selection + definition."""
+    production = [
+        path
+        for path in TUI.rglob("*.rs")
+        if "tests" not in path.relative_to(TUI).parts
+    ]
+    callers = {
+        path.relative_to(ROOT).as_posix()
+        for path in production
+        if "Backend::open_local(" in path.read_text(encoding="utf-8")
+    }
+    assert callers == {"crates/orbit-tui/src/app/mod.rs"}, callers
+    definitions = {
+        path.relative_to(ROOT).as_posix()
+        for path in production
+        if re.search(r"\bfn\s+open_local\s*\(", path.read_text(encoding="utf-8"))
+    }
+    assert definitions == {"crates/orbit-tui/src/local_backend.rs"}, definitions
+    named = {
+        path.relative_to(ROOT).as_posix()
+        for path in production
+        if re.search(r"\bopen_local\s*\(", path.read_text(encoding="utf-8"))
+    }
+    assert named == {
+        "crates/orbit-tui/src/app/mod.rs",
+        "crates/orbit-tui/src/local_backend.rs",
+    }, named
+    assert "Backend::open_local(" in function_body(
+        tui("app/mod.rs"), "pub fn open_deployment("
+    )
+
+
 def test_console_modules_cannot_open_an_embedded_authority():
     console = tui("connected_ops.rs")
     for forbidden in (

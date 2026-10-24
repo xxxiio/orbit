@@ -5,11 +5,10 @@ Two different jobs live here, and they are labelled accordingly:
 * ``test_small_fixture_*`` is a fast **launch smoke** over 5 projects / 40
   tasks.  It proves the shared shell starts, paints, navigates and exits; it is
   not the performance workload and its numbers must not be quoted as such.
-* ``test_full_fixture_*`` is the **measured fixture**: 20 projects / 200 tasks,
-  exactly the shape ``tests/acceptance/tui/perf_probe.py`` measures (the probe
-  builds ``--full`` by default).  It is opt-in with
-  ``ORBIT_TUI_FULL_FIXTURE=1`` and asserts the measured shape before driving
-  the session.
+* ``test_full_fixture_*`` is the **measured fixture**: 20 projects / 200 tasks
+  with the same probe defaults (activity target 1000, 6 attachments, 8 agent
+  jobs).  It is opt-in with ``ORBIT_TUI_FULL_FIXTURE=1`` and asserts those
+  counts before driving the session.
 
 Every session is reaped and writes the usual PTY evidence under
 ``target/tui-evidence/<run-id>/<label>/``.
@@ -32,6 +31,7 @@ FIXTURE_PATH = ROOT / "scripts" / "tui-fixture.py"
 sys.path.insert(0, str(TUI_DIR))
 
 from pty_harness import ENTER, ESC, TuiSession  # noqa: E402
+from settle import wait_until_settled  # noqa: E402
 
 HOME_HEADER_RE = r"(?m)^\s*ORBIT\s*›\s*Home / Today"
 PROJECTS_HEADER_RE = r"(?m)^\s*ORBIT\s*›\s*Projects"
@@ -56,17 +56,33 @@ FIXTURE = _load_fixture()
 
 MEASURED_PROJECTS = 20
 MEASURED_TASKS = 200
+# `scripts/tui-fixture.py` (which `perf_probe.py` calls with its defaults)
+# builds these too; the launch fixture must request them explicitly or it is
+# not the measured shape.
+MEASURED_ACTIVITY_TARGET = 1000
+MEASURED_ATTACHMENTS = 6
+MEASURED_AGENT_JOBS = 8
 
 
-def _build(tmp_path: Path, *, project_count: int, task_count: int):
+def _build(
+    tmp_path: Path,
+    *,
+    project_count: int,
+    task_count: int,
+    activity_target: int | None = None,
+    attachment_count: int = 1,
+    agent_job_count: int = 2,
+):
     summary = FIXTURE.build_fixture(
         tmp_path / "workspace",
         project_count=project_count,
         task_count=task_count,
         seed=20261024,
-        activity_target=max(60, task_count),
-        attachment_count=1,
-        agent_job_count=2,
+        activity_target=max(60, task_count)
+        if activity_target is None
+        else activity_target,
+        attachment_count=attachment_count,
+        agent_job_count=agent_job_count,
         verbose=False,
     )
     return FIXTURE.workspace_from_path(summary["workspace"]), summary["counts"]
@@ -101,11 +117,24 @@ def _open_search(session: TuiSession) -> None:
 
 
 def _close_search(session: TuiSession) -> None:
+    """Close the search modal and wait for the underlying Tasks frame.
+
+    Waiting only for the modal title to vanish can sample a half-painted
+    frame: during a repaint the title is briefly absent while the modal still
+    owns input, so the next keystroke lands in the search box.  Require the
+    workspace below it to be painted as well.
+    """
     session.send(ESC, note="close search")
-    session.wait_until_screen(
-        lambda view: SEARCH_MODAL_RE.search(view) is None,
+    wait_until_settled(
+        session,
+        lambda view: (
+            SEARCH_MODAL_RE.search(view) is None
+            and "Actions:" in view
+            and _current_view_title(view) == "Tasks"
+            and "DEADLINE" in view
+        ),
         timeout=5.0,
-        description="search modal to close",
+        description="search modal to close and the Tasks workspace to repaint",
     )
 
 
@@ -203,14 +232,19 @@ def test_small_fixture_launch_smoke_home_projects_views_search_scroll_quit(tmp_p
     reason="set ORBIT_TUI_FULL_FIXTURE=1 to exercise the measured 20/200 fixture",
 )
 def test_full_fixture_measured_shape_launch(tmp_path):
-    """The measured fixture: 20 projects / 200 tasks, as the perf probe builds it."""
+    """The measured fixture, built with the same defaults as the perf probe."""
     workspace, counts = _build(
-        tmp_path, project_count=MEASURED_PROJECTS, task_count=MEASURED_TASKS
+        tmp_path,
+        project_count=MEASURED_PROJECTS,
+        task_count=MEASURED_TASKS,
+        activity_target=MEASURED_ACTIVITY_TARGET,
+        attachment_count=MEASURED_ATTACHMENTS,
+        agent_job_count=MEASURED_AGENT_JOBS,
     )
-    # The measured shape is the probe's workload, not just a bigger smoke.
+    # These are the probe's own defaults, not just a bigger smoke fixture.
     assert counts["projects"] == MEASURED_PROJECTS, counts
     assert counts["tasks"] == MEASURED_TASKS, counts
-    assert counts["activities"] >= MEASURED_TASKS, counts
-    assert counts["attachments"] == 1, counts
-    assert counts["agent_jobs"] == 2, counts
+    assert counts["activities"] >= MEASURED_ACTIVITY_TARGET, counts
+    assert counts["attachments"] == MEASURED_ATTACHMENTS, counts
+    assert counts["agent_jobs"] == MEASURED_AGENT_JOBS, counts
     _run_smoke(workspace)

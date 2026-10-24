@@ -25,6 +25,43 @@ def tui_files():
     return sorted(TUI.rglob("*.rs"))
 
 
+def production_tui_files():
+    """TUI sources excluding inline and integration tests."""
+    return [
+        path
+        for path in tui_files()
+        if "tests" not in path.relative_to(TUI).parts
+    ]
+
+
+# Constructors that would give a connected shell an embedded authority again.
+# The local facade opener is checked separately because its one legitimate
+# caller is the deployment-selection site.
+FORBIDDEN_CONNECTED_CONSTRUCTORS = (
+    "AuthorityConnection::embedded(",
+    "EmbeddedAuthorityClient",
+    "AuthoritativeHost::open",
+    "SqliteStore::open",
+    "OrbitClient::open(",
+)
+
+
+def guarded_connected_modules():
+    """Production modules that must never reach an embedded authority.
+
+    This is the exact boundary the M29 review probed: adding a constructor to
+    any of these files must fail this suite, not only to the CLI/runtime tests.
+    """
+    paths = [
+        TUI / "backend.rs",
+        TUI / "connected_ops.rs",
+        TUI / "connected_actions.rs",
+    ]
+    for directory in ("app", "input", "render"):
+        paths.extend(sorted((TUI / directory).rglob("*.rs")))
+    return paths
+
+
 def body_of(text, signature):
     """Extract one function body by brace matching from its signature."""
     start = text.index(signature)
@@ -98,6 +135,75 @@ def test_clients_do_not_own_connected_authority():
         assert "OrbitClient::open(" not in body, signature
         assert "AuthoritativeHost::open" not in body, signature
         assert "SqliteStore::open" not in body, signature
+
+
+def test_connected_modules_forbid_every_embedded_constructor():
+    """No connected owner may construct embedded authority or a raw store.
+
+    The older guard only named `backend.rs` and the console modules, so adding
+    `AuthorityConnection::embedded(path, ...)` to an `app/`, `input/` or
+    `render/` module left the suite green. Every module that participates in
+    the connected shell is now checked, including the constructors the M29
+    review used to probe the boundary.
+    """
+    files = guarded_connected_modules()
+    rels = {path.relative_to(ROOT).as_posix() for path in files}
+    for expected in (
+        "crates/orbit-tui/src/backend.rs",
+        "crates/orbit-tui/src/app/connected.rs",
+        "crates/orbit-tui/src/app/mod.rs",
+        "crates/orbit-tui/src/input/modal.rs",
+        "crates/orbit-tui/src/render/shell.rs",
+        "crates/orbit-tui/src/connected_ops.rs",
+        "crates/orbit-tui/src/connected_actions.rs",
+    ):
+        assert expected in rels, f"guard baseline module disappeared: {expected}"
+
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT).as_posix()
+        for forbidden in FORBIDDEN_CONNECTED_CONSTRUCTORS:
+            assert forbidden not in text, (
+                f"{rel} must not construct an embedded authority: {forbidden}"
+            )
+
+
+def test_backend_open_local_is_confined_to_deployment_selection():
+    """The local facade opener lives only at selection + definition.
+
+    `App` is allowed to choose a local backend (that is the deployment
+    decision); no connected module may call the opener directly.
+    """
+    production = production_tui_files()
+    callers = {
+        path.relative_to(ROOT).as_posix()
+        for path in production
+        if "Backend::open_local(" in path.read_text(encoding="utf-8")
+    }
+    assert callers == {"crates/orbit-tui/src/app/mod.rs"}, callers
+
+    definitions = {
+        path.relative_to(ROOT).as_posix()
+        for path in production
+        if re.search(r"\bfn\s+open_local\s*\(", path.read_text(encoding="utf-8"))
+    }
+    assert definitions == {"crates/orbit-tui/src/local_backend.rs"}, definitions
+
+    # No other production module may even name the local opener.
+    named = {
+        path.relative_to(ROOT).as_posix()
+        for path in production
+        if re.search(r"\bopen_local\s*\(", path.read_text(encoding="utf-8"))
+    }
+    assert named == {
+        "crates/orbit-tui/src/app/mod.rs",
+        "crates/orbit-tui/src/local_backend.rs",
+    }, named
+
+    local = tui("local_backend.rs")
+    assert local.count("fn open_local(") == 1
+    selection = tui("app/mod.rs")
+    assert "Backend::open_local(" in body_of(selection, "pub fn open_deployment(")
 
 
 def test_legacy_connected_switch_is_gone():

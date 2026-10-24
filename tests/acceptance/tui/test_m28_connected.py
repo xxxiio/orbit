@@ -22,6 +22,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pty_harness import CTRL_Q, ENTER, ESC, TuiSession, Workspace, strip_ansi  # noqa: E402
+from settle import wait_until_settled  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 SERVER = Path(os.environ.get("ORBIT_SERVER_BIN", ROOT / "target" / "debug" / "orbit-server"))
@@ -157,10 +158,13 @@ def test_connected_shell_pending_flush_and_acceptance(connected_workspace):
             "queued intents are PENDING", timeout=5.0, description="connected console"
         )
         session.send(ESC, note="close connected console")
-        session.wait_until_screen(
-            lambda view: "queued intents are PENDING" not in view,
+        wait_until_settled(
+            session,
+            lambda view: "queued intents are PENDING" not in view
+            and "CONNECTED" in view
+            and "0 project(s)" in view,
             timeout=5.0,
-            description="connected console closes",
+            description="connected console closes and Projects repaints",
         )
 
         session.send(b"c", note="new project form")
@@ -179,10 +183,13 @@ def test_connected_shell_pending_flush_and_acceptance(connected_workspace):
         )
         assert "0 project(s)" in session.screen_text, session.screen_text
         session.send(ESC, note="close pending inspector")
-        session.wait_until_screen(
-            lambda view: "Pending commands" not in view,
+        wait_until_settled(
+            session,
+            lambda view: "Pending commands" not in view
+            and "CONNECTED" in view
+            and "0 project(s)" in view,
             timeout=5.0,
-            description="pending inspector closes",
+            description="pending inspector closes and Projects repaints",
         )
 
         session.send(b"f", note="flush outbox")

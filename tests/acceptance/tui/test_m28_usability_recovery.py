@@ -19,6 +19,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pty_harness import CTRL_Q, ENTER, ESC, TuiSession, Workspace  # noqa: E402
+from settle import wait_until_settled  # noqa: E402
 
 CTRL_S = b"\x13"
 HOME_HEADER_RE = r"(?m)^\s*ORBIT\s*›\s*Home / Today"
@@ -101,7 +102,14 @@ def test_basic_task_details_criteria_attachment_and_restart(sessions, tmp_path):
     session.wait_for_screen_text("Create a task", timeout=8.0, description="task form")
     session.send_text("Tui Task")
     session.send(ENTER, note="create task")
-    session.wait_for_screen_text("Tui Task", timeout=10.0, description="task visible")
+    wait_until_settled(
+        session,
+        lambda view: "Create a task in the selected project" not in view
+        and "ORBIT › Tui Only" in view
+        and "Tui Task" in view,
+        timeout=10.0,
+        description="task form closes and the project workspace repaints",
+    )
 
     # Open the selected task on the Basic board and edit rich details.
     session.send(b"]", note="Tasks view")
@@ -139,10 +147,25 @@ def test_basic_task_details_criteria_attachment_and_restart(sessions, tmp_path):
     session.wait_for_screen_text("Add acceptance criterion", timeout=8.0, description="criterion form")
     session.send_text("Works offline")
     session.send(ENTER, note="save criterion")
-    session.wait_for_screen_text("Works offline", timeout=8.0, description="criterion row")
+    wait_until_settled(
+        session,
+        lambda view: "Add acceptance criterion" not in view
+        and "Acceptance criteria ·" in view
+        and "[ ] Works offline" in view,
+        timeout=8.0,
+        description="criterion form closes and the criteria list repaints",
+    )
     session.send(b" ", note="check criterion")
     session.wait_for_screen_text("[x] Works offline", timeout=8.0, description="checked criterion")
     session.send(ESC, note="close criteria")
+    wait_until_settled(
+        session,
+        lambda view: "Ordered criteria" not in view
+        and "Task board" in view
+        and "Tui Task" in view,
+        timeout=8.0,
+        description="criteria modal closes and the Board repaints",
+    )
 
     connection = sqlite3.connect(session.workspace.db)
     try:
@@ -168,6 +191,14 @@ def test_basic_task_details_criteria_attachment_and_restart(sessions, tmp_path):
     session.wait_for_screen_text("Attachments", timeout=10.0, description="attachments modal")
     session.wait_for_screen_text("evidence.txt", timeout=8.0, description="attachment row")
     session.send(ESC, note="close attachments")
+    wait_until_settled(
+        session,
+        lambda view: "Attachments ·" not in view
+        and "Task board" in view
+        and "Tui Task" in view,
+        timeout=8.0,
+        description="attachments modal closes and the Board repaints",
+    )
 
     attachments = _attachment_rows(session.workspace.db, task_id)
     assert len(attachments) == 1, attachments
@@ -195,13 +226,23 @@ def test_basic_task_details_criteria_attachment_and_restart(sessions, tmp_path):
     restarted.wait_for_screen_text("Basic", timeout=8.0, description="restored workflow")
     assert not restarted._returncode, restarted.screen_text  # still running
 
-    # Jump directly to the Board view (1-based view number).
-    restarted.send(b"2", note="Board after restart")
+    # Jump directly to the Board view (1-based view number: 1 Overview,
+    # 2 Tasks, 3 Board, 4 Timeline).  The restored session is already on
+    # Board, so this also proves the number key keeps that view.
+    restarted.send(b"3", note="Board after restart")
     restarted.wait_for_screen_text("Task board", timeout=8.0, description="Board after restart")
     restarted.wait_for_screen_text("Tui Task", timeout=8.0, description="persisted task card")
     restarted.send(b"K", note="criteria after restart")
     restarted.wait_for_screen_text("[x] Works offline", timeout=8.0, description="persisted criterion")
     restarted.send(ESC, note="close criteria")
+    wait_until_settled(
+        restarted,
+        lambda view: "Ordered criteria" not in view
+        and "Task board" in view
+        and "Tui Task" in view,
+        timeout=8.0,
+        description="criteria modal closes and the Board repaints after restart",
+    )
     restarted.quit_via(CTRL_Q)
     restarted.assert_clean_exit()
 
@@ -225,14 +266,28 @@ def test_narrow_terminal_keeps_actions_visible_and_preserves_unsaved_form(sessio
         "Discard unsaved changes?", timeout=8.0, description="discard confirmation"
     )
     session.send(b"n", note="keep editing")
-    session.wait_for_screen_text("Narrow", timeout=8.0, description="form restored")
+    wait_until_settled(
+        session,
+        lambda view: "Discard unsaved changes?" not in view
+        and "New project" in view
+        and "Narrow" in view,
+        timeout=8.0,
+        description="discard prompt closes and the form repaints",
+    )
     assert "Discard unsaved changes?" not in session.screen_text
     session.send(ESC, note="escape again")
+    session.wait_for_screen_text(
+        "Discard unsaved changes?", timeout=8.0, description="second discard prompt"
+    )
     session.send(ENTER, note="discard changes")
-    session.wait_until_screen(
-        lambda view: "Discard unsaved changes?" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "Discard unsaved changes?" not in view
+        and "New project" not in view
+        and "Actions:" in view
+        and "0 project(s)" in view,
         timeout=8.0,
-        description="form discarded",
+        description="discard prompt closes and the Projects screen repaints",
     )
     assert session.alive
     session.quit_via(CTRL_Q)

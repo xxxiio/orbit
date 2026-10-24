@@ -176,7 +176,7 @@ pub(crate) fn handle_modal(
                         form.dirty = true;
                     }
                 }
-                KeyCode::Char(' ') => {
+                KeyCode::Char(' ') if !modifiers.contains(KeyModifiers::ALT) => {
                     form.clear_error_for_focused();
                     if let Some(field) = form.fields.get_mut(form.focused) {
                         match field.kind {
@@ -210,7 +210,7 @@ pub(crate) fn handle_modal(
                         form.dirty = true;
                     }
                 }
-                KeyCode::Char(character) => {
+                KeyCode::Char(character) if !modifiers.contains(KeyModifiers::ALT) => {
                     form.clear_error_for_focused();
                     if let Some(field) = form.fields.get_mut(form.focused)
                         && matches!(
@@ -320,7 +320,7 @@ pub(crate) fn handle_modal(
                         *entries = app.palette_entries(query);
                         *selected = 0;
                     }
-                    KeyCode::Char(character) => {
+                    KeyCode::Char(character) if !modifiers.contains(KeyModifiers::ALT) => {
                         query.push(character);
                         *entries = app.palette_entries(query);
                         *selected = 0;
@@ -604,7 +604,7 @@ pub(crate) fn handle_modal(
                 *hits = app.search_hits(query);
                 *selected = 0;
             }
-            KeyCode::Char(character) => {
+            KeyCode::Char(character) if !modifiers.contains(KeyModifiers::ALT) => {
                 query.push(character);
                 *hits = app.search_hits(query);
                 *selected = 0;
@@ -635,85 +635,101 @@ pub(crate) fn handle_modal(
             selected,
             detail,
             detail_scroll,
-        } => match code {
-            KeyCode::Esc => {
-                keep = false;
-                app.notify(
-                    "Pending inspector closed; queued intentions are preserved",
-                    StatusKind::Info,
-                );
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if !rows.is_empty() {
-                    *selected = (*selected + 1).min(rows.len() - 1);
-                }
-                *detail = rows
-                    .get(*selected)
-                    .map(|row| app.pending_detail_text(&row.id))
-                    .unwrap_or_else(|| "No pending commands.".into());
-                *detail_scroll = 0;
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                *selected = selected.saturating_sub(1);
-                *detail = rows
-                    .get(*selected)
-                    .map(|row| app.pending_detail_text(&row.id))
-                    .unwrap_or_else(|| "No pending commands.".into());
-                *detail_scroll = 0;
-            }
-            KeyCode::PageDown => *detail_scroll = detail_scroll.saturating_add(5),
-            KeyCode::PageUp => *detail_scroll = detail_scroll.saturating_sub(5),
-            KeyCode::Enter => {
-                *detail = rows
-                    .get(*selected)
-                    .map(|row| app.pending_detail_text(&row.id))
-                    .unwrap_or_else(|| "No pending commands.".into());
-                *detail_scroll = 0;
-            }
-            KeyCode::Char('r') => {
-                app.refresh_pending_count();
-                match app.client.pending_commands() {
-                    Ok(fresh) => {
-                        *selected = (*selected).min(fresh.len().saturating_sub(1));
-                        *detail = fresh
+        } => {
+            if modifiers.contains(KeyModifiers::ALT) && matches!(code, KeyCode::Char(_)) {
+                // Alt-modified characters are not inspector input. Esc followed
+                // immediately by a character can arrive as Alt+<char>; treating
+                // that as a command would act on a key the user did not press.
+            } else {
+                match code {
+                    KeyCode::Esc => {
+                        keep = false;
+                        app.notify(
+                            "Pending inspector closed; queued intentions are preserved",
+                            StatusKind::Info,
+                        );
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if !rows.is_empty() {
+                            *selected = (*selected + 1).min(rows.len() - 1);
+                        }
+                        *detail = rows
                             .get(*selected)
                             .map(|row| app.pending_detail_text(&row.id))
                             .unwrap_or_else(|| "No pending commands.".into());
-                        *rows = fresh;
                         *detail_scroll = 0;
                     }
-                    Err(error) => app.notify(
-                        format!("Pending commands unavailable: {error}"),
-                        StatusKind::Error,
-                    ),
-                }
-            }
-            KeyCode::Char('f') => {
-                let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
-                let (fresh, fresh_detail) = app.pending_flush_report(&ids);
-                *selected = (*selected).min(fresh.len().saturating_sub(1));
-                *rows = fresh;
-                *detail = fresh_detail;
-                *detail_scroll = 0;
-            }
-            KeyCode::Char('c') => {
-                let target = rows
-                    .get(*selected)
-                    .map(|row| (row.id.clone(), row.conflict));
-                match target {
-                    Some((id, true)) => {
-                        keep = false;
-                        app.open_conflict(&id);
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        *selected = selected.saturating_sub(1);
+                        *detail = rows
+                            .get(*selected)
+                            .map(|row| app.pending_detail_text(&row.id))
+                            .unwrap_or_else(|| "No pending commands.".into());
+                        *detail_scroll = 0;
                     }
-                    Some((_, false)) => app.notify(
-                        "That command is pending, not rejected; only a rejected command can be reviewed",
-                        StatusKind::Warning,
-                    ),
-                    None => app.notify("No pending command selected", StatusKind::Warning),
+                    KeyCode::PageDown => *detail_scroll = detail_scroll.saturating_add(5),
+                    KeyCode::PageUp => *detail_scroll = detail_scroll.saturating_sub(5),
+                    KeyCode::Enter => {
+                        *detail = rows
+                            .get(*selected)
+                            .map(|row| app.pending_detail_text(&row.id))
+                            .unwrap_or_else(|| "No pending commands.".into());
+                        *detail_scroll = 0;
+                    }
+                    KeyCode::Char('r') => {
+                        // Manual inspector refresh re-reads accepted state as
+                        // well as the outbox, exactly like acknowledging with
+                        // `f`: the server may have advanced since the last
+                        // accepted read.
+                        app.refresh_after_mutation();
+                        app.invalidate_detail_cache();
+                        app.refresh_pending_count();
+                        match app.client.pending_commands() {
+                            Ok(fresh) => {
+                                *selected = (*selected).min(fresh.len().saturating_sub(1));
+                                *detail = fresh
+                                    .get(*selected)
+                                    .map(|row| app.pending_detail_text(&row.id))
+                                    .unwrap_or_else(|| "No pending commands.".into());
+                                *rows = fresh;
+                                *detail_scroll = 0;
+                            }
+                            Err(error) => app.notify(
+                                format!("Pending commands unavailable: {error}"),
+                                StatusKind::Error,
+                            ),
+                        }
+                    }
+                    KeyCode::Char('f') => {
+                        let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
+                        let (fresh, fresh_detail) = app.pending_flush_report(&ids);
+                        *selected = (*selected).min(fresh.len().saturating_sub(1));
+                        *rows = fresh;
+                        *detail = fresh_detail;
+                        *detail_scroll = 0;
+                    }
+                    KeyCode::Char('c') => {
+                        let target = rows
+                            .get(*selected)
+                            .map(|row| (row.id.clone(), row.conflict));
+                        match target {
+                            Some((id, true)) => {
+                                keep = false;
+                                app.open_conflict(&id);
+                            }
+                            Some((_, false)) => app.notify(
+                                "That command is pending, not rejected; only a rejected command can be reviewed",
+                                StatusKind::Warning,
+                            ),
+                            None => {
+                                app.notify("No pending command selected", StatusKind::Warning)
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
-            _ => {}
-        },
+        }
         Modal::Conflict {
             command_id,
             replacement,
@@ -755,7 +771,7 @@ pub(crate) fn handle_modal(
                         replacement.pop();
                         *error = None;
                     }
-                    KeyCode::Char(character) => {
+                    KeyCode::Char(character) if !modifiers.contains(KeyModifiers::ALT) => {
                         replacement.push(character);
                         *error = None;
                     }
@@ -849,7 +865,7 @@ pub(crate) fn handle_modal(
                             }
                         }
                     }
-                    KeyCode::Char(character) => {
+                    KeyCode::Char(character) if !modifiers.contains(KeyModifiers::ALT) => {
                         input.push(character);
                         *suggestions = app.console_suggestions(input);
                         *selected = 0;

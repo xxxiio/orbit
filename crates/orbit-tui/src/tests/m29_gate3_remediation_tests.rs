@@ -238,6 +238,59 @@ fn criterion_edits_are_reflected_in_the_cached_detail() {
 }
 
 #[test]
+fn alt_modified_characters_are_not_text_input() {
+    // Esc followed immediately by a character can arrive as Alt+<char> in a
+    // real terminal. That chord is not text: it must not mutate a search,
+    // palette or form value, while an Alt-free character still types.
+    let (mut app, _task_id) = project_app("alt-input");
+
+    app.open_search();
+    handle_key(&mut app, KeyCode::Char('j'), KeyModifiers::ALT).unwrap();
+    let Some(Modal::Search { query, .. }) = &app.modal else {
+        panic!("search modal closed unexpectedly");
+    };
+    assert!(
+        query.is_empty(),
+        "Alt+j must not enter search text: {query:?}"
+    );
+    handle_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE).unwrap();
+    let Some(Modal::Search { query, .. }) = &app.modal else {
+        panic!("search modal closed unexpectedly");
+    };
+    assert_eq!(query, "j", "Alt-free characters still type");
+    handle_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).unwrap();
+
+    app.open_palette();
+    handle_key(&mut app, KeyCode::Char('x'), KeyModifiers::ALT).unwrap();
+    let Some(Modal::Palette { query, .. }) = &app.modal else {
+        panic!("palette modal closed unexpectedly");
+    };
+    assert!(
+        query.is_empty(),
+        "Alt+x must not enter palette text: {query:?}"
+    );
+    handle_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).unwrap();
+
+    app.start_form(FormMode::NewTask { project_id: None });
+    handle_key(&mut app, KeyCode::Char('j'), KeyModifiers::ALT).unwrap();
+    let Some(Modal::Form(form)) = &app.modal else {
+        panic!("form modal closed unexpectedly");
+    };
+    assert!(
+        form.fields[0].value.is_empty(),
+        "Alt+j must not enter form text: {:?}",
+        form.fields[0].value
+    );
+    assert!(!form.dirty, "an ignored chord must not dirty the form");
+    handle_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE).unwrap();
+    let Some(Modal::Form(form)) = &app.modal else {
+        panic!("form modal closed unexpectedly");
+    };
+    assert_eq!(form.fields[0].value, "j", "Alt-free characters still type");
+    assert!(form.dirty);
+}
+
+#[test]
 fn accepted_list_commands_are_honest_about_local_deployments() {
     let (mut app, _task_id) = project_app("local-list");
     for command in [

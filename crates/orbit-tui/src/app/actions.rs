@@ -2083,7 +2083,9 @@ impl App {
     }
 
     /// Stage or import one attachment through the backend. A connected stage
-    /// adds to the pending sum, so the cached count is refreshed here.
+    /// adds to the pending sum, so the cached count is refreshed here. The
+    /// detail pane's `Attachments` count also changes, so the cache is
+    /// invalidated in this wrapper rather than relying on the form caller.
     pub(crate) fn import_attachment(
         &mut self,
         owner_kind: String,
@@ -2095,6 +2097,7 @@ impl App {
             .client
             .import_attachment(owner_kind, owner_id, path, description);
         if result.is_ok() {
+            self.invalidate_detail_cache();
             self.refresh_pending_count();
         }
         result

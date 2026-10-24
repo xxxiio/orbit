@@ -81,29 +81,33 @@ impl App {
             self.invalidate_detail_cache();
         }
         self.refresh_pending_count();
-        let outcomes: Vec<String> = ids
+        let outcomes: Vec<(String, MutationOutcome)> = ids
             .iter()
-            .map(|id| match self.client.command_outcome(id) {
+            .map(|id| (id.clone(), self.client.command_outcome(id)))
+            .collect();
+        let accepted = outcomes
+            .iter()
+            .filter(|(_, outcome)| outcome.is_accepted())
+            .count();
+        let unresolved = outcomes.len() - accepted;
+        let outcome_lines: Vec<String> = outcomes
+            .into_iter()
+            .map(|(id, outcome)| match outcome {
                 MutationOutcome::Accepted => format!("{id}: accepted"),
                 MutationOutcome::Pending { state, .. } => format!("{id}: pending ({state})"),
                 MutationOutcome::Conflict { reason, .. } => format!("{id}: rejected — {reason}"),
             })
             .collect();
-        let accepted = outcomes
-            .iter()
-            .filter(|line| line.ends_with(": accepted"))
-            .count();
-        let unresolved = outcomes.len() - accepted;
         if kind == StatusKind::Success && unresolved > 0 {
             kind = StatusKind::Warning;
         }
         let uploads = self.client.pending_attachment_count().unwrap_or_default();
         let mut text = message;
-        if !outcomes.is_empty() {
+        if !outcome_lines.is_empty() {
             text.push_str(&format!(
                 " | {accepted} accepted by the server, {unresolved} still pending/rejected"
             ));
-            text.push_str(&format!(" | {}", outcomes.join("; ")));
+            text.push_str(&format!(" | {}", outcome_lines.join("; ")));
         }
         if uploads > 0 {
             // Staged uploads are not accepted content; never let a flush that

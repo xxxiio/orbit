@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -39,6 +40,7 @@ from pty_harness import (  # noqa: E402
     TuiSession,
     Workspace,
 )
+from settle import wait_until_settled  # noqa: E402
 
 QUIT_KEYS = [
     pytest.param(CTRL_Q, id="ctrl-q"),
@@ -207,10 +209,13 @@ def test_launch_100x30_help_escape_closes_modal(tui):
     assert "Navigation" in tui.text
 
     tui.send(ESC, note="close help with escape")
-    tui.wait_until_screen(
-        lambda view: "Keyboard help" not in view,
+    wait_until_settled(
+        tui,
+        lambda view: "Keyboard help" not in view
+        and re.search(HOME_HEADER_RE, view) is not None
+        and "Actions:" in view,
         timeout=3.0,
-        description="help modal to close after Escape",
+        description="help modal closes and Home repaints after Escape",
     )
     assert tui.alive, "Escape closed the whole application instead of the help modal"
 
@@ -353,10 +358,13 @@ def test_unsaved_text_quit_shows_clear_confirmation_or_quits(tui):
     )
 
     tui.send(b"n", note="cancel quit confirmation")
-    tui.wait_until_screen(
-        lambda view: "quit orbit" not in view.lower(),
+    wait_until_settled(
+        tui,
+        lambda view: "quit orbit" not in view.lower()
+        and "New task" in view
+        and "unsaved draft" in view,
         timeout=3.0,
-        description="quit confirmation to close after n",
+        description="quit confirmation closes and the prompt repaints after n",
     )
     assert tui.alive, (
         "n did not cancel the quit confirmation; "
@@ -459,10 +467,13 @@ def test_project_task_lifecycle_persists_after_restart(tui_factory):
     session.wait_for_screen_text("New task", timeout=8.0, description="task form")
     session.send_text("First task")
     session.send(ENTER, note="submit task")
-    session.wait_until_screen(
-        lambda view: "Create a task in the selected project" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "Create a task in the selected project" not in view
+        and "ORBIT › Lifecycle Project" in view
+        and "Actions:" in view,
         timeout=10.0,
-        description="task form to close",
+        description="task form closes and the project workspace repaints",
     )
     session.wait_for_screen_text("First task", timeout=10.0, description="task in overview")
     session.send(b"]", note="switch to Tasks view")
@@ -475,10 +486,13 @@ def test_project_task_lifecycle_persists_after_restart(tui_factory):
         session.send(b"\x7f", note="erase old title")
     session.send_text("Edited task")
     session.send(ENTER, note="submit task edit")
-    session.wait_until_screen(
-        lambda view: "Rename and set supported planning fields" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "Rename and set supported planning fields" not in view
+        and "Task board" in view
+        and "Edited task" in view,
         timeout=10.0,
-        description="edit form to close",
+        description="edit form closes and the Board repaints with the renamed card",
     )
     session.wait_for_screen_text("Edited task", timeout=10.0, description="renamed task")
 
@@ -572,10 +586,13 @@ def test_blueprint_bind_work_item_edit_and_transition_persist(tui_factory):
     session.wait_for_screen_text("Change workflow", timeout=8.0, description="workflow form")
     session.send(b"\x1b[C", note="select the next workflow (Development)")
     session.send(ENTER, note="apply the selected workflow")
-    session.wait_until_screen(
-        lambda view: "Basic is the default" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "Basic is the default" not in view
+        and "ORBIT › Blueprint Project" in view
+        and "Actions:" in view,
         timeout=10.0,
-        description="workflow form closes",
+        description="workflow form closes and the workspace repaints",
     )
     session.wait_for_screen_text("Development v2", timeout=10.0, description="pinned workflow header")
 
@@ -584,10 +601,13 @@ def test_blueprint_bind_work_item_edit_and_transition_persist(tui_factory):
     session.send(ENTER, note="choose default kind")
     session.wait_for_screen_text("New feature", timeout=8.0, description="property form")
     session.send(ENTER, note="submit default properties")
-    session.wait_until_screen(
-        lambda view: "New feature" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "New feature" not in view
+        and "ORBIT › Blueprint Project" in view
+        and "Actions:" in view,
         timeout=10.0,
-        description="work item form closes",
+        description="work item form closes and the project workspace repaints",
     )
 
     session.send(b"]", note="switch to Board")
@@ -599,10 +619,13 @@ def test_blueprint_bind_work_item_edit_and_transition_persist(tui_factory):
     session.wait_for_screen_text("Edit work item", timeout=8.0, description="work-item edit form")
     session.send(b"\x1b[C", note="select next priority")
     session.send(ENTER, note="submit work-item edit")
-    session.wait_until_screen(
-        lambda view: "Only declared properties are editable" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "Only declared properties are editable" not in view
+        and "Task board" in view
+        and "feature" in view,
         timeout=10.0,
-        description="work-item edit form closes",
+        description="work-item edit form closes and the Board repaints",
     )
 
     session.send(b":", note="palette transition")
@@ -693,6 +716,14 @@ def test_project_form_objective_and_validation_do_not_create_partial_rows(tui_fa
     assert count == 0, "invalid estimate created a task before validation"
 
     session.send(ESC, note="cancel invalid form")
+    wait_until_settled(
+        session,
+        lambda view: "Create a task in the selected project" not in view
+        and "ORBIT › Objective Project" in view
+        and "Actions:" in view,
+        timeout=8.0,
+        description="invalid task form closes and the project workspace repaints",
+    )
     session.quit_via(CTRL_Q)
     session.assert_clean_exit()
 
@@ -836,10 +867,13 @@ def test_responsive_layout_navigation_detail_and_exit(tui_factory, cols, rows):
     session.send(b"?", note="contextual help")
     session.wait_for_screen_text("Keyboard help", timeout=8.0, description="help modal")
     session.send(ESC, note="close help")
-    session.wait_until_screen(
-        lambda view: "Keyboard help" not in view,
+    wait_until_settled(
+        session,
+        lambda view: "Keyboard help" not in view
+        and "Task board" in view
+        and "Actions:" in view,
         timeout=5.0,
-        description="help closes",
+        description="help closes and the Board repaints",
     )
     session.quit_via(CTRL_Q)
     session.assert_clean_exit()

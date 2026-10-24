@@ -1115,6 +1115,149 @@ fn console_accepted_lists_state_their_empty_accepted_state() {
 }
 
 #[test]
+fn console_accepted_lists_fail_closed_without_an_accepted_snapshot() {
+    // No snapshot has ever been observed: an empty projection is not evidence
+    // that the authority is empty. Every list must say so, like `plan.*`.
+    let (mut app, path) = offline_app("console-no-snapshot-lists");
+    for command in [
+        "routine.list",
+        "strategy.list",
+        "milestone.list",
+        "schedule.list",
+    ] {
+        match app.console_run(command) {
+            crate::app::ConsoleOutcome::Error(error) => {
+                assert!(
+                    error.contains("No accepted snapshot yet; refresh while online first"),
+                    "{command}: {error}"
+                );
+            }
+            other => panic!("{command} must fail closed without a snapshot, got {other:?}"),
+        }
+    }
+    assert_eq!(app.client.pending_count(), 0);
+
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn quick_edit_refreshes_the_cached_pending_count() {
+    let authority = Authority::start(vec![
+        ("/v1/authoritative/snapshot", snapshot()),
+        ("/v1/authoritative/tasks/task-1", detail()),
+    ]);
+    let (mut app, path) = connected_app(&authority.base, "quick-edit-count");
+    assert_eq!(app.pending_count(), 0);
+
+    app.start_form(FormMode::QuickEditTask {
+        task_id: "task-1".into(),
+    });
+    let Some(Modal::Form(mut form)) = app.modal.take() else {
+        panic!("quick edit form missing: {}", app.status.text);
+    };
+    form.fields[0].value = "Renamed from quick edit".into();
+    form.dirty = true;
+    app.submit_form(form);
+
+    assert_eq!(
+        app.pending_count(),
+        1,
+        "a queued quick edit must update the cached pending count: {}",
+        app.status.text
+    );
+    let text = rendered(&mut app, 120, 30);
+    assert!(text.contains("1 pending"), "{text}");
+
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn criterion_toggle_refreshes_the_cached_pending_count() {
+    let authority = Authority::start(vec![
+        ("/v1/authoritative/snapshot", snapshot()),
+        ("/v1/authoritative/tasks/task-1", detail()),
+        (
+            "/v1/authoritative/tasks/task-1/acceptance-criteria",
+            criteria(),
+        ),
+    ]);
+    let (mut app, path) = connected_app(&authority.base, "criterion-count");
+    assert_eq!(app.pending_count(), 0);
+
+    app.open_criteria("task-1".into(), "Ship it".into());
+    assert!(matches!(app.modal, Some(Modal::Criteria(_))));
+    handle_key(&mut app, KeyCode::Char(' '), KeyModifiers::NONE).unwrap();
+
+    assert_eq!(
+        app.pending_count(),
+        1,
+        "a queued criterion toggle must update the cached pending count: {}",
+        app.status.text
+    );
+    let text = rendered(&mut app, 120, 30);
+    assert!(text.contains("1 pending"), "{text}");
+
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn conflict_replacement_refreshes_the_cached_pending_count() {
+    let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
+    let (mut app, path) = connected_app(&authority.base, "replacement-count");
+    let intent = crate::connected_actions::parse_intent(
+        "project.create conflicted-project Rejected",
+        "generated",
+    )
+    .expect("intent");
+    app.execute_pending(app::PendingAction::QueueIntent { intent });
+    let id = app.client.last_queued_command_id().expect("queued id");
+
+    // The loopback authority has no command route, so the flush leaves a
+    // permanent conflict. Its pending row stays counted.
+    let flush = orbit_ui::AvailableAction::enabled("flush_pending", "Flush", None);
+    assert!(!app.execute_action(flush));
+    let before = app.pending_count();
+    assert_eq!(before, 1, "{}", app.status.text);
+
+    app.open_conflict(&id);
+    // A rejection can be observed out-of-band (another device's failure or a
+    // replica refresh). Simulate the stale cache the header would have shown
+    // while a conflict was already durable: the replacement must not inherit
+    // `0 pending`.
+    app.pending_count = 0;
+    let review = match app.modal.as_ref() {
+        Some(Modal::Conflict {
+            review: Some(review),
+            ..
+        }) => review.clone(),
+        other => panic!("conflict review missing: {other:?}"),
+    };
+    let (message, _kind) = app
+        .resolve_conflict(
+            &id,
+            Some(&review),
+            "project.create conflict-replacement Conflict Replacement",
+        )
+        .expect("conflict replacement");
+    assert!(message.contains("PENDING"), "{message}");
+
+    assert_eq!(
+        app.pending_count(),
+        1,
+        "the replacement is durable intent and must refresh the cached count: {}",
+        app.status.text
+    );
+    let text = rendered(&mut app, 120, 30);
+    assert!(text.contains("1 pending"), "{text}");
+
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
 fn console_suggestions_are_commands_not_help_prose() {
     let (app, path) = offline_app("console-suggestions");
     let suggestions = app.console_suggestions("");
