@@ -56,9 +56,9 @@ pub(super) fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
                 },
                 "",
                 app.projects.len(),
-                // The client owns the pending sum so staged attachment uploads
-                // are counted alongside outbox commands.
-                app.client.pending_count()
+                // The count is cached on `App` and refreshed by queue, flush,
+                // refresh and inspector events; render never calls the backend.
+                app.pending_count()
             ),
             app.theme.warning(),
         ))

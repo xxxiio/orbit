@@ -1353,7 +1353,6 @@ impl App {
         let description = Self::form_value(form, "description").trim();
         let description = (!description.is_empty()).then(|| description.to_owned());
         let attachment = self
-            .client
             .import_attachment(
                 owner_kind.to_owned(),
                 owner_id.to_owned(),

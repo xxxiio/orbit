@@ -30,6 +30,33 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static ID_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
+/// Test-only counter of backend pending-count reads. The frame renderer must
+/// read the cached count on [`crate::app::App`] instead of asking the client
+/// every frame, so the perf tests can prove render performs no backend read.
+///
+/// The counter is thread-local so concurrently running tests cannot observe
+/// each other's reads.
+#[cfg(test)]
+pub(crate) mod diagnostics {
+    use std::cell::Cell;
+
+    thread_local! {
+        static PENDING_COUNT_READS: Cell<u64> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn pending_count_reads() -> u64 {
+        PENDING_COUNT_READS.with(Cell::get)
+    }
+
+    pub(crate) fn reset_pending_count_reads() {
+        PENDING_COUNT_READS.with(|reads| reads.set(0));
+    }
+
+    pub(crate) fn record_pending_count_read() {
+        PENDING_COUNT_READS.with(|reads| reads.set(reads.get() + 1));
+    }
+}
+
 fn next_id(prefix: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -70,6 +97,28 @@ fn unavailable(message: impl Into<String>) -> ClientError {
 
 fn mapped(error: impl std::fmt::Debug) -> ClientError {
     unavailable(format!("{error:?}"))
+}
+
+/// The connected console is the only accepted-list surface; local deployments
+/// use the shared shell views instead.
+pub(crate) const CONNECTED_LIST_REQUIRES_CONNECTED: &str =
+    "accepted listing requires a connected deployment; the local authority has no console reads";
+
+/// Decode one accepted projection collection into the authority's own record
+/// type. A row this binary cannot decode fails closed instead of being dropped.
+fn decode_accepted_rows<T: serde::de::DeserializeOwned>(
+    rows: Vec<serde_json::Value>,
+    collection: &str,
+) -> Result<Vec<T>, ClientError> {
+    rows.into_iter()
+        .map(|row| {
+            serde_json::from_value(row).map_err(|error| {
+                unavailable(format!(
+                    "accepted {collection} row could not be decoded: {error}"
+                ))
+            })
+        })
+        .collect()
 }
 
 /// Map a connected-connection error into the shared typed client error so the
@@ -381,10 +430,6 @@ pub enum Backend {
 }
 
 impl Backend {
-    pub fn open_local(path: impl AsRef<Path>) -> Result<Self, ClientError> {
-        Ok(Self::Local(OrbitClient::open(path)?))
-    }
-
     pub fn open_connected(replica: &Path, server: &str) -> Result<Self, ClientError> {
         let token = std::env::var("ORBIT_AUTHORITY_TOKEN").ok();
         let device = std::env::var("ORBIT_AUTHORITY_DEVICE").ok();
@@ -472,6 +517,8 @@ impl Backend {
     /// The client owns this sum; the TUI must not re-derive it from outbox
     /// lengths, which omit attachment staging.
     pub fn pending_count(&self) -> usize {
+        #[cfg(test)]
+        diagnostics::record_pending_count_read();
         match self {
             Self::Local(_) => 0,
             Self::Connected { connection, .. } => connection
@@ -1184,6 +1231,62 @@ impl Backend {
                     deadline_at_ms: task.deadline_at_ms,
                 })
                 .collect()),
+        }
+    }
+
+    /// Accepted routine compositions for the read-only console listing.
+    ///
+    /// Connected deployments only: the console is the connected read surface,
+    /// and a local authority has no snapshot to list. Rows are the same typed
+    /// records the authority serves, so the console cannot invent a shape.
+    pub fn accepted_routines(
+        &self,
+    ) -> Result<Vec<orbit_runtime::authority_routines::RoutineRecord>, ClientError> {
+        match self {
+            Self::Local(_) => Err(unavailable(CONNECTED_LIST_REQUIRES_CONNECTED)),
+            Self::Connected { connection, .. } => connection
+                .routines()
+                .map_err(connected_error)
+                .and_then(|rows| decode_accepted_rows(rows, "routines")),
+        }
+    }
+
+    /// Accepted project strategies for the read-only console listing.
+    pub fn accepted_strategies(
+        &self,
+    ) -> Result<Vec<orbit_runtime::authority_strategy::StrategyRecord>, ClientError> {
+        match self {
+            Self::Local(_) => Err(unavailable(CONNECTED_LIST_REQUIRES_CONNECTED)),
+            Self::Connected { connection, .. } => connection
+                .strategies()
+                .map_err(connected_error)
+                .and_then(|rows| decode_accepted_rows(rows, "strategies")),
+        }
+    }
+
+    /// Accepted milestones for the read-only console listing.
+    pub fn accepted_milestones(
+        &self,
+    ) -> Result<Vec<orbit_runtime::authority_milestones::MilestoneRecord>, ClientError> {
+        match self {
+            Self::Local(_) => Err(unavailable(CONNECTED_LIST_REQUIRES_CONNECTED)),
+            Self::Connected { connection, .. } => connection
+                .milestones()
+                .map_err(connected_error)
+                .and_then(|rows| decode_accepted_rows(rows, "milestones")),
+        }
+    }
+
+    /// Accepted schedule blocks for the read-only console listing.
+    pub fn accepted_schedule(
+        &self,
+    ) -> Result<Vec<orbit_runtime::authority_schedule::ScheduleRecord>, ClientError> {
+        match self {
+            Self::Local(_) => Err(unavailable(CONNECTED_LIST_REQUIRES_CONNECTED)),
+            Self::Connected { connection, .. } => connection
+                .schedule()
+                .map_err(connected_error)
+                .and_then(|rows| decode_accepted_rows(rows, "schedule")),
         }
     }
 

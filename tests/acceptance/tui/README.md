@@ -75,6 +75,34 @@ checking that something was emitted at all.
   clean exit. The connected console (`:` → *Connected commands…*) is the only
   connected presentation; there is no separate connected shell or launch flag.
 
+`test_m29_fixture.py` is the shared-fixture launch coverage, and it separates
+two jobs:
+
+- `test_small_fixture_launch_smoke_*` is a fast **launch smoke** over 5
+  projects / 40 tasks: launch, Home/Projects, open a project, switch views,
+  search, scroll and quit. It is not the performance workload.
+- `test_full_fixture_measured_shape_launch` is the **measured fixture**: 20
+  projects / 200 tasks, the shape `perf_probe.py` builds with `--full` (its
+  default). It is opt-in with `ORBIT_TUI_FULL_FIXTURE=1`, asserts the measured
+  shape before launching, and only then drives the same session.
+
+`test_m29_workflows.py` completes the targeted M29 workflow coverage:
+
+- Scenario B: quick edit (`E`, title + priority), multiline task details (`e`),
+  acceptance criteria (`K` → `c`), a workflow status change (`S`), task detail
+  and activity inspection, and unsaved-form discard safety;
+- Scenario C: switching five projects through the sidebar and the command
+  palette, opening different views, restoring the selected task on return, and
+  `g p` / `Esc` returning to the previous project, view and selection;
+- Scenario D: the responsive Kanban at 60x18, 80x24, 100x30, 120x35 and
+  160x45 — closed frame, windowed column legend, selected-card marker, `j`
+  traversal of every non-empty column (the window follows), and a status
+  transition that moves the card to the workflow's target column;
+- Scenario F: `Ctrl+Q` from the workspace, task detail, dirty form, search,
+  palette, connected pending inspector and connected console — the confirmation
+  appears only for unsaved text, `n` preserves it, and every session exits 0
+  with the alternate screen restored.
+
 The harness treats these as target behaviour. A failure is reported as a
 failure rather than hidden by relaxing the assertion.
 

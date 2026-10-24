@@ -5,6 +5,7 @@ mod backend;
 mod connected_actions;
 mod connected_ops;
 mod input;
+mod local_backend;
 mod planning_ui;
 mod render;
 mod terminal;
@@ -178,6 +179,9 @@ mod m28_usability_recovery_tests;
 #[cfg(test)]
 #[path = "tests/m29_connected_task_detail_tests.rs"]
 mod m29_connected_task_detail_tests;
+#[cfg(test)]
+#[path = "tests/m29_gate3_remediation_tests.rs"]
+mod m29_gate3_remediation_tests;
 #[cfg(test)]
 #[path = "tests/m29_layout_presentation_tests.rs"]
 mod m29_layout_presentation_tests;

@@ -9,8 +9,9 @@
 - Same probe, sizes, session order, fixture shape (20 projects / 200 tasks /
   1017 activities / 6 attachments / 8 agent jobs) and session-state reset as
   the baseline. The fixture was rebuilt from `scripts/tui-fixture.py`, so the
-  recorded before/after pairs use different database files with identical
-  contents.
+  recorded before/after pairs use different database files with the same shape
+  and titles: record ids and timestamps differ, and the probe never compares
+  fixture bytes.
 
 Because the recorded baseline was collected on a different binary build and
 the machine drifts between runs, the first table also uses a **same-era

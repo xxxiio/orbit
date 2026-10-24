@@ -95,6 +95,7 @@ impl App {
         let connected_refresh_error = self.client.refresh_accepted().err();
         match self.client.workspace_view_data() {
             Ok(workspace) => {
+                self.pending_count = workspace.pending_commands;
                 self.projects = workspace.projects.clone();
                 self.project_details = self.client.list_projects().unwrap_or_default();
                 self.workspace = Some(workspace);

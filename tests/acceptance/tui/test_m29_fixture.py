@@ -1,9 +1,15 @@
-"""M29 fixture smoke test: launch the real TUI against the shared fixture.
+"""M29 fixture tests: launch the real TUI against the shared fixture.
 
-The default run builds a small deterministic workspace (5 projects / 40 tasks)
-through the same helpers the performance probe uses.  The full 20-project /
-200-task fixture is opt-in with ``ORBIT_TUI_FULL_FIXTURE=1`` (or
-``scripts/tui-fixture.py --full``) and is what the probe measures by default.
+Two different jobs live here, and they are labelled accordingly:
+
+* ``test_small_fixture_*`` is a fast **launch smoke** over 5 projects / 40
+  tasks.  It proves the shared shell starts, paints, navigates and exits; it is
+  not the performance workload and its numbers must not be quoted as such.
+* ``test_full_fixture_*`` is the **measured fixture**: 20 projects / 200 tasks,
+  exactly the shape ``tests/acceptance/tui/perf_probe.py`` measures (the probe
+  builds ``--full`` by default).  It is opt-in with
+  ``ORBIT_TUI_FULL_FIXTURE=1`` and asserts the measured shape before driving
+  the session.
 
 Every session is reaped and writes the usual PTY evidence under
 ``target/tui-evidence/<run-id>/<label>/``.
@@ -48,8 +54,12 @@ def _load_fixture():
 FIXTURE = _load_fixture()
 
 
+MEASURED_PROJECTS = 20
+MEASURED_TASKS = 200
+
+
 def _build(tmp_path: Path, *, project_count: int, task_count: int):
-    workspace = FIXTURE.build_fixture(
+    summary = FIXTURE.build_fixture(
         tmp_path / "workspace",
         project_count=project_count,
         task_count=task_count,
@@ -59,7 +69,7 @@ def _build(tmp_path: Path, *, project_count: int, task_count: int):
         agent_job_count=2,
         verbose=False,
     )
-    return FIXTURE.workspace_from_path(workspace["workspace"])
+    return FIXTURE.workspace_from_path(summary["workspace"]), summary["counts"]
 
 
 def _current_view_title(screen_text: str) -> str | None:
@@ -180,15 +190,27 @@ def _run_smoke(workspace) -> None:
     assert meta["alternate_screen_entered"] and meta["alternate_screen_left"], meta
 
 
-def test_small_fixture_home_projects_views_search_scroll_quit(tmp_path):
-    workspace = _build(tmp_path, project_count=5, task_count=40)
+def test_small_fixture_launch_smoke_home_projects_views_search_scroll_quit(tmp_path):
+    """Launch smoke only: 5 projects / 40 tasks, not the measured workload."""
+    workspace, counts = _build(tmp_path, project_count=5, task_count=40)
+    assert counts["projects"] == 5, counts
+    assert counts["tasks"] == 40, counts
     _run_smoke(workspace)
 
 
 @pytest.mark.skipif(
     os.environ.get("ORBIT_TUI_FULL_FIXTURE") != "1",
-    reason="set ORBIT_TUI_FULL_FIXTURE=1 to exercise the full 20/200 fixture",
+    reason="set ORBIT_TUI_FULL_FIXTURE=1 to exercise the measured 20/200 fixture",
 )
-def test_full_fixture_launch_is_opt_in(tmp_path):
-    workspace = _build(tmp_path, project_count=20, task_count=200)
+def test_full_fixture_measured_shape_launch(tmp_path):
+    """The measured fixture: 20 projects / 200 tasks, as the perf probe builds it."""
+    workspace, counts = _build(
+        tmp_path, project_count=MEASURED_PROJECTS, task_count=MEASURED_TASKS
+    )
+    # The measured shape is the probe's workload, not just a bigger smoke.
+    assert counts["projects"] == MEASURED_PROJECTS, counts
+    assert counts["tasks"] == MEASURED_TASKS, counts
+    assert counts["activities"] >= MEASURED_TASKS, counts
+    assert counts["attachments"] == 1, counts
+    assert counts["agent_jobs"] == 2, counts
     _run_smoke(workspace)

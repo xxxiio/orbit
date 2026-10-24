@@ -569,6 +569,9 @@ impl App {
     }
 
     pub fn open_palette(&mut self) {
+        // The palette names the pending depth, so take one fresh count for this
+        // deliberate user action instead of reading the client while rendering.
+        self.refresh_pending_count();
         let entries = self.palette_entries("");
         self.modal = Some(Modal::Palette {
             query: String::new(),
@@ -692,7 +695,7 @@ impl App {
                 "Pending commands".into(),
                 format!(
                     "{} queued intention(s); none accepted yet — press ! to inspect",
-                    self.client.pending_count()
+                    self.pending_count()
                 ),
                 PaletteAction::Pending,
                 true,
@@ -1366,19 +1369,26 @@ impl App {
                 Ok((message, blocked)) => {
                     let uploads = self.client.pending_attachment_count().unwrap_or_default();
                     self.refresh_after_mutation();
+                    self.refresh_pending_count();
+                    // A blocked flush is a rejection; a flush that leaves
+                    // staged uploads queued is still pending work. Neither may
+                    // read as success.
+                    let kind = if blocked {
+                        StatusKind::Warning
+                    } else if uploads > 0 {
+                        StatusKind::Pending
+                    } else {
+                        StatusKind::Success
+                    };
                     self.notify(
                         if uploads > 0 {
                             format!(
-                                "{message}; {uploads} staged attachment upload(s) still pending"
+                                "{message}; {uploads} staged attachment upload(s) still pending (not accepted)"
                             )
                         } else {
                             message
                         },
-                        if blocked {
-                            StatusKind::Warning
-                        } else {
-                            StatusKind::Success
-                        },
+                        kind,
                     );
                 }
                 Err(error) => self.notify(
@@ -1491,22 +1501,17 @@ impl App {
                 task_id,
                 criterion_id,
                 task_title,
-            } => {
-                match self
-                    .client
-                    .remove_acceptance_criterion(task_id.clone(), criterion_id)
-                {
-                    Ok(_) => {
-                        let (message, kind) = self.mutation_status("Acceptance criterion removed");
-                        self.notify(message, kind);
-                        self.open_criteria(task_id, task_title);
-                    }
-                    Err(error) => self.notify(
-                        format!("Removing the criterion failed: {}", error.message),
-                        StatusKind::Error,
-                    ),
+            } => match self.remove_criterion(task_id.clone(), criterion_id) {
+                Ok(_) => {
+                    let (message, kind) = self.mutation_status("Acceptance criterion removed");
+                    self.notify(message, kind);
+                    self.open_criteria(task_id, task_title);
                 }
-            }
+                Err(error) => self.notify(
+                    format!("Removing the criterion failed: {}", error.message),
+                    StatusKind::Error,
+                ),
+            },
             PendingAction::RemoveAttachment {
                 attachment_id,
                 owner_kind,
@@ -1520,7 +1525,7 @@ impl App {
                     .pending_attachments(&owner_kind, &owner_id)
                     .map(|items| items.iter().any(|item| item.attachment.id == attachment_id))
                     .unwrap_or(false);
-                match self.client.remove_attachment(attachment_id) {
+                match self.remove_attachment(attachment_id) {
                     Ok(content_removed) => {
                         if was_pending {
                             // Refresh only the staging side from the replica;
@@ -1589,6 +1594,7 @@ impl App {
                             "{} queued as {command_id} (PENDING; not accepted; press ! to inspect)",
                             intent.description
                         ));
+                        self.refresh_pending_count();
                         self.notify(message, kind);
                     }
                     Err(error) => self.notify(
@@ -1615,6 +1621,7 @@ impl App {
                         let (message, kind) = self.mutation_status(format!(
                             "Staged {inserted}/{total} pending intention(s) in one transaction (PENDING; not accepted; press ! to inspect)"
                         ));
+                        self.refresh_pending_count();
                         self.notify(message, kind);
                     }
                     Err(error) => self.notify(
@@ -2009,7 +2016,90 @@ impl App {
         }
     }
 
-    /// Reload the criteria modal in place after a mutation.
+    /// Toggle one criterion's completion through the backend.
+    ///
+    /// Task status is never changed here. The docked detail pane shows
+    /// `Acceptance: done/total`, so a successful mutation invalidates its cache
+    /// and the next paint re-reads the accepted count.
+    pub(crate) fn set_criterion_completed(
+        &mut self,
+        task_id: String,
+        criterion_id: String,
+        completed: bool,
+    ) -> Result<Vec<orbit_client::AcceptanceCriterionDto>, orbit_client::ClientError> {
+        let result =
+            self.client
+                .set_acceptance_criterion_completed(task_id, criterion_id, completed);
+        if result.is_ok() {
+            self.invalidate_detail_cache();
+        }
+        result
+    }
+
+    /// Move one criterion to a new index within the ordered list.
+    pub(crate) fn move_criterion(
+        &mut self,
+        task_id: String,
+        criterion_id: String,
+        position: usize,
+    ) -> Result<Vec<orbit_client::AcceptanceCriterionDto>, orbit_client::ClientError> {
+        let result = self
+            .client
+            .move_acceptance_criterion(task_id, criterion_id, position);
+        if result.is_ok() {
+            self.invalidate_detail_cache();
+        }
+        result
+    }
+
+    /// Remove one criterion. The detail pane's `Acceptance` count changes, so
+    /// its cache is invalidated for both accepted and queued outcomes.
+    pub(crate) fn remove_criterion(
+        &mut self,
+        task_id: String,
+        criterion_id: String,
+    ) -> Result<Vec<orbit_client::AcceptanceCriterionDto>, orbit_client::ClientError> {
+        let result = self
+            .client
+            .remove_acceptance_criterion(task_id, criterion_id);
+        if result.is_ok() {
+            self.invalidate_detail_cache();
+        }
+        result
+    }
+
+    /// Remove one attachment. The detail pane's `Attachments` count changes, so
+    /// its cache is invalidated before the caller reopens the modal.
+    pub(crate) fn remove_attachment(
+        &mut self,
+        attachment_id: String,
+    ) -> Result<bool, orbit_client::ClientError> {
+        let result = self.client.remove_attachment(attachment_id);
+        if result.is_ok() {
+            self.invalidate_detail_cache();
+            self.refresh_pending_count();
+        }
+        result
+    }
+
+    /// Stage or import one attachment through the backend. A connected stage
+    /// adds to the pending sum, so the cached count is refreshed here.
+    pub(crate) fn import_attachment(
+        &mut self,
+        owner_kind: String,
+        owner_id: String,
+        path: String,
+        description: Option<String>,
+    ) -> Result<orbit_client::AttachmentDto, orbit_client::ClientError> {
+        let result = self
+            .client
+            .import_attachment(owner_kind, owner_id, path, description);
+        if result.is_ok() {
+            self.refresh_pending_count();
+        }
+        result
+    }
+
     /// Metadata and a bounded text preview for one attachment. Binary content
     /// is never executed or decoded as an image here; the user is directed to
     /// the external viewer instead.
@@ -2067,8 +2157,8 @@ impl App {
         }
     }
 
-    /// Toggle one criterion's completion. Task status is never changed here.
-    /// Move one criterion to a new index within the ordered list.
+    /// Open the accepted attachments modal for one owner, with staged uploads
+    /// listed separately and marked `[pending]`.
     pub fn open_attachments(&mut self, owner_kind: String, owner_id: String, title: String) {
         let pending = self
             .client

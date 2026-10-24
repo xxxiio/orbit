@@ -380,7 +380,7 @@ pub(crate) fn handle_modal(
             }
             KeyCode::Char(' ') => {
                 if let Some(item) = state.items.get(state.selected).cloned() {
-                    match app.client.set_acceptance_criterion_completed(
+                    match app.set_criterion_completed(
                         state.task_id.clone(),
                         item.id,
                         !item.completed,
@@ -423,11 +423,7 @@ pub(crate) fn handle_modal(
             KeyCode::Char('J') => {
                 if let Some(item) = state.items.get(state.selected).cloned() {
                     let position = (state.selected + 1).min(state.items.len().saturating_sub(1));
-                    match app.client.move_acceptance_criterion(
-                        state.task_id.clone(),
-                        item.id,
-                        position,
-                    ) {
+                    match app.move_criterion(state.task_id.clone(), item.id, position) {
                         Ok(items) => {
                             state.items = items;
                             state.selected = position;
@@ -445,11 +441,7 @@ pub(crate) fn handle_modal(
             KeyCode::Char('K') => {
                 if let Some(item) = state.items.get(state.selected).cloned() {
                     let position = state.selected.saturating_sub(1);
-                    match app.client.move_acceptance_criterion(
-                        state.task_id.clone(),
-                        item.id,
-                        position,
-                    ) {
+                    match app.move_criterion(state.task_id.clone(), item.id, position) {
                         Ok(items) => {
                             state.items = items;
                             state.selected = position;
@@ -678,21 +670,24 @@ pub(crate) fn handle_modal(
                     .unwrap_or_else(|| "No pending commands.".into());
                 *detail_scroll = 0;
             }
-            KeyCode::Char('r') => match app.client.pending_commands() {
-                Ok(fresh) => {
-                    *selected = (*selected).min(fresh.len().saturating_sub(1));
-                    *detail = fresh
-                        .get(*selected)
-                        .map(|row| app.pending_detail_text(&row.id))
-                        .unwrap_or_else(|| "No pending commands.".into());
-                    *rows = fresh;
-                    *detail_scroll = 0;
+            KeyCode::Char('r') => {
+                app.refresh_pending_count();
+                match app.client.pending_commands() {
+                    Ok(fresh) => {
+                        *selected = (*selected).min(fresh.len().saturating_sub(1));
+                        *detail = fresh
+                            .get(*selected)
+                            .map(|row| app.pending_detail_text(&row.id))
+                            .unwrap_or_else(|| "No pending commands.".into());
+                        *rows = fresh;
+                        *detail_scroll = 0;
+                    }
+                    Err(error) => app.notify(
+                        format!("Pending commands unavailable: {error}"),
+                        StatusKind::Error,
+                    ),
                 }
-                Err(error) => app.notify(
-                    format!("Pending commands unavailable: {error}"),
-                    StatusKind::Error,
-                ),
-            },
+            }
             KeyCode::Char('f') => {
                 let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
                 let (fresh, fresh_detail) = app.pending_flush_report(&ids);
@@ -740,6 +735,13 @@ pub(crate) fn handle_modal(
                             StatusKind::Info,
                         );
                     }
+                    // The review is longer than a narrow terminal: the reason and
+                    // recorded command state must stay reachable. Plain letters
+                    // still edit the replacement, so only arrows scroll.
+                    KeyCode::Down => app.modal_scroll = app.modal_scroll.saturating_add(1),
+                    KeyCode::Up => app.modal_scroll = app.modal_scroll.saturating_sub(1),
+                    KeyCode::PageDown => app.modal_scroll = app.modal_scroll.saturating_add(10),
+                    KeyCode::PageUp => app.modal_scroll = app.modal_scroll.saturating_sub(10),
                     KeyCode::Enter => {
                         match app.resolve_conflict(command_id, review.as_ref(), replacement) {
                             Ok((message, kind)) => {

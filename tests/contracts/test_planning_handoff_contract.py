@@ -6,6 +6,7 @@ this suite cannot disagree.
 import re
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
+TUI = ROOT / "crates/orbit-tui/src"
 
 def read(rel): return (ROOT/rel).read_text()
 
@@ -24,11 +25,31 @@ def test_shared_shell_owns_the_only_tui_handoff_surface():
     # The legacy connected event loop is retired. One shared shell serves both
     # deployments, so the selectable-index and revision checks exist in exactly
     # one implementation and no connected module may re-implement them.
-    shell = compact(read('crates/orbit-tui/src/main.rs') + read('crates/orbit-tui/src/app.rs'))
+    #
+    # The I5 split moved these owners: actions live in `app/actions.rs`, the
+    # rendered handoff in `planning_ui.rs`. Both are asserted by name below so a
+    # future split cannot silently drop the guard.
+    actions = compact((TUI / "app/actions.rs").read_text(encoding="utf-8"))
+    navigation = compact((TUI / "app/navigation.rs").read_text(encoding="utf-8"))
+    ui = compact((TUI / "planning_ui.rs").read_text(encoding="utf-8"))
+    modal = compact((TUI / "input/modal.rs").read_text(encoding="utf-8"))
+    shell = actions + navigation + ui + modal
+
     for term in ['select_from_menu', 'render_handoff',
                  'PreviewOperation::CompletionImpact',
                  'latest.revision!=brief.revision', 'app.today_select_action']:
-        assert term in shell, term
+        assert compact(term) in shell, term
+
+    # The exact owner of each term, so a term cannot drift into a module that
+    # never executes it.
+    assert compact('pub fn today_select_action(&mut self,index:usize)') in actions
+    assert compact('planning_handoff::select_from_menu(&menu,index)') in actions
+    assert compact('latest.revision!=brief.revision') in actions
+    assert compact('==orbit_runtime::planning_handoff::PreviewOperation::CompletionImpact') in actions
+    assert compact('planning_ui::render_handoff(&handoff)') in actions
+    assert compact('pub fn render_handoff(') in ui
+    assert compact('app.today_select_action(index)') in modal
+
     entry = read('crates/orbit-tui/src/main.rs')
     assert 'mod connected;' not in entry
     assert not (ROOT / 'crates/orbit-tui/src/connected.rs').exists()

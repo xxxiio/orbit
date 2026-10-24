@@ -10,14 +10,35 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+TUI = ROOT / "crates/orbit-tui/src"
 
 
 def source(path):
     return (ROOT / path).read_text()
 
 
+def tui(path):
+    return (TUI / path).read_text(encoding="utf-8")
+
+
 def compact(text):
     return re.sub(r"\s+", "", text)
+
+
+def function_body(text, signature):
+    """Extract one function body by brace matching from its signature."""
+    start = text.index(signature)
+    opening = text.index("{", start)
+    depth = 0
+    for index in range(opening, len(text)):
+        character = text[index]
+        if character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    raise AssertionError(f"unterminated function body for {signature}")
 
 
 def test_shared_deployment_selection_is_used_by_client_adapters():
@@ -34,17 +55,60 @@ def test_shared_deployment_selection_is_used_by_client_adapters():
 def test_connected_tui_cannot_open_embedded_authority():
     # The legacy connected event loop is retired; the connected TUI is the
     # shared shell over the connected backend plus the console operations module.
-    console = source("crates/orbit-tui/src/connected_ops.rs")
-    backend = source("crates/orbit-tui/src/backend.rs")
-    app = source("crates/orbit-tui/src/app.rs")
-    for text in (console, backend, app):
-        assert "AuthoritativeHost::open(" not in text
-        assert "SqliteStore::open(" not in text
-    assert "OrbitClient::open(" not in console
-    assert "OrbitClient::open(" not in app
-    # The connected constructor goes through the remote client, never a local store.
-    assert "AuthorityConnection::remote(" in backend
-    assert "mod connected;" not in source("crates/orbit-tui/src/main.rs")
+    backend = tui("backend.rs")
+    console = tui("connected_ops.rs")
+    connected_actions = tui("connected_actions.rs")
+    for name, text in (
+        ("backend.rs", backend),
+        ("connected_ops.rs", console),
+        ("connected_actions.rs", connected_actions),
+    ):
+        assert "AuthoritativeHost::open(" not in text, name
+        assert "SqliteStore::open(" not in text, name
+    # The connected console modules never construct any client at all.
+    for name, text in (
+        ("connected_ops.rs", console),
+        ("connected_actions.rs", connected_actions),
+        ("app/connected.rs", tui("app/connected.rs")),
+        ("app/actions.rs", tui("app/actions.rs")),
+    ):
+        assert "OrbitClient::open(" not in text, name
+        assert "AuthoritativeHost::open(" not in text, name
+
+    # The connected constructor is remote-only: it never falls back to a local
+    # store or a local facade, in either entrypoint.
+    assert backend.count("AuthorityConnection::remote(") == 1
+    # The local facade opener lives in the local-only module, never here.
+    assert "OrbitClient::open(" not in backend
+    assert "OrbitClient::open(" in tui("local_backend.rs")
+    assert "AuthorityConnection::remote(" not in tui("local_backend.rs")
+    for signature in (
+        "pub fn open_connected(",
+        "pub fn open_connected_with_identity(",
+    ):
+        body = function_body(backend, signature)
+        assert "OrbitClient::open(" not in body, signature
+        assert "AuthoritativeHost::open(" not in body, signature
+        assert "SqliteStore::open(" not in body, signature
+    assert "AuthorityConnection::remote(" in function_body(
+        backend, "pub fn open_connected_with_identity("
+    )
+    assert "mod connected;" not in tui("main.rs")
+    assert not (TUI / "connected.rs").exists()
+
+
+def test_console_modules_cannot_open_an_embedded_authority():
+    console = tui("connected_ops.rs")
+    for forbidden in (
+        "OrbitClient::open(",
+        "AuthoritativeHost::open(",
+        "SqliteStore::open(",
+        "AuthorityConnection::remote(",
+    ):
+        assert forbidden not in console, forbidden
+    # The console only produces typed requests; the shell performs the reads.
+    assert "pub fn parse(" in console
+    assert "pub fn approve_request(" in console
 
 
 def test_remote_client_cannot_open_authoritative_database():

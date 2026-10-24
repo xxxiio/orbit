@@ -62,9 +62,12 @@ live Herdr acceptance and public release verification.
   `backend.rs`, never in view rendering.
 - Connected mutations keep the accepted-vs-pending distinction and use the
   durable outbox; unsupported connected edit surfaces fail closed with a reason.
-- The original connected command palette remains opt-in through
-  `ORBIT_TUI_LEGACY_CONNECTED=1` while connected blueprint/note/habit parity is
-  completed.
+- The retired legacy connected shell is gone: there is no
+  `ORBIT_TUI_LEGACY_CONNECTED` switch and no separate connected event loop. One
+  shared shell serves both deployments; connected parity lives in the typed
+  backend plus the `:` connected console (`routine.list`, `strategy.list`,
+  `milestone.list`, `schedule.list` and the planning reads are accepted-state
+  only).
 - Legacy blueprints receive generated views; no migration.
 - Blueprint declarations are presentation metadata, not authority.
 - Agent job completion never completes an Orbit task.

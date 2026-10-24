@@ -1016,3 +1016,343 @@ fn console_batch_preview_queues_nothing_until_confirmed() {
     drop(app);
     let _ = std::fs::remove_file(&path);
 }
+
+fn snapshot_with_accepted_collections() -> serde_json::Value {
+    let mut snapshot = snapshot();
+    snapshot["routines"] = serde_json::json!([
+        {"id": "morning", "name": "Morning reset", "habit_ids": ["h1", "h2"]},
+        {"id": "evening", "name": "Evening review", "habit_ids": []}
+    ]);
+    snapshot["strategies"] = serde_json::json!([{
+        "project_id": "p1",
+        "mode": "standard",
+        "objective": "Ship the beta",
+        "progress_signals": ["tasks_completed"],
+        "criteria": [
+            {"key": "tests", "description": "Tests pass", "required": true, "status": "pending"}
+        ]
+    }]);
+    snapshot["milestones"] = serde_json::json!([{
+        "id": "m1", "project_id": "p1", "name": "Beta", "status": "planned"
+    }]);
+    snapshot["schedule"] = serde_json::json!([{
+        "id": "b1", "title": "Deep work", "starts_at_ms": 0, "ends_at_ms": 1_800_000,
+        "duration_minutes": 30, "flexibility": "movable",
+        "target_kind": "task", "target_id": "task-1"
+    }]);
+    snapshot
+}
+
+#[test]
+fn console_lists_accepted_routines_strategies_milestones_and_schedule() {
+    let authority = Authority::start(vec![(
+        "/v1/authoritative/snapshot",
+        snapshot_with_accepted_collections(),
+    )]);
+    let (mut app, path) = connected_app(&authority.base, "console-accepted-lists");
+
+    for (command, heading, marker) in [
+        ("routine.list", "ACCEPTED ROUTINES", "morning"),
+        ("strategy.list", "ACCEPTED STRATEGIES", "Ship the beta"),
+        ("milestone.list", "ACCEPTED MILESTONES", "Beta"),
+        ("schedule.list", "ACCEPTED SCHEDULE", "Deep work"),
+    ] {
+        match app.console_run(command) {
+            crate::app::ConsoleOutcome::Lines(lines) => {
+                let text = lines.join("\n");
+                assert!(text.contains(heading), "{command}: {text}");
+                assert!(
+                    text.to_lowercase().contains("accepted"),
+                    "{command} must label accepted state: {text}"
+                );
+                assert!(text.contains(marker), "{command}: {text}");
+                assert!(
+                    text.to_lowercase().contains("read-only"),
+                    "{command}: {text}"
+                );
+                assert!(
+                    text.contains("pending"),
+                    "{command} must say pending intents are excluded: {text}"
+                );
+            }
+            other => panic!("{command} must be a read-only listing, got {other:?}"),
+        }
+    }
+    // The listings are reads: nothing queued, nothing staged.
+    assert_eq!(app.client.pending_count(), 0);
+    assert!(app.pending_scenario.is_none());
+
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn console_accepted_lists_state_their_empty_accepted_state() {
+    let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
+    let (mut app, path) = connected_app(&authority.base, "console-empty-lists");
+    for (command, empty) in [
+        ("routine.list", "No accepted routines"),
+        ("strategy.list", "No accepted project strategies"),
+        ("milestone.list", "No accepted milestones"),
+        ("schedule.list", "No accepted schedule blocks"),
+    ] {
+        match app.console_run(command) {
+            crate::app::ConsoleOutcome::Lines(lines) => {
+                let text = lines.join("\n");
+                assert!(text.contains(empty), "{command}: {text}");
+                assert!(
+                    text.contains("stays pending"),
+                    "{command} must not imply the empty list is final: {text}"
+                );
+            }
+            other => panic!("{command} must be a read-only listing, got {other:?}"),
+        }
+    }
+    assert_eq!(app.client.pending_count(), 0);
+
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn console_suggestions_are_commands_not_help_prose() {
+    let (app, path) = offline_app("console-suggestions");
+    let suggestions = app.console_suggestions("");
+    assert!(!suggestions.is_empty());
+    for suggestion in &suggestions {
+        let verb = suggestion.split_whitespace().next().unwrap_or_default();
+        assert!(
+            verb.contains('.') || matches!(verb, "batch" | "resolve"),
+            "suggestion is not command-shaped: {suggestion:?}"
+        );
+        assert!(
+            !suggestion.contains(" — "),
+            "help prose leaked into suggestions: {suggestion:?}"
+        );
+        assert!(
+            !suggestion.trim_end().ends_with('.'),
+            "sentence leaked into suggestions: {suggestion:?}"
+        );
+    }
+    for expected in [
+        "routine.list",
+        "strategy.list",
+        "milestone.list",
+        "schedule.list",
+    ] {
+        assert!(
+            suggestions.iter().any(|line| line == expected),
+            "missing read-only listing suggestion {expected}: {suggestions:?}"
+        );
+    }
+
+    // Every concrete (placeholder-free) suggestion must be accepted by one of
+    // the two grammars, so Tab never fills something the console rejects.
+    for suggestion in &suggestions {
+        if suggestion.contains('<') || suggestion.contains('[') {
+            continue;
+        }
+        let parsed = crate::connected_actions::parse_intent(suggestion, "generated").is_ok()
+            || crate::connected_ops::parse(suggestion, 0, Some(1), "generated").is_ok();
+        assert!(parsed, "suggestion does not parse: {suggestion:?}");
+    }
+
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn a_flush_that_leaves_staged_uploads_pending_is_not_reported_as_success() {
+    let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
+    let (mut app, path) = connected_app(&authority.base, "flush-staged-upload");
+    let source = std::env::temp_dir().join(format!(
+        "orbit-tui-flush-staged-{}-{}.txt",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::write(&source, b"staged bytes").unwrap();
+    app.import_attachment(
+        "task".into(),
+        "task-1".into(),
+        source.to_string_lossy().into_owned(),
+        None,
+    )
+    .expect("staged upload");
+    assert_eq!(app.client.pending_attachment_count().unwrap(), 1);
+    assert_eq!(app.pending_count(), 1, "the cached count follows the stage");
+
+    let (_rows, _detail) = app.pending_flush_report(&[]);
+    assert_ne!(
+        app.status.kind,
+        StatusKind::Success,
+        "a flush leaving staged uploads must not read as success: {}",
+        app.status.text
+    );
+    assert!(
+        matches!(app.status.kind, StatusKind::Pending | StatusKind::Warning),
+        "{:?}: {}",
+        app.status.kind,
+        app.status.text
+    );
+    assert!(
+        app.status.text.contains("staged attachment upload"),
+        "{}",
+        app.status.text
+    );
+
+    // The `f` action path must report the same pending truth.
+    let flush = orbit_ui::AvailableAction::enabled("flush_pending", "Flush", None);
+    assert!(!app.execute_action(flush));
+    assert_ne!(
+        app.status.kind,
+        StatusKind::Success,
+        "a flush action leaving staged uploads must not read as success: {}",
+        app.status.text
+    );
+    assert!(
+        matches!(app.status.kind, StatusKind::Pending | StatusKind::Warning),
+        "{:?}: {}",
+        app.status.kind,
+        app.status.text
+    );
+
+    let _ = std::fs::remove_file(&source);
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn flush_refreshes_accepted_state_and_separates_accepted_from_pending() {
+    let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
+    let (mut app, path) = connected_app(&authority.base, "flush-refresh");
+    app.go_screen(Screen::Inbox);
+    // Build the docked detail cache for the selected task.
+    let _ = app.detail_model();
+    let builds = app.detail_cache_builds.get();
+    let refreshes = app.workspace_refreshes.get();
+
+    let intent = crate::connected_actions::parse_intent(
+        "project.create refresh-project Queued refresh",
+        "generated",
+    )
+    .expect("intent");
+    app.execute_pending(app::PendingAction::QueueIntent { intent });
+    assert_eq!(app.pending_count(), 1, "queue updates the cached count");
+    let id = app.client.last_queued_command_id().expect("queued id");
+
+    // The loopback authority rejects the command route, so the flush leaves the
+    // command pending/rejected; accepted state is still refreshed.
+    let _ = app.pending_flush_report(std::slice::from_ref(&id));
+
+    assert!(
+        app.workspace_refreshes.get() > refreshes,
+        "a non-empty flush must re-read accepted state"
+    );
+    let _ = app.detail_model();
+    assert!(
+        app.detail_cache_builds.get() > builds,
+        "a non-empty flush must invalidate the detail cache"
+    );
+    assert!(
+        app.status.text.contains("accepted by the server"),
+        "{}",
+        app.status.text
+    );
+    assert!(
+        app.status.text.contains("still pending/rejected"),
+        "{}",
+        app.status.text
+    );
+    assert!(
+        app.status.text.contains("0 accepted by the server"),
+        "{}",
+        app.status.text
+    );
+    assert_ne!(app.status.kind, StatusKind::Success, "{}", app.status.text);
+
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn a_failed_flush_does_not_claim_to_have_refreshed_accepted_state() {
+    let (mut app, path) = offline_app("flush-failed-refresh");
+    let intent =
+        crate::connected_actions::parse_intent("task.create Offline task", "generated").unwrap();
+    app.execute_pending(app::PendingAction::QueueIntent { intent });
+    let id = app.client.last_queued_command_id().expect("queued id");
+    let refreshes = app.workspace_refreshes.get();
+    let _ = app.pending_flush_report(std::slice::from_ref(&id));
+    assert_eq!(
+        app.workspace_refreshes.get(),
+        refreshes,
+        "an offline flush failure must not pretend to refresh accepted state"
+    );
+    assert_eq!(app.pending_count(), 1, "the command is still pending");
+    assert_eq!(app.status.kind, StatusKind::Error, "{}", app.status.text);
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn narrow_conflict_review_can_scroll_to_the_rejection_reason() {
+    let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
+    let (mut app, path) = connected_app(&authority.base, "conflict-narrow");
+    let intent = crate::connected_actions::parse_intent(
+        "project.create narrow-conflict Rejected project",
+        "generated",
+    )
+    .expect("intent");
+    app.execute_pending(app::PendingAction::QueueIntent { intent });
+    let id = app.client.last_queued_command_id().expect("queued id");
+    let flush = orbit_ui::AvailableAction::enabled("flush_pending", "Flush", None);
+    assert!(!app.execute_action(flush));
+
+    app.open_conflict(&id);
+    let Some(Modal::Conflict { review_lines, .. }) = app.modal.as_ref() else {
+        panic!("conflict modal missing: {}", app.status.text);
+    };
+    let reason_line = review_lines
+        .iter()
+        .find(|line| line.starts_with("Rejection reason:"))
+        .unwrap_or_else(|| panic!("no rejection reason in {review_lines:?}"))
+        .clone();
+    assert!(
+        reason_line.contains("404") || reason_line.contains("not found"),
+        "the server reason must be in the review: {reason_line}"
+    );
+
+    // A 60x18 terminal cannot show the whole review at once: the wrapped
+    // reason continues below the fold, so scrolling must reach it.
+    let mut seen_header = false;
+    let mut seen_reason = false;
+    for _ in 0..24 {
+        let text = rendered(&mut app, 60, 18);
+        if text.contains("Rejection reason:") {
+            seen_header = true;
+        }
+        if text.contains("404") || text.contains("not found") {
+            seen_reason = true;
+            break;
+        }
+        // One line at a time so the window cannot jump past the reason.
+        handle_key(&mut app, KeyCode::Down, KeyModifiers::NONE).unwrap();
+    }
+    assert!(
+        seen_header,
+        "the review must label a rejection reason: {}",
+        app.status.text
+    );
+    assert!(
+        seen_reason,
+        "scrolling must reach the server rejection reason at 60x18: {}",
+        app.status.text
+    );
+    assert!(app.modal_scroll > 0, "scrolling must move the review");
+
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}

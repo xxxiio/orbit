@@ -652,7 +652,7 @@ pub(super) fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
             );
             frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
-                    "Enter validate + queue PENDING replacement · Ctrl+U clear · Esc cancel (original kept)",
+                    "Enter validate + queue PENDING replacement · ↑/↓ PgUp/PgDn scroll · Ctrl+U clear · Esc cancel (original kept)",
                     app.theme.muted(),
                 ))),
                 chunks[2],

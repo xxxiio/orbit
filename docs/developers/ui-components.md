@@ -35,8 +35,8 @@ contracts. The renderer only sees resolved data.
    existing bodies cannot represent the output.
 4. Resolve the body in `crates/orbit-ui/src/resolve.rs`. Apply closed
    filter/sort/limit bindings through `binder.rs`; never accept raw SQL.
-5. Render the body in `crates/orbit-tui/src/render.rs`, including empty,
-   loading, error, stale, focus, selection and narrow-terminal behaviour.
+5. Render the body in `crates/orbit-tui/src/render/components.rs`, including
+   empty, loading, error, stale, focus, selection and narrow-terminal behaviour.
 6. Add schema, registry, resolution and terminal-buffer tests.
 7. Document the component and its options.
 

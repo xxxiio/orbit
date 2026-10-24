@@ -16,6 +16,7 @@ impl App {
             );
             return;
         }
+        self.refresh_pending_count();
         match self.client.pending_commands() {
             Ok(rows) => {
                 let detail = rows
@@ -50,9 +51,15 @@ impl App {
     /// never promotes an unacknowledged command: anything still pending or
     /// rejected keeps its row and its warning.
     ///
+    /// A non-empty flush can change accepted state (and staged uploads), so the
+    /// accepted workspace and the docked detail cache are refreshed before the
+    /// outbox is re-listed. Staged uploads that are still pending keep the
+    /// status on `Pending`, never `Success`.
+    ///
     /// The caller owns the open modal, so this returns the refreshed rows and
     /// the detail text for the first row instead of mutating `self.modal`.
     pub fn pending_flush_report(&mut self, ids: &[String]) -> (Vec<PendingCommand>, String) {
+        let before = self.client.pending_count();
         let (message, mut kind) = match self.client.flush_pending() {
             Ok((message, blocked)) => (
                 message,
@@ -67,6 +74,13 @@ impl App {
                 StatusKind::Error,
             ),
         };
+        if before > 0 && kind != StatusKind::Error {
+            // A flush can accept commands and staged uploads; the accepted view
+            // and the detail counts are stale until they are re-read.
+            self.refresh_after_mutation();
+            self.invalidate_detail_cache();
+        }
+        self.refresh_pending_count();
         let outcomes: Vec<String> = ids
             .iter()
             .map(|id| match self.client.command_outcome(id) {
@@ -75,22 +89,31 @@ impl App {
                 MutationOutcome::Conflict { reason, .. } => format!("{id}: rejected — {reason}"),
             })
             .collect();
-        if kind == StatusKind::Success
-            && outcomes
-                .iter()
-                .any(|line| line.contains("pending") || line.contains("rejected"))
-        {
+        let accepted = outcomes
+            .iter()
+            .filter(|line| line.ends_with(": accepted"))
+            .count();
+        let unresolved = outcomes.len() - accepted;
+        if kind == StatusKind::Success && unresolved > 0 {
             kind = StatusKind::Warning;
         }
         let uploads = self.client.pending_attachment_count().unwrap_or_default();
         let mut text = message;
         if !outcomes.is_empty() {
+            text.push_str(&format!(
+                " | {accepted} accepted by the server, {unresolved} still pending/rejected"
+            ));
             text.push_str(&format!(" | {}", outcomes.join("; ")));
         }
         if uploads > 0 {
+            // Staged uploads are not accepted content; never let a flush that
+            // leaves them queued read as success.
             text.push_str(&format!(
                 " | {uploads} staged attachment upload(s) still pending"
             ));
+            if kind == StatusKind::Success {
+                kind = StatusKind::Pending;
+            }
         }
         let rows = self.client.pending_commands().unwrap_or_default();
         let detail = rows
@@ -105,12 +128,23 @@ impl App {
         &self,
         review: &orbit_client::authority::ConflictReview,
     ) -> Vec<String> {
+        // The authority's rejection reason is the fact a reviewer needs. It is
+        // recorded on the unresolved row, not on the review token, so read it
+        // back by command identity and state plainly when it is unavailable.
+        let reason = match self.client.command_outcome(&review.rejected_id) {
+            MutationOutcome::Conflict { reason, .. } => reason,
+            MutationOutcome::Pending { state, .. } => {
+                format!("unavailable (recorded state: {state})")
+            }
+            MutationOutcome::Accepted => "unavailable (no rejection recorded)".to_owned(),
+        };
         vec![
             format!("Command: {} ({})", review.rejected_id, review.kind),
             format!("Local intent (NOT accepted): {}", review.rejected_action),
             format!("Outbox position: {}", review.ordinal),
             format!("Accepted server revision: {}", review.accepted_revision),
             format!("Accepted history: {}", review.history_fingerprint),
+            format!("Rejection reason: {reason}"),
             String::new(),
             "This command was REJECTED by the authority, not accepted.".into(),
             "Nothing is rebased automatically. A replacement is separate pending intent; the rejected audit row is retained."
@@ -233,6 +267,8 @@ impl App {
                 "Read-only: sync.status · sync.observe · note.search <q> · note.sync · note.cached · note.show <id|path>"
                     .into(),
                 "Read-only planning: plan.portfolio · plan.compare · plan.review · plan.focus <task> · plan.group --project <id>"
+                    .into(),
+                "Read-only accepted lists: routine.list · strategy.list · milestone.list · schedule.list"
                     .into(),
                 "Approval: plan.review first, then plan.approve --confirm at the same accepted revision".into(),
             ],
@@ -443,6 +479,34 @@ impl App {
                 Ok(lines) => ConsoleOutcome::Lines(lines),
                 Err(error) => ConsoleOutcome::Error(format!("Note read failed: {error}")),
             },
+            Command::RoutineList => match self.client.accepted_routines() {
+                Ok(rows) => ConsoleOutcome::Lines(planning_ui::render_accepted_routines(&rows)),
+                Err(error) => ConsoleOutcome::Error(format!(
+                    "Accepted routines unavailable: {}",
+                    error.message
+                )),
+            },
+            Command::StrategyList => match self.client.accepted_strategies() {
+                Ok(rows) => ConsoleOutcome::Lines(planning_ui::render_accepted_strategies(&rows)),
+                Err(error) => ConsoleOutcome::Error(format!(
+                    "Accepted strategies unavailable: {}",
+                    error.message
+                )),
+            },
+            Command::MilestoneList => match self.client.accepted_milestones() {
+                Ok(rows) => ConsoleOutcome::Lines(planning_ui::render_accepted_milestones(&rows)),
+                Err(error) => ConsoleOutcome::Error(format!(
+                    "Accepted milestones unavailable: {}",
+                    error.message
+                )),
+            },
+            Command::ScheduleList => match self.client.accepted_schedule() {
+                Ok(rows) => ConsoleOutcome::Lines(planning_ui::render_accepted_schedule(&rows)),
+                Err(error) => ConsoleOutcome::Error(format!(
+                    "Accepted schedule unavailable: {}",
+                    error.message
+                )),
+            },
             Command::ObserveSync => match self.client.connected_observe_sync_report() {
                 Ok(line) => ConsoleOutcome::Lines(vec![line]),
                 Err(error) => ConsoleOutcome::Error(error),
@@ -457,9 +521,15 @@ fn empty_pending_detail() -> String {
 }
 
 /// Every command template the connected console accepts, without descriptions.
-/// The grammar itself stays in `connected_actions`.
+/// The grammar itself stays in `connected_actions`. Help prose is filtered out:
+/// a suggestion must be command-shaped (its first token carries the `.` verb
+/// namespace), so Tab can never fill a sentence that cannot parse.
 fn console_commands() -> Vec<&'static str> {
     let mut commands = vec![
+        "routine.list",
+        "strategy.list",
+        "milestone.list",
+        "schedule.list",
         "batch <command; command>",
         "resolve <rejected-command-id> <replacement-command>",
         "sync.status",
@@ -478,10 +548,23 @@ fn console_commands() -> Vec<&'static str> {
     for section in connected_actions::Section::ALL {
         for line in connected_actions::help(section) {
             let command = line.split(" — ").next().unwrap_or(line).trim();
-            if !command.is_empty() {
+            if is_command_shaped(command) && !commands.contains(&command) {
                 commands.push(command);
             }
         }
     }
     commands
+}
+
+/// A console suggestion must start with a `verb` token in the dotted namespace;
+/// section headers and help prose are never filled into the prompt.
+fn is_command_shaped(line: &str) -> bool {
+    let mut words = line.split_whitespace();
+    let Some(verb) = words.next() else {
+        return false;
+    };
+    verb.contains('.')
+        && verb
+            .chars()
+            .all(|character| character.is_alphanumeric() || matches!(character, '.' | '_' | '-'))
 }

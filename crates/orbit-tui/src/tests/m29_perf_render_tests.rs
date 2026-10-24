@@ -228,3 +228,83 @@ fn quick_edit_refreshes_the_project_without_rereading_the_workspace() {
         Some("high")
     );
 }
+
+fn offline_connected_app(stem: &str) -> (App, std::path::PathBuf) {
+    let path = std::env::temp_dir().join(format!(
+        "orbit-tui-{stem}-{}-{}.db",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let backend = crate::backend::Backend::open_connected_with_identity(
+        &path,
+        "https://example.invalid",
+        None,
+    )
+    .expect("connected backend");
+    (
+        App::open_with_backend(backend).expect("connected app"),
+        path,
+    )
+}
+
+#[test]
+fn render_reads_the_cached_pending_count_and_never_the_backend() {
+    let (mut app, path) = offline_connected_app("m29-pending-cache");
+    assert!(app.client.is_connected());
+
+    // The frame header shows `N pending`; it must not ask the client per frame.
+    crate::backend::diagnostics::reset_pending_count_reads();
+    for _ in 0..3 {
+        render(&mut app, 120, 35);
+    }
+    assert_eq!(
+        crate::backend::diagnostics::pending_count_reads(),
+        0,
+        "rendering must read the cached pending count, not the backend"
+    );
+
+    let intent =
+        crate::connected_actions::parse_intent("project.create cached-probe Queued", "generated")
+            .expect("intent");
+    app.execute_pending(app::PendingAction::QueueIntent { intent });
+    assert_eq!(
+        app.pending_count(),
+        1,
+        "queueing refreshes the cached count"
+    );
+
+    crate::backend::diagnostics::reset_pending_count_reads();
+    let text = {
+        let backend = TestBackend::new(120, 35);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render::draw(frame, &mut app))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(
+        crate::backend::diagnostics::pending_count_reads(),
+        0,
+        "the refreshed cache is enough for the header"
+    );
+    assert!(text.contains("1 pending"), "{text}");
+
+    // Flushing refreshes the count too, so the shell never shows a stale depth.
+    let _ = app.pending_flush_report(&[]);
+    assert_eq!(app.pending_count(), app.client.pending_count());
+
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}

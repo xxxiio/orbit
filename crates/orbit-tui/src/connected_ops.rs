@@ -34,6 +34,14 @@ pub enum Command {
     FocusGroup(GroupFocusRequest),
     /// Read one accepted Markdown body by id or vault-relative path.
     NoteShow(String),
+    /// Read-only accepted routine compositions.
+    RoutineList,
+    /// Read-only accepted project strategies.
+    StrategyList,
+    /// Read-only accepted milestones.
+    MilestoneList,
+    /// Read-only accepted schedule blocks.
+    ScheduleList,
     /// Compare the cached replica report with a live authority observation.
     ObserveSync,
 }
@@ -137,6 +145,33 @@ pub fn parse(
                 return Err("usage: sync.observe".into());
             }
             Ok(Some(Command::ObserveSync))
+        }
+        // Accepted-state listings. They read the accepted snapshot only; a
+        // connected deployment without one fails inside the typed client, and
+        // queued intentions never appear in these rows.
+        "routine.list" => {
+            if source != "routine.list" {
+                return Err("usage: routine.list".into());
+            }
+            Ok(Some(Command::RoutineList))
+        }
+        "strategy.list" => {
+            if source != "strategy.list" {
+                return Err("usage: strategy.list".into());
+            }
+            Ok(Some(Command::StrategyList))
+        }
+        "milestone.list" => {
+            if source != "milestone.list" {
+                return Err("usage: milestone.list".into());
+            }
+            Ok(Some(Command::MilestoneList))
+        }
+        "schedule.list" => {
+            if source != "schedule.list" {
+                return Err("usage: schedule.list".into());
+            }
+            Ok(Some(Command::ScheduleList))
         }
         // These operations are covered by shared shell views; say where rather
         // than silently reporting an unknown command.

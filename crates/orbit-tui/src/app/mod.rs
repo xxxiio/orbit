@@ -36,12 +36,21 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 /// A missing/unknown state is deliberately reported as pending: the TUI must
 /// never promote an unobserved command to accepted. Conflicts name their state
 /// and reason so the user can act on the outbox instead of seeing success.
+/// `connected` is what makes an absent outcome fail closed: a connected
+/// mutation whose disposition was never recorded is pending, not accepted,
+/// while a local authority commits synchronously and needs no receipt.
 fn describe_mutation_outcome(
     outcome: Option<MutationOutcome>,
+    connected: bool,
     text: String,
 ) -> (String, StatusKind) {
     match outcome {
-        None | Some(MutationOutcome::Accepted) => (text, StatusKind::Success),
+        None if !connected => (text, StatusKind::Success),
+        None => (
+            format!("Pending (not accepted; no durable disposition recorded): {text}"),
+            StatusKind::Pending,
+        ),
+        Some(MutationOutcome::Accepted) => (text, StatusKind::Success),
         Some(MutationOutcome::Pending { state, .. }) => {
             let state = if state == "unavailable" {
                 "state unavailable; treated as pending".to_owned()
@@ -92,6 +101,9 @@ pub struct App {
     pub(crate) detail_cache_builds: std::cell::Cell<u64>,
     #[cfg(test)]
     pub(crate) workspace_refreshes: std::cell::Cell<u64>,
+    /// Cached durable pending count (outbox commands plus staged uploads).
+    /// Render reads this field; only lifecycle events re-read the client.
+    pub(crate) pending_count: usize,
     pub modal_scroll: usize,
     pub sidebar_selection: usize,
     pub modal: Option<Modal>,
@@ -170,6 +182,7 @@ impl App {
             detail_cache_builds: std::cell::Cell::new(0),
             #[cfg(test)]
             workspace_refreshes: std::cell::Cell::new(0),
+            pending_count: 0,
             modal_scroll: 0,
             sidebar_selection: 0,
             modal: None,
@@ -235,7 +248,20 @@ impl App {
     /// Report the exact per-command disposition instead of inferring success
     /// from a quiet client. Key handlers in `main` use this too.
     pub(crate) fn mutation_status(&mut self, text: impl Into<String>) -> (String, StatusKind) {
-        describe_mutation_outcome(self.client.take_outcome(), text.into())
+        let connected = self.client.is_connected();
+        describe_mutation_outcome(self.client.take_outcome(), connected, text.into())
+    }
+
+    /// Durable pending count as of the last queue/flush/refresh/inspector read.
+    /// Rendering must never call the backend, so this is the only value the
+    /// frame chrome uses.
+    pub fn pending_count(&self) -> usize {
+        self.pending_count
+    }
+
+    /// Re-read the client's pending sum (outbox commands plus staged uploads).
+    pub(crate) fn refresh_pending_count(&mut self) {
+        self.pending_count = self.client.pending_count();
     }
 
     pub fn notify(&mut self, text: impl Into<String>, kind: StatusKind) {

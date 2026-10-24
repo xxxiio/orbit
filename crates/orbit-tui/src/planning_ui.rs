@@ -1090,6 +1090,150 @@ pub fn render_scenarios(
     lines
 }
 
+/// Read-only accepted routine listing for the connected console.
+///
+/// Only the last accepted composition is shown; a queued `routine.*` intent is
+/// pending local intent and appears under `!`, never here.
+pub fn render_accepted_routines(
+    rows: &[orbit_runtime::authority_routines::RoutineRecord],
+) -> Vec<String> {
+    let mut lines = vec![
+        "ACCEPTED ROUTINES • last accepted server state".into(),
+        "Read-only • pending routine intents are not shown; inspect them with !".into(),
+        format!("Routines: {}", rows.len()),
+        String::new(),
+    ];
+    if rows.is_empty() {
+        lines.push(
+            "No accepted routines. Any queued routine command stays pending until the server accepts it."
+                .into(),
+        );
+        return lines;
+    }
+    for routine in rows {
+        lines.push(format!("{} — {}", routine.id, compact(&routine.name, 60)));
+        lines.push(format!(
+            "   Habits: {}",
+            if routine.habit_ids.is_empty() {
+                "none".to_owned()
+            } else {
+                routine.habit_ids.join(", ")
+            }
+        ));
+    }
+    lines
+}
+
+/// Read-only accepted project-strategy listing for the connected console.
+pub fn render_accepted_strategies(
+    rows: &[orbit_runtime::authority_strategy::StrategyRecord],
+) -> Vec<String> {
+    let mut lines = vec![
+        "ACCEPTED STRATEGIES • last accepted server state".into(),
+        "Read-only • pending strategy intents are not shown; inspect them with !".into(),
+        format!("Strategies: {}", rows.len()),
+        String::new(),
+    ];
+    if rows.is_empty() {
+        lines.push(
+            "No accepted project strategies. Any queued strategy command stays pending until the server accepts it."
+                .into(),
+        );
+        return lines;
+    }
+    for strategy in rows {
+        lines.push(format!(
+            "{} — mode: {}",
+            strategy.project_id,
+            compact(&strategy.mode, 40)
+        ));
+        lines.push(format!(
+            "   Objective: {}",
+            strategy
+                .objective
+                .as_deref()
+                .map(|objective| compact(objective, 90))
+                .filter(|objective| !objective.is_empty())
+                .unwrap_or_else(|| "(none)".into())
+        ));
+        lines.push(format!(
+            "   Progress signals: {} • criteria: {}",
+            if strategy.progress_signals.is_empty() {
+                "none".to_owned()
+            } else {
+                strategy.progress_signals.join(", ")
+            },
+            strategy.criteria.len()
+        ));
+    }
+    lines
+}
+
+/// Read-only accepted milestone listing for the connected console.
+pub fn render_accepted_milestones(
+    rows: &[orbit_runtime::authority_milestones::MilestoneRecord],
+) -> Vec<String> {
+    let mut lines = vec![
+        "ACCEPTED MILESTONES • last accepted server state".into(),
+        "Read-only • pending milestone intents are not shown; inspect them with !".into(),
+        format!("Milestones: {}", rows.len()),
+        String::new(),
+    ];
+    if rows.is_empty() {
+        lines.push(
+            "No accepted milestones. Any queued milestone command stays pending until the server accepts it."
+                .into(),
+        );
+        return lines;
+    }
+    for milestone in rows {
+        lines.push(format!(
+            "{} — {} [{}]",
+            milestone.id,
+            compact(&milestone.name, 60),
+            milestone.status
+        ));
+        lines.push(format!("   Project: {}", milestone.project_id));
+    }
+    lines
+}
+
+/// Read-only accepted schedule-block listing for the connected console.
+pub fn render_accepted_schedule(
+    rows: &[orbit_runtime::authority_schedule::ScheduleRecord],
+) -> Vec<String> {
+    let mut lines = vec![
+        "ACCEPTED SCHEDULE • last accepted server state".into(),
+        "Read-only • pending schedule intents are not shown; inspect them with !".into(),
+        format!("Blocks: {}", rows.len()),
+        String::new(),
+    ];
+    if rows.is_empty() {
+        lines.push(
+            "No accepted schedule blocks. Any queued schedule command stays pending until the server accepts it."
+                .into(),
+        );
+        return lines;
+    }
+    for block in rows {
+        lines.push(format!(
+            "{} — {} ({} → {} ms, {} min, {})",
+            block.id,
+            compact(&block.title, 50),
+            block.starts_at_ms,
+            block.ends_at_ms,
+            block.duration_minutes,
+            block.flexibility
+        ));
+        lines.push(format!(
+            "   Target: {} {}",
+            block.target_kind,
+            block.target_id.as_deref().unwrap_or("-")
+        ));
+    }
+    lines
+}
+
 #[cfg(test)]
 mod scenario_terminal_tests {
     use super::*;

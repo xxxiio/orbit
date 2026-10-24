@@ -729,6 +729,7 @@ pub fn help(section: Section) -> &'static [&'static str] {
             "task.plan <task-id> <minutes|-> <earliest-ms|-> <deadline-ms|->",
         ],
         Section::Schedule => &[
+            "schedule.list — accepted schedule blocks only; queued edits stay pending",
             "schedule.create <id> <start-ms> <minutes> <fixed|movable> <standalone|task|habit> <id|-> <title...>",
             "schedule.move <id> <start-ms>",
             "schedule.resize <id> <minutes>",
@@ -737,12 +738,14 @@ pub fn help(section: Section) -> &'static [&'static str] {
             "schedule.delete <id>",
         ],
         Section::Routines => &[
+            "routine.list — accepted routines only; queued edits stay pending",
             "routine.create <id> <habit1,habit2|-> <name...>",
             "routine.rename <id> <name...>",
             "routine.habits <id> <habit1,habit2|->",
             "routine.delete <id>",
         ],
         Section::Milestones => &[
+            "milestone.list — accepted milestones only; queued edits stay pending",
             "milestone.create <id> <project-id> <name...>",
             "milestone.rename <id> <name...>",
             "milestone.status <id> <planned|in_progress|blocked|completed|cancelled>",
@@ -750,6 +753,7 @@ pub fn help(section: Section) -> &'static [&'static str] {
             "milestone.delete <id>",
         ],
         Section::Strategies => &[
+            "strategy.list — accepted project strategies only",
             "strategy.configure <project-id> <mode> <signals> <objective|-> [key:true|false:description ...]",
             "strategy.objective <project-id> <objective...|->",
             "strategy.signals <project-id> <signal1,signal2>",
