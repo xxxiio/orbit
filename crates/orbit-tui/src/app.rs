@@ -4871,7 +4871,7 @@ impl App {
     }
 
     /// Quick edit deliberately reuses the same commands as the full forms:
-    /// rename, rich-detail update and status transition. No new mutation API.
+    /// rename and rich-detail update. No new mutation API.
     fn submit_quick_edit_task(&mut self, form: &FormState, task_id: &str) -> Result<(), String> {
         let current = self
             .task_dto(task_id)

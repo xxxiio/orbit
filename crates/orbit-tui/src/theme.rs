@@ -4,7 +4,7 @@
 //! three semantic signals (success/warning/danger). Colour is never the only
 //! state signal, so `NO_COLOR` and `TERM=dumb` sessions keep every distinction:
 //!
-//! * status always carries a glyph (`✓ ! ◐ ▶ ○ ~`);
+//! * status always carries a glyph (`✓ ! ⊘ ◐ ◔ ◑ ◉ ▶ ○ ~`);
 //! * selection always carries a `▸` rail and a filled row;
 //! * focus always carries a heavy border and a bright title.
 use ratatui::style::{Color, Modifier, Style};
@@ -163,26 +163,37 @@ impl Theme {
         match status {
             "done" | "completed" | "mastered" | "reported" | "active" | "succeeded"
             | "supported" | "evaluated" | "recorded" => self.success(),
-            "blocked" | "failed" | "unreachable" | "cancelled" | "error" | "rejected" => {
-                self.danger()
-            }
+            "blocked" | "failed" | "unreachable" | "cancelled" | "interrupted" | "error"
+            | "rejected" => self.danger(),
             "ready" | "review" | "waiting" | "waiting_input" | "launching" | "in_progress"
             | "investigating" | "studying" | "practicing" | "analysis" | "running"
             | "implementing" | "preparing" | "assessment" => self.warning(),
             "inbox" | "planned" | "proposed" | "backlog" | "designed" | "due" | "queued" => {
                 self.info()
             }
+            "archived" => self.muted(),
             _ => self.text(),
         }
     }
 
+    /// Single-cell glyph for a status, kept in step with [`Self::status`].
+    ///
+    /// Glyphs are shared only inside a family: the failure states (`blocked`,
+    /// `failed`, `unreachable`, `cancelled`) all use `!`, and task
+    /// readiness/review/waiting use `◐`. Agent runtime states are told apart
+    /// even without colour: `◔` preparing, `◑` launching, `◉` waiting input,
+    /// `⊘` interrupted.
     pub fn status_glyph(status: &str) -> &'static str {
         match status {
             "done" | "completed" | "mastered" | "reported" | "succeeded" | "supported"
             | "evaluated" | "recorded" => "✓",
-            "blocked" | "failed" | "unreachable" | "cancelled" | "interrupted" => "!",
+            "blocked" | "failed" | "unreachable" | "cancelled" => "!",
+            "interrupted" => "⊘",
             "rejected" => "✕",
-            "ready" | "review" | "waiting" | "waiting_input" | "launching" | "preparing" => "◐",
+            "ready" | "review" | "waiting" => "◐",
+            "preparing" => "◔",
+            "launching" => "◑",
+            "waiting_input" => "◉",
             "in_progress" | "investigating" | "studying" | "practicing" | "analysis"
             | "running" | "implementing" => "▶",
             "inbox" | "proposed" | "planned" | "backlog" | "designed" | "due" | "queued" => "○",
@@ -217,6 +228,7 @@ pub const LEGEND_HEIGHT: u16 = 1;
 #[cfg(test)]
 mod tests {
     use super::Theme;
+    use ratatui::style::Style;
     use std::collections::BTreeSet;
 
     const TASK_STATUSES: &[&str] = &[
@@ -277,6 +289,39 @@ mod tests {
             // Every status also has a meaningful style decision.
             let _ = Theme { color: true }.status(&status);
         }
+
+        // Agent runtime states differ semantically, so they must not share a
+        // glyph with each other or hide behind the failure, idle, or task
+        // readiness families.
+        let runtime = [
+            "preparing",
+            "launching",
+            "running",
+            "waiting_input",
+            "interrupted",
+        ];
+        let glyphs: BTreeSet<&str> = runtime
+            .iter()
+            .map(|status| Theme::status_glyph(status))
+            .collect();
+        assert_eq!(glyphs.len(), runtime.len(), "{glyphs:?}");
+        for status in runtime {
+            let glyph = Theme::status_glyph(status);
+            assert_ne!(glyph, "·", "{status} has no glyph");
+            assert_ne!(glyph, "!", "{status} is not a failure state");
+            assert_ne!(glyph, "○", "{status} is not idle");
+            assert_ne!(glyph, "◐", "{status} is not a task readiness state");
+        }
+        assert_ne!(
+            Theme::status_glyph("waiting_input"),
+            Theme::status_glyph("waiting")
+        );
+        // The glyph exists, so the style must make a decision for it too.
+        assert_ne!(
+            Theme { color: false }.status("interrupted"),
+            Style::default()
+        );
+        assert_ne!(Theme { color: false }.status("archived"), Style::default());
     }
 
     #[test]

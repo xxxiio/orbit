@@ -5456,9 +5456,13 @@ mod m29_layout_presentation_tests {
             .selection
             .iter()
             .enumerate()
-            .find(|(_, item)| item.title.starts_with("Alpha"))
+            .find(|(_, item)| item.title.starts_with("Beta"))
             .map(|(index, item)| (index, item.id.clone()))
-            .expect("Alpha card");
+            .expect("Beta card");
+        assert!(
+            selected > 0,
+            "the selection index must be non-zero to prove stability, not identity"
+        );
         app.selected = selected;
         assert_eq!(
             app.current_selected_id().as_deref(),
@@ -5466,7 +5470,7 @@ mod m29_layout_presentation_tests {
         );
         assert_eq!(
             app.detail_model().unwrap().title,
-            "Alpha task with a long title"
+            "Beta task with a long title"
         );
 
         app.refresh_project();
@@ -5477,7 +5481,7 @@ mod m29_layout_presentation_tests {
         );
         assert_eq!(
             app.detail_model().unwrap().title,
-            "Alpha task with a long title"
+            "Beta task with a long title"
         );
 
         app.execute_pending(app::PendingAction::SetTaskStatus {
@@ -5491,7 +5495,7 @@ mod m29_layout_presentation_tests {
         );
         assert_eq!(
             app.detail_model().unwrap().title,
-            "Alpha task with a long title"
+            "Beta task with a long title"
         );
 
         app.refresh_workspace();
@@ -5502,7 +5506,7 @@ mod m29_layout_presentation_tests {
         );
         assert_eq!(
             app.detail_model().unwrap().title,
-            "Alpha task with a long title"
+            "Beta task with a long title"
         );
     }
 

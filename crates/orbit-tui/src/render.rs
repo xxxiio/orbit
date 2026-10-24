@@ -2793,14 +2793,19 @@ fn multiline_preview(
     };
     let mut caret_row = row_of_line.get(caret_line).copied().unwrap_or(0) + row_in_line;
     let mut caret_row_column = caret_column.saturating_sub(row_in_line * width);
-    // A caret at the end of an exactly full wrapped row belongs on the next
-    // (empty) row, not past the value column where it would be clipped.
+    // A caret at the end of an exactly full wrapped row needs a next row to be
+    // visible: on the final line insert one, otherwise clamp to the last cell
+    // of that row so the following line keeps its place.
     if caret_column > 0 && caret_column == line_length && caret_column.is_multiple_of(width) {
-        let insert_at = row_of_line.get(caret_line).copied().unwrap_or(0) + line_rows;
-        let insert_at = insert_at.min(rows.len());
-        rows.insert(insert_at, String::new());
-        caret_row = insert_at;
-        caret_row_column = 0;
+        if caret_line + 1 == lines.len() {
+            let insert_at = row_of_line.get(caret_line).copied().unwrap_or(0) + line_rows;
+            let insert_at = insert_at.min(rows.len());
+            rows.insert(insert_at, String::new());
+            caret_row = insert_at;
+            caret_row_column = 0;
+        } else {
+            caret_row_column = width - 1;
+        }
     }
     let start = caret_row
         .saturating_sub(max_rows.saturating_sub(2))
@@ -2849,7 +2854,7 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
         Line::from("a or s            contextual action menu"),
         Line::from("c / C             new task / workflow item"),
         Line::from("e                 edit selected task, project or workflow item"),
-        Line::from("E                 quick edit a task (title, priority, next status)"),
+        Line::from("E                 quick edit a task (title, priority)"),
         Line::from("S                 status transitions for the selected task"),
         Line::from("K                 acceptance criteria for the selected task"),
         Line::from("H                 activity history for the selected task"),
@@ -3184,6 +3189,14 @@ mod tests {
         assert_eq!(rows[0], "0123456789");
         assert_eq!(rows[1], "");
         assert_eq!((caret_row, caret_column), (1, 0));
+    }
+
+    #[test]
+    fn caret_at_a_wrap_boundary_before_another_line_stays_on_that_row() {
+        let value = "0123456789\nabc";
+        let (rows, caret_row, caret_column) = multiline_preview(value, 10, 10, 4);
+        assert_eq!(rows, vec!["0123456789", "abc"], "{rows:?}");
+        assert_eq!((caret_row, caret_column), (0, 9));
     }
 
     #[test]
