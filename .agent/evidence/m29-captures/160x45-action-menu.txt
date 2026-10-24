@@ -1,0 +1,45 @@
+ ORBIT › Atlas Console  Basic v1   3 projects · 1 inbox
+╭ Orbit ────────────╮   Overview │ ▸ Tasks │   Board │   Timeline  [ ] switch view                                            ╭ Details ───────────────────────╮
+│    Home / Today   │┏ Tasks ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓│Map the command palette         │
+│    Inbox          │┃  TITLE                                                                STATUS      PRIORITY DEADLINE   ┃│▶ inprogress                    │
+│    Projects       │┃  Trim the board cards                                                 ~ deferred                      ┃│                                │
+│    Agents         │┃  Cancel the old export path                                           ! cancelled                     ┃│PROPERTIES                      │
+│▸ ● Atlas Console ○│┃▸ Map the command palette                                              ▶ in_progre…         2026-10-25 ┃│status       in_progress        │
+│    Beacon Sync ○  │┃  Wire the task table                                                  ◐ ready              2026-10-26 ┃│readiness    inprogress         │
+│    Cipher Notes ○ │┃  Audit sync retries                                                   ◐ review             2026-10-27 ┃│actionable   false              │
+│                   │┃  Harden the offline queue                                             ▶ in_progre…         2026-10-28 ┃│estimate     90m                │
+│                   │┃  Review attachment staging                                            ! blocked            2026-10-29 ┃│due          2026-10-25         │
+│                   │┃  Document the connected console                                       ✓ done               2026-10-30 ┃│deadline     2026-10-25 12:31Z  │
+│                   │┃                                                                                                       ┃│Attachments  none               │
+│                   │┃          ╔ Actions · Map the command palette ═══════════════════════════════════════════════════════════╗                               │
+│                   │┃          ║ Suggested                                                                                    ║CTIONS 19 · press a            │
+│                   │┃          ║▸ Enter Open details                                                                          ║                               │
+│                   │┃          ║  e     Edit task                                                                             ║                               │
+│                   │┃          ║        Move to waiting                                                                       ║                               │
+│                   │┃          ║        Move to blocked                                                                       ║                               │
+│                   │┃          ║        Move to review                                                                        ║                               │
+│                   │┃          ║        Move to deferred                                                                      ║                               │
+│                   │┃          ║        Move to done                                                                          ║                               │
+│                   │┃          ║        Move to cancelled                                                                     ║                               │
+│                   │┃          ║  E     Quick edit                                                                            ║                               │
+│                   │┃          ║ More actions                                                                                 ║                               │
+│                   │┃          ║        Edit details                                                                          ║                               │
+│                   │┃          ║  K     Acceptance criteria                                                                   ║                               │
+│                   │┃          ║  i     Attach file                                                                           ║                               │
+│                   │┃          ║  F     Attachments                                                                           ║                               │
+│                   │┃          ║ Enter run selected · ↑/↓/PgUp/PgDn scroll · Esc close · dimmed rows explain why              ║                               │
+│                   │┃          ╚══════════════════════════════════════════════════════════════════════════════════════════════╝                               │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+╰───────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛╰────────────────────────────────╯
+ Actions: Enter Open · e Edit · S Status · a more actions · q quit
+ Ctrl+Q quit · q quit (not typing)  Atlas Console • Basic v1 • 4 views • r refresh   j/k select · h/l component · D details · Esc back

@@ -1,0 +1,45 @@
+ ORBIT › Atlas Console  Basic v1   3 projects · 1 inbox
+╭ Orbit ────────────╮   Overview │   Tasks │ ▸ Board │   Timeline  [ ] switch view                                            ╭ Details ───────────────────────╮
+│    Home / Today   │┏ Task board ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓│Wire the task table             │
+│    Inbox          │┃  Inbox 0              Planned 0          ▾ Ready 1              In progress 2       Waiting 0         ┃│◐ ready                         │
+│    Projects       │┃──────────────────── ──────────────────── ━━━━━━━━━━━━━━━━━━━━ ─────────────────── ─────────────────── ┃│                                │
+│    Agents         │┃— empty              — empty              ▸ ◐ Wire the task t…   ▶ Map the comman… — empty             ┃│PROPERTIES                      │
+│▸ ● Atlas Console ○│┃                                                                 ▶ Harden the off…                     ┃│status       ready              │
+│    Beacon Sync ○  │┃                                                                                                       ┃│readiness    ready              │
+│    Cipher Notes ○ │┃                                                                                                       ┃│actionable   true               │
+│                   │┃                                                                                                       ┃│estimate     45m                │
+│                   │┃                                                                                                       ┃│due          2026-10-26         │
+│                   │┃                                                                                                       ┃│deadline     2026-10-26 12:31Z  │
+│                   │┃                                                                                                       ┃│Attachments  none               │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│ACTIONS 17 · press a            │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃                                                                                                       ┃│                                │
+│                   │┃columns 1-5 of 10 · j/k card · h/l panel · S status · E quick edit · Enter open                        ┃│                                │
+╰───────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛╰────────────────────────────────╯
+ Actions: Enter Open · e Edit · S Status · a more actions · q quit
+ Ctrl+Q quit · q quit (not typing)  Atlas Console • Basic v1 • 4 views • r refresh   j/k select · h/l component · D details · Esc back

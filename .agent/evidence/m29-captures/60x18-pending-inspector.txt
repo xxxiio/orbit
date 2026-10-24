@@ -1,0 +1,18 @@
+ ORBIT › Projects
+ Getting started: press c to create your first project.
+Ba╔ Pending commands · 1 queued (not accepted) ══════════╗
+▸ ║▸ [pending] project   project command project-3784724-║
+Pr║                                                      ║…
+  ║                                                      ║
+┏ ║                                                      ║━┓
+┃N║                                                      ║ ┃
+┃ ║command: command-3784724-1792845076571052577-2        ║ ┃
+┃ ║kind: project                                         ║ ┃
+┃ ║state: pending                                        ║ ┃
+┃ ║attempts: not recorded by this replica                ║ ┃
+┃ ║local intent: {"name":"Pending                        ║ ┃
+┃ ║Scope","project_id":"project-3784724-17928450765707932║ ┃
+┃ ║f flush · c review conflict · Enter detail · r refresh║ ┃
+┗━╚══════════════════════════════════════════════════════╝━┛
+ Actions: / Search · r Refresh · a more · q quit
+ Ctrl+Q quit · q quit (not typing)  Queued intent only: [pen

@@ -1,0 +1,18 @@
+ ORBIT › Home / Today   3 projects · 1 inbox
+▸ Workspace │  Sidebar │ Tab switch · D details
+┏ Today / Next • 12h • [/… ┓╭ Today / Next tasks ──────────╮
+┃Today / Next              ┃│  ○ Wire the task table       │
+┃TODAY / NEXT  •  accepted ┃│  ○ Reconnect the replica     │
+┃revision 49  •  evaluated ┃│  ~ Map the command palette   │
+┃1792845062011             ┃│  ~ Audit sync retries        │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛╰──────────────────────────────╯
+╭ Projects ──────────────────╮╭ Inbox ─────────────────────╮
+│              3             ││              1             │
+│          Projects          ││            Inbox           │
+╰────────────────────────────╯╰────────────────────────────╯
+╭ Ready ─────────────╮╭ Inbox ─────────────────────────────╮
+│          2         ││  ○ Collect note search examples    │
+│        Ready       ││                                    │
+╰────────────────────╯╰────────────────────────────────────╯
+ Actions: c New · / Search · r Refresh · a more · q quit
+ Ctrl+Q quit · q quit (not typing)  Ready • ? help • : palet

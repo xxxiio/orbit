@@ -1,0 +1,18 @@
+ ORBIT › Atlas Console  Basic v1   3 projects · 1 inbox
+▸ Workspace │  Sidebar │ Tab switch · D details
+   Overview │   Tasks │ ▸ Board │   Timeline
+┏ Task board ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃  Planned 0                  ▾ Ready 1                    ┃
+┃──────────────────────────── ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ┃
+┃— empty                      ▸ ◐ Wire the task table      ┃
+┃                                                          ┃
+┃                                                          ┃
+┃                                                          ┃
+┃                                                          ┃
+┃                                                          ┃
+┃                                                          ┃
+┃                                                          ┃
+┃columns 2-3 of 10 · j/k card · h/l panel · S status       ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ Actions: Enter Open · e Edit · S Status · a more · q quit
+ Ctrl+Q quit · q quit (not typing)  Atlas Console • Basic v1

@@ -1,0 +1,30 @@
+ ORBIT › Projects   3 projects · 1 inbox
+╭ Orbit ─────────────╮Projects  Enter open · c new project · : palette · q quit · ? help
+│    Home / Today    │
+│    Inbox           │┏ 3 project(s) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+│▸ ● Projects        │┃▸ ○ Atlas Console  standard · criteria 0/0 · ready                          ┃
+│    Agents          │┃  ○ Beacon Sync  standard · criteria 0/0 · ready                            ┃
+│    Atlas Console ○ │┃  ○ Cipher Notes  standard · criteria 0/0 · ready                           ┃
+│    Beacon Sync ○   │┃                                                                            ┃
+│    Cipher Notes ○  │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+╰────────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ Actions: Enter Open · e Edit · W Workflow · a more actions · q quit
+ Ctrl+Q quit · q quit (not typing)  g… h Home · i Inbox · p Projects · a Agents

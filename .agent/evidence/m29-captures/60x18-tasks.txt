@@ -1,0 +1,18 @@
+ ORBIT › Atlas Console  Basic v1   3 projects · 1 inbox
+▸ Workspace │  Sidebar │ Tab switch · D details
+   Overview │ ▸ Tasks │   Board │   Timeline
+┏ Tasks ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃  TITLE                              STATUS      PRIORITY ┃
+┃  Trim the board cards               ~ deferred           ┃
+┃  Cancel the old export path         ! cancelled          ┃
+┃▸ Map the command palette            ▶ in_progre…         ┃
+┃  Wire the task table                ◐ ready              ┃
+┃  Audit sync retries                 ◐ review             ┃
+┃  Harden the offline queue           ▶ in_progre…         ┃
+┃  Review attachment staging          ! blocked            ┃
+┃  Document the connected console     ✓ done               ┃
+┃                                                          ┃
+┃                                                          ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ Actions: Enter Open · e Edit · S Status · a more · q quit
+ Ctrl+Q quit · q quit (not typing)  Atlas Console • Basic v1

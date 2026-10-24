@@ -1,0 +1,30 @@
+ ORBIT › Atlas Console  Basic v1   3 projects · 1 inbox
+╭ Orbit ─────────────╮   Overview │ ▸ Tasks │   Board │   Timeline  [ ] switch view
+│    Home / Today    │┏ Tasks ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+│    Inbox           │┃  TITLE                                     STATUS      PRIORITY DEADLINE   ┃
+│    Projects        │┃  Trim the board cards                      ~ deferred                      ┃
+│    Agents          │┃  Cancel the old export path                ! cancelled                     ┃
+│▸╔ Actions · Map the command palette ═══════════════════════════════════════════════════════════╗ ┃
+│ ║ Suggested                                                                                    ║ ┃
+│ ║▸ Enter Open details                                                                          ║ ┃
+│ ║  e     Edit task                                                                             ║ ┃
+│ ║        Move to waiting                                                                       ║ ┃
+│ ║        Move to blocked                                                                       ║ ┃
+│ ║        Move to review                                                                        ║ ┃
+│ ║        Move to deferred                                                                      ║ ┃
+│ ║        Move to done                                                                          ║ ┃
+│ ║        Move to cancelled                                                                     ║ ┃
+│ ║  E     Quick edit                                                                            ║ ┃
+│ ║ More actions                                                                                 ║ ┃
+│ ║        Edit details                                                                          ║ ┃
+│ ║  K     Acceptance criteria                                                                   ║ ┃
+│ ║  i     Attach file                                                                           ║ ┃
+│ ║  F     Attachments                                                                           ║ ┃
+│ ║ Enter run selected · ↑/↓/PgUp/PgDn scroll · Esc close · dimmed rows explain why              ║ ┃
+│ ╚══════════════════════════════════════════════════════════════════════════════════════════════╝ ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+╰────────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ Actions: Enter Open · e Edit · S Status · a more actions · q quit
+ Ctrl+Q quit · q quit (not typing)  Atlas Console • Basic v1 • 4 views • r refresh

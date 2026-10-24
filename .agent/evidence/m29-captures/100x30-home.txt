@@ -1,0 +1,30 @@
+ ORBIT › Home / Today   3 projects · 1 inbox
+╭ Orbit ─────────────╮┏ Today / Next • 12h • [/] horizon ━┓╭ Today / Next tasks ───────────────────╮
+│▸ ● Home / Today    │┃Today / Next                       ┃│  ○ Wire the task table                │
+│    Inbox           │┃TODAY / NEXT  •  accepted revision ┃│  ○ Reconnect the replica              │
+│    Projects        │┃49  •  evaluated 1792845062327     ┃│  ~ Map the command palette            │
+│    Agents          │┃Capacity 720min  •  proposed 75min ┃│  ~ Audit sync retries                 │
+│    Atlas Console ○ │┃•  schedule 2  ready 0  blocked 0  ┃│  ~ Harden the offline queue           │
+│    Beacon Sync ○   │┃deferred 7  completed 2            ┃│  ~ Review attachment staging          │
+│    Cipher Notes ○  │┃PORTFOLIO • 2 actionable accepted  ┃│  ~ Trim the board cards               │
+│                    │┃task(s) • 0 visible task(s) with   ┃│  ~ Verify the conflict review         │
+│                    │┃cross-project leverage             ┃│  ~ Collect note search examples       │
+│                    │┃READ-ONLY PROPOSAL • pending       ┃│  ✓ Document the connected console     │
+│                    │┃offline commands are not included •┃│  ✓ Cancel the old export path         │
+│                    │┃times shown as epoch milliseconds  ┃│                                       │
+│                    │┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛╰───────────────────────────────────────╯
+│                    │╭ Projects ───────────────────────────╮╭ Inbox ──────────────────────────────╮
+│                    ││                  3                  ││                  1                  │
+│                    ││              Projects               ││                Inbox                │
+│                    ││         0 pending commands          ││        tasks · status=inbox         │
+│                    ││                                     ││                                     │
+│                    │╰─────────────────────────────────────╯╰─────────────────────────────────────╯
+│                    │╭ Ready ────────────────────╮╭ Inbox ────────────────────────────────────────╮
+│                    ││             2             ││  ○ Collect note search examples  inbox        │
+│                    ││           Ready           ││                                               │
+│                    ││   tasks · status=ready    ││                                               │
+│                    ││                           ││                                               │
+│                    ││                           ││                                               │
+╰────────────────────╯╰───────────────────────────╯╰───────────────────────────────────────────────╯
+ Actions: c New · / Search · r Refresh · a more actions · q quit
+ Ctrl+Q quit · q quit (not typing)  Ready • ? help • : palette • g h/i/p/a navigate

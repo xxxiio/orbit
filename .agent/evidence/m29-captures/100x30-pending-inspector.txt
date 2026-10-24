@@ -1,0 +1,30 @@
+ ORBIT › Projects   CONNECTED · 0 projects · 1 pending · ! inspect
+ Getting started: press c to create your first project. Basic is the default workflow; every project
+ships with Overview, Tasks, Board and Timeline views.
+╭ Orbit ─────────────╮Projects  Enter open · c new project · : palette · q quit · ? help
+│    Home / Today    │
+│    Inbox           │┏ 0 project(s) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+│▸ ● Projects        │┃No projects yet — press c to create one.                                    ┃
+│    Agents          │┃                                                                            ┃
+│ ╔ Pending commands · 1 queued (not accepted) ══════════════════════════════════════════════════╗ ┃
+│ ║▸ [pending] project   project command project-3784751-1792845077716839447-1 · Pending Scope   ║ ┃
+│ ║                                                                                              ║ ┃
+│ ║                                                                                              ║ ┃
+│ ║                                                                                              ║ ┃
+│ ║                                                                                              ║ ┃
+│ ║command: command-3784751-1792845077717051451-2                                                ║ ┃
+│ ║kind: project                                                                                 ║ ┃
+│ ║state: pending                                                                                ║ ┃
+│ ║attempts: not recorded by this replica                                                        ║ ┃
+│ ║local intent: {"name":"Pending Scope","project_id":"project-3784751-1792845077716839447-1"}   ║ ┃
+│ ║accepted receipt: none (not accepted)                                                         ║ ┃
+│ ║f flush · c review conflict · Enter detail · r refresh · Esc close · queued ≠ accepted        ║ ┃
+│ ╚══════════════════════════════════════════════════════════════════════════════════════════════╝ ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+╰────────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ Actions: / Search · r Refresh · a more actions · q quit
+ Ctrl+Q quit · q quit (not typing)  Queued intent only: [pending] and [conflict] rows are never acce

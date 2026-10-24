@@ -1,0 +1,30 @@
+ ORBIT › Home / Today   CONNECTED · 0 projects · 0 pending · ! inspect
+ Getting started: press c to create your first project. Basic is the default workflow; every project
+sh╔ Connected commands · queued intents are PENDING ═════════════════════════════════════════════╗
+╭ ║> _                                                                                           ║─╮
+│▸║Enter validates · Tab fills a suggestion                                                      ║ │
+│ ║Connected commands queue PENDING intentions; nothing is accepted until the server acknowledges║ │
+│ ║it.                                                                                           ║ │
+│ ║Read-only: sync.status · sync.observe · note.search <q> · note.sync · note.cached · note.show ║ │
+│ ║<id|path>                                                                                     ║ │
+│ ║Read-only planning: plan.portfolio · plan.compare · plan.review · plan.focus <task> ·         ║ │
+│ ║plan.group --project <id>                                                                     ║ │
+│ ║Read-only accepted lists: routine.list · strategy.list · milestone.list · schedule.list       ║ │
+│ ║Approval: plan.review first, then plan.approve --confirm at the same accepted revision        ║ │
+│ ║Sync MirrorIncomplete | accepted Some(0) | live None | pending 0 | conflicts 0 | mirror       ║ │
+│ ║incomplete | next [RefreshMarkdownMirror, ObserveLiveAuthority]                               ║ │
+│ ║                                                                                              ║ │
+│ ║                                                                                              ║ │
+│ ║                                                                                              ║─╯
+│ ║                                                                                              ║─╮
+│ ║▸ routine.list                                                                                ║ │
+│ ║  strategy.list                                                                               ║e│
+│ ║  milestone.list                                                                              ║ │
+│ ║  schedule.list                                                                               ║ │
+│ ║  batch <command; command>                                                                    ║ │
+│ ║  resolve <rejected-command-id> <replacement-command>                                         ║ │
+│ ║  sync.status                                                                                 ║ │
+│ ║Enter run · Tab fill · ↑/↓ suggest · Ctrl+U clear · Esc close · nothing is accepted on queue  ║ │
+╰─╚══════════════════════════════════════════════════════════════════════════════════════════════╝─╯
+ Actions: c New · / Search · r Refresh · a more actions · q quit
+ Ctrl+Q quit · q quit (not typing)  Ready • ? help • : palette • g h/i/p/a navigate

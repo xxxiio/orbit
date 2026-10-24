@@ -1,0 +1,18 @@
+ ORBIT › Projects   3 projects · 1 inbox
+▸ Workspace │  Sidebar │ Tab switch · D details
+Projects  Enter open · c new project · : palette · q quit …
+
+┏ 3 project(s) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃▸ ○ Atlas Console  standard · criteria 0/0 · ready        ┃
+┃  ○ Beacon Sync  standard · criteria 0/0 · ready          ┃
+┃  ○ Cipher Notes  standard · criteria 0/0 · ready         ┃
+┃                                                          ┃
+┃                                                          ┃
+┃                                                          ┃
+┃                                                          ┃
+┃                                                          ┃
+┃                                                          ┃
+┃                                                          ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ Actions: Enter Open · e Edit · W Workflow · a more · q quit
+ Ctrl+Q quit · q quit (not typing)  g… h Home · i Inbox · p

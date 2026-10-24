@@ -1,0 +1,30 @@
+ ORBIT › Atlas Console  Basic v1   3 projects · 1 inbox
+╭ Orbit ─────────────╮   Overview │   Tasks │ ▸ Board │   Timeline  [ ] switch view
+│    Home / Today    │┏ Task board ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+│    Inbox           │┃  Planned 0               ▾ Ready 1                  In progress 2          ┃
+│    Projects        │┃───────────────────────── ━━━━━━━━━━━━━━━━━━━━━━━━ ──────────────────────── ┃
+│    Agents          │┃— empty                   ▸ ◐ Wire the task table    ▶ Map the command pal… ┃
+│▸ ● Atlas Console ○ │┃                                                     ▶ Harden the offline … ┃
+│    Beacon Sync ○   │┃                                                                            ┃
+│    Cipher Notes ○  │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃columns 2-4 of 10 · j/k card · h/l panel · S status · E quick edit          ┃
+╰────────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ Actions: Enter Open · e Edit · S Status · a more actions · q quit
+ Ctrl+Q quit · q quit (not typing)  Atlas Console • Basic v1 • 4 views • r refresh
