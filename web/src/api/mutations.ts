@@ -10,15 +10,19 @@
  *    `expected_revision` comes from the query cache inside `mutationFn`, so a
  *    snapshot refresh between render and click cannot produce a stale fence.
  *    After an accepted write the response's revision becomes the cache's new
- *    floor (`Math.max`) in *both* ledger snapshots (tasks and milestones), so a
- *    second command in the same interaction fences on the revision the server
- *    just reported instead of the pre-write one. The
- *    client never decides what a legal transition is; it sends the command and
- *    renders the server's answer.
+ *    floor (`Math.max`) in *both* ledger snapshots (tasks and milestones), and
+ *    an accepted work-item response replaces the cached item record without
+ *    ever lowering its revision, so a second command in the same interaction
+ *    fences on the revision the server just reported instead of the pre-write
+ *    one. The client never decides what a legal transition is; it sends the
+ *    command and renders the server's answer.
  * 3. **Idempotency keys are allocated by the caller.** `command_id` (and the
  *    entity id for creates) travel in the mutation variables, minted when the
  *    person acts, so pressing the same button again after an unconfirmed
  *    failure replays the same receipt instead of creating a second entity.
+ *    For work-item creates the item id *is* the wire-level key: that route has
+ *    no command envelope, so the server refuses a second row under an id the
+ *    caller already used.
  * 4. **Failures are honest.** A rejected command is `rejected`; a write whose
  *    outcome the server may have applied anyway (lost response, 5xx, knowledge
  *    filesystem publication) is `uncertain`, never silently retried.
@@ -267,16 +271,91 @@ export function milestoneRevision(queryClient: QueryClient): number {
   return snapshot.revision
 }
 
-/** Work items fence on their own `u64` revision, found in the freshest cached list. */
+/**
+ * One cached work-item record, whatever the cached shape: the project list is an
+ * array, a single-item snapshot is the record itself.
+ */
+type CachedWorkItem = BlueprintWorkItemRecord | BlueprintWorkItemRecord[] | undefined
+
+function findCachedWorkItem(cached: CachedWorkItem, id: string): BlueprintWorkItemRecord | undefined {
+  if (!cached) return undefined
+  if (Array.isArray(cached)) return cached.find((candidate) => candidate.id === id)
+  return cached.id === id ? cached : undefined
+}
+
+/**
+ * Work items fence on their own `u64` revision. Read it from the freshest
+ * cached copy — every query under the work-item family, list or single record —
+ * and take the highest revision found: revisions only ever increase, so the
+ * maximum is the newest fence and a stale duplicate cache entry can never
+ * *lower* the revision a command fences on.
+ */
 export function workItemRevision(queryClient: QueryClient, id: string): number {
-  const lists = queryClient.getQueriesData<BlueprintWorkItemRecord[]>({
+  const cached = queryClient.getQueriesData<CachedWorkItem>({
     queryKey: queryKeys.workItemsAll(),
   })
-  for (const [, items] of lists) {
-    const item = items?.find((candidate) => candidate.id === id)
-    if (item) return item.revision
+  let revision: number | null = null
+  for (const [, data] of cached) {
+    const item = findCachedWorkItem(data, id)
+    if (!item) continue
+    revision = revision === null ? item.revision : Math.max(revision, item.revision)
   }
-  throw new ClientStateError('Reload this project before changing its work items.')
+  if (revision === null) {
+    throw new ClientStateError('Reload this project before changing its work items.')
+  }
+  return revision
+}
+
+/** An accepted work item as the cached list stores it (the wire record). */
+export function workItemRecord(item: WorkItem): BlueprintWorkItemRecord {
+  return {
+    id: item.id,
+    project_id: item.projectId,
+    kind: item.kind,
+    state: item.state,
+    properties: item.properties,
+    revision: item.revision,
+  }
+}
+
+/**
+ * Write the record an accepted work-item response carries back into every
+ * cached copy of it: the project list(s) that hold it and any single-item
+ * snapshot. This is cache coherence, not an optimistic update — it runs only
+ * after the server accepted the write and stores exactly what it returned.
+ *
+ * The revision discipline matches `acceptRevision` for the ledger: a cached
+ * copy is never rewound. A replayed or out-of-order answer carrying an older
+ * revision leaves the newer record in place, so the next command fences on the
+ * tip this browser has already seen instead of a revision the server will
+ * refuse as stale.
+ */
+export function acceptWorkItemRecord(queryClient: QueryClient, item: WorkItem): void {
+  const record = workItemRecord(item)
+  const cached = queryClient.getQueriesData<CachedWorkItem>({
+    queryKey: queryKeys.workItemsAll(),
+  })
+  for (const [key, data] of cached) {
+    if (!data) continue
+    if (Array.isArray(data)) {
+      const index = data.findIndex((candidate) => candidate.id === record.id)
+      if (index >= 0) {
+        if (data[index].revision > record.revision) continue
+        const next = [...data]
+        next[index] = record
+        queryClient.setQueryData(key, next)
+        continue
+      }
+      // A create accepted before the list's first refetch: append to *this*
+      // project's list only (the key is `['work-items', projectId]`).
+      if (key[1] === item.projectId) {
+        queryClient.setQueryData(key, [...data, record])
+      }
+      continue
+    }
+    if (data.id !== record.id || data.revision > record.revision) continue
+    queryClient.setQueryData(key, record)
+  }
 }
 
 /** Revision-derived reads that a domain write makes stale. */
@@ -810,19 +889,33 @@ export function useApplyUpgrade(): CommandMutation<
   })
 }
 
-export function useCreateWorkItem(): CommandMutation<
-  WorkItem,
-  { projectId: string; kind: string; properties?: Record<string, unknown> }
-> {
-  return useApiMutation<
-    WorkItem,
-    { projectId: string; kind: string; properties?: Record<string, unknown> }
-  >({
+/**
+ * Everything the server needs to create one work item, including both ids.
+ *
+ * The item create route takes no command envelope (the receipt-bearing
+ * `/blueprints/commands` route is a separate contract), so the caller-chosen
+ * item `id` is the create's idempotency key: a retry of the same intent repeats
+ * it and the server refuses to store a second row under it. `commandId` names
+ * the same attempt for the caller's own bookkeeping and is part of the
+ * variables for the same reason as in `useCreateTask` — both ids are minted
+ * when the person acts, never inside `mutationFn`, because minting them there
+ * made every retry a fresh create.
+ */
+export interface CreateWorkItemVariables {
+  commandId: string
+  id: string
+  projectId: string
+  kind: string
+  properties?: Record<string, unknown>
+}
+
+export function useCreateWorkItem(): CommandMutation<WorkItem, CreateWorkItemVariables> {
+  return useApiMutation<WorkItem, CreateWorkItemVariables>({
     // The item may exist even when the response never arrived.
     uncertainOnError: true,
-    mutationFn: ({ projectId, kind, properties }) => {
+    mutationFn: ({ id, projectId, kind, properties }) => {
       const body: CreateWorkItemBody = {
-        id: newCommandId(),
+        id,
         project_id: projectId,
         kind,
         ...(properties ? { properties } : {}),
@@ -833,10 +926,18 @@ export function useCreateWorkItem(): CommandMutation<
       queryKeys.workItems(variables.projectId),
       queryKeys.upgradePreviewAll(),
     ],
+    onAccepted: (item, _variables, queryClient) => {
+      acceptWorkItemRecord(queryClient, item)
+    },
   })
 }
 
-/** Transition legality, guards and capabilities are decided by the server. */
+/**
+ * Transition legality, guards and capabilities are decided by the server. The
+ * accepted record is written back before the invalidation, so a second move
+ * made before the list refetch settles fences on the revision the server just
+ * reported instead of the pre-move one.
+ */
 export function useWorkItemTransition(): CommandMutation<WorkItem, { id: string; to: string }> {
   return useApiMutation<WorkItem, { id: string; to: string }>({
     uncertainOnError: true,
@@ -849,6 +950,9 @@ export function useWorkItemTransition(): CommandMutation<WorkItem, { id: string;
       return transitionWorkItem(body).then(toWorkItem)
     },
     affectedKeys: () => [queryKeys.workItemsAll(), queryKeys.upgradePreviewAll()],
+    onAccepted: (item, _variables, queryClient) => {
+      acceptWorkItemRecord(queryClient, item)
+    },
   })
 }
 
@@ -867,6 +971,9 @@ export function useUpdateWorkItemProperties(): CommandMutation<
       return updateWorkItemProperties(body).then(toWorkItem)
     },
     affectedKeys: () => [queryKeys.workItemsAll(), queryKeys.upgradePreviewAll()],
+    onAccepted: (item, _variables, queryClient) => {
+      acceptWorkItemRecord(queryClient, item)
+    },
   })
 }
 

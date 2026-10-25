@@ -8,9 +8,10 @@
  * control — capability execution is a local-authority feature in this product,
  * and this server exposes neither status nor an execution route.
  *
- * Every command reads the item's revision at mutate time (in the hook) and the
- * accepted response is written back into the list cache, so two quick edits can
- * never fence against a revision the person has not seen.
+ * Every command reads the item's revision at mutate time and writes the
+ * accepted response back into the list cache inside the hook, so two quick
+ * edits can never fence against a revision the person has not seen. The sheet
+ * itself writes nothing to the cache.
  */
 import {
   useCallback,
@@ -19,7 +20,6 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import type { WorkItem, WorkItemField, WorkItemKind, Workflow } from '@/api/adapters'
 import {
   uncertainMessage,
@@ -57,7 +57,6 @@ import {
   transitionsFromState,
   workItemTitle,
 } from './work-item-model'
-import { writeAcceptedWorkItem } from './work-item-cache'
 
 const INTEGER_PATTERN = /^-?\d+$/
 
@@ -375,7 +374,6 @@ export function WorkItemSheet({ item, workflow, onClose, onRefresh }: WorkItemSh
 }
 
 function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemSheetProps & { item: WorkItem }) {
-  const queryClient = useQueryClient()
   const transition = useWorkItemTransition()
   const properties = useUpdateWorkItemProperties()
 
@@ -424,8 +422,7 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
   const updateProperty = async (fieldId: string, value: unknown) => {
     setLocalError(null)
     try {
-      const accepted = await properties.mutateAsync({ id: item.id, changes: { [fieldId]: value } })
-      writeAcceptedWorkItem(queryClient, accepted)
+      await properties.mutateAsync({ id: item.id, changes: { [fieldId]: value } })
       const field = kind?.fields.find((candidate) => candidate.id === fieldId)
       setAnnouncement(`${fieldLabel(field, fieldId)} saved.`)
     } catch {
@@ -437,7 +434,6 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
     setLocalError(null)
     try {
       const accepted = await transition.mutateAsync({ id: item.id, to })
-      writeAcceptedWorkItem(queryClient, accepted)
       setAnnouncement(`The server moved this item to ${stateLabel(accepted.state)}.`)
     } catch {
       // `transition.error` is shown next to the transition and in the footer.

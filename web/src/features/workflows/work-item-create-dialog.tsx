@@ -7,9 +7,9 @@
  * initial state and the property rules; the dialog never mints a state.
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import type { WorkItem, WorkItemField, Workflow } from '@/api/adapters'
 import {
+  newCommandId,
   uncertainMessage,
   useCreateWorkItem,
   userMessage,
@@ -33,13 +33,31 @@ import {
   kindLabel,
   stateLabel,
 } from './work-item-model'
-import { writeAcceptedWorkItem } from './work-item-cache'
 
 interface FieldDraft {
   text: Record<string, string>
   integer: Record<string, string>
   boolean: Record<string, boolean | undefined>
   choice: Record<string, string>
+}
+
+/**
+ * One create attempt: the command id and the item id are minted when the person
+ * submits (never inside `mutationFn`), and reused while the submitted payload
+ * stays the same. Pressing Create again after an unconfirmed failure therefore
+ * repeats the same item id — the server cannot store a second row under it —
+ * instead of creating a duplicate. Editing the payload mints a new attempt,
+ * because it is a different item.
+ */
+interface CreateWorkItemAttempt {
+  key: string
+  commandId: string
+  itemId: string
+}
+
+/** The submitted payload, in the shape the attempt key is derived from. */
+function payloadKey(kindId: string, properties: Record<string, unknown>): string {
+  return `${kindId}\u0000${JSON.stringify(properties)}`
 }
 
 function initialDraft(kindId: string | undefined, workflow: Workflow | undefined): FieldDraft {
@@ -290,7 +308,6 @@ export function NewWorkItemDialog({
   onCreated?: (item: WorkItem) => void
 }) {
   const create = useCreateWorkItem()
-  const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const kinds = workflow?.kinds ?? []
@@ -303,6 +320,7 @@ export function NewWorkItemDialog({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitted, setSubmitted] = useState(false)
   const firstFieldRef = useRef<HTMLDivElement>(null)
+  const attemptRef = useRef<CreateWorkItemAttempt | null>(null)
 
   // Choosing another kind is a different schema; drafts must not leak across.
   useEffect(() => {
@@ -315,6 +333,23 @@ export function NewWorkItemDialog({
   const uncertain = create.disposition === 'uncertain'
   const submitting = create.isPending
 
+  // The payload on screen and the payload of the attempt whose outcome is
+  // unknown. An unchanged retry is safe — it repeats the same ids, so the
+  // server cannot store a second item. A changed payload would be a second,
+  // blind create while the first may already exist, so it is not offered.
+  const currentKey = payloadKey(kindId, validate(kindId, workflow, draft).properties)
+  const unconfirmedKey = create.variables
+    ? payloadKey(create.variables.kind, create.variables.properties ?? {})
+    : null
+  const blindRetry = uncertain && unconfirmedKey !== null && unconfirmedKey !== currentKey
+
+  function attemptFor(key: string): CreateWorkItemAttempt {
+    if (attemptRef.current?.key !== key) {
+      attemptRef.current = { key, commandId: newCommandId(), itemId: newCommandId() }
+    }
+    return attemptRef.current
+  }
+
   const nameOptions = useMemo(
     () =>
       kinds.map((candidate) => ({
@@ -326,7 +361,7 @@ export function NewWorkItemDialog({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (submitting || !kind) return
+    if (submitting || blindRetry || !kind) return
     setSubmitted(true)
     const checked = validate(kind.id, workflow, draft)
     if (Object.keys(checked.errors).length > 0) {
@@ -335,13 +370,16 @@ export function NewWorkItemDialog({
       return
     }
     setErrors({})
+    const attempt = attemptFor(payloadKey(kind.id, checked.properties))
     try {
       const item = await create.mutateAsync({
+        commandId: attempt.commandId,
+        id: attempt.itemId,
         projectId,
         kind: kind.id,
         properties: checked.properties,
       })
-      writeAcceptedWorkItem(queryClient, item)
+      attemptRef.current = null
       toast({
         tone: 'success',
         title: 'Work item created',
@@ -350,7 +388,8 @@ export function NewWorkItemDialog({
       onCreated?.(item)
       onClose()
     } catch {
-      // The form shows `create.error`; nothing was written optimistically.
+      // The form shows `create.error`; nothing was written optimistically. The
+      // attempt is kept so the next submit of the same payload reuses its ids.
     }
   }
 
@@ -405,7 +444,7 @@ export function NewWorkItemDialog({
                     draft={draft}
                     setDraft={setDraft}
                     error={submitted ? errors[field.id] : undefined}
-                    disabled={submitting || uncertain}
+                    disabled={submitting}
                   />
                 ))
               )}
@@ -429,8 +468,19 @@ export function NewWorkItemDialog({
                 'rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning-ink',
               )}
             >
-              {uncertainMessage(create.error ?? undefined)} Check the board before creating this
-              item again: the first request may have been stored.
+              {uncertainMessage(create.error ?? undefined)}
+              {blindRetry
+                ? ''
+                : ' Retrying with these fields repeats the same item id, so it cannot create a second item.'}
+            </p>
+          ) : null}
+          {blindRetry ? (
+            <p
+              role="alert"
+              className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning-ink"
+            >
+              These fields no longer match the request whose outcome is unknown. Retry the request
+              unchanged, or close this dialog and check the board before creating a different item.
             </p>
           ) : null}
           <InlineFieldError
@@ -449,10 +499,14 @@ export function NewWorkItemDialog({
               type="submit"
               size="md"
               loading={submitting}
-              disabled={!kind || uncertain}
-              title={uncertain ? 'Check the board before creating this item again.' : undefined}
+              disabled={!kind || blindRetry}
+              title={
+                blindRetry
+                  ? 'Retry the unknown request unchanged, or check the board first.'
+                  : undefined
+              }
             >
-              Create work item
+              {uncertain && !blindRetry ? 'Retry the same request' : 'Create work item'}
             </Button>
           </div>
         </form>
