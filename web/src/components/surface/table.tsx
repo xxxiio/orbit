@@ -9,8 +9,6 @@
  */
 import type { ReactNode } from 'react'
 
-export { PlainHeader, SortHeader } from '@/components/ui/table'
-
 /** The horizontal scroller a table lives in. */
 export function TableScrollRegion({ children }: { children: ReactNode }) {
   return <div className="scrollbar-slim overflow-x-auto">{children}</div>

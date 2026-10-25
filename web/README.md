@@ -63,28 +63,50 @@ exchanges device credentials for an HttpOnly cookie; the client only sets
 ```text
 src/
   api/            fetch wrapper, wire contracts, adapters, queries/mutations
-    adapters/     wire → domain mappers split by domain (planning)
+    adapters.ts   compatibility barrel over the domain mappers below
+    adapters/     wire → domain mappers split by domain (projects, tasks,
+                  workspace, planning-reads, workflows, attachments, agents,
+                  planning) plus the shared `asStatus` helper
+    mutations.ts  compatibility barrel over the command families below
+    mutations/    command hooks split by domain (core, tasks, projects,
+                  milestones, workflows, attachments, knowledge, agents,
+                  planning)
     contracts/    wire contracts split by domain (planning)
     endpoints/    one module per endpoint family
   app/            providers, routing, guard, page shims, shell orchestration
   components/
+    surface/      the shared surface kit: ComponentPanel, UnavailablePanel,
+                  InlineReadError, ProvenanceNote, DeclaredActionsNote,
+                  ResourceReadPrelude, filterSortLimit, SurfaceFooter,
+                  board chrome, table chrome — re-exported by `components/ui`
     ui/           reusable primitives (Button, Field, Dialog, Select, Badge,
-                  Section, table headers, …)
+                  Section, table headers, …) plus the surface kit
     forms/        labelled select, property select, inline title, edit guard
-    markdown/     the single Markdown renderer
+    markdown/     the single Markdown renderer and the one draft editor
+                  (write/preview, dirty guard, commit/save hooks)
     theme/        theme provider and preference toggle
     layout/       presentational sidebar (data comes from the app shell)
     navigation/   navigation configuration and project item shape
     feedback/     session gate, global error boundary
   domain/         framework-free shared rules (project/milestone copy, task
-                  progress, workflow copy)
+                  progress, workflow copy, calendar/clock formatting)
   features/
     auth/         sign-in screen and error copy
     tasks/        shared task kernel: table, row meta, controls, list model,
                   URL state, project task list, drawer (task-drawer/)
     inbox/        Inbox list and quick capture
-    home/         Today
+    home/         Today, including the agent attention rail
     projects/     project index, workspace, settings, create dialog
+    knowledge/    Knowledge workspace, note page and declared reference panels:
+                  knowledge-model.ts, note-view.tsx, knowledge-page.tsx,
+                  knowledge-panel.tsx, note-create-dialog.tsx
+                  note/  relations panel and move dialog
+    attachments/  the one attachment list, mounted by the task drawer and the
+                  work-item sheet
+    agents/       agent overview, job page and declared job panels:
+                  agent-model.ts, agents-overview-page.tsx, agent-job-page.tsx,
+                  agent-jobs-panel.tsx
+                  agent-job/  read-only blocks and the review form
     workflows/    the workflow surface:
                   view-metadata.ts (compatibility barrel for declarations/)
                   declarations/  filters, metrics, columns, sorts, views, reserved ids
@@ -97,16 +119,17 @@ src/
                   upgrade-preview.tsx, milestone-create-dialog.tsx
                   use-work-item-drawer.ts, index.ts (public barrel)
     planning/     project day plan, schedule window and the approval gate
-  hooks/          shared hooks (media query, command feedback, workflow
-                  catalog, URL-param resource drawers, …)
+  hooks/          shared hooks (media query, command feedback, idempotent
+                  attempt, workflow catalog, URL-param resource drawers, …)
   lib/            browser-local stores and small helpers (recent projects, humanize)
   styles/         design tokens and global styles
 tests/
   unit/
     api/          request shape, revision fences, adapters and errors
-    components/   design-system primitives
-    domain/       status labels and progress rules
-    features/     feature logic (list model, URL state, registry dispatch)
+    components/   design-system primitives and the Markdown editor
+    domain/       pure models shared across features (status labels and
+                  progress rules, knowledge note model)
+    features/     feature behaviour (panels, list model, URL state, registry)
   e2e/            Playwright acceptance suite (real orbit-server)
     harness/      server/session/fixture wiring shared by every spec
   fixture/        deterministic seed data
@@ -115,7 +138,14 @@ tests/
 ### Shared modules and boundaries
 
 - `src/domain/` holds genuinely shared, framework-free rules. Its modules import no
-  React, hooks or UI; features import it through `@/domain`.
+  React, hooks or UI; features import it through `@/domain`. Calendar and clock copy
+  (`formatMoment`, `formatDay`, `startOfDay`, `formatTimeOfDay`) lives in
+  `domain/datetime.ts` so no feature imports another feature's barrel just to print a date.
+- `src/components/surface/` is the **surface kit** every declared source shares: one panel
+  shell, one unavailable/refusal state, one resource read guard and the board/table chrome.
+  It lives under `components/` because it is cross-cutting UI, so a workflow view, a
+  knowledge panel and an agent panel use the same chrome without importing each other.
+  `@/components/ui` re-exports it.
 - `src/features/tasks/index.ts` is the **public surface of the task kernel**. Inbox, Projects,
   Home and the app shell import task UI from `@/features/tasks` only; sections under
   `task-drawer/` are composition detail.
@@ -131,7 +161,12 @@ tests/
   a field-descriptor list, so a new source adds descriptors rather than a second resolver.
 - `src/api/**` imports only `api/*`, React and TanStack Query. `api/accepted-write.ts` is the one
   place that writes an accepted response back into the cache, and none of its writes ever lowers
-  a cached revision.
+  a cached revision. `api/adapters.ts` and `api/mutations.ts` are barrels over
+  `api/adapters/*` and `api/mutations/*` (split by domain); import the domain module directly
+  in new code.
+- Idempotency is one rule with one implementation: `hooks/use-idempotent-command.ts` pins an
+  attempt per payload (mint on change, reuse on an identical retry, clear when confirmed).
+  Every create dialog, note write/resume and agent review/resume goes through it.
 
 Views declared by a project's workflow are resolved by `features/projects/use-project-workflow`
 and rendered by the registry in `features/workflows`.
@@ -180,9 +215,15 @@ fabricated data.
 
 ## What is intentionally not here yet
 
-- Knowledge browsing and agent administration screens, including agent administration beyond
-  the read-only Agents placeholder.
-- Attachments in the task drawer or the work-item sheet; the API and query keys exist, the
-  shared list does not.
 - Capability execution: the work-item sheet lists declared actions and says the local Orbit
   authority owns execution, because this server exposes no execution route.
+- Starting an agent job. Knowledge, Attachments and Agents ship as read/write screens, but a job
+  is started by an executor or the command line; the browser only reviews a handoff and resumes a
+  finished job into the queue.
+- Project rename: a project cannot yet be named after the work it holds (the settings screen says
+  so twice).
+- Task created/updated timestamps in the drawer. Accessories show absolute dates; tasks show
+  relative freshness only.
+- Search across projects: the vault has its own search and the palette navigates or creates a
+  task; there is no cross-project task/note search yet.
+- Saved views: list/board filters live in the URL, and only `orbit.theme` is persisted.

@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiError } from '@/api/errors'
-import { Markdown } from '@/components/markdown'
+import { MarkdownEditor } from '@/components/markdown'
 import { LoaderIcon } from '@/components/ui/icons'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FieldError, Section } from './section'
-import { useDirtyGuard } from '@/components/forms'
 
 /** Markdown draft with a write/preview switch; saves when the field loses focus. */
 export function DescriptionEditor({
@@ -22,7 +20,6 @@ export function DescriptionEditor({
   onCommit: (description: string) => void
 }) {
   const [draft, setDraft] = useState(description)
-  const [mode, setMode] = useState<'write' | 'preview'>('write')
 
   useEffect(() => {
     setDraft(description)
@@ -40,13 +37,6 @@ export function DescriptionEditor({
   const commitRef = useRef(commit)
   commitRef.current = commit
 
-  useDirtyGuard(
-    'description',
-    () => draftRef.current !== descriptionRef.current,
-    () => commitRef.current(),
-    () => draftRef.current,
-  )
-
   return (
     <Section
       title="Description"
@@ -59,43 +49,23 @@ export function DescriptionEditor({
         ) : null
       }
     >
-      <Tabs value={mode} onValueChange={(value) => setMode(value as 'write' | 'preview')}>
-        <TabsList className="gap-4">
-          <TabsTrigger value="write" className="pb-1.5 text-xs">
-            Write
-          </TabsTrigger>
-          <TabsTrigger value="preview" className="pb-1.5 text-xs">
-            Preview
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="write" className="mt-2">
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onBlur={commit}
-            disabled={disabled}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault()
-                commit()
-              }
-            }}
-            rows={8}
-            placeholder="What does done look like? Markdown is fine."
-            aria-label="Task description"
-            className="scrollbar-slim min-h-[8rem] w-full resize-y rounded-md border border-line bg-surface px-3 py-2 font-sans text-sm leading-6 text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-          />
-        </TabsContent>
-        <TabsContent value="preview" className="mt-2">
-          <div className="min-h-[8rem] rounded-md border border-line bg-surface px-3 py-2">
-            {draft.trim().length === 0 ? (
-              <p className="text-sm italic text-ink-faint">Nothing to preview yet.</p>
-            ) : (
-              <Markdown source={draft} />
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
+      <MarkdownEditor
+        value={draft}
+        onChange={setDraft}
+        label="Task description"
+        placeholder="What does done look like? Markdown is fine."
+        disabled={disabled}
+        rows={8}
+        fieldClassName="scrollbar-slim min-h-[8rem] w-full resize-y rounded-md border border-line bg-surface px-3 py-2 font-sans text-sm leading-6 text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 transition-none hover:border-line disabled:bg-surface disabled:text-ink-soft"
+        onCommit={commit}
+        onSaveShortcut={commit}
+        guard={{
+          id: 'description',
+          isDirty: () => draftRef.current !== descriptionRef.current,
+          flush: () => commitRef.current(),
+          draftKey: () => draftRef.current,
+        }}
+      />
       <FieldError error={error} />
     </Section>
   )

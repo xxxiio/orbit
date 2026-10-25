@@ -6,13 +6,18 @@
  * `expected`/`replacement` from that fresh read. Move re-reads the file for
  * `expected` immediately before sending. The same command id is reused for an
  * identical retry because the file may already have changed on disk.
+ *
+ * The relations panel (`note/note-relations`) and the move dialog
+ * (`note/note-move-dialog`) own their own chrome; this module owns the page and
+ * the editor's byte fence.
  */
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { MarkdownCommand } from '@/api/contracts'
 import {
   newCommandId,
   uncertainMessage,
+  useIdempotentAttempt,
   useMarkdownCommand,
   useMarkdownDocument,
   useMarkdownInventory,
@@ -22,16 +27,11 @@ import {
 } from '@/hooks'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
-import { ErrorState } from '@/components/ui/error-state'
-import { Field } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import { BookIcon, LoaderIcon, RefreshIcon } from '@/components/ui/icons'
-import { Markdown } from '@/components/markdown'
+import { Markdown, MarkdownEditor } from '@/components/markdown'
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel'
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
-import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/components/ui/utils'
 import {
@@ -40,8 +40,9 @@ import {
   noteHref,
   noteTitleFromPath,
   splitMarkdown,
-  splitRelations,
 } from './knowledge-model'
+import { NoteMoveDialog } from './note/note-move-dialog'
+import { NoteRelations } from './note/note-relations'
 
 interface SaveAttempt {
   key: string
@@ -72,7 +73,11 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
   const [announcement, setAnnouncement] = useState<string | null>(null)
   const [moveOpen, setMoveOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const attemptRef = useRef<SaveAttempt | null>(null)
+  const attempt = useIdempotentAttempt<SaveAttempt, { command: MarkdownCommand }>((key, payload) => ({
+    key,
+    commandId: newCommandId(),
+    command: payload.command,
+  }))
 
   useEffect(() => {
     if (!announcement) return
@@ -98,7 +103,7 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
     setBaseline(null)
     setLocalError(null)
     setStale(false)
-    attemptRef.current = null
+    attempt.clear()
   }
 
   const reload = async () => {
@@ -126,10 +131,10 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
     }
   }
 
-  const send = async (attempt: SaveAttempt) => {
+  const send = async (pinned: SaveAttempt) => {
     setLocalError(null)
     try {
-      await command.mutateAsync({ commandId: attempt.commandId, command: attempt.command })
+      await command.mutateAsync({ commandId: pinned.commandId, command: pinned.command })
       resetEdit()
       setAnnouncement('Note saved.')
       toast({ tone: 'success', title: 'Note saved', description: path })
@@ -161,8 +166,8 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
     setSaving(true)
     try {
       const key = `${path}\u0000${baseline}\u0000${draft}`
-      if (attemptRef.current?.key === key) {
-        await send(attemptRef.current)
+      if (attempt.attempt?.key === key) {
+        await send(attempt.attempt)
         return
       }
 
@@ -198,18 +203,15 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
         return
       }
 
-      const attempt: SaveAttempt = {
-        key,
-        commandId: newCommandId(),
+      const pinned = attempt.ensure(key, {
         command: {
           kind: 'Update',
           note_id: noteId,
           expected: freshRaw,
           replacement: joinMarkdown(freshParts.frontmatter, draft),
         },
-      }
-      attemptRef.current = attempt
-      await send(attempt)
+      })
+      await send(pinned)
     } finally {
       setSaving(false)
     }
@@ -267,7 +269,6 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
   }
 
   const body = editing ? draft : parts.body
-  const relationRows = relations.data ? splitRelations(relations.data) : null
   const idToPath = new Map((inventory.data ?? []).map((note) => [note.id, note.path]))
 
   return (
@@ -323,7 +324,7 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
                     setBaseline(document.data?.body ?? parts.body)
                     setLocalError(null)
                     setStale(false)
-                    attemptRef.current = null
+                    attempt.clear()
                     setEditing(true)
                   }}
                   disabled={!noteId}
@@ -360,16 +361,17 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
           ) : null}
 
           {editing ? (
-            <Textarea
+            <MarkdownEditor
               value={draft}
-              onChange={(event) => {
-                setDraft(event.target.value)
+              onChange={(next) => {
+                setDraft(next)
                 setLocalError(null)
               }}
-              aria-label="Note body"
-              className="min-h-[24rem] font-mono text-sm leading-6"
+              label="Note body"
               disabled={writing}
               spellCheck={false}
+              fieldClassName="min-h-[24rem] font-mono text-sm leading-6"
+              previewClassName="min-h-[24rem]"
             />
           ) : (
             <div data-note-body className="max-w-[72ch]">
@@ -405,11 +407,11 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
                 {uncertain ? uncertainMessage(commandError) : userMessage(commandError)}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                {uncertain && attemptRef.current ? (
+                {uncertain && attempt.attempt ? (
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => attemptRef.current && void send(attemptRef.current)}
+                    onClick={() => attempt.attempt && void send(attempt.attempt)}
                     disabled={writing}
                   >
                     Retry the same change
@@ -440,79 +442,12 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
         </PanelBody>
       </Panel>
 
-      <Panel className="mt-4 overflow-hidden" aria-label="Relations">
-        <PanelHeader
-          title="Relations"
-          description="Links are explicit [[note-id]] references, resolved against the vault's stable ids."
-          actions={
-            <span className="text-2xs text-ink-muted">
-              {relations.data
-                ? `${relations.data.outgoing.length} outgoing · ${relations.data.backlinks.length} backlinks`
-                : ''}
-            </span>
-          }
-        />
-        <PanelBody>
-          {inventory.error && !inventory.data ? (
-            <p
-              role="alert"
-              className="mb-3 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning-ink"
-            >
-              The note identity index could not be read, so relation ids are shown without
-              resolving them to paths. {userMessage(inventory.error)}
-            </p>
-          ) : null}
-          {!noteId ? (
-            <p className="text-xs leading-5 text-ink-muted">
-              Relations are unavailable without an <span className="font-mono">orbit_id</span>.
-            </p>
-          ) : relations.isPending && !relations.data ? (
-            <SkeletonText lines={2} />
-          ) : relations.error && !relations.data ? (
-            <ErrorState
-              compact
-              title="Relations could not be read"
-              description={userMessage(relations.error)}
-              onRetry={() => void relations.refetch()}
-              retrying={relations.isFetching}
-            />
-          ) : relationRows ? (
-            <div className="flex flex-col gap-4">
-              <RelationGroup
-                label="Links to"
-                ids={relationRows.resolvedOutgoing}
-                idToPath={idToPath}
-                empty="No resolvable outgoing links."
-              />
-              <RelationGroup
-                label="Linked from"
-                ids={relations.data?.backlinks ?? []}
-                idToPath={idToPath}
-                empty="No other note links here yet."
-              />
-              {relationRows.unresolved.length > 0 ? (
-                <div>
-                  <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
-                    Unresolved references
-                  </p>
-                  <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Unresolved references">
-                    {relationRows.unresolved.map((id) => (
-                      <li key={id}>
-                        <span
-                          className="inline-flex items-center rounded-full border border-dashed border-line-strong bg-surface-sunken px-2 py-0.5 font-mono text-2xs text-ink-muted"
-                          title="No note in this vault has this id"
-                        >
-                          [[{id}]]
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </PanelBody>
-      </Panel>
+      <NoteRelations
+        noteId={noteId}
+        relations={relations}
+        inventoryError={inventory.error && !inventory.data ? inventory.error : null}
+        idToPath={idToPath}
+      />
 
       {moveOpen ? (
         <NoteMoveDialog
@@ -528,247 +463,5 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
         />
       ) : null}
     </>
-  )
-}
-
-function RelationGroup({
-  label,
-  ids,
-  idToPath,
-  empty,
-}: {
-  label: string
-  ids: string[]
-  idToPath: Map<string, string>
-  empty: string
-}) {
-  return (
-    <div>
-      <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">{label}</p>
-      {ids.length === 0 ? (
-        <p className="mt-1 text-xs leading-5 text-ink-muted">{empty}</p>
-      ) : (
-        <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label={label}>
-          {ids.map((id) => {
-            const target = idToPath.get(id)
-            return (
-              <li key={id}>
-                {target ? (
-                  <Link
-                    to={noteHref(target)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent-soft px-2 py-0.5 font-mono text-2xs text-accent-soft-ink transition-colors hover:border-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                    title={target}
-                  >
-                    {id}
-                  </Link>
-                ) : (
-                  <span className="inline-flex items-center rounded-full border border-line bg-surface-sunken px-2 py-0.5 font-mono text-2xs text-ink-muted">
-                    {id}
-                  </span>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-interface MoveAttempt {
-  key: string
-  commandId: string
-  command: MarkdownCommand
-}
-
-function NoteMoveDialog({
-  currentPath,
-  noteId,
-  onClose,
-  onMoved,
-  onRefreshTree,
-}: {
-  currentPath: string
-  noteId: string
-  onClose: () => void
-  onMoved: (path: string) => void
-  onRefreshTree: () => void
-}) {
-  const source = useMarkdownDocument(currentPath)
-  const command = useMarkdownCommand()
-  const [target, setTarget] = useState(currentPath)
-  const [error, setError] = useState<string | null>(null)
-  const [blindRetry, setBlindRetry] = useState(false)
-  const attemptRef = useRef<MoveAttempt | null>(null)
-  const writing = command.isPending
-  const uncertain = command.disposition === 'uncertain'
-  const refused = command.disposition === 'rejected'
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
-    if (writing || blindRetry) return
-    const next = target.trim().replace(/^\/+/, '')
-    if (!isNotePath(next)) {
-      setError('Use a relative .md path such as archive/decision.md.')
-      return
-    }
-    if (next === currentPath) {
-      setError('Choose a different path. The note is already there.')
-      return
-    }
-
-    const key = `${currentPath}\u0000${next}`
-    if (attemptRef.current?.key === key) {
-      try {
-        await command.mutateAsync({
-          commandId: attemptRef.current.commandId,
-          command: attemptRef.current.command,
-        })
-        onMoved(next)
-      } catch {
-        // The server's answer is rendered below.
-      }
-      return
-    }
-    if (attemptRef.current && attemptRef.current.key !== key) {
-      if (command.disposition === 'uncertain') {
-        setBlindRetry(true)
-        setError(
-          'The previous move may have completed. Retry it unchanged, or refresh the tree before choosing another path.',
-        )
-        return
-      }
-      // A definitive refusal did not move anything; a new destination is a
-      // genuinely new command, not a blind retry.
-      attemptRef.current = null
-      setBlindRetry(false)
-    }
-
-    // As in `save`, a failed refetch must reject instead of resolving with the
-    // cached body: `expected` is a fence on bytes the server must still hold.
-    let raw: string | undefined
-    try {
-      const fresh = await source.refetch({ throwOnError: true })
-      raw = fresh.data?.body
-    } catch {
-      setError('The note could not be re-read, so nothing was moved. Try again.')
-      return
-    }
-    if (raw === undefined) {
-      setError('The note could not be re-read, so nothing was moved. Try again.')
-      return
-    }
-    if (splitMarkdown(raw).noteId !== noteId) {
-      setError('The note identity changed on disk. Reload it before moving; nothing was sent.')
-      return
-    }
-
-    const attempt: MoveAttempt = {
-      key,
-      commandId: newCommandId(),
-      command: {
-        kind: 'Move',
-        note_id: noteId,
-        from: currentPath,
-        to: next,
-        expected: raw,
-      },
-    }
-    attemptRef.current = attempt
-    try {
-      await command.mutateAsync({ commandId: attempt.commandId, command: attempt.command })
-      onMoved(next)
-    } catch {
-      // The server's answer is rendered below.
-    }
-  }
-
-  const commandError: ApiError | null = uncertain || refused ? command.error : null
-
-  return (
-    <Dialog open onOpenChange={(next) => (!next && !writing ? onClose() : undefined)}>
-      <DialogContent
-        title="Move note"
-        description="The file is moved on disk; its stable id and links stay unchanged."
-        size="md"
-      >
-        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-          <Field
-            label="New path"
-            required
-            hint="The destination folder must already exist. The .md extension is required."
-          >
-            <Input
-              value={target}
-              onChange={(event) => {
-                setTarget(event.target.value)
-                setError(null)
-              }}
-              autoFocus
-              disabled={writing}
-              spellCheck={false}
-            />
-          </Field>
-
-          {error ? (
-            <p role="alert" className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-xs leading-5 text-danger-ink">
-              {error}
-            </p>
-          ) : null}
-
-          {commandError ? (
-            <div
-              role="alert"
-              className={
-                uncertain
-                  ? 'rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning-ink'
-                  : 'rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-xs leading-5 text-danger-ink'
-              }
-            >
-              <p className="font-medium">
-                {uncertain
-                  ? 'The move was not confirmed; the file may already be at the new path.'
-                  : 'The server refused this move.'}
-              </p>
-              <p className="mt-0.5">
-                {uncertain ? uncertainMessage(commandError) : userMessage(commandError)}
-              </p>
-            </div>
-          ) : null}
-
-          {blindRetry ? (
-            <p role="alert" className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning-ink">
-              A previous move is still unresolved. Retry it unchanged, or refresh the tree and open
-              the note at its current path.
-            </p>
-          ) : null}
-
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {attemptRef.current ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  attemptRef.current = null
-                  setBlindRetry(false)
-                  setError(null)
-                  onRefreshTree()
-                }}
-                disabled={writing}
-              >
-                Refresh the tree
-              </Button>
-            ) : null}
-            <Button type="button" variant="secondary" onClick={onClose} disabled={writing}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={writing} disabled={blindRetry}>
-              {uncertain && !blindRetry ? 'Retry the same move' : 'Move note'}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
   )
 }

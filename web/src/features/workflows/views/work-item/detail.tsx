@@ -21,8 +21,14 @@ import {
 } from '../../work-item-model'
 import { useWorkItemDrawer } from '../../use-work-item-drawer'
 import type { ViewRendererProps } from '../../view-types'
-import { DeclaredActionsFooter, filterSortLimit, SurfaceFooter } from '../resource-surface'
-import { ComponentPanel, ProvenanceNote, UnavailablePanel } from '../shared'
+import {
+  ComponentPanel,
+  DeclaredActionsFooter,
+  ProvenanceNote,
+  SurfaceFooter,
+  UnavailablePanel,
+  filterSortLimit,
+} from '@/components/surface'
 import {
   emptyDescription,
   metaLine,

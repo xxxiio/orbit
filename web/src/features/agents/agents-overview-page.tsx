@@ -28,7 +28,7 @@ import {
 import { PageHeader } from '@/components/ui/page-header'
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatMoment } from '@/features/tasks'
+import { formatMoment } from '@/domain'
 import {
   AGENT_STATES,
   agentStateLabel,

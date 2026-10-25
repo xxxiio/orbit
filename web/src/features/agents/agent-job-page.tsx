@@ -4,8 +4,11 @@
  * The page is read-mostly. The only writes are an explicit review decision and
  * an explicit resume that queues a new job. Neither launches an executor and
  * neither completes the Orbit task; the copy says both facts on screen.
+ *
+ * The read-only blocks live in `agent-job/blocks` and the review form in
+ * `agent-job/review-section`; this module owns the reads, the job header and
+ * the resume command.
  */
-import { useEffect, useReducer, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   isApiError,
@@ -17,23 +20,21 @@ import {
   useAgentResumeContext,
   useAgentReview,
   useDocumentTitle,
+  useIdempotentAttempt,
   useResumeAgentJob,
-  useSubmitAgentReview,
   useWorkspaceSnapshot,
   userMessage,
   type ApiError,
 } from '@/hooks'
-import type { AgentHandoff, AgentReview } from '@/api/adapters'
-import type { TaskStatus } from '@/api/contracts'
+import type { AgentReview } from '@/api/adapters'
+import { formatMoment } from '@/domain'
+import { useTaskDrawer } from '@/features/tasks'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
 import { ErrorState } from '@/components/ui/error-state'
 import {
-  AgentsIcon,
   AlertCircleIcon,
   ArrowLeftIcon,
-  ClockIcon,
   FolderIcon,
   LoaderIcon,
   RefreshIcon,
@@ -42,10 +43,7 @@ import { PageHeader } from '@/components/ui/page-header'
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel'
 import { Section } from '@/components/ui/section'
 import { SkeletonText } from '@/components/ui/skeleton'
-import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/components/ui/utils'
-import { formatMoment, statusLabel } from '@/features/tasks'
-import { useTaskDrawer } from '@/features/tasks'
 import {
   agentKindLabel,
   agentStateLabel,
@@ -56,382 +54,14 @@ import {
   reviewDecisionLabel,
   shortAgentId,
 } from './agent-model'
+import { Fact, HandoffList, JobSkeleton, JsonBlock, NotVisiblePanel } from './agent-job/blocks'
+import { ReviewSection } from './agent-job/review-section'
 
-function JobSkeleton() {
-  return (
-    <div className="flex flex-col gap-5" aria-busy="true" aria-label="Loading agent job">
-      <SkeletonText lines={2} />
-      <div className="rounded-lg border border-line p-5">
-        <SkeletonText lines={5} />
-      </div>
-      <div className="rounded-lg border border-line p-5">
-        <SkeletonText lines={4} />
-      </div>
-    </div>
-  )
-}
-
-function NotVisiblePanel({ id }: { id: string }) {
-  return (
-    <Panel>
-      <EmptyState
-        icon={<AgentsIcon size={21} />}
-        title="This job is not visible to this device"
-        description={
-          <>
-            Agent jobs belong to the device that started them. The server answered 403 for{' '}
-            <span className="font-mono text-ink-soft">{id}</span>; it does not confirm whether the
-            job exists on another device.
-          </>
-        }
-        action={
-          <Button asChild variant="secondary" size="sm">
-            <Link to="/agents">Back to Agents</Link>
-          </Button>
-        }
-        className="min-h-[20rem]"
-      />
-    </Panel>
-  )
-}
-
-function JsonBlock({ label, value }: { label: string; value: unknown }) {
-  let text: string
-  try {
-    text = JSON.stringify(value, null, 2) ?? 'null'
-  } catch {
-    text = String(value)
-  }
-  return (
-    <div className="min-w-0">
-      <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">{label}</p>
-      <pre className="scrollbar-slim mt-1 max-h-72 overflow-auto rounded-md border border-line bg-surface-sunken p-3 font-mono text-2xs leading-5 text-ink-soft">
-        {text}
-      </pre>
-    </div>
-  )
-}
-
-function HandoffList({ handoffs }: { handoffs: AgentHandoff[] }) {
-  if (handoffs.length === 0) {
-    return (
-      <p className="text-xs leading-5 text-ink-muted">
-        This job has no handoffs yet. A review needs a persisted handoff; the executor submits it.
-      </p>
-    )
-  }
-  return (
-    <ul aria-label="Handoffs" className="flex flex-col gap-2">
-      {handoffs.map((handoff, index) => (
-        <li key={handoff.handoffId} className="rounded-md border border-line bg-surface-sunken/25 px-3 py-2.5">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-sm font-medium text-ink">
-              {index === handoffs.length - 1 ? 'Latest handoff' : `Handoff ${handoffs.length - index}`}
-            </span>
-            <span className="font-mono text-2xs text-ink-muted">{handoff.handoffId}</span>
-            <span className="ml-auto inline-flex items-center gap-1 text-2xs text-ink-faint">
-              <ClockIcon size={11} />
-              {formatMoment(handoff.reportedAtMs)}
-            </span>
-          </div>
-          <JsonBlock label="Payload" value={handoff.payload} />
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-function ReviewSection({
-  jobId,
-  handoffs,
-  review,
-  taskStatus,
-  onRefresh,
-}: {
-  jobId: string
-  handoffs: AgentHandoff[]
-  review: ReturnType<typeof useAgentReview>['data']
-  taskStatus: TaskStatus | null
-  onRefresh: () => Promise<{ ok: boolean; review: AgentReview | null }>
-}) {
-  const submit = useSubmitAgentReview()
-  const [decision, setDecision] = useState<'approved' | 'changes_requested'>('approved')
-  const [reason, setReason] = useState('')
-  const [localError, setLocalError] = useState<string | null>(null)
-  const [announcement, setAnnouncement] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const attemptRef = useRef<{ key: string; atMs: number } | null>(null)
-  // Clearing `attemptRef` does not re-render, and `blindRetry` is derived during
-  // render; this forces the form to notice that the pinned attempt is gone.
-  const [, bumpAttempt] = useReducer((value: number) => value + 1, 0)
-
-  const latest = handoffs[handoffs.length - 1]
-  const key = `${jobId}\u0000${latest?.handoffId ?? ''}\u0000${decision}\u0000${reason}`
-  const uncertain = submit.disposition === 'uncertain'
-  const refused = submit.disposition === 'rejected'
-  const blindRetry = uncertain && attemptRef.current !== null && attemptRef.current.key !== key
-  const commandError: ApiError | null = uncertain || refused ? submit.error : null
-
-  useEffect(() => {
-    if (!announcement) return
-    const timer = window.setTimeout(() => setAnnouncement(null), 6000)
-    return () => window.clearTimeout(timer)
-  }, [announcement])
-
-  /**
-   * An explicit refresh is the way out of an unconfirmed review. If the server
-   * still has no review for this job, the pinned attempt did not land, so it is
-   * safe to drop the key and let the person choose another decision. If a review
-   * does exist, the recorded-review branch replaces this form.
-   */
-  const refresh = async () => {
-    setRefreshing(true)
-    try {
-      const current = await onRefresh()
-      if (!current.ok) {
-        setLocalError('The job could not be refreshed. Try again before recording a decision.')
-        return
-      }
-      if (current.review) {
-        setAnnouncement('Refreshed: the review on record is shown below.')
-      } else if (attemptRef.current) {
-        attemptRef.current = null
-        submit.reset()
-        setLocalError(null)
-        bumpAttempt()
-        setAnnouncement(
-          'Refreshed: no review is on record. The unconfirmed attempt was discarded; you can record a decision.',
-        )
-      } else {
-        setAnnouncement('Refreshed: no review is on record yet.')
-      }
-    } catch {
-      setLocalError('The job could not be refreshed. Try again before recording a decision.')
-    } finally {
-      setRefreshing(false)
-    }
-  }
-
-  const record = async () => {
-    if (!latest) {
-      setLocalError('A review needs a persisted handoff. This job has none yet.')
-      return
-    }
-    if (reason.trim().length === 0) {
-      setLocalError('Add a short reason for the decision.')
-      return
-    }
-    if (blindRetry) return
-    setLocalError(null)
-    if (attemptRef.current?.key !== key) {
-      attemptRef.current = { key, atMs: Date.now() }
-    }
-    try {
-      await submit.mutateAsync({
-        jobId,
-        handoffId: latest.handoffId,
-        decision,
-        reason: reason.trim(),
-        atMs: attemptRef.current.atMs,
-      })
-      attemptRef.current = null
-      setReason('')
-      setAnnouncement(
-        decision === 'approved'
-          ? 'Review recorded as approved. The task was not completed.'
-          : 'Review recorded as changes requested. The task is unchanged.',
-      )
-      void onRefresh()
-    } catch {
-      // The server's answer is rendered below.
-    }
-  }
-
-  if (review) {
-    return (
-      <Section
-        title="Review"
-        description="The server records one review for this job. Approving a handoff never completes the Orbit task."
-        aside={
-          <Badge tone={review.decision === 'approved' ? 'success' : 'warning'}>
-            {reviewDecisionLabel(review.decision)}
-          </Badge>
-        }
-      >
-        <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
-          <div className="min-w-0">
-            <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">Reviewer</dt>
-            <dd className="font-mono text-xs text-ink-soft">{review.reviewer}</dd>
-          </div>
-          <div className="min-w-0">
-            <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">Recorded</dt>
-            <dd className="text-sm text-ink-soft">{formatMoment(review.reviewedAtMs)}</dd>
-          </div>
-          <div className="min-w-0 sm:col-span-2">
-            <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">Reason</dt>
-            <dd className="whitespace-pre-wrap text-sm leading-6 text-ink-soft">{review.reason}</dd>
-          </div>
-          <div className="min-w-0 sm:col-span-2">
-            <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">Task effect</dt>
-            <dd className="text-sm leading-6 text-ink-soft">
-              <Badge tone={review.taskCompleted ? 'danger' : 'neutral'}>
-                {review.taskCompleted ? 'Task completed' : 'Task not completed'}
-              </Badge>{' '}
-              A review decision is separate from task acceptance
-              {taskStatus ? `; the task is still ${statusLabel(taskStatus)}` : ''}.
-            </dd>
-          </div>
-        </dl>
-        {review.decision === 'changes_requested' ? (
-          <p className="mt-3 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning-ink">
-            Changes were requested. Resume below creates a new job for an executor; it does not
-            launch one, and it does not infer task completion.
-          </p>
-        ) : (
-          <p className="mt-3 text-xs leading-5 text-ink-muted">
-            A conflicting second decision is refused by the server. This page does not offer one.
-          </p>
-        )}
-        <p role="status" aria-live="polite" className="mt-2 min-h-4 text-2xs text-ink-muted">
-          {announcement}
-        </p>
-      </Section>
-    )
-  }
-
-  return (
-    <Section
-      title="Review"
-      description="Read the latest handoff, then record one decision with a reason. The server refuses a conflicting second review."
-      aside={latest ? <Badge tone="accent">Review available</Badge> : <Badge tone="neutral">No handoff</Badge>}
-    >
-      <div className="rounded-md border border-info/30 bg-info-soft/50 px-3 py-2 text-xs leading-5 text-info-ink">
-        <p className="font-medium">Approving records a review. It does not complete the task.</p>
-        <p className="mt-0.5">
-          Task acceptance stays on the task itself{taskStatus ? ` (currently ${statusLabel(taskStatus)})` : ''}.
-        </p>
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Review decision">
-        <button
-          type="button"
-          onClick={() => setDecision('approved')}
-          aria-pressed={decision === 'approved'}
-          className={cn(
-            'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
-            decision === 'approved'
-              ? 'border-success/50 bg-success-soft text-success-ink'
-              : 'border-line bg-surface text-ink-soft hover:border-line-strong',
-          )}
-          disabled={!latest || submit.isPending}
-        >
-          Approve
-        </button>
-        <button
-          type="button"
-          onClick={() => setDecision('changes_requested')}
-          aria-pressed={decision === 'changes_requested'}
-          className={cn(
-            'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
-            decision === 'changes_requested'
-              ? 'border-warning/50 bg-warning-soft text-warning-ink'
-              : 'border-line bg-surface text-ink-soft hover:border-line-strong',
-          )}
-          disabled={!latest || submit.isPending}
-        >
-          Request changes
-        </button>
-      </div>
-
-      <div className="mt-3">
-        <label htmlFor="review-reason" className="text-sm font-medium text-ink">
-          Reason <span aria-hidden="true" className="text-danger">*</span>
-        </label>
-        <Textarea
-          id="review-reason"
-          value={reason}
-          onChange={(event) => {
-            setReason(event.target.value)
-            setLocalError(null)
-          }}
-          placeholder={
-            decision === 'approved'
-              ? 'What did you verify before approving?'
-              : 'What needs to change before this can land?'
-          }
-          disabled={!latest || submit.isPending}
-          className="mt-1.5 min-h-[4.5rem]"
-        />
-      </div>
-
-      {!latest ? (
-        <p className="mt-2 text-xs leading-5 text-warning-ink">
-          A review needs a persisted handoff. Nothing can be recorded for this job yet.
-        </p>
-      ) : null}
-
-      {localError ? (
-        <p role="alert" className="mt-2 text-xs leading-5 text-danger-ink">
-          {localError}
-        </p>
-      ) : null}
-
-      {commandError ? (
-        <div
-          role="alert"
-          className={cn(
-            'mt-2 rounded-md border px-3 py-2 text-xs leading-5',
-            uncertain
-              ? 'border-warning/40 bg-warning-soft text-warning-ink'
-              : 'border-danger/30 bg-danger-soft text-danger-ink',
-          )}
-        >
-          <p className="font-medium">
-            {uncertain ? 'The review was not confirmed.' : 'The server refused this review.'}
-          </p>
-          <p className="mt-0.5">
-            {uncertain ? uncertainMessage(commandError) : userMessage(commandError)}
-          </p>
-          <p className="mt-1">
-            Retry the same review unchanged, or refresh the job. A refresh that finds no review
-            discards this unconfirmed attempt so you can choose a different decision.
-          </p>
-        </div>
-      ) : null}
-
-      {blindRetry ? (
-        <p role="alert" className="mt-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning-ink">
-          These fields no longer match the review whose outcome is unknown. Retry it unchanged, or
-          refresh the job. If no review is on record, the refresh discards the unconfirmed attempt
-          and this form accepts a new decision.
-        </p>
-      ) : null}
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          onClick={() => void record()}
-          loading={submit.isPending}
-          disabled={!latest || blindRetry}
-        >
-          {uncertain && !blindRetry ? 'Retry the same review' : 'Record review'}
-        </Button>
-        <Button
-          size="sm"
-          variant="quiet"
-          onClick={() => void refresh()}
-          loading={refreshing}
-          disabled={submit.isPending}
-        >
-          Refresh the job
-        </Button>
-      </div>
-
-      <p role="status" aria-live="polite" className="mt-2 min-h-4 text-2xs text-ink-muted">
-        {announcement}
-      </p>
-    </Section>
-  )
+interface ResumeAttempt {
+  /** One resume per job: the same page cannot queue two successors. */
+  key: string
+  newJobId: string
+  atMs: number
 }
 
 export function AgentJobPage() {
@@ -445,7 +75,11 @@ export function AgentJobPage() {
   const resume = useResumeAgentJob()
   const snapshot = useWorkspaceSnapshot()
   const { openTask } = useTaskDrawer()
-  const resumeAttempt = useRef<{ newJobId: string; atMs: number } | null>(null)
+  const resumeAttempt = useIdempotentAttempt<ResumeAttempt>((key) => ({
+    key,
+    newJobId: newCommandId(),
+    atMs: Date.now(),
+  }))
   const task = snapshot.data?.tasks.find((candidate) => candidate.id === job.data?.taskId)
   const project = snapshot.data?.projects.find((candidate) => candidate.id === job.data?.projectId)
 
@@ -500,17 +134,14 @@ export function AgentJobPage() {
 
   const startResume = async () => {
     if (!resumeContext.data || resume.isPending) return
-    if (!resumeAttempt.current) {
-      resumeAttempt.current = { newJobId: newCommandId(), atMs: Date.now() }
-    }
-    const attempt = resumeAttempt.current
+    const pinned = resumeAttempt.ensure(current.id)
     try {
       const next = await resume.mutateAsync({
         priorJobId: current.id,
-        newJobId: attempt.newJobId,
-        atMs: attempt.atMs,
+        newJobId: pinned.newJobId,
+        atMs: pinned.atMs,
       })
-      resumeAttempt.current = null
+      resumeAttempt.clear()
       navigate(`/agents/${encodeURIComponent(next.id)}`)
     } catch {
       // The mutation's disposition and error are rendered in the section.
@@ -555,7 +186,7 @@ export function AgentJobPage() {
                 {task.title}
               </button>
             ) : (
-              <span>Task {current.taskId}</span>
+              <span>A task outside this snapshot</span>
             )}
             <span aria-hidden="true">·</span>
             <span className="font-mono text-2xs">{current.id}</span>
@@ -807,15 +438,6 @@ export function AgentJobPage() {
         )}{' '}
         No launch control exists in this browser.
       </p>
-    </div>
-  )
-}
-
-function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">{label}</dt>
-      <dd className={cn('break-words text-sm text-ink-soft', mono && 'font-mono text-xs')}>{value}</dd>
     </div>
   )
 }

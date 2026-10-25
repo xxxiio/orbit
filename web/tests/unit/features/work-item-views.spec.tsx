@@ -4,12 +4,10 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import type { WorkItem, Workflow, WorkflowViewComponent } from '@/api/adapters'
-import {
-  WorkItemBoardView,
-  WorkItemDetailView,
-  WorkItemListView,
-  WorkItemTableView,
-} from '@/features/workflows/views/work-item-views'
+import { WorkItemBoardView } from '@/features/workflows/views/work-item/board'
+import { WorkItemDetailView } from '@/features/workflows/views/work-item/detail'
+import { WorkItemListView } from '@/features/workflows/views/work-item/list'
+import { WorkItemTableView } from '@/features/workflows/views/work-item/table'
 import type { ViewRendererProps } from '@/features/workflows/view-types'
 import { testQueryClient } from '../api/test-utils'
 

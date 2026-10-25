@@ -6,10 +6,11 @@
  * mean the note exists; an unchanged retry replays the same ids, while a changed
  * payload cannot mint a new id until the person looks at the tree.
  */
-import { useRef, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import {
   newCommandId,
   uncertainMessage,
+  useIdempotentAttempt,
   useMarkdownCommand,
   userMessage,
   type ApiError,
@@ -45,13 +46,16 @@ export function NewNoteDialog({ folders, onClose, onCreated, onRefreshTree }: Ne
   const [markdown, setMarkdown] = useState('')
   const [pathError, setPathError] = useState<string | null>(null)
   const [titleError, setTitleError] = useState<string | null>(null)
-  const attemptRef = useRef<CreateAttempt | null>(null)
+  const attempt = useIdempotentAttempt<CreateAttempt>((attemptKey) => ({
+    key: attemptKey,
+    noteId: newCommandId(),
+    commandId: newCommandId(),
+  }))
 
   const trimmedPath = path.trim().replace(/^\/+/, '')
   const key = `${trimmedPath}\u0000${title}\u0000${markdown}`
-  const uncertainAttempt =
-    command.disposition === 'uncertain' && attemptRef.current !== null
-  const blindRetry = uncertainAttempt && attemptRef.current?.key !== key
+  const uncertainAttempt = command.disposition === 'uncertain' && attempt.attempt !== null
+  const blindRetry = uncertainAttempt && attempt.isStale(key)
   const submitting = command.isPending
   const error: ApiError | null =
     command.disposition === 'rejected' || command.disposition === 'uncertain' ? command.error : null
@@ -70,25 +74,18 @@ export function NewNoteDialog({ folders, onClose, onCreated, onRefreshTree }: Ne
     setPathError(null)
     setTitleError(null)
 
-    if (attemptRef.current?.key !== key) {
-      attemptRef.current = {
-        key,
-        noteId: newCommandId(),
-        commandId: newCommandId(),
-      }
-    }
-    const attempt = attemptRef.current
+    const pinned = attempt.ensure(key)
     try {
       await command.mutateAsync({
-        commandId: attempt.commandId,
+        commandId: pinned.commandId,
         command: {
           kind: 'Create',
-          note_id: attempt.noteId,
+          note_id: pinned.noteId,
           path: trimmedPath,
-          body: createNoteBody(attempt.noteId, title, markdown),
+          body: createNoteBody(pinned.noteId, title, markdown),
         },
       })
-      attemptRef.current = null
+      attempt.clear()
       toast({ tone: 'success', title: 'Note created', description: trimmedPath })
       onCreated(trimmedPath)
       onClose()
@@ -199,7 +196,7 @@ export function NewNoteDialog({ folders, onClose, onCreated, onRefreshTree }: Ne
                 type="button"
                 variant="secondary"
                 onClick={() => {
-                  attemptRef.current = null
+                  attempt.clear()
                   onRefreshTree()
                 }}
                 disabled={submitting}

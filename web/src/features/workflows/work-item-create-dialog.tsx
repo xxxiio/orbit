@@ -12,6 +12,7 @@ import {
   newCommandId,
   uncertainMessage,
   useCreateWorkItem,
+  useIdempotentAttempt,
   userMessage,
 } from '@/hooks'
 import { Button } from '@/components/ui/button'
@@ -263,7 +264,11 @@ export function NewWorkItemDialog({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitted, setSubmitted] = useState(false)
   const firstFieldRef = useRef<HTMLDivElement>(null)
-  const attemptRef = useRef<CreateWorkItemAttempt | null>(null)
+  const attempt = useIdempotentAttempt<CreateWorkItemAttempt>((key) => ({
+    key,
+    commandId: newCommandId(),
+    itemId: newCommandId(),
+  }))
 
   // Choosing another kind is a different schema; drafts must not leak across.
   useEffect(() => {
@@ -276,7 +281,7 @@ export function NewWorkItemDialog({
   const uncertain = create.disposition === 'uncertain'
   const submitting = create.isPending
   const pinnedId = create.pinnedId
-  const pinnedAttempt = pinnedId !== null && attemptRef.current?.itemId === pinnedId
+  const pinnedAttempt = pinnedId !== null && attempt.attempt?.itemId === pinnedId
   const refusedButPinned = pinnedAttempt && rejection !== null
 
   // The payload on screen and the payload of the attempt whose outcome is
@@ -291,13 +296,6 @@ export function NewWorkItemDialog({
     ? payloadKey(create.variables.kind, create.variables.properties ?? {})
     : null
   const blindRetry = pinnedAttempt && unconfirmedKey !== null && unconfirmedKey !== currentKey
-
-  function attemptFor(key: string): CreateWorkItemAttempt {
-    if (attemptRef.current?.key !== key) {
-      attemptRef.current = { key, commandId: newCommandId(), itemId: newCommandId() }
-    }
-    return attemptRef.current
-  }
 
   const nameOptions = useMemo(
     () =>
@@ -319,16 +317,16 @@ export function NewWorkItemDialog({
       return
     }
     setErrors({})
-    const attempt = attemptFor(payloadKey(kind.id, checked.properties))
+    const pinned = attempt.ensure(payloadKey(kind.id, checked.properties))
     try {
       const item = await create.mutateAsync({
-        commandId: attempt.commandId,
-        id: attempt.itemId,
+        commandId: pinned.commandId,
+        id: pinned.itemId,
         projectId,
         kind: kind.id,
         properties: checked.properties,
       })
-      attemptRef.current = null
+      attempt.clear()
       toast({
         tone: 'success',
         title: 'Work item created',

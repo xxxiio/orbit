@@ -25,7 +25,7 @@ import {
   InlineReadError,
   ProvenanceNote,
   UnavailablePanel,
-} from './shared'
+} from '@/components/surface'
 import { TaskSummaryList } from './list-view'
 import { WorkItemTableView } from './work-item-views'
 import { KnowledgeTablePanel } from '@/features/knowledge'

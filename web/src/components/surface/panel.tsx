@@ -1,10 +1,11 @@
 /**
- * Shared chrome for one declared view component.
+ * Shared chrome for one product panel.
  *
  * A renderer is a panel: it has a title, an optional declared caveat and a
  * body. Keeping the chrome here is what makes Basic, Development, Research,
  * Learning and Habits feel like one product even though their workflows declare
- * very different panels.
+ * very different panels, and what lets Knowledge, Agent jobs and Attachments
+ * use the same chrome without importing a workflow module.
  */
 import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
@@ -131,13 +132,20 @@ export function ProvenanceNote({ children }: { children: ReactNode }) {
  * a button for an action it cannot complete. Say which actions were declared
  * where the declaration exists instead of dropping it silently.
  */
-export function DeclaredActionsNote({ component }: { component: WorkflowViewComponent }) {
+export function DeclaredActionsNote({
+  component,
+  ownLabel = 'controls',
+}: {
+  component: WorkflowViewComponent
+  /** The noun the panel's own affordances go by ("controls", "links"). */
+  ownLabel?: string
+}) {
   if (component.actions.length === 0) return null
   const names = component.actions.map((action) => humanizeIdentifier(workflowText(action)))
   return (
     <span data-declared-actions={component.actions.join(',')}>
       The workflow also declares the {names.join(', ')} action
-      {component.actions.length === 1 ? '' : 's'}; this panel renders its own controls and does
+      {component.actions.length === 1 ? '' : 's'}; this panel renders its own {ownLabel} and does
       not attach an action it cannot complete.
     </span>
   )

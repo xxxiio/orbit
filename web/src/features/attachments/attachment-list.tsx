@@ -43,7 +43,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { SkeletonText } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
-import { formatMoment } from '@/features/tasks'
+import { formatMoment } from '@/domain'
 
 type UploadStatus = 'uploading' | 'rejected' | 'uncertain'
 

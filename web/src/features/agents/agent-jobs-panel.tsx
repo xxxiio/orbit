@@ -4,19 +4,29 @@
  * The read is the device-wide overview: the server has already filtered it to
  * jobs this device owns. Rows link to the job detail; this panel never offers a
  * start or launch control, because starting a job is an executor-side action.
+ *
+ * Chrome comes from the shared surface kit (`@/components/ui`), so the read
+ * ladder (loading → refused → error → rows) is the same one every source uses.
  */
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { AgentJobOverview, WorkflowViewComponent } from '@/api/adapters'
+import { formatMoment } from '@/domain'
 import { emptyTextOption } from '@/features/workflows/declarations'
-import { useAgentOverview, useWorkspaceSnapshot, userMessage } from '@/hooks'
+import { useAgentOverview, useWorkspaceSnapshot } from '@/hooks'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
-import { ErrorState } from '@/components/ui/error-state'
-import { AgentsIcon, LayersIcon } from '@/components/ui/icons'
-import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel'
+import { AgentsIcon } from '@/components/ui/icons'
 import { SkeletonText } from '@/components/ui/skeleton'
+import {
+  ComponentPanel,
+  DeclaredActionsNote,
+  InlineReadError,
+  ProvenanceNote,
+  TableHeadCell,
+  UnavailablePanel,
+} from '@/components/ui'
 import { humanizeIdentifier } from '@/lib/humanize'
 import { workflowText } from '@/domain'
 import {
@@ -26,7 +36,6 @@ import {
   reviewDecisionLabel,
   shortAgentId,
 } from '@/features/agents/agent-model'
-import { formatMoment } from '@/features/tasks'
 
 function panelTitle(component: WorkflowViewComponent): string {
   const declared = workflowText(component.title)?.trim()
@@ -145,85 +154,51 @@ export function AgentJobsPanel({ component }: { component: WorkflowViewComponent
 
   if (source !== 'agent_jobs') {
     return (
-      <Panel className="flex min-w-0 flex-col">
-        <PanelHeader title={panelTitle(component)} className="flex-wrap gap-y-2" />
-        <PanelBody className="min-w-0 flex-1 p-0">
-          <EmptyState
-            compact
-            headingLevel="p"
-            icon={<LayersIcon size={18} />}
-            title="Not available in the browser yet"
-            description={`This panel is declared over “${source}”, not agent jobs.`}
-            className="min-h-[12rem]"
-          />
-        </PanelBody>
-      </Panel>
+      <UnavailablePanel
+        title={panelTitle(component)}
+        reason={`This panel is declared over “${source}”, not agent jobs.`}
+      />
     )
   }
   if (Object.keys(component.filter ?? {}).length > 0 || component.sort) {
     return (
-      <Panel className="flex min-w-0 flex-col">
-        <PanelHeader title={panelTitle(component)} className="flex-wrap gap-y-2" />
-        <PanelBody className="min-w-0 flex-1 p-0">
-          <EmptyState
-            compact
-            headingLevel="p"
-            icon={<LayersIcon size={18} />}
-            title="Not available in the browser yet"
-            description="This build cannot evaluate a declared filter or sort over agent jobs. The overview is ordered by the server's update time; another order would not be the declaration."
-            className="min-h-[12rem]"
-          />
-        </PanelBody>
-      </Panel>
+      <UnavailablePanel
+        title={panelTitle(component)}
+        reason="This build cannot evaluate a declared filter or sort over agent jobs. The overview is ordered by the server's update time; another order would not be the declaration."
+      />
     )
   }
 
   if (table && unsupportedNames.length > 0) {
     return (
-      <Panel className="flex min-w-0 flex-col">
-        <PanelHeader title={panelTitle(component)} className="flex-wrap gap-y-2" />
-        <PanelBody className="min-w-0 flex-1 p-0">
-          <EmptyState
-            compact
-            headingLevel="p"
-            icon={<LayersIcon size={18} />}
-            title="Not available in the browser yet"
-            description={`This table declares the ${unsupportedNames
-              .map((name) => `“${name}”`)
-              .join(', ')} column${unsupportedNames.length === 1 ? '' : 's'}. The agent-job overview exposes state, task, project, handoffs, next action, review and update time; the panel refuses rather than substituting a different column.`}
-            className="min-h-[12rem]"
-          />
-        </PanelBody>
-      </Panel>
+      <UnavailablePanel
+        title={panelTitle(component)}
+        reason={`This table declares the ${unsupportedNames
+          .map((name) => `“${name}”`)
+          .join(', ')} column${unsupportedNames.length === 1 ? '' : 's'}. The agent-job overview exposes state, task, project, handoffs, next action, review and update time; the panel refuses rather than substituting a different column.`}
+      />
     )
   }
 
   if (overview.isPending && !overview.data) {
     return (
-      <Panel className="flex min-w-0 flex-col">
-        <PanelHeader title={panelTitle(component)} className="flex-wrap gap-y-2" />
-        <PanelBody className="min-w-0 flex-1">
-          <div aria-busy="true">
-            <SkeletonText lines={3} />
-          </div>
-        </PanelBody>
-      </Panel>
+      <ComponentPanel title={panelTitle(component)}>
+        <div aria-busy="true">
+          <SkeletonText lines={3} />
+        </div>
+      </ComponentPanel>
     )
   }
   if (overview.error && !overview.data) {
     return (
-      <Panel className="flex min-w-0 flex-col">
-        <PanelHeader title={panelTitle(component)} className="flex-wrap gap-y-2" />
-        <PanelBody className="min-w-0 flex-1">
-          <ErrorState
-            compact
-            title="Agent jobs could not be read"
-            description={userMessage(overview.error)}
-            onRetry={() => void overview.refetch()}
-            retrying={overview.isFetching}
-          />
-        </PanelBody>
-      </Panel>
+      <ComponentPanel title={panelTitle(component)}>
+        <InlineReadError
+          label="Agent jobs"
+          error={overview.error}
+          onRetry={() => void overview.refetch()}
+          retrying={overview.isFetching}
+        />
+      </ComponentPanel>
     )
   }
 
@@ -233,150 +208,143 @@ export function AgentJobsPanel({ component }: { component: WorkflowViewComponent
   const compact = component.type === 'list'
 
   return (
-    <Panel className="flex min-w-0 flex-col">
-      <PanelHeader
-        title={panelTitle(component)}
-        description={
+    <ComponentPanel
+      title={panelTitle(component)}
+      description={
+        compact
+          ? 'Every job this device can see, newest update first. A compact list; open one for review and resume.'
+          : table
+            ? 'The declared columns over this device\'s jobs, newest update first. Opening one is a read; the detail page offers review and resume only.'
+            : 'Jobs owned by this device, newest update first. Opening one is a read; the detail page offers review and resume only.'
+      }
+      bodyClassName="px-0 py-0"
+      footer={
+        <>
+          <ProvenanceNote>
+            {jobs.length} of {overview.data?.length ?? 0} visible jobs
+            {attention > 0 ? ` · ${attention} need attention` : ''}. Agent jobs are device-wide;
+            project and task names come from the workspace.
+          </ProvenanceNote>
+          {component.actions.length > 0 ? (
+            <div className="mt-1">
+              <ProvenanceNote>
+                <DeclaredActionsNote component={component} ownLabel="links" />
+              </ProvenanceNote>
+            </div>
+          ) : null}
+        </>
+      }
+    >
+      {jobs.length === 0 ? (
+        <EmptyState
           compact
-            ? 'Every job this device can see, newest update first. A compact list; open one for review and resume.'
-            : table
-              ? 'The declared columns over this device\'s jobs, newest update first. Opening one is a read; the detail page offers review and resume only.'
-              : 'Jobs owned by this device, newest update first. Opening one is a read; the detail page offers review and resume only.'
-        }
-        className="flex-wrap gap-y-2"
-      />
-      <PanelBody className="min-w-0 flex-1 px-0 py-0">
-        {jobs.length === 0 ? (
-          <EmptyState
-            compact
-            headingLevel="p"
-            icon={<AgentsIcon size={18} />}
-            title="No agent jobs are visible to this device"
-            description={
-              emptyText ?? 'Jobs are started by an executor or the command line, not by this panel.'
-            }
-            action={
-              <Button asChild variant="secondary" size="sm">
-                <Link to="/agents">Open Agents</Link>
-              </Button>
-            }
-          />
-        ) : table ? (
-          <div className="overflow-x-auto">
-            <table aria-label="Agent jobs" className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-line bg-surface-sunken/70 text-left">
+          headingLevel="p"
+          icon={<AgentsIcon size={18} />}
+          title="No agent jobs are visible to this device"
+          description={
+            emptyText ?? 'Jobs are started by an executor or the command line, not by this panel.'
+          }
+          action={
+            <Button asChild variant="secondary" size="sm">
+              <Link to="/agents">Open Agents</Link>
+            </Button>
+          }
+        />
+      ) : table ? (
+        <div className="overflow-x-auto">
+          <table aria-label="Agent jobs" className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-line bg-surface-sunken/70 text-left">
+                {columnKeys.map((column, index) => (
+                  <TableHeadCell key={`${column}:${index}`}>{AGENT_JOB_COLUMNS[column]}</TableHeadCell>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr
+                  key={job.jobId}
+                  data-agent-job={job.jobId}
+                  className="border-b border-line last:border-b-0 hover:bg-surface-hover/40"
+                >
                   {columnKeys.map((column, index) => (
-                    <th
+                    <td
                       key={`${column}:${index}`}
-                      scope="col"
-                      className="whitespace-nowrap px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint"
+                      className="whitespace-nowrap px-4 py-2 align-middle text-xs text-ink-soft"
                     >
-                      {AGENT_JOB_COLUMNS[column]}
-                    </th>
+                      {index === 0 ? (
+                        <Link
+                          to={`/agents/${encodeURIComponent(job.jobId)}`}
+                          className="underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                        >
+                          {columnCell(column, job, tasks, projects)}
+                        </Link>
+                      ) : (
+                        columnCell(column, job, tasks, projects)
+                      )}
+                    </td>
                   ))}
                 </tr>
-              </thead>
-              <tbody>
-                {jobs.map((job) => (
-                  <tr
-                    key={job.jobId}
-                    data-agent-job={job.jobId}
-                    className="border-b border-line last:border-b-0 hover:bg-surface-hover/40"
-                  >
-                    {columnKeys.map((column, index) => (
-                      <td
-                        key={`${column}:${index}`}
-                        className="whitespace-nowrap px-4 py-2 align-middle text-xs text-ink-soft"
-                      >
-                        {index === 0 ? (
-                          <Link
-                            to={`/agents/${encodeURIComponent(job.jobId)}`}
-                            className="underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                          >
-                            {columnCell(column, job, tasks, projects)}
-                          </Link>
-                        ) : (
-                          columnCell(column, job, tasks, projects)
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : compact ? (
-          <ul aria-label="All agent jobs" className="divide-y divide-line">
-            {jobs.map((job) => (
-              <li key={job.jobId} data-agent-job={job.jobId}>
-                <Link
-                  to={`/agents/${encodeURIComponent(job.jobId)}`}
-                  className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-1.5 text-2xs transition-colors hover:bg-surface-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
-                >
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : compact ? (
+        <ul aria-label="All agent jobs" className="divide-y divide-line">
+          {jobs.map((job) => (
+            <li key={job.jobId} data-agent-job={job.jobId}>
+              <Link
+                to={`/agents/${encodeURIComponent(job.jobId)}`}
+                className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-1.5 text-2xs transition-colors hover:bg-surface-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
+              >
+                <Badge tone={agentStateTone(job.state)} dot>
+                  {agentStateLabel(job.state)}
+                </Badge>
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                  {tasks.get(job.taskId) ?? shortAgentId(job.jobId)}
+                </span>
+                <span className="font-mono text-ink-muted">{shortAgentId(job.jobId)}</span>
+                <span className="text-ink-faint">{nextActionLabel(job.nextAction)}</span>
+                <span className="text-ink-faint">{formatMoment(job.updatedAtMs)}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <ul aria-label="Agent jobs" className="divide-y divide-line">
+          {jobs.map((job) => (
+            <li key={job.jobId} data-agent-job={job.jobId}>
+              <Link
+                to={`/agents/${encodeURIComponent(job.jobId)}`}
+                className="flex flex-col gap-1 px-4 py-2.5 transition-colors hover:bg-surface-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
+              >
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+                    {tasks.get(job.taskId) ?? shortAgentId(job.jobId)}
+                  </span>
                   <Badge tone={agentStateTone(job.state)} dot>
                     {agentStateLabel(job.state)}
                   </Badge>
-                  <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                    {tasks.get(job.taskId) ?? shortAgentId(job.jobId)}
-                  </span>
-                  <span className="font-mono text-ink-muted">{shortAgentId(job.jobId)}</span>
-                  <span className="text-ink-faint">{nextActionLabel(job.nextAction)}</span>
-                  <span className="text-ink-faint">{formatMoment(job.updatedAtMs)}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <ul aria-label="Agent jobs" className="divide-y divide-line">
-            {jobs.map((job) => (
-              <li key={job.jobId} data-agent-job={job.jobId}>
-                <Link
-                  to={`/agents/${encodeURIComponent(job.jobId)}`}
-                  className="flex flex-col gap-1 px-4 py-2.5 transition-colors hover:bg-surface-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
-                >
-                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-                      {tasks.get(job.taskId) ?? shortAgentId(job.jobId)}
-                    </span>
-                    <Badge tone={agentStateTone(job.state)} dot>
-                      {agentStateLabel(job.state)}
-                    </Badge>
-                    {job.needsAttention ? <Badge tone="warning">Needs attention</Badge> : null}
-                  </span>
-                  <span className="flex flex-wrap items-center gap-x-2 text-2xs text-ink-muted">
-                    <span>{projects.get(job.projectId) ?? job.projectId}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="font-mono">{shortAgentId(job.jobId)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{job.handoffCount} handoff{job.handoffCount === 1 ? '' : 's'}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{nextActionLabel(job.nextAction)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{reviewDecisionLabel(job.reviewDecision)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{formatMoment(job.updatedAtMs)}</span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </PanelBody>
-      <div className="border-t border-line px-5 py-3">
-        <p className="text-2xs leading-4 text-ink-faint">
-          {jobs.length} of {overview.data?.length ?? 0} visible jobs
-          {attention > 0 ? ` · ${attention} need attention` : ''}. Agent jobs are device-wide;
-          project and task names come from the workspace.
-        </p>
-        {component.actions.length > 0 ? (
-          <p className="mt-1 text-2xs leading-4 text-ink-faint">
-            The workflow also declares the {component.actions.map((action) => humanizeIdentifier(workflowText(action))).join(', ')} action
-            {component.actions.length === 1 ? '' : 's'}; this panel renders its own links and does
-            not attach an action it cannot complete.
-          </p>
-        ) : null}
-      </div>
-    </Panel>
+                  {job.needsAttention ? <Badge tone="warning">Needs attention</Badge> : null}
+                </span>
+                <span className="flex flex-wrap items-center gap-x-2 text-2xs text-ink-muted">
+                  <span>{projects.get(job.projectId) ?? job.projectId}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono">{shortAgentId(job.jobId)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{job.handoffCount} handoff{job.handoffCount === 1 ? '' : 's'}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{nextActionLabel(job.nextAction)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{reviewDecisionLabel(job.reviewDecision)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{formatMoment(job.updatedAtMs)}</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </ComponentPanel>
   )
 }

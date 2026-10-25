@@ -1,6 +1,6 @@
 import type { ViewRendererProps } from '../view-types'
 import { componentTypeName } from '../view-metadata'
-import { ComponentPanel, DeclaredActionsNote, ProvenanceNote } from './shared'
+import { ComponentPanel, DeclaredActionsNote, ProvenanceNote } from '@/components/surface'
 
 /**
  * Declared prose. A text component carries the workflow author's own wording;

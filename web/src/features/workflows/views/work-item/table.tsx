@@ -12,9 +12,19 @@ import { emptyTextOption, workItemKindFilterRefusal, workItemMatchesDeclaredFilt
 import { workItemColumnPlan, workItemSortDeclaration } from '../../work-item-model'
 import { useWorkItemDrawer } from '../../use-work-item-drawer'
 import type { ViewRendererProps } from '../../view-types'
-import { DeclaredActionsFooter, filterSortLimit, SurfaceFooter } from '../resource-surface'
-import { ComponentPanel, ProvenanceNote, UnavailablePanel } from '../shared'
-import { ColumnNotice, limitNote, TableHead, TableHeadCell, TableScrollRegion } from '../table-chrome'
+import {
+  ColumnNotice,
+  ComponentPanel,
+  DeclaredActionsFooter,
+  ProvenanceNote,
+  SurfaceFooter,
+  TableHead,
+  TableHeadCell,
+  TableScrollRegion,
+  UnavailablePanel,
+  filterSortLimit,
+  limitNote,
+} from '@/components/surface'
 import {
   Cell,
   emptyDescription,

@@ -38,15 +38,15 @@ import {
   BoardColumnEmpty,
   BoardKeyboardHint,
   BoardScrollRegion,
-  useBoardKeyboard,
-} from '../board-chrome'
-import {
+  ComponentPanel,
   DeclaredActionsFooter,
-  filterSortLimit,
+  ProvenanceNote,
   SurfaceFooter,
-} from '../resource-surface'
-import { ComponentPanel, ProvenanceNote, UnavailablePanel } from '../shared'
-import { limitNote } from '../table-chrome'
+  UnavailablePanel,
+  filterSortLimit,
+  limitNote,
+  useBoardKeyboard,
+} from '@/components/surface'
 import {
   emptyDescription,
   metaLine,

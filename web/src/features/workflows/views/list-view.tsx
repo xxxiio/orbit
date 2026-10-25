@@ -21,14 +21,14 @@ import {
   unsupportedTaskFilterKeys,
 } from '../view-metadata'
 import { taskSortDescriptor } from '../declarations'
-import { filterSortLimit } from './resource-surface'
 import {
   ComponentPanel,
   DeclaredActionsNote,
   InlineReadError,
   ProvenanceNote,
   UnavailablePanel,
-} from './shared'
+  filterSortLimit,
+} from '@/components/surface'
 import { WorkItemListView } from './work-item-views'
 
 function TaskSummaryList({

@@ -32,7 +32,7 @@ import { MilestoneProgressView } from './views/milestone-view'
 import { TableView, TaskListView } from './views/task-list-view'
 import { TextView } from './views/text-view'
 import { TimelineView } from './views/timeline-view'
-import { UnavailablePanel } from './views/shared'
+import { UnavailablePanel } from '@/components/surface'
 
 function HabitTrackerView(props: ViewRendererProps) {
   const days = declaredWindowOption(props.component, 'days')

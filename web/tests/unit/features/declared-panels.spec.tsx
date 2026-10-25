@@ -37,6 +37,17 @@ function renderPanel(panel: ReactElement) {
   )
 }
 
+function stubInventory(notes: unknown[]) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/authoritative/markdown-inventory')) return jsonResponse(notes)
+      return jsonResponse({ error: `unexpected fetch ${url}` }, 404)
+    }),
+  )
+}
+
 function stubOverview(overview: unknown[]) {
   vi.stubGlobal(
     'fetch',
@@ -158,5 +169,159 @@ describe('declared knowledge_refs panel', () => {
     )
 
     expect(await screen.findByText('This project references no notes yet.')).toBeInTheDocument()
+  })
+})
+
+describe('declared knowledge_refs panel chrome', () => {
+  const notes = [
+    { id: 'n-1', path: 'notes/one.md', title: 'First note' },
+    { id: 'n-2', path: 'notes/two.md', title: 'Second note' },
+  ]
+
+  it('lists notes, links them by path and names the declared limit', async () => {
+    stubInventory(notes)
+    renderPanel(
+      <KnowledgeRefsPanel
+        component={component({
+          id: 'references',
+          type: 'knowledge_refs',
+          title: 'References',
+          source: 'knowledge',
+          limit: 1,
+        })}
+      />,
+    )
+
+    expect(await screen.findByRole('link', { name: /First note/ })).toHaveAttribute(
+      'href',
+      '/knowledge/notes/one.md',
+    )
+    expect(screen.queryByText('Second note')).not.toBeInTheDocument()
+    expect(screen.getByText(/Showing 1 of 2 notes/)).toBeInTheDocument()
+  })
+
+  it('names a declared column the inventory cannot represent', async () => {
+    stubInventory(notes)
+    renderPanel(
+      <KnowledgeRefsPanel
+        component={component({
+          id: 'references',
+          type: 'knowledge_refs',
+          title: 'References',
+          source: 'knowledge',
+          columns: ['Title', 'Word count'],
+        })}
+      />,
+    )
+
+    expect(await screen.findByText(/The workflow declares “Word count”/)).toBeInTheDocument()
+  })
+
+  it('renders the declared actions note with its own vocabulary', async () => {
+    stubInventory(notes)
+    renderPanel(
+      <KnowledgeRefsPanel
+        component={component({
+          id: 'references',
+          type: 'knowledge_refs',
+          title: 'References',
+          source: 'knowledge',
+          actions: ['create_note'],
+        })}
+      />,
+    )
+
+    expect(await screen.findByText(/this panel renders its own links/)).toBeInTheDocument()
+  })
+
+  it('refuses a declared filter or sort instead of showing another order', () => {
+    stubInventory(notes)
+    renderPanel(
+      <KnowledgeRefsPanel
+        component={component({
+          id: 'references',
+          type: 'knowledge_refs',
+          title: 'References',
+          source: 'knowledge',
+          sort: 'title',
+        })}
+      />,
+    )
+
+    expect(screen.getByText('Not available in the browser yet')).toBeInTheDocument()
+    expect(screen.getByText(/cannot evaluate a declared filter or sort/)).toBeInTheDocument()
+  })
+
+  it('refuses a non-knowledge source by name', () => {
+    stubInventory(notes)
+    renderPanel(
+      <KnowledgeRefsPanel
+        component={component({
+          id: 'references',
+          type: 'knowledge_refs',
+          title: 'References',
+          source: 'tasks',
+        })}
+      />,
+    )
+
+    expect(screen.getByText(/declared over “tasks”/)).toBeInTheDocument()
+  })
+})
+
+describe('declared agent_jobs panel chrome', () => {
+  const attentionItem = { ...overviewItem, job_id: 'job-1', needs_attention: true }
+
+  it('counts the visible jobs and the ones needing attention', async () => {
+    stubOverview([attentionItem])
+    renderPanel(
+      <AgentJobsPanel
+        component={component({
+          id: 'jobs',
+          type: 'list',
+          title: 'Jobs',
+          source: 'agent_jobs',
+        })}
+      />,
+    )
+
+    expect(
+      await screen.findByText(/1 of 1 visible jobs · 1 need attention/),
+    ).toBeInTheDocument()
+  })
+
+  it('refuses a declared filter or sort instead of showing another order', () => {
+    stubOverview([overviewItem])
+    renderPanel(
+      <AgentJobsPanel
+        component={component({
+          id: 'jobs',
+          type: 'agent_jobs',
+          title: 'Jobs',
+          source: 'agent_jobs',
+          filter: { state: 'running' },
+        })}
+      />,
+    )
+
+    expect(screen.getByText('Not available in the browser yet')).toBeInTheDocument()
+    expect(screen.getByText(/cannot evaluate a declared filter or sort/)).toBeInTheDocument()
+  })
+
+  it('renders the declared actions note with its own vocabulary', async () => {
+    stubOverview([overviewItem])
+    renderPanel(
+      <AgentJobsPanel
+        component={component({
+          id: 'jobs',
+          type: 'agent_jobs',
+          title: 'Jobs',
+          source: 'agent_jobs',
+          actions: ['start_job'],
+        })}
+      />,
+    )
+
+    expect(await screen.findByText(/this panel renders its own links/)).toBeInTheDocument()
   })
 })

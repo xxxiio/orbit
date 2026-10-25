@@ -5,18 +5,28 @@
  * reads the same inventory the Knowledge workspace uses, links every row to the
  * note, and refuses declarations it cannot honour (filter/sort) instead of
  * quietly showing a different order.
+ *
+ * Chrome comes from the shared surface kit (`@/components/ui`): this panel and
+ * every other declared source render the same title, refusal and footer.
  */
-import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { WorkflowViewComponent } from '@/api/adapters'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
-import { ErrorState } from '@/components/ui/error-state'
-import { BookIcon, LayersIcon } from '@/components/ui/icons'
-import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel'
+import { BookIcon } from '@/components/ui/icons'
 import { SkeletonText } from '@/components/ui/skeleton'
-import { useMarkdownInventory, userMessage } from '@/hooks'
+import {
+  ColumnNotice,
+  ComponentPanel,
+  DeclaredActionsNote,
+  InlineReadError,
+  ProvenanceNote,
+  SurfaceFooter,
+  TableHeadCell,
+  UnavailablePanel,
+} from '@/components/ui'
+import { useMarkdownInventory } from '@/hooks'
 import { humanizeIdentifier } from '@/lib/humanize'
 import { workflowText } from '@/domain'
 import { emptyTextOption } from '@/features/workflows/declarations'
@@ -27,66 +37,6 @@ function panelTitle(component: WorkflowViewComponent): string {
   if (declared) return declared
   if (component.type === 'knowledge_refs') return 'Knowledge references'
   return humanizeIdentifier(component.type)
-}
-
-function Unavailable({ component, reason }: { component: WorkflowViewComponent; reason: string }) {
-  return (
-    <Panel className="flex min-w-0 flex-col">
-      <PanelHeader title={panelTitle(component)} className="flex-wrap gap-y-2" />
-      <PanelBody className="min-w-0 flex-1 p-0">
-        <EmptyState
-          compact
-          headingLevel="p"
-          icon={<LayersIcon size={18} />}
-          title="Not available in the browser yet"
-          description={reason}
-          className="min-h-[12rem]"
-        />
-      </PanelBody>
-    </Panel>
-  )
-}
-
-function PanelShell({
-  component,
-  description,
-  children,
-  footer,
-  bodyClassName,
-}: {
-  component: WorkflowViewComponent
-  description: string
-  children: ReactNode
-  footer: ReactNode
-  bodyClassName?: string
-}) {
-  return (
-    <Panel className="flex min-w-0 flex-col">
-      <PanelHeader
-        title={panelTitle(component)}
-        description={description}
-        className="flex-wrap gap-y-2"
-      />
-      <PanelBody className={bodyClassName ?? 'min-w-0 flex-1 px-0 py-0'}>{children}</PanelBody>
-      <div className="border-t border-line px-5 py-3">{footer}</div>
-    </Panel>
-  )
-}
-
-function Provenance({ children }: { children: ReactNode }) {
-  return <p className="text-2xs leading-4 text-ink-faint">{children}</p>
-}
-
-function DeclaredActionsNote({ component }: { component: WorkflowViewComponent }) {
-  if (component.actions.length === 0) return null
-  const names = component.actions.map((action) => humanizeIdentifier(workflowText(action)))
-  return (
-    <span>
-      The workflow also declares the {names.join(', ')} action
-      {component.actions.length === 1 ? '' : 's'}; this panel renders its own links and does not
-      attach an action it cannot complete.
-    </span>
-  )
 }
 
 export interface KnowledgePanelProps {
@@ -100,16 +50,16 @@ export function KnowledgeRefsPanel({ component, variant = 'list' }: KnowledgePan
 
   if (source !== 'knowledge') {
     return (
-      <Unavailable
-        component={component}
+      <UnavailablePanel
+        title={panelTitle(component)}
         reason={`This panel is declared over “${source}”, not the knowledge vault.`}
       />
     )
   }
   if (Object.keys(component.filter ?? {}).length > 0 || component.sort) {
     return (
-      <Unavailable
-        component={component}
+      <UnavailablePanel
+        title={panelTitle(component)}
         reason="This build cannot evaluate a declared filter or sort over knowledge notes. The inventory is sorted by note id; a different order would not be the declaration."
       />
     )
@@ -117,34 +67,33 @@ export function KnowledgeRefsPanel({ component, variant = 'list' }: KnowledgePan
 
   if (inventory.isPending && !inventory.data) {
     return (
-      <PanelShell
-        component={component}
+      <ComponentPanel
+        title={panelTitle(component)}
         description="Reading the server's note inventory."
-        footer={<Provenance>Waiting for the server.</Provenance>}
-        bodyClassName="min-w-0 flex-1 px-5 py-4"
+        footer={<ProvenanceNote>Waiting for the server.</ProvenanceNote>}
+        bodyClassName="px-5 py-4"
       >
         <div aria-busy="true">
           <SkeletonText lines={3} />
         </div>
-      </PanelShell>
+      </ComponentPanel>
     )
   }
   if (inventory.error && !inventory.data) {
     return (
-      <PanelShell
-        component={component}
+      <ComponentPanel
+        title={panelTitle(component)}
         description="Markdown notes from the server's vault, linked by their stable ids."
-        footer={<Provenance>Nothing was cached from a failed read.</Provenance>}
-        bodyClassName="min-w-0 flex-1 px-5 py-4"
+        footer={<ProvenanceNote>Nothing was cached from a failed read.</ProvenanceNote>}
+        bodyClassName="px-5 py-4"
       >
-        <ErrorState
-          compact
-          title="Knowledge notes could not be read"
-          description={userMessage(inventory.error)}
+        <InlineReadError
+          label="Knowledge notes"
+          error={inventory.error}
           onRetry={() => void inventory.refetch()}
           retrying={inventory.isFetching}
         />
-      </PanelShell>
+      </ComponentPanel>
     )
   }
 
@@ -157,29 +106,30 @@ export function KnowledgeRefsPanel({ component, variant = 'list' }: KnowledgePan
   const emptyText = emptyTextOption(component)
 
   return (
-    <PanelShell
-      component={component}
+    <ComponentPanel
+      title={panelTitle(component)}
       description="Markdown notes from the server's vault, linked by their stable ids."
+      bodyClassName="px-0 py-0"
       footer={
-        <div className="flex flex-col gap-1">
-          <Provenance>
+        <SurfaceFooter>
+          <ProvenanceNote>
             {total === 0
               ? 'The vault returned no notes.'
               : `Showing ${notes.length} of ${total} notes. Notes are global; a project view references them rather than owning them.`}
-          </Provenance>
+          </ProvenanceNote>
           {unrepresented.length > 0 ? (
-            <p className="text-2xs leading-4 text-warning-ink">
+            <ColumnNotice>
               The workflow declares {unrepresented.map((column) => `“${column}”`).join(', ')};
               the note inventory exposes title, path and id. The other columns are named here
               rather than invented.
-            </p>
+            </ColumnNotice>
           ) : null}
           {component.actions.length > 0 ? (
-            <Provenance>
-              <DeclaredActionsNote component={component} />
-            </Provenance>
+            <ProvenanceNote>
+              <DeclaredActionsNote component={component} ownLabel="links" />
+            </ProvenanceNote>
           ) : null}
-        </div>
+        </SurfaceFooter>
       }
     >
       {notes.length === 0 ? (
@@ -203,15 +153,9 @@ export function KnowledgeRefsPanel({ component, variant = 'list' }: KnowledgePan
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-line bg-surface-sunken/70 text-left">
-                <th scope="col" className="px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint">
-                  Title
-                </th>
-                <th scope="col" className="px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint">
-                  Path
-                </th>
-                <th scope="col" className="px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint">
-                  Note id
-                </th>
+                <TableHeadCell>Title</TableHeadCell>
+                <TableHeadCell>Path</TableHeadCell>
+                <TableHeadCell>Note id</TableHeadCell>
               </tr>
             </thead>
             <tbody>
@@ -252,7 +196,7 @@ export function KnowledgeRefsPanel({ component, variant = 'list' }: KnowledgePan
           ))}
         </ul>
       )}
-    </PanelShell>
+    </ComponentPanel>
   )
 }
 

@@ -47,22 +47,20 @@ import {
   unsupportedTaskFilterKeys,
 } from '../view-metadata'
 import { taskSortDescriptor } from '../declarations'
-import { filterSortLimit } from './resource-surface'
-import {
-  ComponentPanel,
-  DeclaredActionsNote,
-  ProvenanceNote,
-  UnavailablePanel,
-} from './shared'
 import {
   BoardCard,
   BoardColumn,
   BoardColumnEmpty,
   BoardKeyboardHint,
   BoardScrollRegion,
+  ComponentPanel,
+  DeclaredActionsNote,
+  ProvenanceNote,
+  UnavailablePanel,
+  filterSortLimit,
+  limitNote,
   useBoardKeyboard,
-} from './board-chrome'
-import { limitNote } from './table-chrome'
+} from '@/components/surface'
 import { WorkItemBoardView } from './work-item-views'
 
 interface BoardColumn {

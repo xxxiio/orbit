@@ -7,39 +7,14 @@ import type {
   WorkflowView,
   WorkflowViewComponent,
 } from '@/api/adapters'
-import {
-  actionableFilterNote,
-  actionableFilterRefusal,
-  aggregateMetric,
-  componentFamily,
-  componentSpansFullWidth,
-  componentTypeName,
-  columnWidthNote,
-  columnWidthOption,
-  declaredWorkspaceViews,
-  describeFilter,
-  isReservedViewId,
-  metricDeclaration,
-  metricDisplayValue,
-  milestoneMatchesDeclaredFilter,
-  numericFieldsForSource,
-  parseActionable,
-  reservedDeclaredViews,
-  taskMatchesDeclaredFilter,
-  taskMetricRows,
-  taskSortDeclaration,
-  unsupportedTaskFilterKeys,
-  viewBadge,
-  viewBadgeCount,
-  viewHeaderAction,
-  viewLayoutClassName,
-  workspaceViewTabs,
-  workItemMatchesDeclaredFilter,
-  workItemKindFilterRefusal,
-  workItemMetricRows,
-} from '@/features/workflows/view-metadata'
+import { actionableFilterNote, actionableFilterRefusal, describeFilter, milestoneMatchesDeclaredFilter, parseActionable, taskMatchesDeclaredFilter, unsupportedTaskFilterKeys, workItemKindFilterRefusal, workItemMatchesDeclaredFilter } from '@/features/workflows/declarations/filters'
+import { aggregateMetric, metricDeclaration, metricDisplayValue, numericFieldsForSource, taskMetricRows, workItemMetricRows } from '@/features/workflows/declarations/metrics'
+import { columnWidthNote, columnWidthOption } from '@/features/workflows/declarations/columns'
+import { taskSortDeclaration } from '@/features/workflows/declarations/sorts'
+import { componentFamily, componentSpansFullWidth, componentTypeName, viewBadge, viewBadgeCount, viewHeaderAction, viewLayoutClassName } from '@/features/workflows/declarations/views'
+import { declaredWorkspaceViews, isReservedViewId, reservedDeclaredViews, workspaceViewTabs } from '@/features/workflows/declarations/reserved'
 import { taskSortDescriptor } from '@/features/workflows/declarations'
-import { filterSortLimit } from '@/features/workflows/views/resource-surface'
+import { filterSortLimit } from '@/components/surface'
 
 function component(
   overrides: Partial<WorkflowViewComponent> & Pick<WorkflowViewComponent, 'id' | 'type'>,

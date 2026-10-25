@@ -30,7 +30,7 @@ import {
   ProvenanceNote,
   RefusalNote,
   UnavailablePanel,
-} from './shared'
+} from '@/components/surface'
 
 function progressOf(assigned: number, done: number): number {
   if (assigned === 0) return 0

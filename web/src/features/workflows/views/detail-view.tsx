@@ -14,7 +14,7 @@ import {
   DeclaredActionsNote,
   ProvenanceNote,
   UnavailablePanel,
-} from './shared'
+} from '@/components/surface'
 import { WorkItemDetailView } from './work-item-views'
 
 function Row({ label, children }: { label: string; children: ReactNode }) {

@@ -20,7 +20,7 @@ import {
   DeclaredActionsNote,
   ProvenanceNote,
   UnavailablePanel,
-} from './shared'
+} from '@/components/surface'
 
 const STATUS_DOT: Record<string, string> = {
   planned: 'bg-line-strong',

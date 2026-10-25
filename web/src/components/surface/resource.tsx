@@ -19,7 +19,7 @@ import {
   InlineReadError,
   ProvenanceNote,
   UnavailablePanel,
-} from './shared'
+} from './panel'
 
 export interface ResourceRows<T> {
   /** Rows that matched the declared filter, before sorting. */

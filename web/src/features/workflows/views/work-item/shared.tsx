@@ -24,8 +24,7 @@ import {
 } from '../../work-item-model'
 import { NewWorkItemButton } from '../../work-item-create-dialog'
 import type { ViewRendererProps } from '../../view-types'
-import { ResourceReadPrelude } from '../resource-surface'
-import { UnavailablePanel } from '../shared'
+import { ResourceReadPrelude, UnavailablePanel } from '@/components/surface'
 
 export function workItemPanelTitle(component: WorkflowViewComponent): string {
   return workflowText(component.title) || 'Work items'

@@ -5,6 +5,7 @@ import {
   queryKeys,
   uncertainMessage,
   useCreateTask,
+  useIdempotentAttempt,
   useProjects,
   userMessage,
   type ApiError,
@@ -49,14 +50,18 @@ export function CreateTaskDialog({ open, onOpenChange, defaultProjectId }: Creat
   const [projectId, setProjectId] = useState<string>(defaultProjectId ?? NONE)
   const [fieldError, setFieldError] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
-  const attemptRef = useRef<CreateTaskAttempt | null>(null)
+  const attempt = useIdempotentAttempt<CreateTaskAttempt>((key) => ({
+    key,
+    commandId: newCommandId(),
+    taskId: newCommandId(),
+  }))
 
   useEffect(() => {
     if (!open) return
     setTitle('')
     setProjectId(defaultProjectId ?? NONE)
     setFieldError(null)
-    attemptRef.current = null
+    attempt.clear()
     createTask.reset()
     // Only reset when the dialog opens; `createTask` is a mutation object whose
     // identity changes every render.
@@ -66,13 +71,6 @@ export function CreateTaskDialog({ open, onOpenChange, defaultProjectId }: Creat
   const error: ApiError | null = createTask.disposition === 'rejected' ? createTask.error : null
   const uncertain = createTask.disposition === 'uncertain'
   const submitting = createTask.isPending
-
-  function attemptFor(key: string): CreateTaskAttempt {
-    if (attemptRef.current?.key !== key) {
-      attemptRef.current = { key, commandId: newCommandId(), taskId: newCommandId() }
-    }
-    return attemptRef.current
-  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -86,19 +84,19 @@ export function CreateTaskDialog({ open, onOpenChange, defaultProjectId }: Creat
     setFieldError(null)
 
     const selectedProject = projectId === NONE ? undefined : projectId
-    const attempt = attemptFor(`${trimmed}\u0000${selectedProject ?? ''}`)
+    const pinned = attempt.ensure(`${trimmed}\u0000${selectedProject ?? ''}`)
 
     const outcome = await createTask
       .mutateAsync({
-        commandId: attempt.commandId,
-        taskId: attempt.taskId,
+        commandId: pinned.commandId,
+        taskId: pinned.taskId,
         title: trimmed,
         ...(selectedProject ? { projectId: selectedProject } : {}),
       })
       .catch(() => null)
 
     if (!outcome) return
-    attemptRef.current = null
+    attempt.clear()
     await queryClient.refetchQueries({ queryKey: queryKeys.snapshot() })
     toast({ tone: 'success', title: 'Task created', description: outcome.task.title })
     onOpenChange(false)

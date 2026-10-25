@@ -23,7 +23,7 @@ import {
   workItemMetricRows,
   type MetricDeclaration,
 } from '../view-metadata'
-import { ComponentPanel, DeclaredActionsNote, InlineReadError, ProvenanceNote, UnavailablePanel } from './shared'
+import { ComponentPanel, DeclaredActionsNote, InlineReadError, ProvenanceNote, UnavailablePanel } from '@/components/surface'
 
 function nounFor(noun: string, value: number): string {
   return value === 1 ? noun.replace(/s$/, '') : noun

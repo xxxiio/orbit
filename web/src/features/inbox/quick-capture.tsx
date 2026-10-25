@@ -1,5 +1,12 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { newCommandId, uncertainMessage, useCreateTask, userMessage, type ApiError } from '@/hooks'
+import {
+  newCommandId,
+  uncertainMessage,
+  useCreateTask,
+  useIdempotentAttempt,
+  userMessage,
+  type ApiError,
+} from '@/hooks'
 import { Button } from '@/components/ui/button'
 import { AlertCircleIcon, LoaderIcon, PlusIcon } from '@/components/ui/icons'
 import { cn } from '@/components/ui/utils'
@@ -11,7 +18,8 @@ import { cn } from '@/components/ui/utils'
  * second task. Editing the text mints a new attempt.
  */
 interface CaptureAttempt {
-  title: string
+  /** The captured text, trimmed; editing it mints a new attempt. */
+  key: string
   commandId: string
   taskId: string
 }
@@ -26,22 +34,15 @@ export function QuickCapture({ onCaptured }: { onCaptured?: (taskId: string) => 
   const [title, setTitle] = useState('')
   const [announcement, setAnnouncement] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const attemptRef = useRef<CaptureAttempt | null>(null)
+  const attempt = useIdempotentAttempt<CaptureAttempt>((key) => ({
+    key,
+    commandId: newCommandId(),
+    taskId: newCommandId(),
+  }))
 
   const error: ApiError | null = createTask.disposition === 'rejected' ? createTask.error : null
   const uncertain = createTask.disposition === 'uncertain'
   const submitting = createTask.isPending
-
-  function attemptFor(submitted: string): CaptureAttempt {
-    if (attemptRef.current?.title !== submitted) {
-      attemptRef.current = {
-        title: submitted,
-        commandId: newCommandId(),
-        taskId: newCommandId(),
-      }
-    }
-    return attemptRef.current
-  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -53,16 +54,16 @@ export function QuickCapture({ onCaptured }: { onCaptured?: (taskId: string) => 
     }
 
     const submitted = trimmed
-    const attempt = attemptFor(submitted)
+    const pinned = attempt.ensure(submitted)
     const outcome = await createTask
       .mutateAsync({
-        commandId: attempt.commandId,
-        taskId: attempt.taskId,
+        commandId: pinned.commandId,
+        taskId: pinned.taskId,
         title: submitted,
       })
       .catch(() => null)
     if (!outcome) return
-    attemptRef.current = null
+    attempt.clear()
     setTitle((current) => (current === submitted ? '' : current))
     setAnnouncement(`Captured “${outcome.task.title}” in the Inbox.`)
     onCaptured?.(outcome.task.id)

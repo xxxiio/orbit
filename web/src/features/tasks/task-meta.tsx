@@ -9,6 +9,7 @@ import type { BadgeTone } from '@/components/ui/badge'
 import type { TaskPriority, TaskStatus } from '@/api/contracts'
 import { TASK_PRIORITIES, TASK_STATUSES } from '@/api/contracts'
 import type { ReadinessEntry, Task } from '@/api/adapters'
+import { endOfDay, formatDay, formatTimeOfDay } from '@/domain/datetime'
 
 export const statusLabels: Record<TaskStatus, string> = {
   inbox: 'Inbox',
@@ -122,21 +123,10 @@ export function readinessReasonLabel(reason: ReadinessEntry['reason']): string {
 /* Dates                                                              */
 /* ------------------------------------------------------------------ */
 
-const dayFormatter = new Intl.DateTimeFormat(undefined, {
-  weekday: 'short',
-  day: 'numeric',
-  month: 'short',
-})
-
 const longDayFormatter = new Intl.DateTimeFormat(undefined, {
   weekday: 'long',
   day: 'numeric',
   month: 'long',
-})
-
-const timeFormatter = new Intl.DateTimeFormat(undefined, {
-  hour: 'numeric',
-  minute: '2-digit',
 })
 
 const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -148,32 +138,20 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }
 
 const weekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long' })
 
-export function startOfDay(ms: number): number {
-  const date = new Date(ms)
-  date.setHours(0, 0, 0, 0)
-  return date.getTime()
-}
-
-export function endOfDay(ms: number): number {
-  const date = new Date(ms)
-  date.setHours(23, 59, 59, 999)
-  return date.getTime()
-}
-
 export function formatLongDay(ms: number): string {
   return longDayFormatter.format(new Date(ms))
-}
-
-export function formatDay(ms: number): string {
-  return dayFormatter.format(new Date(ms))
 }
 
 export function formatDateTime(ms: number): string {
   return dateTimeFormatter.format(new Date(ms))
 }
 
-/** Clock time only, for schedule blocks and windows. */
-export { formatTimeOfDay } from '@/domain/datetime'
+/**
+ * Calendar vocabulary shared with every other feature. Re-exported here for one
+ * iteration so `@/features/tasks` keeps offering the names it always has; the
+ * implementation lives in `@/domain/datetime`.
+ */
+export { endOfDay, formatDay, formatMoment, formatTimeOfDay, startOfDay } from '@/domain/datetime'
 
 export function formatDate(ms: number): string {
   return dateFormatter.format(new Date(ms))
@@ -181,26 +159,6 @@ export function formatDate(ms: number): string {
 
 export function formatWeekday(ms: number): string {
   return weekdayFormatter.format(new Date(ms))
-}
-
-function hasMeaningfulTime(ms: number): boolean {
-  const date = new Date(ms)
-  return date.getHours() !== 0 || date.getMinutes() !== 0
-}
-
-/** A short, honest label for a deadline or start time. */
-export function formatMoment(ms: number, now = Date.now()): string {
-  const today = startOfDay(now)
-  const tomorrow = today + 24 * 60 * 60 * 1000
-  const time = hasMeaningfulTime(ms) ? `, ${timeFormatter.format(new Date(ms))}` : ''
-
-  if (ms < today) {
-    const days = Math.max(1, Math.round((today - startOfDay(ms)) / (24 * 60 * 60 * 1000)))
-    return `${formatDay(ms)} · ${days} day${days === 1 ? '' : 's'} ago`
-  }
-  if (ms < tomorrow) return `Today${time}`
-  if (ms < tomorrow + 24 * 60 * 60 * 1000) return `Tomorrow${time}`
-  return `${formatDay(ms)}${time}`
 }
 
 export function relativeTime(ms: number, now = Date.now()): string {
@@ -221,7 +179,7 @@ export function freshnessLabel(updatedAt: number | undefined, now: number): stri
   if (seconds < 60) return 'Updated just now'
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `Updated ${minutes} min ago`
-  return `Updated ${timeFormatter.format(new Date(updatedAt))}`
+  return `Updated ${formatTimeOfDay(updatedAt)}`
 }
 
 export function formatMinutes(minutes: number | null | undefined): string | null {

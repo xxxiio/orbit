@@ -12,7 +12,7 @@ import {
   workItemTitle,
 } from '@/features/workflows/work-item-model'
 import type { SortDeclaration } from '@/lib/declarations'
-import { filterSortLimit } from '@/features/workflows/views/resource-surface'
+import { filterSortLimit } from '@/components/surface'
 
 const workflow: Workflow = {
   id: 'guarded',

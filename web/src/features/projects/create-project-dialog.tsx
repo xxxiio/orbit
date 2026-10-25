@@ -7,6 +7,7 @@ import {
   uncertainMessage,
   useAvailableWorkflows,
   useCreateProject,
+  useIdempotentAttempt,
   useWorkflowCatalog,
   useWorkflowDefinition,
   userMessage,
@@ -111,14 +112,18 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
   const [workflowId, setWorkflowId] = useState(DEFAULT_WORKFLOW)
   const [fieldError, setFieldError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
-  const attemptRef = useRef<CreateProjectAttempt | null>(null)
+  const attempt = useIdempotentAttempt<CreateProjectAttempt>((key) => ({
+    key,
+    commandId: newCommandId(),
+    projectId: newCommandId(),
+  }))
 
   useEffect(() => {
     if (!open) return
     setName('')
     setWorkflowId(DEFAULT_WORKFLOW)
     setFieldError(null)
-    attemptRef.current = null
+    attempt.clear()
     createProject.reset()
     // Reset only on open; the mutation object is a fresh handle each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -137,13 +142,6 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
   const catalogPending = workflows.isPending || catalog.entries.some((entry) => entry.isPending)
   const additionalWorkflows = catalog.entries.filter((workflow) => workflow.id !== defaultWorkflow?.id)
 
-  function attemptFor(key: string): CreateProjectAttempt {
-    if (attemptRef.current?.key !== key) {
-      attemptRef.current = { key, commandId: newCommandId(), projectId: newCommandId() }
-    }
-    return attemptRef.current
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (submitting) return
@@ -156,19 +154,19 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
     setFieldError(null)
 
     const selectedWorkflow = workflowId === DEFAULT_WORKFLOW ? undefined : workflowId
-    const attempt = attemptFor(`${trimmed}\u0000${selectedWorkflow ?? ''}`)
+    const pinned = attempt.ensure(`${trimmed}\u0000${selectedWorkflow ?? ''}`)
 
     const outcome = await createProject
       .mutateAsync({
-        commandId: attempt.commandId,
-        projectId: attempt.projectId,
+        commandId: pinned.commandId,
+        projectId: pinned.projectId,
         name: trimmed,
         ...(selectedWorkflow ? { workflowId: selectedWorkflow } : {}),
       })
       .catch(() => null)
 
     if (!outcome) return
-    attemptRef.current = null
+    attempt.clear()
     await queryClient.refetchQueries({ queryKey: queryKeys.snapshot() })
     toast({ tone: 'success', title: 'Project created', description: outcome.project.name })
     onOpenChange(false)
