@@ -1,4 +1,4 @@
-import { defaultNowMs, useTaskReadiness } from '@/hooks'
+import { defaultNowMs, useAgentOverview, useTaskReadiness } from '@/hooks'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ViewRendererProps } from '../view-types'
 import type { WorkflowViewComponent } from '@/api/adapters'
@@ -130,7 +130,9 @@ function declarationRefusal(
 
 function metricLabel(declaration: MetricDeclaration, source: string): string {
   if (declaration.aggregate === 'count') {
-    return source === 'work_items' ? 'work items' : source
+    if (source === 'work_items') return 'work items'
+    if (source === 'agent_jobs') return 'agent jobs'
+    return source
   }
   // A non-count number is labelled with the unit its declaration proved; a
   // field without one is refused before it reaches this renderer.
@@ -145,6 +147,7 @@ function metricSourceNote(
   if (declaration.aggregate === 'count') {
     if (source === 'tasks') return "Counted from this project's tasks in the workspace snapshot."
     if (source === 'milestones') return "Counted from this project's milestones in the workspace snapshot."
+    if (source === 'agent_jobs') return "Counted from the agent-job overview for this project."
     return 'Counted from the work items the server returns for this project.'
   }
   const verb =
@@ -352,6 +355,61 @@ function WorkItemMetric({ component, workItems, workItemsState, workflow }: View
 }
 
 /**
+ * Agent jobs are a device-wide overview; a project metric narrows it to this
+ * project's jobs. The count is of rows the server returned, never of a local
+ * guess at what "needs attention" means.
+ */
+function AgentJobMetric({ component, project, workflow }: ViewRendererProps) {
+  const overview = useAgentOverview()
+  const filter = component.filter ?? {}
+  const declaration = metricDeclaration(component, workflow)
+
+  if (declaration.refusal) return declarationRefusal(component, declaration)
+  if (Object.keys(filter).length > 0) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason="This build cannot evaluate a declared filter over agent jobs."
+        hint="The panel is refused rather than counting a set the declaration did not describe."
+      />
+    )
+  }
+
+  const matching = (overview.data ?? []).filter((job) => job.projectId === project.id)
+  const value = metricDisplayValue(
+    declaration,
+    aggregateMetric(declaration, matching.map(() => null)),
+  )
+
+  if (overview.error && !overview.data) {
+    return (
+      <ComponentPanel title={componentTypeName(component)}>
+        <InlineReadError
+          label="Agent jobs"
+          error={overview.error}
+          onRetry={() => void overview.refetch()}
+          retrying={overview.isFetching}
+        />
+      </ComponentPanel>
+    )
+  }
+
+  return (
+    <div data-agent-job-count={matching.length}>
+      <MetricFrame
+        component={component}
+        value={overview.isPending && !overview.data ? null : value}
+        noun={metricLabel(declaration, 'agent_jobs')}
+        filterNote={null}
+        sourceNote={metricSourceNote(declaration, 'agent_jobs', null)}
+        loading={overview.isPending && !overview.data}
+        caption={metricCaption(component)}
+      />
+    </div>
+  )
+}
+
+/**
  * Metrics are counts of server rows. The source decides which projection is
  * read; a source with no browser read is refused by name.
  */
@@ -360,6 +418,7 @@ export function MetricView(props: ViewRendererProps) {
   if (source === 'tasks') return <TaskMetric {...props} />
   if (source === 'milestones') return <MilestoneMetric {...props} />
   if (source === 'work_items') return <WorkItemMetric {...props} />
+  if (source === 'agent_jobs') return <AgentJobMetric {...props} />
 
   return (
     <UnavailablePanel

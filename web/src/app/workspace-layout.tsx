@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useProjects } from '@/hooks'
 import type { Command } from '@/components/ui/command-palette'
-import { FolderIcon, HomeIcon, InboxIcon, PlusIcon } from '@/components/ui/icons'
+import { FolderIcon, HomeIcon, InboxIcon, PlusIcon, BookIcon, AgentsIcon } from '@/components/ui/icons'
 import type { ProjectNavItem } from '@/components/navigation/nav'
 import { AppShell } from './app-shell'
 import type { SidebarSession } from '@/components/layout/sidebar'
@@ -98,6 +98,20 @@ function WorkspaceShell() {
         icon: <FolderIcon size={15} />,
         keywords: 'index all',
         onSelect: () => navigate('/projects'),
+      },
+      {
+        id: 'go-knowledge',
+        label: 'Go to Knowledge',
+        icon: <BookIcon size={15} />,
+        keywords: 'notes markdown vault',
+        onSelect: () => navigate('/knowledge'),
+      },
+      {
+        id: 'go-agents',
+        label: 'Go to Agents',
+        icon: <AgentsIcon size={15} />,
+        keywords: 'jobs handoff review',
+        onSelect: () => navigate('/agents'),
       },
       ...orderedProjects.map((project) => ({
         id: `open-project-${project.id}`,

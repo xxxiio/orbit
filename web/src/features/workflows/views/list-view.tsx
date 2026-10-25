@@ -6,6 +6,8 @@ import { ListIcon } from '@/components/ui/icons'
 import { SkeletonText } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
 import { formatMoment, formatMinutes, priorityLabels, readinessReasonLabel, statusLabel, statusTones, useTaskDrawer } from '@/features/tasks'
+import { KnowledgeRefsPanel } from '@/features/knowledge'
+import { AgentJobsPanel } from '@/features/agents'
 import type { ViewRendererProps } from '../view-types'
 import {
   actionableFilterRefusal,
@@ -258,6 +260,12 @@ export function ListView(props: ViewRendererProps) {
   const source = props.component.source ?? 'tasks'
   if (source === 'work_items') {
     return <WorkItemListView {...props} />
+  }
+  if (source === 'knowledge') {
+    return <KnowledgeRefsPanel component={props.component} />
+  }
+  if (source === 'agent_jobs') {
+    return <AgentJobsPanel component={props.component} />
   }
   if (source !== 'tasks') {
     return (

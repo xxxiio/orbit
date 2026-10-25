@@ -7,7 +7,8 @@ import { InboxPage } from './pages/inbox-page'
 import { NotFoundPage } from './pages/not-found-page'
 import { ProjectWorkspacePage } from './pages/project-workspace-page'
 import { ProjectsPage } from './pages/projects-page'
-import { SectionPlaceholderPage } from './pages/section-placeholder-page'
+import { KnowledgePage } from '@/features/knowledge'
+import { AgentJobPage, AgentsOverviewPage } from '@/features/agents'
 
 export function AppRoutes() {
   return (
@@ -20,7 +21,9 @@ export function AppRoutes() {
           <Route path="inbox" element={<InboxPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:projectId/:viewId?" element={<ProjectWorkspacePage />} />
-          <Route path="agents" element={<SectionPlaceholderPage section="agents" />} />
+          <Route path="knowledge/*" element={<KnowledgePage />} />
+          <Route path="agents" element={<AgentsOverviewPage />} />
+          <Route path="agents/:jobId" element={<AgentJobPage />} />
         </Route>
       </Route>
 

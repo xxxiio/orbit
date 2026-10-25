@@ -55,6 +55,11 @@ function causalError(error: unknown): ApiError {
   return new ApiError(0, 'Could not reach the Orbit server.', error)
 }
 
+export interface ByteUploadProgress {
+  loaded: number
+  total: number
+}
+
 /** POST raw bytes with the same cookie + CSRF contract as `client.post`. */
 export async function postBytes<T>(
   path: string,
@@ -83,6 +88,88 @@ export async function postBytes<T>(
     throw new ApiError(response.status, messageFor(response, payload), payload)
   }
   return payload as T
+}
+
+/**
+ * POST raw bytes while reporting upload progress.
+ *
+ * `fetch` cannot observe request progress, so the one raw-body upload path uses
+ * XHR. The rest of the contract is identical to `postBytes`: cookie credentials,
+ * the CSRF header, the server's `{error}` body and `ApiError` on failure. The
+ * progress callback reports bytes handed to the network, never acceptance —
+ * callers must still wait for the response before showing an upload as stored.
+ */
+export function postBytesWithProgress<T>(
+  path: string,
+  body: Blob | ArrayBuffer | Uint8Array,
+  init: {
+    contentType?: string
+    signal?: AbortSignal
+    onProgress?: (progress: ByteUploadProgress) => void
+  } = {},
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open('POST', apiUrl(path))
+    request.withCredentials = true
+    request.setRequestHeader('Accept', 'application/json')
+    request.setRequestHeader('Content-Type', init.contentType ?? 'application/octet-stream')
+    request.setRequestHeader('x-orbit-csrf', '1')
+
+    const onAbort = () => request.abort()
+    if (init.signal) {
+      if (init.signal.aborted) {
+        reject(new ApiError(0, 'The upload was cancelled.'))
+        return
+      }
+      init.signal.addEventListener('abort', onAbort, { once: true })
+    }
+
+    const cleanup = () => init.signal?.removeEventListener('abort', onAbort)
+
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return
+      init.onProgress?.({ loaded: event.loaded, total: event.total })
+    }
+
+    request.onload = () => {
+      cleanup()
+      const payload = parseText(request.responseText)
+      if (request.status < 200 || request.status >= 300) {
+        reject(new ApiError(request.status, xhrMessage(request, payload), payload))
+        return
+      }
+      resolve(payload as T)
+    }
+
+    request.onerror = () => {
+      cleanup()
+      reject(new ApiError(0, 'Could not reach the Orbit server.'))
+    }
+
+    request.onabort = () => {
+      cleanup()
+      reject(new ApiError(0, 'The upload was cancelled.'))
+    }
+
+    request.send(body)
+  })
+}
+
+function parseText(text: string): unknown {
+  if (text.length === 0) return undefined
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return text
+  }
+}
+
+function xhrMessage(request: XMLHttpRequest, payload: unknown): string {
+  if (payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string') {
+    return (payload as { error: string }).error
+  }
+  return request.statusText || `Request failed with status ${request.status}`
 }
 
 /** GET binary content (attachment bytes). Never JSON-parsed. */

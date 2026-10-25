@@ -185,10 +185,40 @@ describe('work item create dialog idempotency', () => {
 
     // The attempt stays pinned: a retry still repeats the same item id, so the
     // dialog cannot create a second item while the earlier one is unresolved.
-    await user.click(screen.getByRole('button', { name: 'Create work item' }))
+    await user.click(screen.getByRole('button', { name: 'Retry the same request' }))
     const createIds = bodies().map((body) => body.id)
     expect(createIds.length).toBeGreaterThanOrEqual(2)
     expect(new Set(createIds).size).toBe(1)
+  })
+
+  it('keeps a refused-but-pinned create from minting a new id when the payload changes', async () => {
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(new TypeError('network down'))
+      .mockResolvedValueOnce(jsonResponse({ error: 'item id already exists' }, 400))
+      .mockResolvedValueOnce(jsonResponse({ error: 'work item not found' }, 404))
+
+    renderDialog()
+    const user = userEvent.setup()
+    const summary = screen.getByLabelText(/Summary/)
+
+    await user.type(summary, 'Once')
+    await user.click(screen.getByRole('button', { name: 'Create work item' }))
+    await screen.findByRole('alert')
+    await user.click(screen.getByRole('button', { name: 'Retry the same request' }))
+    await screen.findByText(/The server refused this work item/)
+
+    // The contradictory answer is a refusal, but the attempt is still pinned.
+    expect(screen.getByText(/still holds item id/)).toBeInTheDocument()
+    const createsBefore = bodies().length
+
+    await user.type(summary, ' edited')
+    expect(screen.getByRole('button', { name: 'Create work item' })).toBeDisabled()
+    expect(screen.getByText(/no longer match the request whose outcome is unknown/i)).toBeInTheDocument()
+    expect(bodies()).toHaveLength(createsBefore)
+
+    await user.clear(summary)
+    await user.type(summary, 'Once')
+    expect(screen.getByRole('button', { name: 'Retry the same request' })).toBeEnabled()
   })
 
   it('validates a required field and a typed control before sending anything', async () => {

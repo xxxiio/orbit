@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { ReadinessEntry, Task } from '@/api/adapters'
+import type { AgentJob, ReadinessEntry, Task } from '@/api/adapters'
 import type { TaskStatus } from '@/api/contracts'
 import type { ApiError } from '@/api/errors'
 import {
   defaultNowMs,
+  useAgentAttention,
   useProjects,
   useTaskCommand,
   useTaskCounts,
@@ -13,12 +14,14 @@ import {
   userMessage,
 } from '@/hooks'
 import { useDocumentTitle } from '@/hooks'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ErrorState } from '@/components/ui/error-state'
 import { IconButton } from '@/components/ui/icon-button'
 import {
   AlertCircleIcon,
+  AgentsIcon,
   ArrowRightIcon,
   CalendarIcon,
   CheckCircleIcon,
@@ -49,6 +52,11 @@ import {
 } from '@/features/tasks'
 import { useRecentProjectIds } from '@/lib/recent-projects'
 import { isTaskCompleted, isTaskOpen } from '@/domain'
+import {
+  agentStateLabel,
+  agentStateTone,
+  shortAgentId,
+} from '@/features/agents'
 
 interface SectionTask {
   task: Task
@@ -191,6 +199,92 @@ function HomeSection({
   )
 }
 
+function AgentAttentionPanel({
+  jobs,
+  projectName,
+  taskTitle,
+  loading,
+  error,
+  onRetry,
+  retrying,
+}: {
+  jobs: AgentJob[]
+  projectName: (id: string) => string | null
+  taskTitle: (id: string) => string | null
+  loading: boolean
+  error: ApiError | null
+  onRetry: () => void
+  retrying: boolean
+}) {
+  return (
+    <Panel className="overflow-hidden">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3">
+        <AgentsIcon size={15} className="text-ink-muted" />
+        <h2 className="text-sm font-semibold text-ink">Agent jobs needing attention</h2>
+        <span className="rounded-full bg-surface-sunken px-1.5 py-0.5 text-2xs font-semibold tabular-nums text-ink-muted">
+          {jobs.length}
+        </span>
+        <Link
+          to="/agents"
+          className="ml-auto rounded-sm text-2xs font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+        >
+          All agents
+        </Link>
+      </div>
+      {error ? (
+        <div className="flex items-center gap-2 px-4 py-3">
+          <p className="min-w-0 flex-1 text-xs text-danger-ink">{userMessage(error)}</p>
+          <Button variant="quiet" size="sm" loading={retrying} onClick={onRetry}>
+            Retry
+          </Button>
+        </div>
+      ) : loading && jobs.length === 0 ? (
+        <div className="px-4 py-3" aria-busy="true">
+          <SkeletonText lines={2} />
+        </div>
+      ) : jobs.length === 0 ? (
+        <p className="px-4 py-4 text-xs leading-5 text-ink-muted">
+          No agent job needs attention. Reviews and resumes are explicit actions on the Agents page.
+        </p>
+      ) : (
+        <ul aria-label="Agent jobs needing attention">
+          {jobs.map((job) => (
+            <li key={job.id} className="border-b border-line last:border-b-0">
+              <Link
+                to={`/agents/${encodeURIComponent(job.id)}`}
+                className="flex flex-col gap-1 px-4 py-3 transition-colors hover:bg-surface-hover/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
+              >
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+                    {taskTitle(job.taskId) ?? shortAgentId(job.id)}
+                  </span>
+                  <Badge tone={agentStateTone(job.state)} dot>
+                    {agentStateLabel(job.state)}
+                  </Badge>
+                </span>
+                <span className="flex flex-wrap items-center gap-x-2 text-2xs text-ink-muted">
+                  <span>{projectName(job.projectId) ?? job.projectId}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono">{shortAgentId(job.id)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{formatMoment(job.updatedAtMs)}</span>
+                  <ArrowRightIcon size={11} className="ml-auto shrink-0 text-ink-faint" />
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {jobs.length > 0 ? (
+        <p className="border-t border-line px-4 py-2 text-2xs leading-4 text-ink-faint">
+          Review and resume are explicit actions on the job page. Opening one never launches an
+          agent.
+        </p>
+      ) : null}
+    </Panel>
+  )
+}
+
 function HomeTaskRow({
   entry,
   projectName,
@@ -304,6 +398,7 @@ export function HomePage() {
   const readiness = useTaskReadiness(defaultNowMs())
   const command = useTaskCommand()
   const recentIds = useRecentProjectIds()
+  const agentAttention = useAgentAttention()
 
   const [now, setNow] = useState(() => Date.now())
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -596,6 +691,16 @@ export function HomePage() {
             >
               {renderRows(overview.blocked, 'blocked', 'Blocked tasks', true)}
             </HomeSection>
+
+            <AgentAttentionPanel
+              jobs={agentAttention.data ?? []}
+              projectName={(id) => projectById.get(id)?.name ?? null}
+              taskTitle={(id) => taskById.get(id)?.title ?? null}
+              loading={agentAttention.isPending}
+              error={agentAttention.error && !agentAttention.data ? agentAttention.error : null}
+              onRetry={() => void agentAttention.refetch()}
+              retrying={agentAttention.isFetching}
+            />
 
             <Panel className="overflow-hidden">
               <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">

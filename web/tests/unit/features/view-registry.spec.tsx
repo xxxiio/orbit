@@ -105,8 +105,8 @@ describe('workflow view registry', () => {
     expect(screen.getByText('ToString panel is not supported')).toBeInTheDocument()
   })
 
-  it('keeps four named refusals for the declared types this build does not render', () => {
-    for (const type of ['habit_tracker', 'metric_history', 'knowledge_refs', 'agent_jobs']) {
+  it('keeps named refusals only for the declared types this build does not render', () => {
+    for (const type of ['habit_tracker', 'metric_history']) {
       expect(isViewComponentImplemented(type)).toBe(false)
       const { unmount } = render(
         renderViewComponent(props({ id: `${type}-panel`, type, title: componentTypeNames[type] })),
@@ -115,6 +115,10 @@ describe('workflow view registry', () => {
       expect(screen.getByText(componentTypeNames[type])).toBeInTheDocument()
       unmount()
     }
+    // Knowledge and agent panels are real now; their data path is covered by
+    // the browser acceptance suite.
+    expect(isViewComponentImplemented('knowledge_refs')).toBe(true)
+    expect(isViewComponentImplemented('agent_jobs')).toBe(true)
   })
 
   it('names every registered component type for the refusal and panel chrome', () => {

@@ -1,5 +1,5 @@
 import { api, apiUrl } from '../client'
-import { getBlob, postBytes, withQuery } from '../http'
+import { getBlob, postBytesWithProgress, withQuery, type ByteUploadProgress } from '../http'
 import type {
   AttachmentAssociateRequest,
   AttachmentAssociateResult,
@@ -29,10 +29,14 @@ export function fetchAttachments(
  * travels in the query string and the file bytes are the request body (no
  * multipart, no base64). `Content-Type` of the request is ignored by the
  * server; the stored type comes from `content_type`.
+ *
+ * `onProgress` reports bytes sent, not acceptance; callers must wait for the
+ * response before rendering the attachment as stored.
  */
 export function importAttachment(
   metadata: AttachmentImportMetadata,
   bytes: Blob | ArrayBuffer | Uint8Array,
+  onProgress?: (progress: ByteUploadProgress) => void,
 ): Promise<AttachmentImportResult> {
   const path = withQuery(`${BASE}/attachment-import`, {
     command_id: metadata.command_id,
@@ -45,7 +49,10 @@ export function importAttachment(
     content_type: metadata.content_type,
     description: metadata.description,
   })
-  return postBytes<AttachmentImportResult>(path, bytes)
+  return postBytesWithProgress<AttachmentImportResult>(path, bytes, {
+    contentType: metadata.content_type,
+    onProgress,
+  })
 }
 
 /** Path for an `<img src>` / download link; the cookie authenticates it. */

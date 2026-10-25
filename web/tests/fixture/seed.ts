@@ -369,6 +369,15 @@ const GUARDED_WORKFLOW = {
           limit: 100,
           title: 'Ticket table',
         },
+        {
+          id: 'descending_tasks',
+          type: 'list',
+          source: 'tasks',
+          sort: 'title',
+          descending: true,
+          limit: 5,
+          title: 'Titles descending',
+        },
       ],
     },
   ],
@@ -487,6 +496,14 @@ export const WORK_ITEM_PLANS: readonly SeedWorkItemPlan[] = [
     kind: 'check_in',
     state: 'due',
     properties: { notes: 'Record the morning walk', performed: false },
+    transitions: [],
+  },
+  {
+    id: 'wi-guarded-ticket-open',
+    projectId: PROJECT_IDS.guarded,
+    kind: 'ticket',
+    state: 'open',
+    properties: { priority: 'high', note: 'Guard copy reviewed in the fixture.' },
     transitions: [],
   },
 ]
@@ -1007,18 +1024,50 @@ export async function seedWorkspace(
     }
 
     // 6. Small deterministic attachments (raw body bytes, metadata in the query).
+    //    The SVG and the work-item attachment give the browser a real preview
+    //    target and a second owner surface without opening a second upload path.
+    const STATUS_CARD = Buffer.from(
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="150" viewBox="0 0 480 150">',
+        '<rect width="480" height="150" rx="16" fill="#ece9ff"/>',
+        '<rect x="24" y="28" width="132" height="12" rx="6" fill="#6750d8"/>',
+        '<rect x="24" y="54" width="300" height="8" rx="4" fill="#a99cf0"/>',
+        '<rect x="24" y="74" width="252" height="8" rx="4" fill="#c9c1f7"/>',
+        '<circle cx="414" cy="75" r="34" fill="#6750d8" opacity="0.18"/>',
+        '<path d="M400 75h28M414 61v28" stroke="#6750d8" stroke-width="5" stroke-linecap="round"/>',
+        '<text x="24" y="120" font-family="monospace" font-size="12" fill="#6750d8">Fixture attachment</text>',
+        '</svg>',
+      ].join(''),
+      'utf8',
+    )
     const attachmentPlans = [
-      { ownerKind: 'task', ownerId: tasks[0].id, name: 'acceptance-notes.txt' },
-      { ownerKind: 'task', ownerId: tasks[1].id, name: 'repro-steps.txt' },
-      { ownerKind: 'task', ownerId: tasks[5].id, name: 'sketch.txt' },
-      { ownerKind: 'project', ownerId: PROJECT_IDS.orbit, name: 'i1-scope.txt' },
-      { ownerKind: 'project', ownerId: PROJECT_IDS.research, name: 'sources.txt' },
+      { ownerKind: 'task', ownerId: tasks[0].id, name: 'acceptance-notes.txt', type: 'text/plain' },
+      { ownerKind: 'task', ownerId: tasks[1].id, name: 'repro-steps.txt', type: 'text/plain' },
+      { ownerKind: 'task', ownerId: tasks[5].id, name: 'sketch.txt', type: 'text/plain' },
+      { ownerKind: 'project', ownerId: PROJECT_IDS.orbit, name: 'i1-scope.txt', type: 'text/plain' },
+      { ownerKind: 'project', ownerId: PROJECT_IDS.research, name: 'sources.txt', type: 'text/plain' },
+      {
+        ownerKind: 'task',
+        ownerId: tasks[0].id,
+        name: 'status-card.svg',
+        type: 'image/svg+xml',
+        bytes: STATUS_CARD,
+      },
+      {
+        ownerKind: 'work_item',
+        ownerId: 'wi-orbit-feature-ready',
+        name: 'review-notes.txt',
+        type: 'text/plain',
+      },
     ] as const
     for (const [index, attachment] of attachmentPlans.entries()) {
       const id = `a-${String(index + 1).padStart(2, '0')}`
-      const bytes = new TextEncoder().encode(
-        `Orbit fixture attachment ${id}\nSeeded deterministically for ${attachment.ownerKind} ${attachment.ownerId}.\n`,
-      )
+      const bytes =
+        'bytes' in attachment
+          ? attachment.bytes
+          : new TextEncoder().encode(
+              `Orbit fixture attachment ${id}\nSeeded deterministically for ${attachment.ownerKind} ${attachment.ownerId}.\n`,
+            )
       const query = [
         `command_id=seed-attachment-${id}`,
         `expected_revision=${revision}`,
@@ -1027,11 +1076,11 @@ export async function seedWorkspace(
         `owner_kind=${attachment.ownerKind}`,
         `owner_id=${attachment.ownerId}`,
         `filename=${encodeURIComponent(attachment.name)}`,
-        'content_type=text%2Fplain',
+        `content_type=${encodeURIComponent(attachment.type)}`,
         `description=${encodeURIComponent('Fixture attachment')}`,
       ].join('&')
       const result = await transport
-        .postBytes<{ revision: number }>(`/v1/authoritative/attachment-import?${query}`, bytes, 'text/plain')
+        .postBytes<{ revision: number }>(`/v1/authoritative/attachment-import?${query}`, bytes, attachment.type)
         .catch((error) => {
           throw withLabel(error, `attachment ${id}`, '/v1/authoritative/attachment-import')
         })
@@ -1039,13 +1088,22 @@ export async function seedWorkspace(
     }
   }
 
-  // 7. Agent jobs: one awaiting review (needs attention), one running, one fresh.
+  // 7. Agent jobs: one awaiting review (needs attention), one running, one fresh,
+  //    and one whole-handoff job in Development that has no review yet (so the
+  //    browser can record an approval rather than a conflicting second one).
   const agentJobs: SeedAgentJob[] = []
   if (extras) {
     const orbitInProgress = tasks.filter(
       (task) => task.projectId === PROJECT_IDS.orbit && task.status === 'in_progress',
     )
-    const jobTasks = orbitInProgress.slice(0, 3)
+    const developmentTask =
+      tasks.find(
+        (task) => task.projectId === PROJECT_IDS.development && task.status === 'in_progress',
+      ) ?? tasks.find((task) => task.projectId === PROJECT_IDS.development)
+    const jobTasks = [
+      ...orbitInProgress.slice(0, 3),
+      ...(developmentTask ? [developmentTask] : []),
+    ]
     // The launch routes refuse timestamps that move backwards, so the whole
     // sequence is anchored in the past and only ever increases.
     const anchor = nowMs - 4 * HOUR
@@ -1059,7 +1117,11 @@ export async function seedWorkspace(
     for (const [index, task] of jobTasks.entries()) {
       const jobId = `job-seed-${index + 1}`
       if (existing.has(jobId)) {
-        agentJobs.push({ id: jobId, taskId: task.id, handoffId: index === 0 ? `h-${jobId}` : null })
+        agentJobs.push({
+          id: jobId,
+          taskId: task.id,
+          handoffId: index === 0 || index === 3 ? `h-${jobId}` : null,
+        })
         continue
       }
       await transport
@@ -1077,7 +1139,7 @@ export async function seedWorkspace(
         })
 
       let handoffId: string | null = null
-      if (index === 0) {
+      if (index === 0 || index === 3) {
         // Drive the job to `running` through the machine routes so a handoff and
         // a review exist — that is what the attention queue reads.
         const claimToken = `claim-${jobId}`
@@ -1123,27 +1185,36 @@ export async function seedWorkspace(
           .post('/v1/authoritative/agent-jobs/handoffs', {
             job_id: jobId,
             handoff_id: handoffId,
-            payload: {
-              summary: 'Implemented the session cookie flow behind a failing test.',
-              validation: 'unit + browser checks pass locally',
-              next_steps: ['review the CSRF guard', 'confirm cookie flags'],
-            },
+            payload:
+              index === 0
+                ? {
+                    summary: 'Implemented the session cookie flow behind a failing test.',
+                    validation: 'unit + browser checks pass locally',
+                    next_steps: ['review the CSRF guard', 'confirm cookie flags'],
+                  }
+                : {
+                    summary: 'Added the guarded work-item transition and its refusal.',
+                    validation: 'browser checks pass against the deterministic fixture',
+                    next_steps: ['approve the guard copy', 'confirm the task stays in progress'],
+                  },
             at_ms: anchor + 4_000,
           })
           .catch((error) => {
             throw withLabel(error, `agent job ${jobId} handoff`, '/v1/authoritative/agent-jobs/handoffs')
           })
-        await transport
-          .post('/v1/authoritative/agent-jobs/review', {
-            job_id: jobId,
-            handoff_id: handoffId,
-            decision: 'changes_requested',
-            reason: 'Add a test for a stale session cookie before this lands.',
-            at_ms: anchor + 5_000,
-          })
-          .catch((error) => {
-            throw withLabel(error, `agent job ${jobId} review`, '/v1/authoritative/agent-jobs/review')
-          })
+        if (index === 0) {
+          await transport
+            .post('/v1/authoritative/agent-jobs/review', {
+              job_id: jobId,
+              handoff_id: handoffId,
+              decision: 'changes_requested',
+              reason: 'Add a test for a stale session cookie before this lands.',
+              at_ms: anchor + 5_000,
+            })
+            .catch((error) => {
+              throw withLabel(error, `agent job ${jobId} review`, '/v1/authoritative/agent-jobs/review')
+            })
+        }
       }
       agentJobs.push({ id: jobId, taskId: task.id, handoffId })
     }

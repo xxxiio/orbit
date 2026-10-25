@@ -275,16 +275,22 @@ export function NewWorkItemDialog({
   const rejection = create.disposition === 'rejected' ? create.error : null
   const uncertain = create.disposition === 'uncertain'
   const submitting = create.isPending
+  const pinnedId = create.pinnedId
+  const pinnedAttempt = pinnedId !== null && attemptRef.current?.itemId === pinnedId
+  const refusedButPinned = pinnedAttempt && rejection !== null
 
   // The payload on screen and the payload of the attempt whose outcome is
   // unknown. An unchanged retry is safe — it repeats the same ids, so the
   // server cannot store a second item. A changed payload would be a second,
   // blind create while the first may already exist, so it is not offered.
+  //
+  // The pin outlives a contradictory answer: a duplicate refusal followed by a
+  // 404 read is still not proof that the earlier attempt can be abandoned.
   const currentKey = payloadKey(kindId, validate(kindId, workflow, draft).properties)
   const unconfirmedKey = create.variables
     ? payloadKey(create.variables.kind, create.variables.properties ?? {})
     : null
-  const blindRetry = uncertain && unconfirmedKey !== null && unconfirmedKey !== currentKey
+  const blindRetry = pinnedAttempt && unconfirmedKey !== null && unconfirmedKey !== currentKey
 
   function attemptFor(key: string): CreateWorkItemAttempt {
     if (attemptRef.current?.key !== key) {
@@ -417,6 +423,18 @@ export function NewWorkItemDialog({
                 : ' Retrying with these fields repeats the same item id, so it cannot create a second item.'}
             </p>
           ) : null}
+          {refusedButPinned ? (
+            <p
+              role="alert"
+              data-pinned-item-id={pinnedId ?? undefined}
+              className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning-ink"
+            >
+              The server refused the last attempt, but this create still holds item id{' '}
+              <span className="font-mono">{pinnedId}</span>. The earlier attempt is unresolved, so
+              changing fields cannot mint a different item. Retry the same request, or close and
+              check the board before creating something else.
+            </p>
+          ) : null}
           {blindRetry ? (
             <p
               role="alert"
@@ -449,7 +467,7 @@ export function NewWorkItemDialog({
                   : undefined
               }
             >
-              {uncertain && !blindRetry ? 'Retry the same request' : 'Create work item'}
+              {pinnedAttempt && !blindRetry ? 'Retry the same request' : 'Create work item'}
             </Button>
           </div>
         </form>

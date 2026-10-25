@@ -1,5 +1,12 @@
 import type { ComponentType } from 'react'
-import { AgentsIcon, FolderIcon, HomeIcon, InboxIcon, type IconProps } from '@/components/ui/icons'
+import {
+  AgentsIcon,
+  BookIcon,
+  FolderIcon,
+  HomeIcon,
+  InboxIcon,
+  type IconProps,
+} from '@/components/ui/icons'
 
 export interface GlobalNavItem {
   to: string
@@ -12,6 +19,7 @@ export const globalNav: GlobalNavItem[] = [
   { to: '/', label: 'Home', icon: HomeIcon, end: true },
   { to: '/inbox', label: 'Inbox', icon: InboxIcon },
   { to: '/projects', label: 'Projects', icon: FolderIcon },
+  { to: '/knowledge', label: 'Knowledge', icon: BookIcon },
   { to: '/agents', label: 'Agents', icon: AgentsIcon },
 ]
 

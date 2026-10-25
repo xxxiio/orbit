@@ -65,6 +65,9 @@ function renderSheet(item: WorkItem, onRefresh?: () => void) {
       revision: item.revision,
     },
   ])
+  // The sheet mounts the shared attachment list. Seed an empty list so these
+  // sheet-focused tests do not spend their mocked responses on its read.
+  client.setQueryData(queryKeys.attachments('work_item', item.id), { attachments: [] })
   render(
     <QueryClientProvider client={client}>
       <WorkItemSheet item={item} workflow={workflow} onClose={onClose} onRefresh={onRefresh} />

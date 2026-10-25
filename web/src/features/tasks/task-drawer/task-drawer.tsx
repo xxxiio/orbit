@@ -23,6 +23,8 @@ import { Button } from '@/components/ui/button'
 import { Drawer } from '@/components/ui/drawer'
 import { ErrorState } from '@/components/ui/error-state'
 import { AlertCircleIcon, CheckCircleIcon, LoaderIcon } from '@/components/ui/icons'
+import { Section } from '@/components/ui/section'
+import { AttachmentList } from '@/features/attachments'
 import { priorityLabels, priorityTones, statusLabel, statusTones } from '../task-meta'
 import { useTaskDrawer } from '../use-task-drawer'
 import { writeAcceptedTask } from '../task-cache'
@@ -399,6 +401,17 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                       )
                     }
                   />
+
+                  <Section
+                    title="Attachments"
+                    description="Files stored by the server beside this task. Uploads and removals are confirmed before they are shown."
+                  >
+                    <AttachmentList
+                      ownerKind="task"
+                      ownerId={taskId}
+                      emptyHint="Upload a file to keep it with this task. The server stores the bytes and lists it here."
+                    />
+                  </Section>
 
                   <ActivitySection
                     entries={detail.activity}

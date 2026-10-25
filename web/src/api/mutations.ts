@@ -27,7 +27,7 @@
  *    outcome the server may have applied anyway (lost response, 5xx, knowledge
  *    filesystem publication) is `uncertain`, never silently retried.
  */
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query'
 import {
   ApiError,
@@ -41,6 +41,8 @@ import { handleUnauthorized } from './session-store'
 import { queryKeys } from './queries'
 import { acceptLedgerRevision, acceptTaskRecord, acceptWorkItemRecord, workItemRevision } from './accepted-write'
 import {
+  toAgentJob,
+  toAgentReview,
   toApprovedScheduleReceipt,
   toAttachment,
   toMilestoneResult,
@@ -48,6 +50,8 @@ import {
   toTask,
   toWorkItem,
   toWorkflowUpgradeApplied,
+  type AgentJob,
+  type AgentReview,
   type ApprovedScheduleOutcome,
   type Attachment,
   type MilestoneMutationOutcome,
@@ -61,6 +65,7 @@ import type {
   ApplyUpgradeBody,
   AttachmentImportResult,
   AttachmentOwnerKind,
+  AttachmentRemoveResult,
   AuthoritySnapshotResponse,
   BlueprintUpgradePreview,
   CreateWorkItemBody,
@@ -102,8 +107,13 @@ import {
   transitionWorkItem,
   updateWorkItemProperties,
 } from './endpoints/workflows'
-import { importAttachment } from './endpoints/attachments'
+import {
+  importAttachment,
+  removeAttachment,
+} from './endpoints/attachments'
 import { sendMarkdownCommand } from './endpoints/knowledge'
+import { resumeAgentJob, submitAgentReview } from './endpoints/agents'
+import type { ByteUploadProgress } from './http'
 
 export { newCommandId } from './ids'
 
@@ -844,9 +854,18 @@ function serializeWorkItemWrite<T>(id: string, write: () => Promise<T>): Promise
   return result
 }
 
-export function useCreateWorkItem(): CommandMutation<WorkItem, CreateWorkItemVariables> {
+export function useCreateWorkItem(): CommandMutation<WorkItem, CreateWorkItemVariables> & {
+  /**
+   * The item id whose first attempt may have been stored but has never been
+   * confirmed. A caller must keep using it while this is set, even if the last
+   * answer was a refusal: a duplicate refusal followed by a 404 read proves the
+   * id was not stored *yet*, not that the earlier attempt is safe to abandon.
+   */
+  pinnedId: string | null
+} {
   const uncertainCreates = useRef(new Set<string>())
-  return useApiMutation<WorkItem, CreateWorkItemVariables>({
+  const [pinnedId, setPinnedId] = useState<string | null>(null)
+  const mutation = useApiMutation<WorkItem, CreateWorkItemVariables>({
     // The item may exist even when the response never arrived.
     uncertainOnError: true,
     mutationFn: async ({ id, projectId, kind, properties }) => {
@@ -859,12 +878,14 @@ export function useCreateWorkItem(): CommandMutation<WorkItem, CreateWorkItemVar
       try {
         const item = await createWorkItem(body).then(toWorkItem)
         uncertainCreates.current.delete(id)
+        setPinnedId((current) => (current === id ? null : current))
         return item
       } catch (error) {
         if (isAmbiguousError(error)) {
           // Keep the attempt pinned: a changed payload must not mint a new id
           // while this one may already be stored.
           uncertainCreates.current.add(id)
+          setPinnedId(id)
           throw error
         }
         if (uncertainCreates.current.has(id)) {
@@ -873,6 +894,7 @@ export function useCreateWorkItem(): CommandMutation<WorkItem, CreateWorkItemVar
           try {
             const existing = await fetchWorkItem(id)
             uncertainCreates.current.delete(id)
+            setPinnedId((current) => (current === id ? null : current))
             return toWorkItem(existing)
           } catch (readError) {
             if (!isApiError(readError) || readError.status !== 404) {
@@ -888,6 +910,9 @@ export function useCreateWorkItem(): CommandMutation<WorkItem, CreateWorkItemVar
           // outcome, so report that instead of a synthetic "unconfirmed".
           throw error
         }
+        // A definitive refusal before any attempt could have been stored: this
+        // id is not the pinned one, so a later payload may mint a fresh id.
+        setPinnedId((current) => (current === id ? null : current))
         throw error
       }
     },
@@ -899,6 +924,8 @@ export function useCreateWorkItem(): CommandMutation<WorkItem, CreateWorkItemVar
       acceptWorkItemRecord(queryClient, item)
     },
   })
+
+  return { ...mutation, pinnedId }
 }
 
 /**
@@ -961,12 +988,22 @@ export function useUpdateWorkItemProperties(): CommandMutation<
 /* ------------------------------------------------------------------ */
 
 export interface ImportAttachmentVariables {
+  /**
+   * All three ids are minted by the caller *before* the first request and reused
+   * on retry. The server accepts an import by `command_id`, so a lost response
+   * can be replayed without storing a second file under a new id.
+   */
+  commandId: string
+  attachmentId: string
+  activityId: string
   ownerKind: AttachmentOwnerKind | string
   ownerId: string
   file: Blob | ArrayBuffer | Uint8Array
   filename: string
   contentType?: string
   description?: string
+  /** Bytes handed to the network; never acceptance. */
+  onProgress?: (progress: ByteUploadProgress) => void
 }
 
 export interface ImportAttachmentOutcome {
@@ -986,29 +1023,107 @@ export function useImportAttachment(): CommandMutation<
   ImportAttachmentOutcome,
   ImportAttachmentVariables
 > {
+  // An upload that was not confirmed must be replayed with the *same* expected
+  // revision as its first attempt: the server deduplicates on command id and
+  // payload, and the first attempt may already have advanced the ledger. Reading
+  // a fresh revision on retry would turn a safe replay into an immutable
+  // conflict.
+  const attemptRevisions = useRef(new Map<string, number>())
   return useApiMutation<ImportAttachmentOutcome, ImportAttachmentVariables>({
     uncertainOnError: true,
     mutationFn: (variables, queryClient) => {
+      let expectedRevision = attemptRevisions.current.get(variables.commandId)
+      if (expectedRevision === undefined) {
+        expectedRevision = snapshotRevision(queryClient)
+        attemptRevisions.current.set(variables.commandId, expectedRevision)
+      }
       const metadata = {
-        command_id: newCommandId(),
-        expected_revision: snapshotRevision(queryClient),
-        attachment_id: newCommandId(),
-        activity_id: newCommandId(),
+        command_id: variables.commandId,
+        expected_revision: expectedRevision,
+        attachment_id: variables.attachmentId,
+        activity_id: variables.activityId,
         owner_kind: variables.ownerKind,
         owner_id: variables.ownerId,
         filename: variables.filename,
         content_type: variables.contentType,
         description: variables.description,
       }
-      return importAttachment(metadata, variables.file).then(
-        (result: AttachmentImportResult): ImportAttachmentOutcome => ({
-          revision: result.revision,
-          duplicate: result.duplicate,
-          removed: result.removed,
-          attachment: result.attachment ? toAttachment(result.attachment) : null,
-        }),
-      )
+      return importAttachment(metadata, variables.file, variables.onProgress)
+        .then(
+          (result: AttachmentImportResult): ImportAttachmentOutcome => ({
+            revision: result.revision,
+            duplicate: result.duplicate,
+            removed: result.removed,
+            attachment: result.attachment ? toAttachment(result.attachment) : null,
+          }),
+        )
+        .catch((error: unknown) => {
+          // A definitive refusal stored nothing, so its pinned revision can go;
+          // an uncertain outcome must keep it for the identical retry.
+          if (!isAmbiguousError(error)) {
+            attemptRevisions.current.delete(variables.commandId)
+          }
+          throw error
+        })
     },
+    affectedKeys: (variables) => [
+      queryKeys.snapshot(),
+      queryKeys.attachments(variables.ownerKind, variables.ownerId),
+      ...(variables.ownerKind === 'task' ? [queryKeys.task(variables.ownerId)] : []),
+      ...(variables.ownerKind === 'task'
+        ? [queryKeys.taskActivity(variables.ownerId)]
+        : []),
+    ],
+    onAccepted: (outcome, variables, queryClient) => {
+      attemptRevisions.current.delete(variables.commandId)
+      acceptLedgerRevision(queryClient, outcome.revision)
+    },
+  })
+}
+
+export interface RemoveAttachmentVariables {
+  commandId: string
+  attachmentId: string
+  activityId: string
+  ownerKind: AttachmentOwnerKind | string
+  ownerId: string
+}
+
+export interface RemoveAttachmentOutcome {
+  revision: number
+  removed: boolean
+  duplicate: boolean
+  contentRemoved: boolean
+  alreadyRemoved: boolean
+}
+
+/**
+ * Removing writes a ledger activity and drops the stored bytes. The response
+ * may be lost after the row is gone, so the disposition is `uncertain` on
+ * transport/5xx failures and the caller refetches instead of deleting locally.
+ * Removing an already-removed attachment is a 200 no-op (`already_removed`).
+ */
+export function useRemoveAttachment(): CommandMutation<
+  RemoveAttachmentOutcome,
+  RemoveAttachmentVariables
+> {
+  return useApiMutation<RemoveAttachmentOutcome, RemoveAttachmentVariables>({
+    uncertainOnError: true,
+    mutationFn: (variables, queryClient) =>
+      removeAttachment({
+        command_id: variables.commandId,
+        expected_revision: snapshotRevision(queryClient),
+        attachment_id: variables.attachmentId,
+        activity_id: variables.activityId,
+      }).then(
+        (result: AttachmentRemoveResult): RemoveAttachmentOutcome => ({
+          revision: result.revision,
+          removed: result.removed,
+          duplicate: result.duplicate,
+          contentRemoved: result.content_removed,
+          alreadyRemoved: result.already_removed,
+        }),
+      ),
     affectedKeys: (variables) => [
       queryKeys.snapshot(),
       queryKeys.attachments(variables.ownerKind, variables.ownerId),
@@ -1027,20 +1142,98 @@ export function useImportAttachment(): CommandMutation<
 /* Knowledge                                                           */
 /* ------------------------------------------------------------------ */
 
+export interface MarkdownCommandVariables {
+  /**
+   * Minted by the caller before the first attempt. A knowledge write publishes
+   * to disk before the receipt, so an error can still mean the file changed;
+   * the identical retry must replay this id, not mint a new one.
+   */
+  commandId: string
+  command: MarkdownCommand
+}
+
 /**
  * Knowledge writes are published to disk before the receipt is accepted, so an
  * error does not prove nothing changed. Treat it as `uncertain` and re-read the
  * document or manifest before retrying with a fresh command id.
  */
-export function useMarkdownCommand(): CommandMutation<
-  MarkdownReceipt,
-  { command: MarkdownCommand }
-> {
-  return useApiMutation<MarkdownReceipt, { command: MarkdownCommand }>({
+export function useMarkdownCommand(): CommandMutation<MarkdownReceipt, MarkdownCommandVariables> {
+  return useApiMutation<MarkdownReceipt, MarkdownCommandVariables>({
     uncertainOnError: true,
-    mutationFn: ({ command }) =>
-      sendMarkdownCommand({ command_id: newCommandId(), command }),
+    mutationFn: ({ command, commandId }) =>
+      sendMarkdownCommand({ command_id: commandId, command }),
     affectedKeys: () => [queryKeys.knowledgeAll()],
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Agent jobs                                                          */
+/* ------------------------------------------------------------------ */
+
+export interface SubmitAgentReviewVariables {
+  jobId: string
+  handoffId: string
+  decision: 'approved' | 'changes_requested'
+  reason: string
+  /** Minted with the attempt so an identical retry replays the same review. */
+  atMs: number
+}
+
+/**
+ * A review is a write, not a launch. The server records the decision and always
+ * returns `task_completed: false`; approving never moves the Orbit task. The
+ * caller keeps `atMs` stable across retries because the server refuses a
+ * conflicting second review for the same handoff.
+ */
+export function useSubmitAgentReview(): CommandMutation<AgentReview, SubmitAgentReviewVariables> {
+  return useApiMutation<AgentReview, SubmitAgentReviewVariables>({
+    uncertainOnError: true,
+    mutationFn: ({ jobId, handoffId, decision, reason, atMs }) =>
+      submitAgentReview({
+        job_id: jobId,
+        handoff_id: handoffId,
+        decision,
+        reason,
+        at_ms: atMs,
+      }).then(toAgentReview),
+    affectedKeys: (variables) => [
+      queryKeys.agentJob(variables.jobId),
+      queryKeys.agentHandoffs(variables.jobId),
+      queryKeys.agentReview(variables.jobId),
+      queryKeys.agentResumeContext(variables.jobId),
+      queryKeys.agentOverview(),
+      queryKeys.agentAttention(),
+    ],
+  })
+}
+
+export interface ResumeAgentJobVariables {
+  priorJobId: string
+  /** Minted before the first attempt; an identical retry must reuse it. */
+  newJobId: string
+  atMs: number
+}
+
+/**
+ * Resume queues a new, authority-owned job that an executor can claim. It does
+ * not launch anything from the browser, and it does not infer task completion.
+ */
+export function useResumeAgentJob(): CommandMutation<AgentJob, ResumeAgentJobVariables> {
+  return useApiMutation<AgentJob, ResumeAgentJobVariables>({
+    uncertainOnError: true,
+    mutationFn: ({ priorJobId, newJobId, atMs }) =>
+      resumeAgentJob({
+        prior_job_id: priorJobId,
+        new_job_id: newJobId,
+        at_ms: atMs,
+      }).then(toAgentJob),
+    affectedKeys: (variables) => [
+      queryKeys.agentJob(variables.priorJobId),
+      queryKeys.agentJob(variables.newJobId),
+      queryKeys.agentResumeContext(variables.priorJobId),
+      queryKeys.agentOverview(),
+      queryKeys.agentAttention(),
+    ],
   })
 }
 

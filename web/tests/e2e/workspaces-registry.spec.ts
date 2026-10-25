@@ -21,8 +21,8 @@ interface ManifestView {
   components: ManifestComponent[]
 }
 
-/** The four declared types this build names as unavailable. */
-const NAMED_REFUSAL_TYPES = ['habit_tracker', 'metric_history', 'knowledge_refs', 'agent_jobs']
+/** The declared types this build still names as unavailable. */
+const NAMED_REFUSAL_TYPES = ['habit_tracker', 'metric_history']
 
 function componentHeading(component: ManifestComponent): string {
   return component.title?.trim() || 'View panel'
@@ -33,10 +33,10 @@ test.describe('workflow view registry', () => {
     page,
     workspace,
   }) => {
-    const { server } = workspace
+    const { server, fixture } = workspace
     await signInViaApi(page, server)
 
-    const projects = ['p-basic', 'p-development', 'p-research', 'p-learning', 'p-habits']
+    const projects = ['p-basic', 'p-development', 'p-research', 'p-learning', 'p-habits', 'p-guarded']
     const refusalsSeen = new Set<string>()
 
     for (const projectId of projects) {
@@ -105,6 +105,45 @@ test.describe('workflow view registry', () => {
                 `${projectId}/${view.id}/${component.id} lists a work item`,
               ).toBeVisible()
             }
+          }
+
+          // Knowledge references and agent jobs are real panels now: each one
+          // must show a row the fixture actually seeded.
+          if (component.type === 'knowledge_refs') {
+            await expect(
+              surface.locator('a[href^="/knowledge/"]').first(),
+              `${projectId}/${view.id}/${component.id} links a real note`,
+            ).toBeVisible()
+          }
+          if (component.source === 'agent_jobs') {
+            if (component.type === 'metric') {
+              await expect(
+                surface.locator('[data-agent-job-count]'),
+                `${projectId}/${view.id}/${component.id} counts real agent jobs`,
+              ).toHaveAttribute('data-agent-job-count', /^[1-9]\d*$/)
+            } else {
+              await expect(
+                surface.locator('[data-agent-job]').first(),
+                `${projectId}/${view.id}/${component.id} lists a real agent job`,
+              ).toBeVisible()
+            }
+          }
+          if (component.source === 'knowledge' && component.type === 'table') {
+            await expect(
+              surface.locator('a[href^="/knowledge/"]').first(),
+              `${projectId}/${view.id}/${component.id} tabulates a real note`,
+            ).toBeVisible()
+          }
+
+          // The fixture's guarded view declares a descending task sort. The
+          // rendered order must be the server titles descending, not ascending.
+          if (component.id === 'descending_tasks') {
+            const titles = fixture.tasks
+              .filter((task) => task.projectId === 'p-guarded')
+              .map((task) => task.title)
+              .sort((left, right) => right.localeCompare(left))
+              .slice(0, 5)
+            await expect(surface.getByRole('button')).toHaveText(titles)
           }
         }
 

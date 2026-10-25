@@ -29,6 +29,22 @@ import {
   type WorkBriefParams,
   type WorkloadParams,
 } from './endpoints/planning'
+import {
+  fetchAgentAttention,
+  fetchAgentHandoffs,
+  fetchAgentJob,
+  fetchAgentOverview,
+  fetchAgentResumeContext,
+  fetchAgentReview,
+} from './endpoints/agents'
+import { fetchAttachments, fetchAttachmentContent } from './endpoints/attachments'
+import {
+  fetchKnowledgeTree,
+  fetchMarkdownDocument,
+  fetchMarkdownInventory,
+  fetchMarkdownRelations,
+  searchMarkdown,
+} from './endpoints/knowledge'
 import { fetchMilestones } from './endpoints/milestones'
 import { fetchSnapshot } from './endpoints/snapshot'
 import { fetchAcceptanceCriteria, fetchTaskActivity, fetchTaskDetail } from './endpoints/tasks'
@@ -42,6 +58,11 @@ import {
 import {
   toAcceptanceCriterion,
   toActivityEntry,
+  toAgentHandoff,
+  toAgentJob,
+  toAgentJobOverview,
+  toAgentResumeContext,
+  toAgentReview,
   toDayPlan,
   toDependency,
   toMilestone,
@@ -61,6 +82,11 @@ import {
   toWorkspaceSnapshot,
   type AcceptanceCriterion,
   type ActivityEntry,
+  type AgentHandoff,
+  type AgentJob,
+  type AgentJobOverview,
+  type AgentResumeContext,
+  type AgentReview,
   type DayPlanView,
   type Dependency,
   type Milestone,
@@ -79,7 +105,14 @@ import {
   type WorkloadView,
   type WorkspaceSnapshot,
 } from './adapters'
-import type { MilestoneSnapshot } from './contracts'
+import type { Attachment } from './adapters'
+import { toAttachment } from './adapters'
+import type {
+  AttachmentOwnerKind,
+  KnowledgeDocumentInfo,
+  KnowledgeNode,
+  MilestoneSnapshot,
+} from './contracts'
 
 /** The snapshot is the shared basis for almost every screen: keep it warm for 5s. */
 export const SNAPSHOT_STALE_TIME = 5_000
@@ -124,8 +157,19 @@ export const queryKeys = {
   knowledgeAll: () => ['knowledge'] as const,
   knowledgeTree: () => ['knowledge', 'tree'] as const,
   knowledgeInventory: () => ['knowledge', 'inventory'] as const,
+  knowledgeDocument: (path: string) => ['knowledge', 'document', path] as const,
+  knowledgeRelations: (id: string) => ['knowledge', 'relations', id] as const,
+  knowledgeSearch: (query: string, limit: number) => ['knowledge', 'search', query, limit] as const,
   markdownManifest: () => ['knowledge', 'manifest'] as const,
   attachments: (ownerKind: string, ownerId: string) => ['attachments', ownerKind, ownerId] as const,
+  attachmentContent: (id: string) => ['attachments', 'content', id] as const,
+  agentAll: () => ['agent-jobs'] as const,
+  agentOverview: () => ['agent-jobs', 'overview'] as const,
+  agentAttention: () => ['agent-jobs', 'attention'] as const,
+  agentJob: (id: string) => ['agent-jobs', 'job', id] as const,
+  agentHandoffs: (id: string) => ['agent-jobs', 'handoffs', id] as const,
+  agentReview: (id: string) => ['agent-jobs', 'review', id] as const,
+  agentResumeContext: (id: string) => ['agent-jobs', 'resume-context', id] as const,
 }
 
 /** 4xx means "understood and refused": never retry it blindly. */
@@ -499,5 +543,159 @@ export function useUpgradePreview(
     },
     enabled: Boolean(params),
     select: toWorkflowUpgradePreview,
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Knowledge (file-authoritative Markdown)                             */
+/* ------------------------------------------------------------------ */
+
+export function useKnowledgeTree(): UseQueryResult<KnowledgeNode, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.knowledgeTree(),
+    queryFn: ({ signal }) => fetchKnowledgeTree(signal),
+    staleTime: 10_000,
+  })
+}
+
+/** Inventory is the id → path index used for `[[id]]` chips and note titles. */
+export function useMarkdownInventory(): UseQueryResult<KnowledgeDocumentInfo[], ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.knowledgeInventory(),
+    queryFn: ({ signal }) => fetchMarkdownInventory(signal),
+    staleTime: 10_000,
+  })
+}
+
+/** A note is a file read: no stale window, so a reload really re-reads the disk. */
+export function useMarkdownDocument(
+  path: string | undefined,
+): UseQueryResult<{ path: string; body: string }, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.knowledgeDocument(path ?? ''),
+    queryFn: ({ signal }) => fetchMarkdownDocument(path as string, signal),
+    enabled: Boolean(path),
+  })
+}
+
+export function useMarkdownRelations(
+  id: string | undefined,
+): UseQueryResult<{ outgoing: string[]; backlinks: string[]; unresolved: string[] }, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.knowledgeRelations(id ?? ''),
+    queryFn: ({ signal }) => fetchMarkdownRelations(id as string, signal),
+    enabled: Boolean(id),
+  })
+}
+
+/** Search is a `POST` read; no command is written. */
+export function useMarkdownSearch(
+  query: string,
+  limit = 20,
+): UseQueryResult<KnowledgeDocumentInfo[], ApiError> {
+  const trimmed = query.trim()
+  return useApiQuery({
+    queryKey: queryKeys.knowledgeSearch(trimmed, limit),
+    queryFn: ({ signal }) => searchMarkdown(trimmed, limit, signal),
+    enabled: trimmed.length > 0,
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Attachments                                                         */
+/* ------------------------------------------------------------------ */
+
+export function useAttachments(
+  ownerKind: AttachmentOwnerKind | string | undefined,
+  ownerId: string | undefined,
+): UseQueryResult<Attachment[], ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.attachments(ownerKind ?? '', ownerId ?? ''),
+    queryFn: ({ signal }) => fetchAttachments(ownerKind as string, ownerId as string, signal),
+    enabled: Boolean(ownerKind) && Boolean(ownerId),
+    staleTime: 5_000,
+    select: (response) => response.attachments.map(toAttachment),
+  })
+}
+
+/**
+ * Image bytes for an inline preview. The `Blob` keeps the response's
+ * `Content-Type`, so the object URL an `<img>` receives is the type the server
+ * stored. Disabled until the person asks for a preview.
+ */
+export function useAttachmentContent(
+  id: string | undefined,
+  enabled: boolean,
+): UseQueryResult<Blob, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.attachmentContent(id ?? ''),
+    queryFn: ({ signal }) => fetchAttachmentContent(id as string, signal),
+    enabled: Boolean(id) && enabled,
+    staleTime: Number.POSITIVE_INFINITY,
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Agent jobs                                                          */
+/* ------------------------------------------------------------------ */
+
+export function useAgentOverview(): UseQueryResult<AgentJobOverview[], ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.agentOverview(),
+    queryFn: ({ signal }) => fetchAgentOverview(signal),
+    select: (items) => items.map(toAgentJobOverview),
+  })
+}
+
+export function useAgentAttention(): UseQueryResult<AgentJob[], ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.agentAttention(),
+    queryFn: ({ signal }) => fetchAgentAttention(signal),
+    select: (jobs) => jobs.map(toAgentJob),
+  })
+}
+
+/**
+ * A missing or foreign job answers 403, never 404. The query keeps that error;
+ * the detail page turns it into "not visible to this device" rather than
+ * pretending the job does not exist.
+ */
+export function useAgentJob(id: string | undefined): UseQueryResult<AgentJob | null, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.agentJob(id ?? ''),
+    queryFn: ({ signal }) => fetchAgentJob(id as string, signal),
+    enabled: Boolean(id),
+    select: (job) => (job ? toAgentJob(job) : null),
+  })
+}
+
+export function useAgentHandoffs(
+  id: string | undefined,
+): UseQueryResult<AgentHandoff[], ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.agentHandoffs(id ?? ''),
+    queryFn: ({ signal }) => fetchAgentHandoffs(id as string, signal),
+    enabled: Boolean(id),
+    select: (entries) => entries.map(toAgentHandoff),
+  })
+}
+
+export function useAgentReview(id: string | undefined): UseQueryResult<AgentReview | null, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.agentReview(id ?? ''),
+    queryFn: ({ signal }) => fetchAgentReview(id as string, signal),
+    enabled: Boolean(id),
+    select: (review) => (review ? toAgentReview(review) : null),
+  })
+}
+
+export function useAgentResumeContext(
+  id: string | undefined,
+): UseQueryResult<AgentResumeContext, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.agentResumeContext(id ?? ''),
+    queryFn: ({ signal }) => fetchAgentResumeContext(id as string, signal),
+    enabled: Boolean(id),
+    select: toAgentResumeContext,
   })
 }

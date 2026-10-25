@@ -355,3 +355,53 @@ export function SettingsIcon(props: IconProps) {
     </Icon>
   )
 }
+
+export function BookIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.5 5.5a2 2 0 0 1 2-2H19v17H6.5a2 2 0 0 1-2-2z" />
+      <path d="M4.5 17.5H19" />
+      <path d="M8.5 7.5h6M8.5 11h4" />
+    </Icon>
+  )
+}
+
+export function FileIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6.5 3.5h7l4 4v13h-11z" />
+      <path d="M13.5 3.5v4h4" />
+      <path d="M9 12.5h6M9 16h5" />
+    </Icon>
+  )
+}
+
+export function ImageIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <circle cx="8.75" cy="9.25" r="1.6" />
+      <path d="m4.5 16.5 4.75-4.5 3.25 3 2.75-2.5 4.25 4" />
+    </Icon>
+  )
+}
+
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4.5v11M7.5 11 12 15.5 16.5 11" />
+      <path d="M4.5 19.5h15" />
+    </Icon>
+  )
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.5 6.5h15" />
+      <path d="M9 6.5V4.75A1.25 1.25 0 0 1 10.25 3.5h3.5A1.25 1.25 0 0 1 15 4.75V6.5" />
+      <path d="M6.5 6.5 7.4 19a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4l.9-12.5" />
+      <path d="M10 10v6.5M14 10v6.5" />
+    </Icon>
+  )
+}

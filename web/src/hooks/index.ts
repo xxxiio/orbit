@@ -8,6 +8,8 @@
 export * from '@/api/errors'
 export * from '@/api/queries'
 export * from '@/api/mutations'
+export type { ByteUploadProgress } from '@/api/http'
+export { attachmentContentPath } from '@/api/endpoints/attachments'
 export type * from '@/api/adapters'
 export * from './use-session'
 export * from './use-document-title'

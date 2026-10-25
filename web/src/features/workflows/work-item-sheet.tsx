@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Drawer } from '@/components/ui/drawer'
 import { AlertCircleIcon, CheckCircleIcon, LoaderIcon } from '@/components/ui/icons'
 import { Section } from '@/components/ui/section'
+import { AttachmentList } from '@/features/attachments'
 import {
   EditGuardProvider,
   InlineFieldError,
@@ -586,6 +587,17 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
                     </p>
                   ) : null}
                 </div>
+              </Section>
+
+              <Section
+                title="Attachments"
+                description="Files stored by the server beside this work item. Uploads and removals are confirmed before they are shown."
+              >
+                <AttachmentList
+                  ownerKind="work_item"
+                  ownerId={item.id}
+                  emptyHint="Upload a file to keep it with this work item. The server stores the bytes and lists it here."
+                />
               </Section>
 
               <Section

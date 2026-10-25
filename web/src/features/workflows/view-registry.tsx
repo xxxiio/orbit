@@ -15,6 +15,8 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { GridIcon } from '@/components/ui/icons'
 import { Panel } from '@/components/ui/panel'
 import type { ViewRendererProps } from './view-types'
+import { KnowledgeRefsPanel } from '@/features/knowledge'
+import { AgentJobsPanel } from '@/features/agents'
 import {
   componentSpansFullWidth,
   componentTypeName,
@@ -59,23 +61,11 @@ function MetricHistoryView(props: ViewRendererProps) {
 }
 
 function KnowledgeRefsView(props: ViewRendererProps) {
-  return (
-    <UnavailablePanel
-      title={componentTypeName(props.component)}
-      reason="Knowledge notes are not browsable in the browser yet."
-      hint="Open notes from the desktop console until a knowledge screen ships."
-    />
-  )
+  return <KnowledgeRefsPanel component={props.component} />
 }
 
 function AgentJobsView(props: ViewRendererProps) {
-  return (
-    <UnavailablePanel
-      title={componentTypeName(props.component)}
-      reason="Agent jobs are not available in the browser yet."
-      hint="The sidebar's Agents entry says the same thing: job monitoring is a console feature in this build."
-    />
-  )
+  return <AgentJobsPanel component={props.component} />
 }
 
 export const viewComponentRenderers: Record<string, ComponentType<ViewRendererProps>> = {
@@ -103,12 +93,7 @@ export function isViewComponentImplemented(type: string): boolean {
   return Boolean(renderer) && !UNIMPLEMENTED_TYPES.has(type)
 }
 
-const UNIMPLEMENTED_TYPES = new Set([
-  'habit_tracker',
-  'metric_history',
-  'knowledge_refs',
-  'agent_jobs',
-])
+const UNIMPLEMENTED_TYPES = new Set(['habit_tracker', 'metric_history'])
 
 /** A type the registry has never heard of: named, refused, never blank. */
 function UnknownComponentView(props: ViewRendererProps) {

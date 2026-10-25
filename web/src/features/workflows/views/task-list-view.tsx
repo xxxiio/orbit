@@ -28,6 +28,8 @@ import {
 } from './shared'
 import { TaskSummaryList } from './list-view'
 import { WorkItemTableView } from './work-item-views'
+import { KnowledgeTablePanel } from '@/features/knowledge'
+import { AgentJobsPanel } from '@/features/agents'
 
 /**
  * The snapshot tasks narrowed by the component's declared filter. Readiness is
@@ -238,6 +240,14 @@ export function TableView(props: ViewRendererProps) {
 
   if (source === 'work_items') {
     return <WorkItemTableView {...props} />
+  }
+
+  if (source === 'knowledge') {
+    return <KnowledgeTablePanel component={component} />
+  }
+
+  if (source === 'agent_jobs') {
+    return <AgentJobsPanel component={component} />
   }
 
   if (source !== 'tasks') {
