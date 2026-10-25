@@ -1,0 +1,1150 @@
+/**
+ * Wire contracts for the Orbit authoritative HTTP API.
+ *
+ * Every type in this file mirrors a Rust type that orbit-server actually
+ * serialises (see `.slim/deepwork/m31-web-app/api-contract.md`). Field names,
+ * optionality and tag casing are copied from the structs, not normalised here:
+ * mapping to camelCase UI names happens in `adapters.ts`, one function per
+ * resource.
+ *
+ * Three serde traps are load-bearing and must not be "cleaned up":
+ *
+ * 1. `TaskRecord.project_id` / `.milestone_id` are *absent keys* when null
+ *    (`skip_serializing_if = "Option::is_none"`), while `TaskDetailResponse`
+ *    always emits them as `string | null`. Hence `project_id?: string` on the
+ *    record and `project_id: string | null` on the detail. Both mean the same
+ *    thing to a person; the adapter normalises them to `null`.
+ *
+ * 2. `MarkdownCommand` is the only tagged union that is *not* snake_case: the
+ *    enum has `#[serde(tag = "kind")]` with no `rename_all`, so the wire tags
+ *    are PascalCase (`{"kind":"Create"}`). Every other union here is tagged
+ *    snake_case (`{"type":"change_status"}`, `{"operation":"set_text"}`,
+ *    `{"kind":"folder"}`).
+ *
+ * 3. `GET /authoritative/blueprints/items` is polymorphic: `?id=` returns one
+ *    object (404 when absent) and `?project_id=` returns an array. The shape
+ *    depends on the query parameter, so this module exposes two distinct
+ *    functions (`fetchWorkItem` / `fetchWorkItems`) and never branches on
+ *    `Array.isArray` in a single helper.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Scalar unions (validated by the authority, never by this layer)      */
+/* ------------------------------------------------------------------ */
+
+export type TaskStatus =
+  | 'inbox'
+  | 'planned'
+  | 'ready'
+  | 'in_progress'
+  | 'waiting'
+  | 'blocked'
+  | 'review'
+  | 'deferred'
+  | 'done'
+  | 'cancelled'
+
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
+
+export type ProjectStatus = 'proposed' | 'active' | 'on_hold' | 'completed' | 'cancelled' | 'archived'
+
+export type MilestoneStatus = 'planned' | 'in_progress' | 'blocked' | 'completed' | 'cancelled'
+
+export type ScheduleFlexibility = 'fixed' | 'movable'
+export type ScheduleTargetKind = 'standalone' | 'task' | 'habit'
+
+export type StrategyMode =
+  | 'standard'
+  | 'learning'
+  | 'habit_driven'
+  | 'metric_target'
+  | 'maintenance'
+  | 'custom'
+
+export type CriterionStatus = 'pending' | 'satisfied' | 'waived'
+
+export type ReadinessReason =
+  | 'ready'
+  | 'unfinished_prerequisites'
+  | 'scheduled_for_later'
+  | 'past_deadline'
+  | 'inbox'
+  | 'planned'
+  | 'waiting'
+  | 'blocked'
+  | 'deferred'
+  | 'in_progress'
+  | 'review'
+  | 'done'
+  | 'cancelled'
+  | 'unknown_status'
+
+export type PlanningDisposition =
+  | 'selected'
+  | 'outside_project'
+  | 'not_actionable'
+  | 'insufficient_capacity'
+  | 'missing_estimate'
+  | 'task_limit'
+
+export type AttentionReason =
+  | 'overdue'
+  | 'due_soon'
+  | 'missing_estimate'
+  | 'unfinished_prerequisites'
+  | 'future_start'
+  | 'waiting_workflow'
+  | 'unblocks_others'
+
+export type ActivityKind =
+  | 'created'
+  | 'updated'
+  | 'status_changed'
+  | 'progress_updated'
+  | 'blocker_opened'
+  | 'blocker_resolved'
+  | 'scheduled'
+  | 'rescheduled'
+  | 'completed'
+  | 'attachment_added'
+  | 'attachment_removed'
+  /** The server renders custom kinds as the literal string `custom:<name>`. */
+  | (string & {})
+
+export type AttachmentOwnerKind = 'task' | 'project' | 'work_item' | 'knowledge' | 'agent_job'
+
+export type AgentJobState =
+  | 'queued'
+  | 'preparing'
+  | 'launching'
+  | 'running'
+  | 'waiting_input'
+  | 'blocked'
+  | 'completed'
+  | 'failed'
+  | 'interrupted'
+  | 'unreachable'
+
+export type AgentNextAction =
+  | 'none'
+  | 'respond_to_agent'
+  | 'inspect_runtime'
+  | 'review_handoff'
+  | 'resume_or_rework'
+  | 'inspect_missing_handoff'
+  | 'check_task_acceptance'
+  | 'inspect_and_resume'
+
+/** Runtime guard for values that reach a `<Select>`; the server rejects others. */
+export const TASK_STATUSES: readonly TaskStatus[] = [
+  'inbox',
+  'planned',
+  'ready',
+  'in_progress',
+  'waiting',
+  'blocked',
+  'review',
+  'deferred',
+  'done',
+  'cancelled',
+]
+
+export const TASK_PRIORITIES: readonly TaskPriority[] = ['low', 'medium', 'high', 'urgent']
+
+export const PROJECT_STATUSES: readonly ProjectStatus[] = [
+  'proposed',
+  'active',
+  'on_hold',
+  'completed',
+  'cancelled',
+  'archived',
+]
+
+export const MILESTONE_STATUSES: readonly MilestoneStatus[] = [
+  'planned',
+  'in_progress',
+  'blocked',
+  'completed',
+  'cancelled',
+]
+
+export function isTaskStatus(value: string): value is TaskStatus {
+  return (TASK_STATUSES as readonly string[]).includes(value)
+}
+
+export function isTaskPriority(value: string): value is TaskPriority {
+  return (TASK_PRIORITIES as readonly string[]).includes(value)
+}
+
+export function isMilestoneStatus(value: string): value is MilestoneStatus {
+  return (MILESTONE_STATUSES as readonly string[]).includes(value)
+}
+
+export function isAttachmentOwnerKind(value: string): value is AttachmentOwnerKind {
+  return ['task', 'project', 'work_item', 'knowledge', 'agent_job'].includes(value)
+}
+
+/* ------------------------------------------------------------------ */
+/* Error envelope                                                      */
+/* ------------------------------------------------------------------ */
+
+/** `{"error":"<static message>"}` from `ErrorResponse` (main.rs:71). */
+export interface ErrorEnvelope {
+  error: string
+}
+
+/* ------------------------------------------------------------------ */
+/* Projects                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface ProjectRecord {
+  id: string
+  name: string
+  status: string
+}
+
+export interface AuthorityProjectsResponse {
+  revision: number
+  projects: ProjectRecord[]
+}
+
+/** `deny_unknown_fields`; `workflow_id` is only read on the first accepted create. */
+export interface ProjectCommand {
+  command_id: string
+  expected_revision: number
+  project_id: string
+  name: string
+  workflow_id?: string
+}
+
+export interface ProjectResult {
+  revision: number
+  duplicate: boolean
+  project: ProjectRecord
+}
+
+/* ------------------------------------------------------------------ */
+/* Tasks                                                               */
+/* ------------------------------------------------------------------ */
+
+/** Trap 1a: `project_id` / `milestone_id` are absent keys when null. */
+export interface TaskRecord {
+  id: string
+  title: string
+  status: string
+  project_id?: string
+  milestone_id?: string
+  estimated_minutes: number | null
+  earliest_start_at_ms: number | null
+  deadline_at_ms: number | null
+  description: string
+  priority: string | null
+  labels: string[]
+}
+
+/** Trap 1b: the same values, but both ids are always present. */
+export interface TaskDetailResponse {
+  id: string
+  title: string
+  status: string
+  project_id: string | null
+  milestone_id: string | null
+  estimated_minutes: number | null
+  earliest_start_at_ms: number | null
+  deadline_at_ms: number | null
+  description: string
+  priority: string | null
+  labels: string[]
+}
+
+export interface AcceptanceCriterionResponse {
+  id: string
+  text: string
+  completed: boolean
+  completed_at_ms: number | null
+  position: number
+}
+
+export interface ActivityResponse {
+  id: string
+  kind: string
+  /** `human` | `system` | `agent:<id>` | `external:<device>` */
+  origin: string
+  occurred_at_ms: number
+  summary: string
+}
+
+export interface DomainTasksResponse {
+  revision: number
+  tasks: TaskRecord[]
+}
+
+export interface TaskResult {
+  revision: number
+  duplicate: boolean
+  task: TaskRecord
+}
+
+/** Tagged `"type"`, snake_case. */
+export type TaskAction =
+  | { type: 'create'; task_id: string; title: string; project_id?: string }
+  | { type: 'change_status'; task_id: string; status: string }
+  | { type: 'rename'; task_id: string; title: string }
+  | { type: 'assign_project'; task_id: string; project_id: string | null }
+  | { type: 'assign_milestone'; task_id: string; milestone_id: string | null }
+  | {
+      type: 'set_planning'
+      task_id: string
+      estimated_minutes: number | null
+      earliest_start_at_ms: number | null
+      deadline_at_ms: number | null
+    }
+  | { type: 'add_prerequisite'; task_id: string; prerequisite_id: string }
+  | { type: 'remove_prerequisite'; task_id: string; prerequisite_id: string }
+  | {
+      type: 'set_details'
+      task_id: string
+      description: string
+      priority: string | null
+      labels: string[]
+    }
+  | { type: 'acceptance_criteria'; task_id: string; change: AcceptanceCriteriaAction }
+
+/** Tagged `"operation"`, snake_case. Positions are 0-based integers. */
+export type AcceptanceCriteriaAction =
+  | { operation: 'add'; criterion_id: string; text: string }
+  | { operation: 'set_text'; criterion_id: string; text: string }
+  | { operation: 'set_completed'; criterion_id: string; completed: boolean }
+  | { operation: 'reorder'; criterion_id: string; position: number }
+  | { operation: 'remove'; criterion_id: string }
+
+export interface TaskCommand {
+  command_id: string
+  expected_revision: number
+  action: TaskAction
+}
+
+/* ------------------------------------------------------------------ */
+/* Milestones                                                          */
+/* ------------------------------------------------------------------ */
+
+export interface MilestoneRecord {
+  id: string
+  project_id: string
+  name: string
+  status: string
+}
+
+export interface MilestoneSnapshot {
+  revision: number
+  milestones: MilestoneRecord[]
+}
+
+export interface MilestoneResult {
+  revision: number
+  duplicate: boolean
+  /** `null` for `delete`. */
+  milestone: MilestoneRecord | null
+}
+
+export type MilestoneAction =
+  | { type: 'create'; milestone_id: string; project_id: string; name: string }
+  | { type: 'rename'; milestone_id: string; name: string }
+  | { type: 'change_status'; milestone_id: string; status: string }
+  | { type: 'move_project'; milestone_id: string; project_id: string }
+  | { type: 'delete'; milestone_id: string }
+
+export interface MilestoneCommand {
+  command_id: string
+  expected_revision: number
+  action: MilestoneAction
+}
+
+/* ------------------------------------------------------------------ */
+/* Dependencies, readiness, next actions                               */
+/* ------------------------------------------------------------------ */
+
+export interface TaskDependencyEdge {
+  task_id: string
+  prerequisite_id: string
+}
+
+export interface TaskDependenciesResponse {
+  revision: number
+  edges: TaskDependencyEdge[]
+}
+
+export interface TaskReadiness {
+  task_id: string
+  title: string
+  status: string
+  actionable: boolean
+  reason: ReadinessReason
+  blocking_task_ids: string[]
+  prerequisite_ids: string[]
+  earliest_start_at_ms: number | null
+  deadline_at_ms: number | null
+  estimated_minutes: number | null
+  project_id: string | null
+}
+
+export interface TaskReadinessSnapshot {
+  revision: number
+  edges: TaskDependencyEdge[]
+  tasks: TaskReadiness[]
+  actionable_count: number
+  blocked_count: number
+}
+
+export interface NextAction {
+  task_id: string
+  title: string
+  project_id: string | null
+  rank: number
+  deadline_at_ms: number | null
+  estimated_minutes: number | null
+  unblocks_task_ids: string[]
+  unblocks_count: number
+  overdue: boolean
+  explanation: string[]
+}
+
+export interface NextActionsReport {
+  revision: number
+  evaluated_at_ms: number
+  actionable_total: number
+  blocked_total: number
+  actions: NextAction[]
+}
+
+/* ------------------------------------------------------------------ */
+/* Schedule                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface ScheduleRecord {
+  id: string
+  title: string
+  starts_at_ms: number
+  ends_at_ms: number
+  duration_minutes: number
+  flexibility: string
+  target_kind: string
+  target_id: string | null
+}
+
+export interface ScheduleSnapshot {
+  revision: number
+  blocks: ScheduleRecord[]
+}
+
+/* ------------------------------------------------------------------ */
+/* Day plan, workload                                                  */
+/* ------------------------------------------------------------------ */
+
+export interface PlannedTask {
+  task_id: string
+  title: string
+  project_id: string | null
+  disposition: PlanningDisposition
+  estimated_minutes: number | null
+  allocated_minutes: number
+  start_offset_minutes: number | null
+  blocking_task_ids: string[]
+  explanation: string[]
+  rank: number | null
+}
+
+export interface ProjectDaySummary {
+  project_id: string | null
+  selected: number
+  actionable: number
+  blocked: number
+  allocated_minutes: number
+}
+
+export interface DayPlan {
+  revision: number
+  now_ms: number
+  available_minutes: number
+  allocated_minutes: number
+  remaining_minutes: number
+  selected_count: number
+  actionable_count: number
+  blocked_count: number
+  tasks: PlannedTask[]
+  projects: ProjectDaySummary[]
+  warnings: string[]
+}
+
+export interface TaskAttention {
+  task_id: string
+  title: string
+  project_id: string | null
+  reasons: AttentionReason[]
+  details: string[]
+  blocking_ids: string[]
+  downstream_count: number
+  estimated_minutes: number | null
+  deadline_at_ms: number | null
+}
+
+export interface ProjectWorkload {
+  project_id: string | null
+  total: number
+  completed: number
+  actionable: number
+  blocked_by_prerequisites: number
+  waiting_or_deferred: number
+  overdue: number
+  missing_estimates: number
+  known_remaining_minutes: number
+  attention: TaskAttention[]
+}
+
+export interface WorkloadInsights {
+  revision: number
+  evaluated_at_ms: number
+  horizon_end_ms: number
+  total_tasks: number
+  unfinished_tasks: number
+  total_known_remaining_minutes: number
+  projects: ProjectWorkload[]
+}
+
+/* ------------------------------------------------------------------ */
+/* Strategies, routines, evidence                                      */
+/* ------------------------------------------------------------------ */
+
+export interface CriterionRecord {
+  key: string
+  description: string
+  required: boolean
+  status: string
+}
+
+export interface StrategyRecord {
+  project_id: string
+  mode: string
+  objective: string | null
+  progress_signals: string[]
+  criteria: CriterionRecord[]
+}
+
+export interface StrategySnapshot {
+  revision: number
+  strategies: StrategyRecord[]
+}
+
+export interface RoutineRecord {
+  id: string
+  name: string
+  habit_ids: string[]
+}
+
+export interface RoutineSnapshot {
+  revision: number
+  routines: RoutineRecord[]
+}
+
+export interface HabitRecord {
+  id: string
+  name: string
+  /** `daily` | `weekly:<n>` */
+  cadence: string
+}
+
+export interface HabitOccurrenceRecord {
+  id: string
+  habit_id: string
+  occurred_at_ms: number
+}
+
+export interface MetricRecord {
+  id: string
+  baseline: number
+  target: number
+  direction: string
+}
+
+export interface MetricObservationRecord {
+  metric_id: string
+  observed_at_ms: number
+  value: number
+}
+
+export interface EvidenceSnapshot {
+  revision: number
+  history_fingerprint: string
+  habits: HabitRecord[]
+  habit_occurrences: HabitOccurrenceRecord[]
+  metrics: MetricRecord[]
+  metric_observations: MetricObservationRecord[]
+}
+
+/* ------------------------------------------------------------------ */
+/* Snapshot (narrow slice — no workflows, items, notes or jobs)        */
+/* ------------------------------------------------------------------ */
+
+export interface AuthoritySnapshotResponse {
+  revision: number
+  history_fingerprint: string
+  projects: ProjectRecord[]
+  tasks: TaskRecord[]
+  task_dependencies: TaskDependencyEdge[]
+  habits: HabitRecord[]
+  habit_occurrences: HabitOccurrenceRecord[]
+  metrics: MetricRecord[]
+  metric_observations: MetricObservationRecord[]
+  schedule: ScheduleRecord[]
+  routines: RoutineRecord[]
+  milestones: MilestoneRecord[]
+  strategies: StrategyRecord[]
+}
+
+export interface HistoryPrefixResponse {
+  revision: number
+  history_fingerprint: string
+}
+
+/* ------------------------------------------------------------------ */
+/* Workflows (wire name: blueprints)                                   */
+/* ------------------------------------------------------------------ */
+
+export type FieldKind =
+  | { type: 'text' }
+  | { type: 'boolean' }
+  | { type: 'integer' }
+  | { type: 'choice'; options: string[] }
+
+export interface Field {
+  id: string
+  kind: FieldKind
+  required: boolean
+  default: unknown
+}
+
+/** Tagged `"type"`, snake_case. */
+export type TransitionGuard =
+  | { type: 'property_equals'; field: string; value: unknown }
+  | { type: 'property_present'; field: string }
+  | { type: 'all_prerequisites_in_state'; state: string }
+
+export interface WorkflowActionDefinition {
+  id: string
+  capability: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
+export interface Transition {
+  from: string
+  to: string
+  required_capability: string | null
+  guards: TransitionGuard[]
+  actions: WorkflowActionDefinition[]
+}
+
+/** The manifest's per-kind schema. UI name: `WorkItemKind`. */
+export interface BlueprintKindDefinition {
+  id: string
+  name: string
+  initial_state: string
+  states: string[]
+  fields: Field[]
+  transitions: Transition[]
+}
+
+export interface ViewLayout {
+  type: 'vertical' | 'horizontal' | 'grid'
+  columns: number
+}
+
+/** `deny_unknown_fields`; every optional key is always serialised. */
+export interface ViewComponent {
+  id: string
+  type: string
+  title: string | null
+  source: string | null
+  aggregate: string | null
+  field: string | null
+  group_by: string | null
+  filter: Record<string, string>
+  sort: string | null
+  descending: boolean
+  limit: number | null
+  columns: string[]
+  text: string | null
+  actions: string[]
+  options: Record<string, unknown>
+}
+
+export interface BlueprintView {
+  id: string
+  title: string
+  description: string
+  layout: ViewLayout
+  components: ViewComponent[]
+}
+
+export interface TemplateItem {
+  key: string
+  kind: string
+  properties: Record<string, unknown>
+  prerequisites: string[]
+}
+
+export interface ProjectTemplate {
+  id: string
+  name: string
+  items: TemplateItem[]
+}
+
+/** The published manifest. UI name: `Workflow`. */
+export interface BlueprintManifest {
+  id: string
+  version: number
+  name: string
+  description: string
+  work_items: BlueprintKindDefinition[]
+  required_capabilities: string[]
+  templates: ProjectTemplate[]
+  views: BlueprintView[]
+}
+
+export interface BlueprintBindingRecord {
+  project_id: string
+  blueprint_id: string
+  version: number
+}
+
+export interface BlueprintWorkItemRecord {
+  id: string
+  project_id: string
+  kind: string
+  state: string
+  properties: Record<string, unknown>
+  /** Work items use `u64`, unlike the `i64` domain revisions. */
+  revision: number
+}
+
+export interface TemplatePlan {
+  items: BlueprintWorkItemRecord[]
+  /** `[item_id, prerequisite_id]` pairs, in deterministic order. */
+  prerequisites: [string, string][]
+}
+
+export interface CreateWorkItemBody {
+  id: string
+  project_id: string
+  kind: string
+  properties?: Record<string, unknown>
+}
+
+export interface WorkItemTransitionBody {
+  id: string
+  to: string
+  expected_revision: number
+}
+
+export interface WorkItemPropertiesBody {
+  id: string
+  expected_revision: number
+  changes: Record<string, unknown>
+}
+
+export interface BindWorkflowBody {
+  project_id: string
+  id: string
+  version: number
+}
+
+/* ---- Upgrade preview (read-only comparison) ---- */
+
+export interface UpgradeNotice {
+  code: string
+  message: string
+  subjects: string[]
+}
+
+export interface WorkflowVersionRef {
+  blueprint_id: string
+  version: number
+}
+
+export interface FieldTypeView {
+  kind: string
+  options: string[]
+}
+
+export interface FieldDefinition {
+  id: string
+  field_type: FieldTypeView
+  required: boolean
+  default: unknown
+}
+
+export interface FieldChange {
+  id: string
+  before: FieldDefinition
+  after: FieldDefinition
+}
+
+export interface TransitionChange {
+  transition: string
+  required_capability_before: string | null
+  required_capability_after: string | null
+  guards_changed: boolean
+}
+
+export interface ActionRef {
+  transition: string
+  action: string
+  capability: string
+}
+
+export interface KindUpgradeDiff {
+  kind: string
+  added: boolean
+  removed: boolean
+  initial_state_before: string | null
+  initial_state_after: string | null
+  states_added: string[]
+  states_removed: string[]
+  fields_added: FieldDefinition[]
+  fields_removed: FieldDefinition[]
+  fields_changed: FieldChange[]
+  transitions_added: string[]
+  transitions_removed: string[]
+  transitions_changed: TransitionChange[]
+  actions_added: ActionRef[]
+  actions_removed: ActionRef[]
+  required_capabilities_added: string[]
+  required_capabilities_removed: string[]
+}
+
+export interface ViewChange {
+  view: string
+  layout_before: string
+  layout_after: string
+  components_added: string[]
+  components_removed: string[]
+  components_changed: string[]
+}
+
+export interface ViewUpgradeDiff {
+  added: string[]
+  removed: string[]
+  changed: ViewChange[]
+}
+
+export interface BlueprintUpgradePreview {
+  schema: string
+  project_id: string
+  project_revision: number
+  current: WorkflowVersionRef | null
+  target: WorkflowVersionRef
+  kinds: KindUpgradeDiff[]
+  views: ViewUpgradeDiff
+  warnings: UpgradeNotice[]
+  blockers: UpgradeNotice[]
+  fingerprint: string
+}
+
+/** The preview is `#[serde(flatten)]`ed into this response. */
+export interface BlueprintUpgradeApplied extends BlueprintUpgradePreview {
+  binding: BlueprintBindingRecord
+  previous: WorkflowVersionRef | null
+  already_applied: boolean
+}
+
+export interface ApplyUpgradeBody {
+  project_id: string
+  id: string
+  version: number
+  confirm: true
+  /** Optional; when omitted the server recomputes the preview fingerprint. */
+  fingerprint?: string
+}
+
+/* ------------------------------------------------------------------ */
+/* Knowledge (file-authoritative Markdown)                             */
+/* ------------------------------------------------------------------ */
+
+export type KnowledgeNode =
+  | { kind: 'folder'; name: string; path: string; children: KnowledgeNode[] }
+  | { kind: 'note'; name: string; path: string }
+
+export interface KnowledgeDocumentInfo {
+  id: string
+  path: string
+  title: string
+}
+
+export interface KnowledgeFileRelations {
+  outgoing: string[]
+  backlinks: string[]
+  unresolved: string[]
+}
+
+export interface MarkdownManifestEntry {
+  note: KnowledgeDocumentInfo
+  body_sha256: string
+}
+
+export interface MarkdownDocumentResponse {
+  path: string
+  body: string
+}
+
+export interface MarkdownByIdResponse {
+  note: KnowledgeDocumentInfo
+  body: string
+}
+
+/**
+ * Trap 2: `#[serde(tag = "kind")]` with no `rename_all`, so these tags are
+ * PascalCase. Sending `{"kind":"create"}` is a 422/400 extractor rejection.
+ */
+export type MarkdownCommand =
+  | { kind: 'Create'; note_id: string; path: string; body: string }
+  | { kind: 'Update'; note_id: string; expected: string; replacement: string }
+  | { kind: 'Move'; note_id: string; from: string; to: string; expected: string }
+
+export interface MarkdownCommandRequest {
+  command_id: string
+  command: MarkdownCommand
+}
+
+export interface MarkdownReceipt {
+  command_id: string
+  note_id: string
+  revision: number
+}
+
+export interface CreateFolderRequest {
+  command_id: string
+  command: { path: string }
+}
+
+export interface CreateFolderResponse {
+  command_id: string
+  path: string
+}
+
+export interface MoveFolderRequest {
+  command_id: string
+  command: { from: string; to: string }
+}
+
+export interface MoveFolderResponse {
+  command_id: string
+  from: string
+  to: string
+}
+
+/* ------------------------------------------------------------------ */
+/* Attachments                                                         */
+/* ------------------------------------------------------------------ */
+
+export interface AttachmentView {
+  id: string
+  owner_kind: string
+  owner_id: string
+  filename: string
+  content_type: string
+  size_bytes: number
+  checksum: string
+  created_at_ms: number
+  description: string | null
+  is_image: boolean
+}
+
+export interface AttachmentListResponse {
+  attachments: AttachmentView[]
+}
+
+export interface AttachmentImportResult {
+  revision: number
+  duplicate: boolean
+  removed: boolean
+  attachment: AttachmentView | null
+}
+
+export interface AttachmentRemoveResult {
+  revision: number
+  removed: boolean
+  duplicate: boolean
+  content_removed: boolean
+  already_removed: boolean
+}
+
+export interface AttachmentAssociateResult {
+  revision: number
+  duplicate: boolean
+  attachment_id: string
+}
+
+export interface AttachmentRemoveRequest {
+  command_id: string
+  expected_revision: number
+  attachment_id: string
+  activity_id: string
+}
+
+export interface AttachmentAssociateRequest {
+  command_id: string
+  expected_revision: number
+  source_id: string
+  new_id: string
+  owner_kind: string
+  owner_id: string
+  activity_id: string
+}
+
+/** Metadata travels in the query string; the file itself is the raw body. */
+export interface AttachmentImportMetadata {
+  command_id: string
+  expected_revision: number
+  attachment_id: string
+  activity_id: string
+  owner_kind: string
+  owner_id: string
+  filename: string
+  content_type?: string
+  description?: string
+}
+
+/* ------------------------------------------------------------------ */
+/* Agent jobs                                                          */
+/* ------------------------------------------------------------------ */
+
+/** Every field is always present; `runtime_session_ref` may be null. */
+export interface AgentJobView {
+  id: string
+  request_id: string
+  project_id: string
+  task_id: string
+  state: string
+  revision: number
+  agent_kind: string
+  machine_ref: string
+  runtime_kind: string
+  repository_ref: string
+  runtime_session_ref: string | null
+  created_at_ms: number
+  updated_at_ms: number
+}
+
+export interface AgentJobOverviewItem {
+  job_id: string
+  project_id: string
+  task_id: string
+  state: string
+  updated_at_ms: number
+  handoff_count: number
+  review_decision: string | null
+  needs_attention: boolean
+  next_action: string
+}
+
+export interface AgentHandoffEntry {
+  handoff_id: string
+  reported_at_ms: number
+  payload: unknown
+}
+
+export interface AgentReview {
+  job_id: string
+  handoff_id: string
+  decision: string
+  reviewer: string
+  reason: string
+  reviewed_at_ms: number
+  /** Approving a review never completes the task. */
+  task_completed: boolean
+}
+
+export interface AgentResumeContext {
+  job: AgentJobView
+  original_brief: unknown
+  latest_handoff: unknown
+  handoff_count: number
+  review: AgentReview | null
+  worktree: unknown
+  task_completion_inferred: boolean
+  runtime_launch_authorized: boolean
+}
+
+export interface StartAgentJobRequest {
+  job_id: string
+  task_id: string
+  agent_kind: string
+  machine_ref: string
+  repository_ref: string
+  worktree: boolean
+  at_ms: number
+}
+
+export interface ReserveAgentJobRequest {
+  job_id: string
+  request_id: string
+  project_id: string
+  task_id: string
+  agent_kind: string
+  machine_ref: string
+  runtime_kind: string
+  repository_ref: string
+  launch_revision: number
+  created_at_ms: number
+}
+
+export interface AgentJobCommandRequest {
+  command_id: string
+  job_id: string
+  expected_revision: number
+  action: 'prepare' | 'interrupt' | 'mark_failed'
+  at_ms: number
+}
+
+export interface SubmitAgentHandoffRequest {
+  job_id: string
+  handoff_id: string
+  payload: unknown
+  at_ms: number
+}
+
+export interface ReviewAgentHandoffRequest {
+  job_id: string
+  handoff_id: string
+  decision: 'approved' | 'changes_requested'
+  reason: string
+  at_ms: number
+}
+
+export interface ResumeAgentJobRequest {
+  prior_job_id: string
+  new_job_id: string
+  at_ms: number
+}
+
+export interface QueueSessionPromptRequest {
+  command_id: string
+  job_id: string
+  message: string
+  at_ms: number
+}
+
+/* ------------------------------------------------------------------ */
+/* Web session                                                         */
+/* ------------------------------------------------------------------ */
+
+/** Returned by `POST /v1/web/session` (201) and `GET` (200). */
+export interface WebSessionResponse {
+  device_id: string
+  expires_at_ms: number
+}
+
+export interface WebSessionRequest {
+  device_id: string
+  token: string
+}
