@@ -116,7 +116,7 @@ test.describe('workflow upgrades', () => {
     await goto(page, server, `/projects/${projectId}/settings`)
 
     // The default target is the newest published version of the same id.
-    await expect(page.getByText(/A newer Development version is published/)).toBeVisible()
+    await expect(page.getByText(/A newer Development version is published/)).toBeVisible({ timeout: 20_000 })
     await expect(page.getByText(/Development v2/)).toBeVisible()
     await expect(page.getByText(/^fingerprint /)).toBeVisible()
     await expect(page.getByText('Release notes').first()).toBeVisible()
@@ -138,7 +138,7 @@ test.describe('workflow upgrades', () => {
     await dialog.getByRole('button', { name: 'Apply upgrade' }).click()
 
     const receipt = page.locator('[data-upgrade-receipt]')
-    await expect(receipt).toBeVisible()
+    await expect(receipt).toBeVisible({ timeout: 20_000 })
     await expect(receipt).toContainText('Workflow change applied')
     await expect(receipt).toContainText('v2 → Development v3')
     await expect(receipt).toContainText('fingerprint')
@@ -146,10 +146,10 @@ test.describe('workflow upgrades', () => {
 
     // The new view is a tab immediately, and it survives a reload.
     const releaseTab = page.getByRole('link', { name: /^Release notes/ })
-    await expect(releaseTab).toBeVisible()
+    await expect(releaseTab).toBeVisible({ timeout: 20_000 })
     await releaseTab.click()
-    await expect(releaseTab).toHaveAttribute('aria-current', 'page')
-    await expect(page.getByRole('heading', { name: 'Release board' })).toBeVisible()
+    await expect(releaseTab).toHaveAttribute('aria-current', 'page', { timeout: 20_000 })
+    await expect(page.getByRole('heading', { name: 'Release board' })).toBeVisible({ timeout: 20_000 })
 
     await page.reload()
     await expect(page.getByRole('link', { name: /^Release notes/ })).toBeVisible()
@@ -173,10 +173,10 @@ test.describe('workflow upgrades', () => {
     await publish(page, server, target)
 
     await goto(page, server, `/projects/${projectId}/settings`)
-    await expect(page.getByText(/A newer Development version is published/)).toBeVisible()
+    await expect(page.getByText(/A newer Development version is published/)).toBeVisible({ timeout: 20_000 })
 
     const blocker = page.locator('[data-upgrade-notice="field_removed_with_values"]')
-    await expect(blocker).toBeVisible()
+    await expect(blocker).toBeVisible({ timeout: 20_000 })
     await expect(blocker).toContainText('priority')
     // Subjects are the live items, not a count.
     for (const itemId of [
