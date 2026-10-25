@@ -3,7 +3,8 @@ use crate::{
     ApplicationError, HabitOccurrenceRepository, HabitRepository, MetricEvidenceRepository,
     ProjectEvidenceBinding, ProjectEvidenceRepository, ProjectRepository,
 };
-use orbit_domain::{HabitId, HabitPeriod, ProgressBasisPoints, ProjectId, evaluate_habit_periods};
+use orbit_domain::{HabitId, HabitPeriod, ProgressBasisPoints, ProjectId};
+use orbit_habit_capability::{HabitRecurrenceStatus, evaluate_habit_periods};
 use orbit_progress::habit_consistency_evidence;
 use orbit_progress::{MetricTargetEvidence, metric_target_evidence};
 
@@ -38,14 +39,22 @@ pub struct ProjectEvidenceReport {
     pub metrics_awaiting_source: Vec<String>,
     /// Equal-weight mean of habits with evaluated periods only. None means unknown.
     pub habit_consistency: Option<ProgressBasisPoints>,
+    /// Whether recurrence evaluation was available for this report. When this is
+    /// `Unavailable`, bound habits keep `available: false` and no streak or
+    /// consistency value is computed in core.
+    pub habit_recurrence: HabitRecurrenceStatus,
 }
 
 /// Explicit caller-supplied periods permit daily or weekly cadence windows, with no
 /// assumed timezone or fabricated historical records. Periods are validated by domain.
+/// Recurrence itself is delegated to the opt-in `orbit.habit.recurrence` capability:
+/// without an available capability, habits are reported as unevaluated rather than
+/// silently computed in core.
 pub fn get_project_evidence_report<R>(
     repository: &R,
     project_id: &ProjectId,
     periods: &[HabitPeriod],
+    recurrence: &HabitRecurrenceStatus,
 ) -> Result<ProjectEvidenceReport, ApplicationError>
 where
     R: ProjectRepository + ProjectEvidenceRepository + HabitRepository + HabitOccurrenceRepository,
@@ -62,19 +71,7 @@ where
         match binding {
             ProjectEvidenceBinding::Metric(id) => metrics_awaiting_source.push(id),
             ProjectEvidenceBinding::Habit(id) => {
-                if let Some(habit) = HabitRepository::get(repository, &id)? {
-                    let occurrences = HabitOccurrenceRepository::list_for_habit(repository, &id)?;
-                    let evaluation =
-                        evaluate_habit_periods(habit.cadence(), periods, &occurrences)?;
-                    let consistency = habit_consistency_evidence(&evaluation.periods)?;
-                    habits.push(BoundHabitEvidence {
-                        habit_id: id,
-                        available: true,
-                        fulfilled_periods: consistency.fulfilled_periods,
-                        evaluated_periods: consistency.evaluated_periods,
-                        consistency: consistency.consistency,
-                    });
-                } else {
+                let Some(habit) = HabitRepository::get(repository, &id)? else {
                     habits.push(BoundHabitEvidence {
                         habit_id: id,
                         available: false,
@@ -82,7 +79,33 @@ where
                         evaluated_periods: 0,
                         consistency: None,
                     });
+                    continue;
+                };
+                if !recurrence.is_available() {
+                    habits.push(BoundHabitEvidence {
+                        habit_id: id,
+                        available: false,
+                        fulfilled_periods: 0,
+                        evaluated_periods: 0,
+                        consistency: None,
+                    });
+                    continue;
                 }
+                let occurrences = HabitOccurrenceRepository::list_for_habit(repository, &id)?;
+                let evaluation = evaluate_habit_periods(habit.cadence(), periods, &occurrences)?;
+                let fulfilled: Vec<bool> = evaluation
+                    .periods
+                    .iter()
+                    .map(|period| period.fulfilled)
+                    .collect();
+                let consistency = habit_consistency_evidence(&fulfilled)?;
+                habits.push(BoundHabitEvidence {
+                    habit_id: id,
+                    available: true,
+                    fulfilled_periods: consistency.fulfilled_periods,
+                    evaluated_periods: consistency.evaluated_periods,
+                    consistency: consistency.consistency,
+                });
             }
         }
     }
@@ -92,6 +115,7 @@ where
         habits,
         metrics_awaiting_source,
         habit_consistency,
+        habit_recurrence: recurrence.clone(),
     })
 }
 
@@ -116,6 +140,7 @@ pub fn get_combined_project_evidence_report<R>(
     project_id: &ProjectId,
     periods: &[HabitPeriod],
     as_of_ms: i64,
+    recurrence: &HabitRecurrenceStatus,
 ) -> Result<CombinedProjectEvidenceReport, ApplicationError>
 where
     R: ProjectRepository
@@ -124,7 +149,7 @@ where
         + HabitOccurrenceRepository
         + MetricEvidenceRepository,
 {
-    let habits = get_project_evidence_report(repository, project_id, periods)?;
+    let habits = get_project_evidence_report(repository, project_id, periods, recurrence)?;
     let mut values: Vec<u16> = habits
         .habits
         .iter()

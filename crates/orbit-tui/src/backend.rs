@@ -43,6 +43,7 @@ pub(crate) mod diagnostics {
     thread_local! {
         static PENDING_COUNT_READS: Cell<u64> = const { Cell::new(0) };
         static DETAIL_READS: Cell<u64> = const { Cell::new(0) };
+        static CAPABILITY_READS: Cell<u64> = const { Cell::new(0) };
     }
 
     pub(crate) fn pending_count_reads() -> u64 {
@@ -70,6 +71,20 @@ pub(crate) mod diagnostics {
 
     pub(crate) fn record_detail_read() {
         DETAIL_READS.with(|reads| reads.set(reads.get() + 1));
+    }
+
+    /// Capability offer/status/history reads. These are cached on [`App`] by
+    /// input lifecycle events, so a painted frame must never move this counter.
+    pub(crate) fn capability_reads() -> u64 {
+        CAPABILITY_READS.with(Cell::get)
+    }
+
+    pub(crate) fn reset_capability_reads() {
+        CAPABILITY_READS.with(|reads| reads.set(0));
+    }
+
+    pub(crate) fn record_capability_read() {
+        CAPABILITY_READS.with(|reads| reads.set(reads.get() + 1));
     }
 }
 
@@ -119,6 +134,11 @@ fn mapped(error: impl std::fmt::Debug) -> ClientError {
 /// use the shared shell views instead.
 pub(crate) const CONNECTED_LIST_REQUIRES_CONNECTED: &str =
     "accepted listing requires a connected deployment; the local authority has no console reads";
+
+/// The honest connected-mode disposition for every capability action surface.
+/// Connected parity is tracked separately and must never be simulated by
+/// queueing a command the connected transport cannot execute.
+pub const CONNECTED_CAPABILITY_REFUSED: &str = "Capability actions require the local authoritative workspace; connected parity is tracked as M25 EC-004.";
 
 /// Decode one accepted projection collection into the authority's own record
 /// type. A row this binary cannot decode fails closed instead of being dropped.
@@ -1916,6 +1936,139 @@ impl Backend {
             Self::Connected { .. } => Err(unavailable(
                 "workflow transitions require the connected console (`:`, then Connected commands)",
             )),
+        }
+    }
+
+    /// Capability installation is local-authority setup. It is exposed through
+    /// the same facade the CLI uses; connected transports must not queue it.
+    #[allow(dead_code)] // Exercised by the M30 capability acceptance tests.
+    pub fn install_trusted_capability(&mut self, capability_id: &str) -> Result<(), ClientError> {
+        match self {
+            Self::Local(client) => client.install_trusted_capability(capability_id),
+            Self::Connected { .. } => Err(unavailable(CONNECTED_CAPABILITY_REFUSED)),
+        }
+    }
+
+    /// Explicit project-scoped capability grant.
+    #[allow(dead_code)] // Exercised by the M30 capability acceptance tests.
+    pub fn authorize_trusted_capability(
+        &mut self,
+        capability_id: &str,
+        project_id: &str,
+    ) -> Result<(), ClientError> {
+        match self {
+            Self::Local(client) => client.authorize_trusted_capability(capability_id, project_id),
+            Self::Connected { .. } => Err(unavailable(CONNECTED_CAPABILITY_REFUSED)),
+        }
+    }
+
+    /// Publish a blueprint manifest against the installed capabilities.
+    #[allow(dead_code)] // Exercised by the M30 capability acceptance tests.
+    pub fn publish_blueprint_manifest(
+        &mut self,
+        manifest_json: &str,
+    ) -> Result<orbit_blueprint::Blueprint, ClientError> {
+        match self {
+            Self::Local(client) => client.publish_blueprint_manifest(manifest_json),
+            Self::Connected { .. } => Err(unavailable(CONNECTED_CAPABILITY_REFUSED)),
+        }
+    }
+
+    /// Capability actions are exposed by the local authoritative host only.
+    /// Connected mode refuses with the tracked M25 EC-004 gap rather than
+    /// queueing an intention that could never execute.
+    pub fn capability_action_offers(
+        &self,
+        item_id: &str,
+    ) -> Result<Vec<orbit_client::OrbitCapabilityOffer>, ClientError> {
+        #[cfg(test)]
+        diagnostics::record_capability_read();
+        match self {
+            Self::Local(client) => client.capability_action_offers(item_id),
+            Self::Connected { .. } => Err(unavailable(CONNECTED_CAPABILITY_REFUSED)),
+        }
+    }
+
+    #[allow(dead_code)] // Part of the required M30 client/backend surface.
+    pub fn capability_status(
+        &self,
+        project_id: Option<&str>,
+    ) -> Result<Vec<orbit_client::OrbitCapabilityStatus>, ClientError> {
+        #[cfg(test)]
+        diagnostics::record_capability_read();
+        match self {
+            Self::Local(client) => client.capability_status(project_id),
+            Self::Connected { .. } => Err(unavailable(CONNECTED_CAPABILITY_REFUSED)),
+        }
+    }
+
+    /// Record an explicit pending request. Never dispatches.
+    pub fn request_capability_action(
+        &mut self,
+        request: orbit_client::OrbitCapabilityRequest,
+    ) -> Result<orbit_client::OrbitCapabilityAction, ClientError> {
+        match self {
+            Self::Local(client) => client.request_capability_action(request),
+            Self::Connected { .. } => Err(unavailable(CONNECTED_CAPABILITY_REFUSED)),
+        }
+    }
+
+    /// Claim and execute one recorded request exactly once.
+    pub fn execute_capability_action(
+        &mut self,
+        command_id: &str,
+    ) -> Result<orbit_client::OrbitCapabilityReceipt, ClientError> {
+        match self {
+            Self::Local(client) => client.execute_capability_action(command_id),
+            Self::Connected { .. } => Err(unavailable(CONNECTED_CAPABILITY_REFUSED)),
+        }
+    }
+
+    #[allow(dead_code)] // Part of the required M30 client/backend surface.
+    pub fn capability_action_state(
+        &self,
+        command_id: &str,
+    ) -> Result<Option<orbit_client::OrbitCapabilityActionState>, ClientError> {
+        #[cfg(test)]
+        diagnostics::record_capability_read();
+        match self {
+            Self::Local(client) => client.capability_action_state(command_id),
+            Self::Connected { .. } => Err(unavailable(CONNECTED_CAPABILITY_REFUSED)),
+        }
+    }
+
+    pub fn capability_action_history(
+        &self,
+        item_id: &str,
+        limit: usize,
+    ) -> Result<Vec<orbit_client::OrbitCapabilityAction>, ClientError> {
+        #[cfg(test)]
+        diagnostics::record_capability_read();
+        match self {
+            Self::Local(client) => client.capability_action_history(item_id, limit),
+            Self::Connected { .. } => Err(unavailable(CONNECTED_CAPABILITY_REFUSED)),
+        }
+    }
+
+    /// Explicitly settle an uncertain outcome. Never re-executes.
+    pub fn reconcile_capability_action(
+        &mut self,
+        command_id: &str,
+        succeed: bool,
+    ) -> Result<orbit_client::OrbitCapabilityReceipt, ClientError> {
+        match self {
+            Self::Local(client) => client.reconcile_capability_action(command_id, succeed),
+            Self::Connected { .. } => Err(unavailable(CONNECTED_CAPABILITY_REFUSED)),
+        }
+    }
+
+    /// Durable effect count for the built-in reference capability. Local-only;
+    /// used by the M30 acceptance tests to prove no note was appended.
+    #[allow(dead_code)]
+    pub fn reference_work_item_note_count(&self, item_id: &str) -> Result<usize, ClientError> {
+        match self {
+            Self::Local(client) => client.reference_work_item_note_count(item_id),
+            Self::Connected { .. } => Err(unavailable(CONNECTED_CAPABILITY_REFUSED)),
         }
     }
 

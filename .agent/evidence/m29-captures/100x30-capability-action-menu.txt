@@ -1,0 +1,30 @@
+ ORBIT › Capability Demo  capability-reference v1   1 projects · 0 inbox
+╭ Orbit ─────────────╮ ▸ Overview  [ ] switch view
+│    Home / Today    │┏ Work ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+│    Inbox           │┃▾ Open 1                                Closed 0                            ┃
+│    Projects        │┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ───────────────────────────────────── ┃
+│    Agents          │┃▸ · note-task item-1                  — empty                               ┃
+│▸╔ Actions · note-task item-1 ══════════════════════════════════════════════════════════════════╗ ┃
+│ ║        Inspect dependencies                                                                  ║ ┃
+│ ║  c     New task                                                                              ║ ┃
+│ ║  C     New work item                                                                         ║ ┃
+│ ║  p     Preview plan                                                                          ║ ┃
+│ ║  b     Bind evidence                                                                         ║ ┃
+│ ║        Project settings                                                                      ║ ┃
+│ ║  W     Change workflow                                                                       ║ ┃
+│ ║        Apply workflow version                                                                ║ ┃
+│ ║        Add bundled workflow                                                                  ║ ┃
+│ ║        Project evidence                                                                      ║ ┃
+│ ║        Unbind evidence                                                                       ║ ┃
+│ ║  r     Refresh project                                                                       ║ ┃
+│ ║  Ctrl+PCommand palette                                                                       ║ ┃
+│ ║        Clean up unreferenced attachment content                                              ║ ┃
+│ ║▸       Action Append a durable note to this blueprint work item  — not_authorized: capability║ ┃
+│ ║ Enter run selected · ↑/↓/PgUp/PgDn scroll · Esc close · dimmed rows explain why              ║ ┃
+│ ╚══════════════════════════════════════════════════════════════════════════════════════════════╝ ┃
+│                    │┃                                                                            ┃
+│                    │┃                                                                            ┃
+│                    │┃2 columns · j/k card · h/l panel · S status · E quick edit · Enter open     ┃
+╰────────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ Actions: Enter Open · e Edit · i Attach · a more actions · q quit
+ Ctrl+Q quit · q quit (not typing)  Capability Demo • capability-reference v1 • 1 views • r refresh

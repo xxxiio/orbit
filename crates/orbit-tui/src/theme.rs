@@ -209,22 +209,25 @@ impl Theme {
 
 /// Compact sidebar width used from the medium breakpoint upwards.
 pub const SIDEBAR_WIDTH: u16 = 22;
-/// Comfortable detail width on medium terminals.
-pub const DETAIL_WIDTH: u16 = 30;
 /// The sidebar never shrinks below its marker + navigation label.
 pub const SIDEBAR_MIN: u16 = 18;
 /// ... and never grows into a second workspace, even with long project names.
 pub const SIDEBAR_MAX: u16 = 26;
-/// The detail pane keeps property keys and a wrapped value readable.
-pub const DETAIL_MIN: u16 = 26;
-/// Wider terminals may give the detail pane more room, up to this width.
-pub const DETAIL_MAX: u16 = 40;
-/// Below this width the detail pane is opened on demand instead of docked.
-pub const WIDE_BREAKPOINT: u16 = 120;
+/// Minimum terminal width for a readable inspector overlay.
+pub const INSPECTOR_OVERLAY_MIN_WIDTH: u16 = 80;
+/// Minimum terminal height for a readable inspector overlay.
+pub const INSPECTOR_OVERLAY_MIN_HEIGHT: u16 = 20;
 /// Below this width only one pane is visible at a time.
 pub const MEDIUM_BREAKPOINT: u16 = 76;
 /// One row is reserved above a component's content for its legend/hints.
 pub const LEGEND_HEIGHT: u16 = 1;
+
+/// The inspector is an overlay while the terminal can show a readable box; on
+/// smaller terminals it takes the whole frame instead of shrinking into a
+/// cramped, unreadable margin.
+pub fn inspector_fullscreen(width: u16, height: u16) -> bool {
+    width < INSPECTOR_OVERLAY_MIN_WIDTH || height < INSPECTOR_OVERLAY_MIN_HEIGHT
+}
 
 #[cfg(test)]
 mod tests {

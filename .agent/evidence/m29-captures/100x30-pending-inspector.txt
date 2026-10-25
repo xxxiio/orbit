@@ -7,16 +7,16 @@ every project ships with Overview, Tasks, Board and Timeline views.
 │▸ » Projects        │┃No projects yet — press c to create one.                                    ┃
 │    Agents          │┃                                                                            ┃
 │ ╔ Pending commands · 1 queued (not accepted) ══════════════════════════════════════════════════╗ ┃
-│ ║▸ [pending] project   project command project-3915111-1792850165448931908-1 · Pending Scope   ║ ┃
+│ ║▸ [pending] project   project command project-4113273-1792859741317409456-1 · Pending Scope   ║ ┃
 │ ║                                                                                              ║ ┃
 │ ║                                                                                              ║ ┃
 │ ║                                                                                              ║ ┃
 │ ║                                                                                              ║ ┃
-│ ║command: command-3915111-1792850165449217169-2                                                ║ ┃
+│ ║command: command-4113273-1792859741317668072-2                                                ║ ┃
 │ ║kind: project                                                                                 ║ ┃
 │ ║state: pending                                                                                ║ ┃
 │ ║attempts: not recorded by this replica                                                        ║ ┃
-│ ║local intent: {"name":"Pending Scope","project_id":"project-3915111-1792850165448931908-1"}   ║ ┃
+│ ║local intent: {"name":"Pending Scope","project_id":"project-4113273-1792859741317409456-1"}   ║ ┃
 │ ║accepted receipt: none (not accepted)                                                         ║ ┃
 │ ║f flush · c review conflict · Enter detail · r refresh · Esc close · queued ≠ accepted        ║ ┃
 │ ╚══════════════════════════════════════════════════════════════════════════════════════════════╝ ┃

@@ -76,7 +76,6 @@ impl App {
                 scroll.min(self.selected)
             };
         }
-        self.seed_detail_cache();
     }
 
     pub fn current_component(&self) -> Option<&ResolvedComponent> {
@@ -114,10 +113,7 @@ impl App {
         active_component: Option<usize>,
         view_id: Option<&str>,
         scroll: Option<usize>,
-        detail_scroll: Option<usize>,
     ) {
-        /// Stale detail offsets must not scroll a restored pane out of view.
-        const MAX_DETAIL_SCROLL: usize = 500;
         let count = self.component_count();
         let saved_component = active_component
             .unwrap_or(self.active_component)
@@ -182,13 +178,10 @@ impl App {
                 };
             }
         }
-        if let Some(detail_scroll) = detail_scroll {
-            self.detail_scroll = detail_scroll.min(MAX_DETAIL_SCROLL);
-        }
         if count > 0 {
             self.sync_cursor();
         }
-        self.seed_detail_cache();
+        self.refresh_capability_actions();
     }
 
     pub fn move_selection(&mut self, delta: isize) {
@@ -198,7 +191,6 @@ impl App {
                 .projects_selection
                 .saturating_add_signed(delta)
                 .min(max);
-            self.seed_detail_cache();
             return;
         }
         match self.focus {
@@ -217,16 +209,10 @@ impl App {
                     self.selected = 0;
                 } else {
                     self.selected = self.selected.saturating_add_signed(delta).min(len - 1);
-                    self.detail_scroll = 0;
                 }
-                // The pane's subject changed: rebuild it here, never in render.
-                self.seed_detail_cache();
-            }
-            FocusPane::Detail => {
-                let max = self.detail_max_scroll.get();
-                self.detail_scroll = self.detail_scroll.saturating_add_signed(delta).min(max);
             }
         }
+        self.refresh_capability_actions();
     }
 
     pub fn move_component(&mut self, delta: isize) {
@@ -246,32 +232,23 @@ impl App {
             state.active_component = next;
         }
         self.restore_cursor();
+        self.refresh_capability_actions();
     }
 
+    /// Cycle only the panes that are painted. The inspector is an overlay and
+    /// therefore never a focus stop.
     pub fn focus_next(&mut self, reverse: bool) {
-        let mut panes = vec![FocusPane::Sidebar, FocusPane::Workspace];
-        if self.show_detail && self.wide_detail() {
-            panes.push(FocusPane::Detail);
-        }
-        let index = panes
+        const PANES: [FocusPane; 2] = [FocusPane::Sidebar, FocusPane::Workspace];
+        let index = PANES
             .iter()
             .position(|pane| *pane == self.focus)
             .unwrap_or(1);
         let next = if reverse {
-            (index + panes.len() - 1) % panes.len()
+            (index + PANES.len() - 1) % PANES.len()
         } else {
-            (index + 1) % panes.len()
+            (index + 1) % PANES.len()
         };
-        self.focus = panes[next];
-        if self.focus == FocusPane::Detail {
-            self.detail_scroll = 0;
-        }
-    }
-
-    fn wide_detail(&self) -> bool {
-        // The renderer hides the detail pane below the wide breakpoint; the
-        // actual width is updated by `set_viewport`.
-        self.viewport_width >= crate::theme::WIDE_BREAKPOINT
+        self.focus = PANES[next];
     }
 
     pub(crate) fn clamp_component(&mut self) {
@@ -287,7 +264,5 @@ impl App {
         } else {
             self.scroll.min(self.selected)
         };
-        // Clamping can change the subject after a restore; keep the pane warm.
-        self.seed_detail_cache();
     }
 }

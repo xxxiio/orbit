@@ -192,6 +192,8 @@ workflows are Development, Research, Learning and Habits (version 2).
 | `orbit blueprint export` | `ID VERSION [--file DEST]` |
 | `orbit blueprint bind` | `PROJECT ID VERSION` (fails if the project is already bound) |
 | `orbit blueprint apply` | `PROJECT ID [--version N]` (replace the current workflow; omitted version uses the bundled/latest published revision) |
+| `orbit blueprint upgrade-preview` | `PROJECT --id ID --version N` (read-only version-upgrade report with blockers and a fingerprint) |
+| `orbit blueprint upgrade` | `PROJECT --id ID --version N --fingerprint HEX --confirm` (apply exactly the approved preview) |
 | `orbit blueprint unbind` | `PROJECT` (remove the binding; generated default views apply) |
 | `orbit blueprint binding` | `PROJECT` |
 | `orbit blueprint create-item` | `PROJECT ID KIND [--properties JSON]` |
@@ -199,16 +201,137 @@ workflows are Development, Research, Learning and Habits (version 2).
 | `orbit blueprint transition` | `ID STATE --revision N` |
 | `orbit blueprint set-properties` | `ID --revision N --file FILE` |
 | `orbit blueprint apply-template` | `PROJECT TEMPLATE NAMESPACE` |
+| `orbit blueprint capability list` | `[--project ID]` |
+| `orbit blueprint capability install` | `CAPABILITY_ID` |
+| `orbit blueprint capability uninstall` | `CAPABILITY_ID` (also removes its project grants) |
+| `orbit blueprint capability authorize` | `CAPABILITY_ID --project ID --confirm` |
+| `orbit blueprint capability revoke` | `CAPABILITY_ID --project ID` |
+| `orbit blueprint action offers` | `ITEM_ID` |
+| `orbit blueprint action request` | `ITEM_ID --action ID --revision N [--command ID] [--input JSON] [--confirm]` |
+| `orbit blueprint action execute` | `COMMAND_ID` |
+| `orbit blueprint action show` | `COMMAND_ID` |
+| `orbit blueprint action list` | `[--item ID] [--state STATE] [--limit N]` |
+| `orbit blueprint action reconcile` | `COMMAND_ID --succeed\|--fail --confirm` |
 
 `--offline` and `--require-online` are group-level options for connected
 behavior. `workflow` is accepted as a user-facing alias for `blueprint`, for
 example `orbit workflow apply PROJECT basic`. A workflow cannot authorize its
-own capabilities; action execution is not exposed in this build. Every new
-project is already bound to `basic` (version 1) by the authority, so use
-`blueprint apply` to change it and `blueprint bind` only for an unbound
-project. Binding a new version does not migrate existing work items. Changing
-or unpinning a workflow is local-authoritative only in this build; connected
-mode reports that clearly instead of queueing an unsupported mutation.
+own capabilities; the local CLI exposes explicit capability administration and
+action commands. Every new project is already bound to `basic` (version 1) by
+the authority, so use `blueprint apply` to change it and `blueprint bind` only
+for an unbound project. Binding a new version does not migrate existing work
+items. Changing or unpinning a workflow is local-authoritative only in this
+build; connected mode reports that clearly instead of queueing an unsupported
+mutation.
+
+### Workflow version upgrades
+
+A published version is immutable and a binding is pinned, so moving an existing
+project to a newer version is an explicit operation. `upgrade-preview` is a pure
+read; `upgrade` writes only after its own fences pass.
+
+```sh
+# Read-only: current/target bindings, per-kind delta, views, warnings, blockers,
+# accepted revision and the preview fingerprint.
+orbit blueprint upgrade-preview PROJECT_ID --id ID --version N --json
+
+# Apply exactly the approved preview. --confirm pins and the fingerprint is
+# recomputed inside the same savepoint that writes the binding.
+orbit blueprint upgrade PROJECT_ID --id ID --version N \
+  --fingerprint HEX --confirm --json
+```
+
+The preview result exposes `schema`, `project_id`, `project_revision`,
+`current` (`null` when the project has no binding), `target`, `kinds`, `views`,
+`warnings`, `blockers` and `fingerprint`. Each notice is
+`{code, message, subjects}`; `subjects` names the live item ids or schema
+identifiers the finding came from.
+
+`upgrade` succeeds only when `--confirm` is present, the recomputed preview has
+no blockers, and the recomputed `fingerprint` equals `--fingerprint`. It echoes
+the approved report and adds `binding`, `previous` and `already_applied`.
+Repeating the same approved upgrade is idempotent (`already_applied: true`,
+binding unchanged). Once the project is already pinned to the target version the
+command is a no-op success and does not compare the fingerprint, because there is
+no approved change left to apply. Nothing is rebound by `blueprint import`,
+`install` or `apply`, and other projects are never touched.
+
+Exit codes: missing `--confirm` is a usage error (`2`); a blocker, an
+unpublished target or a fingerprint mismatch is an authority conflict (`4`) with
+the reason on stderr and no binding written. `upgrade-preview` exits `0` even
+when it reports blockers, because the report is the success case. Both commands
+are local-authoritative only in this build; connected mode refuses them instead
+of queueing a change it cannot verify. See
+[Build your own project workflow](../guides/custom-blueprints.md#6-updating-existing-projects)
+for a runnable two-version example and the full warning/blocker code list.
+
+### Capability administration and actions
+
+These commands are local-authority only. Connected mode refuses them with
+`capability actions require the local authoritative workspace; connected parity
+is tracked as M25 EC-004` and does not queue a request. There are no capability
+MCP tools in this iteration.
+
+Installation records the trusted composition's contract; it grants no
+permission. Authorization is a separate project-scoped grant:
+
+```sh
+orbit blueprint capability install orbit.reference.work-item-note
+orbit blueprint capability list --json
+orbit blueprint capability authorize orbit.reference.work-item-note \
+  --project PROJECT_ID --confirm
+orbit blueprint capability list --project PROJECT_ID --json
+orbit blueprint capability revoke orbit.reference.work-item-note --project PROJECT_ID
+orbit blueprint capability uninstall orbit.reference.work-item-note
+```
+
+`capability list` rows contain `capability_id`, `provider`, `permission`,
+`installed`, `executor_registered`, `actions`, `requires`,
+`authorized_projects` and `available`. `install` and `uninstall` return the
+installation or `{"capability_id": ..., "removed": bool}`. `authorize` returns
+the grant (`capability_id`, `project_id`, `granted_by`, `granted_at_ms`) and
+requires `--confirm`. `revoke` returns
+`{"capability_id": ..., "project_id": ..., "revoked": bool}`.
+
+Action commands are a lifecycle, not one command with a retry flag:
+
+```sh
+orbit blueprint action offers ITEM_ID --json
+orbit blueprint action request ITEM_ID --action append_note --revision 0 \
+  --command cmd-note-1 --input '{"note":"first durable note"}' --json
+orbit blueprint action show cmd-note-1 --json
+orbit blueprint action execute cmd-note-1 --json
+orbit blueprint action list --item ITEM_ID --state succeeded --limit 10 --json
+orbit blueprint action reconcile cmd-note-1 --succeed --confirm --json
+```
+
+- `offers` returns each action with `action_id`, `capability`, `description`,
+  `from`, `to`, `input_schema`, `declared_parameters`, `external_effect`,
+  `requires` and `availability`. Availability is either
+  `{"state":"available"}` or `{"state":"unavailable","code":...,"reason":...}`;
+  codes are `capability_missing`, `capability_disabled`,
+  `capability_not_installed`, `executor_missing`, `requirement_missing` and
+  `not_authorized`.
+- `request` re-checks everything and writes `state: "pending"` with the stable
+  `command_id`, `item_id`, `item_revision`, `action_id`, `capability` and
+  `plan_json`. If `--command` is omitted, the CLI generates one. Inputs must be
+  keys declared in the transition action's `parameters`. `--confirm` is
+  required for effectful or destructive actions.
+- `execute` claims the pending request once, dispatches the trusted provider and
+  returns the receipt: `command_id`, `item_id`, `action_id`, `capability`,
+  `provider`, `outcome`, `detail`, `recorded_at_ms`. Replaying `execute` returns
+  the same receipt without dispatching again.
+- `show` returns `{"request": {...}, "receipt": {...}|null}`.
+- `list` returns request rows and accepts an item, state and limit filter.
+- `reconcile` resolves only `claimed`-without-receipt or `uncertain` requests,
+  requires `--confirm` and one of `--succeed`/`--fail`, and returns
+  `{"recovered_from":"claimed"|"uncertain","receipt":{...}}`. A `pending`
+  request is refused; `succeeded` and `failed` receipts are not rewritten.
+
+Refusals use the normal error contract: an unavailable offer, a missing
+`--confirm`, an unknown action or the connected-mode refusal exits `2`; an
+invalid persisted input, a revision mismatch or an unreconcilable state exits
+`4`.
 
 ## Habit, routine, note, folder and schedule commands
 
@@ -401,7 +524,8 @@ Runtime errors in JSON mode carry a `type` and `message`; exit classes are:
 - No standalone milestone create/list/status command.
 - No project-switch command and no global active project.
 - No dedicated backup subcommand.
-- No executable workflow/blueprint capability actions.
+- No connected-mode or MCP capability install/authorize/request/execute surface;
+  capability actions are local CLI only in this iteration.
 - No knowledge command group; notes and folders replace it.
 
 See [configuration](configuration.md), [release assets](release-assets.md) and

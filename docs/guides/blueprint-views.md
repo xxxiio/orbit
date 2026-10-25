@@ -134,6 +134,84 @@ of broadening a query. A view cannot request a cross-project aggregate; project
 views resolve against the selected project. Global Home/Inbox/Agents screens
 are host-generated aggregations, not workflow-controlled queries.
 
+## Capability actions
+
+A work-item transition may advertise actions supplied by a trusted capability.
+The manifest says which capability and action are offered; it never ships the
+implementation:
+
+```json
+{
+  "required_capabilities": ["orbit.reference.work-item-note"],
+  "work_items": [
+    {
+      "id": "note-task",
+      "name": "Note task",
+      "initial_state": "open",
+      "states": ["open", "closed"],
+      "transitions": [
+        {
+          "from": "open",
+          "to": "closed",
+          "actions": [
+            {
+              "id": "append_note",
+              "capability": "orbit.reference.work-item-note",
+              "description": "Append a durable note to this blueprint work item",
+              "parameters": { "note": "" }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+`required_capabilities` lists capabilities that must be durably installed before
+the manifest can be published. `orbit blueprint import` fails with
+`unavailable capability: <id>` until then. It does not install anything.
+
+The transition action's `parameters` object declares the keys a request may
+supply and their defaults. User inputs override matching defaults. A key that is
+not declared there is rejected when the request is persisted, even if the
+capability's input schema mentions it. The capability's input schema then
+validates the merged values with the small subset string, integer and boolean
+types plus a `required` list; `minLength` is enforced for strings. It is not a
+general JSON Schema engine.
+
+Offers are reported by `orbit blueprint action offers ITEM`. An offer is
+available only when the capability is registered and enabled in the trusted
+composition, installed, backed by a registered executor, has its requirements
+satisfied, and is authorized for the item's project. Otherwise the offer carries
+an explicit reason:
+
+```json
+{
+  "availability": {
+    "state": "unavailable",
+    "code": "not_authorized",
+    "reason": "capability orbit.reference.work-item-note is not authorized for project project-1792856580125-4035056-0"
+  }
+}
+```
+
+Reason codes are `capability_missing`, `capability_disabled`,
+`capability_not_installed`, `executor_missing`, `requirement_missing` and
+`not_authorized`. A fully authorized offer is simply:
+
+```json
+{
+  "availability": { "state": "available" }
+}
+```
+
+Availability is advisory. Requesting the action re-checks the revision, grant,
+requirements and inputs before a durable `pending` request is written. Views and
+components cannot invoke a capability action; the local CLI is the supported
+surface. See [Build your own project workflow](custom-blueprints.md) and the
+[trusted capability developer guide](../developers/extensions-and-capabilities.md).
+
 ## Contextual actions
 
 Components may list actions as presentation metadata. A declaration does not

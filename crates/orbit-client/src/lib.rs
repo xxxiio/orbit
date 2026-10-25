@@ -65,6 +65,8 @@ static CLIENT_ID_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 mod attachments;
 mod attachments_remote;
 pub mod authority;
+mod capability_actions;
+pub use capability_actions::*;
 pub mod connected;
 pub mod embedded_authority;
 mod file_knowledge_bridge;

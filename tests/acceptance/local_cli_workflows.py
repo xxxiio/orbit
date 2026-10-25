@@ -563,6 +563,131 @@ class RuntimeAcceptance(unittest.TestCase):
         self.assertEqual(before['application_entities'], after['application_entities'])
         self.assertEqual(before['objects'], after['objects'])
 
+    def test_blueprint_version_upgrade_is_previewed_fenced_and_persistent(self):
+        """Preview -> apply is explicit, fingerprint-fenced and restart-safe."""
+        project_id = self.client.create_project('Upgrade persistence')
+        manifest_v1 = {
+            'id': 'upgrade-demo',
+            'version': 1,
+            'name': 'Upgrade demo',
+            'work_items': [{
+                'id': 'feature',
+                'name': 'Feature',
+                'initial_state': 'backlog',
+                'states': ['backlog', 'done'],
+                'fields': [
+                    {'id': 'effort', 'kind': {'type': 'text'},
+                     'required': True, 'default': 'small'},
+                ],
+                'transitions': [{'from': 'backlog', 'to': 'done'}],
+            }],
+        }
+        manifest_v2 = {
+            'id': 'upgrade-demo',
+            'version': 2,
+            'name': 'Upgrade demo',
+            'work_items': [{
+                'id': 'feature',
+                'name': 'Feature',
+                'initial_state': 'backlog',
+                'states': ['backlog', 'review', 'done'],
+                'fields': [
+                    {'id': 'effort',
+                     'kind': {'type': 'choice', 'options': ['small', 'large']},
+                     'required': True, 'default': 'small'},
+                    {'id': 'owner', 'kind': {'type': 'text'}},
+                ],
+                'transitions': [
+                    {'from': 'backlog', 'to': 'review'},
+                    {'from': 'review', 'to': 'done'},
+                ],
+            }],
+        }
+        first = self.root / 'upgrade-v1.json'
+        second = self.root / 'upgrade-v2.json'
+        first.write_text(json.dumps(manifest_v1))
+        second.write_text(json.dumps(manifest_v2))
+        properties = self.root / 'properties.json'
+        properties.write_text(json.dumps({'effort': 'small'}))
+
+        self.client.call('blueprint', 'import', str(first))
+        applied = self.client.call(
+            'blueprint', 'apply', project_id, 'upgrade-demo', '--version', '1')
+        self.assertEqual(applied['result']['version'], 1)
+        item = self.client.call(
+            'blueprint', 'create-item', project_id, 'item-1', 'feature',
+            '--properties', str(properties))
+        self.assertEqual(item['result']['state'], 'backlog')
+        self.client.call('blueprint', 'import', str(second))
+
+        preview = self.client.call(
+            'blueprint', 'upgrade-preview', project_id,
+            '--id', 'upgrade-demo', '--version', '2')['result']
+        self.assertEqual(preview['current']['version'], 1)
+        self.assertEqual(preview['target']['version'], 2)
+        self.assertEqual(preview['blockers'], [])
+        self.assertIn('field_type_widened',
+                      [warning['code'] for warning in preview['warnings']])
+        self.assertEqual(len(preview['fingerprint']), 64)
+        # A preview is a read: the project is still pinned to version 1.
+        self.assertEqual(
+            self.client.call('blueprint', 'binding', project_id)['result']['version'], 1)
+
+        def upgrade(fingerprint: str, confirm: bool = True) -> dict:
+            argv = ['blueprint', 'upgrade', project_id, '--id', 'upgrade-demo',
+                    '--version', '2', '--fingerprint', fingerprint]
+            if confirm:
+                argv.append('--confirm')
+            return self.client.call(*argv, successful=False)
+
+        missing_confirm = upgrade(preview['fingerprint'], confirm=False)
+        self.assertEqual(missing_confirm['returncode'], 2)
+        self.assertEqual(json.loads(missing_confirm['stderr'])['code'], 'usage_error')
+
+        wrong = upgrade('0' * 64)
+        self.assertEqual(wrong['returncode'], 4)
+        self.assertEqual(json.loads(wrong['stderr'])['code'], 'repository_error')
+        self.assertEqual(
+            self.client.call('blueprint', 'binding', project_id)['result']['version'], 1)
+
+        # Any accepted change after the preview invalidates its fingerprint.
+        properties.write_text(json.dumps({'effort': 'large'}))
+        self.client.call(
+            'blueprint', 'create-item', project_id, 'item-2', 'feature',
+            '--properties', str(properties))
+        stale = upgrade(preview['fingerprint'])
+        self.assertEqual(stale['returncode'], 4)
+        self.assertIn('fingerprint mismatch', json.loads(stale['stderr'])['message'])
+        self.assertEqual(
+            self.client.call('blueprint', 'binding', project_id)['result']['version'], 1)
+
+        refreshed = self.client.call(
+            'blueprint', 'upgrade-preview', project_id,
+            '--id', 'upgrade-demo', '--version', '2')['result']['fingerprint']
+        self.assertNotEqual(refreshed, preview['fingerprint'])
+        success = self.client.call(
+            'blueprint', 'upgrade', project_id, '--id', 'upgrade-demo',
+            '--version', '2', '--fingerprint', refreshed, '--confirm')['result']
+        self.assertEqual(success['binding']['version'], 2)
+        self.assertEqual(success['previous']['version'], 1)
+        self.assertFalse(success['already_applied'])
+        self.assertEqual(success['fingerprint'], refreshed)
+
+        restarted = OrbitCli(self.executable, self.client.db)
+        self.assertEqual(
+            restarted.call('blueprint', 'binding', project_id)['result']['version'], 2)
+        preserved = restarted.call('blueprint', 'item', 'item-1')['result']['item']
+        self.assertEqual(preserved['state'], 'backlog')
+        self.assertEqual(preserved['revision'], 0)
+        self.assertEqual(preserved['properties']['effort'], 'small')
+
+        replay = restarted.call(
+            'blueprint', 'upgrade', project_id, '--id', 'upgrade-demo',
+            '--version', '2', '--fingerprint', refreshed, '--confirm')['result']
+        self.assertTrue(replay['already_applied'])
+        self.assertEqual(replay['binding']['version'], 2)
+        self.assertHealthy()
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)

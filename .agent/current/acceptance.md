@@ -6,81 +6,61 @@ project_owned: true
 record_contract: acceptance-report
 record_schema_version: 1
 status: passed
-task_id: TASK-0007
+task_id: TASK-0009
 ---
 
 # Current Acceptance Report
 
 ## Task
 
-TASK-0007 — M29 TUI product experience, interaction quality and maintainability.
+TASK-0009 — M30 I2–I4 and the navigation rail correction.
 
 ## Gate results
 
 | Gate ID | Gate | Status | Evidence |
 |---|---|---|---|
-| G-0001 | Navigation and selection restoration | pass | `ui_state` schema v1 persists project/view/focus/component/stable id/index/scroll; restore resolves the id across the view, falls back to a clamped index, preserves a skipped restore and ignores corrupt/newer files. 18 state tests + PTY Scenario A (3 tests). |
-| G-0002 | Contextual actions and palette | pass | Compact bar shows three context-ranked actions with keys that resolve to the action they advertise; grouped menu with disabled reasons; palette prefix/word/fuzzy ranking, 5-entry destination MRU, context boost, disabled refusal. 13 Rust tests + PTY Scenario F. |
-| G-0003 | Quick edit and forms | pass | `E` edits title/priority through existing commands; task forms lead with title/priority/description/labels; range/timestamp errors focus and mark the field; multiline caret window; discard confirmation preserved. 9 Rust tests + PTY Scenario B. |
-| G-0004 | Responsive layout and board | pass | Component minimums, content-weighted allocation and single-component rail at 60x18/80x24/100x30/120x35/160x45; Kanban header/rule/card, horizontal windowing and ownership-aware selection; priority table columns; clamped detail scroll. 8 layout tests + PTY Scenario D (5 sizes). |
-| G-0005 | Theme and no-colour legibility | pass | Restrained palette; selection/focus carry `▸`, fill and border weight; complete distinct status glyphs for task/project/agent/workflow states; `NO_COLOR`/`TERM=dumb` tested. 3 theme tests. |
-| G-0006 | Shared connected shell and legacy removal | pass | `!` pending inspector, conflict review with fail-closed replacement, connected command console covering the record grammar/batch/resolve/sync/notes/planning and accepted routine/strategy/milestone/schedule reads. `connected.rs` (1994 lines) and `ORBIT_TUI_LEGACY_CONNECTED` deleted. Real-server PTY Scenario E. |
-| G-0007 | Maintainability extraction | pass | `main.rs` 196 lines (wiring, `run`, one event loop, test declarations); keyboard dispatch only in `input/dispatch.rs`; `app/{state,navigation,selection,actions,forms,connected}`; `render/{layout,shell,components,modals}`; local construction isolated in `local_backend.rs`. Contract tests enforce the boundaries. |
-| G-0008 | Measured performance | pass | 20/200/1,017 fixture + PTY probe recorded baseline and after tables; detail model cached (render performs zero backend reads for the docked pane); title-only quick edit avoids a whole-workspace reload. Quick edit 173→83 ms (100x30), 173→87 ms (160x45); detail open 7.6→5.3 ms and board view switch 93.5→77.6 ms at 160x45; other operations unchanged within noise. |
-| G-0009 | PTY scenarios A–G | pass | `tests/acceptance/tui`: 54 passed, 1 skipped; full fixture opt-in 2 passed. Scenario A (`test_m29_selection.py`), B/C/D/F (`test_m29_workflows.py`), E (`test_m29_connected_recovery.py`), G (`test_m29_fixture.py` + `perf_probe.py`). |
-| G-0010 | Quality gates | pass | workspace 1,563 passed; orbit-client 348; documentation 39; contracts 43; clippy `-D warnings` clean; fmt clean. M15 profile 45/47 with the two withheld release-workflow checks. |
-| G-0011 | Documentation and captures | pass | User guide, TUI contract, developer component guide and acceptance README rewritten to shipped behaviour; `scripts/tui-captures.py` produced 21 real screen captures at 60x18/100x30/160x45. |
+| G-0001 | Navigation rail drives the workspace | pass | `input/dispatch.rs` activates the focused rail row on every screen; `activate_sidebar` keeps the rail focused for Home/Inbox/Agents/Projects; project activation hands focus to the workspace. 4 regression tests (`m30_sidebar_navigation_tests`); real-binary PTY repro: Projects → Home → Inbox → Agents → Alpha Project when driven from the rail. |
+| G-0002 | Connected MCP blueprint writes are outbox-backed | pass | `crates/orbit-mcp/src/blueprint_tools.rs` has no `.post(`; every write queues via `queue_blueprint_transport` then flushes and reports `accepted`/`pending`/`conflict` from the outbox row. 8 MCP tests; real server/MCP acceptance covers offline pending, accepted receipt, identical replay, same-id different-body conflict, lost-ack replay with one applied effect, duplicate command refusal, read paths never queued, policy refusal. |
+| G-0003 | Previewable, fenced blueprint upgrades | pass | `preview_blueprint_upgrade` diffs kinds/states/fields/transitions/actions/capabilities/views and classifies warnings/blockers with a SHA-256 fingerprint over accepted state; `apply_blueprint_upgrade` requires `--confirm` plus the fingerprint, recomputes inside a savepoint, refuses blockers/mismatch, preserves items, idempotent. 13 runtime tests, 2 CLI tests, 60 local CLI acceptance checks (preview → refusals → apply → restart). No auto-upgrade on publish/install. |
+| G-0004 | Habit recurrence owned by an opt-in capability | pass | New `orbit-habit-capability` crate owns `evaluate_habit_periods` and the summary types; `orbit-domain` keeps only occurrence/period types. Runtime registers `orbit.habit.recurrence` without installing/authorizing it; application/evidence reads return explicit `Unavailable` until installed (and granted for project evidence). Package 5 tests, domain 56, application 17, runtime 542; moved tests preserve streak numbers; task-only flow needs no habit capability. |
+| G-0005 | Quality gates | pass | `cargo test --workspace --offline` 1,658 passed, 0 failed (31 binaries); clippy `-D warnings` clean across 14 crates; fmt clean; PTY 65 passed/1 skipped; MCP 4; contracts 43; documentation 39; capability workflow 1; local CLI 60; `getdone-validate-project` passed. |
 
 ## Commands run
 
 ```text
-cargo test --workspace --offline                          # 1,563 passed, 0 failed (29 binaries)
-cargo clippy --offline -p orbit-domain -p orbit-application -p orbit-storage \
-  -p orbit-runtime -p orbit-sync -p orbit-blueprint -p orbit-client -p orbit-ui \
-  -p orbit-tui -p orbit-mcp -p orbit-cli -p orbit-server --all-targets -- -D warnings
-cargo fmt --all -- --check
-python3 -m unittest discover -s tests/documentation       # 39 passed
-python3 -m pytest -q tests/contracts                      # 43 passed
-python3 -m pytest -q tests/acceptance/tui                 # 54 passed, 1 skipped
-ORBIT_TUI_FULL_FIXTURE=1 python3 -m pytest -q tests/acceptance/tui/test_m29_fixture.py  # 2 passed
-python3 scripts/tui-fixture.py --out /tmp/opencode/m29-fixture --json   # 20/200/1,017
-python3 tests/acceptance/tui/perf_probe.py --workspace /tmp/opencode/m29-fixture --repeat 5
-python3 scripts/tui-captures.py                           # 21 written
-./scripts/m15-full-automated.sh --profile full            # 45 passed, 2 failed
+cargo fmt --all -- --check                                   # clean
+cargo test --workspace --offline                             # 1,658 passed, 0 failed (31 binaries)
+cargo clippy -p orbit-domain -p orbit-application -p orbit-storage -p orbit-runtime \
+  -p orbit-sync -p orbit-blueprint -p orbit-client -p orbit-ui -p orbit-tui \
+  -p orbit-mcp -p orbit-cli -p orbit-server -p orbit-progress \
+  -p orbit-habit-capability --all-targets --offline -- -D warnings   # clean
+cargo test -p orbit-runtime --offline blueprint_upgrade       # 13 passed
+cargo test -p orbit-mcp --offline                             # 76 passed
+cargo test -p orbit-cli --offline                             # 128 passed
+cargo test -p orbit-habit-capability -p orbit-domain -p orbit-application --offline
+python3 -m pytest -q tests/acceptance/tui tests/acceptance/mcp \
+  tests/contracts tests/documentation                          # 151 passed, 1 skipped (plus capability test)
+python3 -m pytest -q tests/acceptance/test_m30_capability_workflow.py   # 1 passed
+python3 tests/acceptance/local_cli_workflows.py --binary target/debug/orbit  # 60 passed
+getdone-validate-project                                      # passed
 ```
-
-### M15 profile observation
-
-47 checks: 45 passed. The two failures are `release-workflow-contract` and
-`python-contract-tests`; both read `.github/workflows/release.yml`, which is
-intentionally withheld pending the OAuth workflow-scope fix recorded in M27/M28.
-`python-contract-tests` reports 103 passed and 12 errors, all in
-`tests/packaging/test_release_workflow.py`. Every product, server, blueprint,
-offline-authority, connected and agent check passed. Evidence:
-`orbit-m15-evidence-20261024T135239Z.zip`.
 
 ## Checks not run
 
-- Live Herdr/model agent acceptance (requires authorization and token spend;
-  the scripted Scenario C path still passes).
-- Per-device project ACLs: the authority remains single-tenant (TODO-0013).
-- Server-side attachment garbage collection (no endpoint; TODO-0014).
-- Public release installation/update (M27 external gate).
+- Full `./scripts/m15-full-automated.sh --profile full` release profile (unchanged
+  release qualification remains M15/M27; the focused suites above were run).
+- Connected capability execution and MCP capability tools (not implemented; the
+  refusal is explicit).
+- Live Herdr/model acceptance (unchanged external requirement).
 
 ## Waivers
 
-- None. The withheld release-workflow checks and the single-tenant limitation
-  are documented limitations, not waived requirements.
+- None.
 
 ## Residual risk
 
-- Connected multi-command edits are not atomic; the pending inspector and
-  console report per-command state.
-- The connected console exposes the legacy command grammar for record families
-  that have no structured form yet; it is one modal in the shared shell but less
-  discoverable than a purpose-built form.
-- Conflict replacement requires a user-supplied replacement command; the UI
-  fails closed but cannot synthesise a valid replacement.
-- Interaction measurements are PTY wall-clock medians, not a microbenchmark;
-  process spawn and terminal reconstruction dominate cold start and key-paced
-  scrolling.
+- Connected capability actions remain local-only by design; connected blueprint
+  writes are now outbox-backed.
+- Habit streaks/evidence are unavailable until the capability is installed and
+  (for project evidence) granted; this is intended opt-in behaviour.
+- Upgrade blockers intentionally refuse incompatible live-data changes.

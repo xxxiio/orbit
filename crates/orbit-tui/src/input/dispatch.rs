@@ -1,6 +1,5 @@
 use crate::app::{self, App, Modal, Screen, StatusKind};
 use crate::input::handle_modal;
-use crate::theme;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 pub(crate) fn handle_key(
@@ -12,7 +11,12 @@ pub(crate) fn handle_key(
         app.modal_scroll = 0;
     }
     if app.modal.is_some() {
-        return handle_modal(app, code, modifiers);
+        let quit = handle_modal(app, code, modifiers)?;
+        // A follow-up modal launched from the inspector may have closed (saved,
+        // cancelled or confirmed). Reopen the inspector only for its recorded
+        // subject, never by guessing from the current selection.
+        app.resume_pending_inspector();
+        return Ok(quit);
     }
     if let Some(prefix) = app.prefix.take() {
         if prefix == 'g' {
@@ -67,12 +71,10 @@ pub(crate) fn handle_key(
                 orbit_ui::AvailableAction::enabled("flush_pending", "Flush pending commands", None);
             app.execute_action(action);
         }
+        // `D` opens the inspector. While it is open, key dispatch routes to the
+        // inspector handler, where `D` closes it again.
         KeyCode::Char('D') => {
-            if app.viewport_width < theme::WIDE_BREAKPOINT {
-                app.open_detail();
-            } else {
-                app.toggle_detail();
-            }
+            app.open_inspector();
         }
         KeyCode::Tab => app.focus_next(false),
         KeyCode::BackTab => app.focus_next(true),
@@ -84,11 +86,20 @@ pub(crate) fn handle_key(
         KeyCode::Left | KeyCode::Char('h') if app.focus == app::FocusPane::Workspace => {
             app.move_component(-1)
         }
-        KeyCode::Enter => match app.screen {
-            Screen::Projects => app.activate_project_selection(),
-            _ if app.focus == app::FocusPane::Sidebar => app.activate_sidebar(),
-            _ => app.open_detail(),
-        },
+        KeyCode::Enter => {
+            // The navigation rail always wins while it owns the keyboard. The
+            // Projects screen previously took Enter unconditionally, so moving
+            // the sidebar selection to Home/Inbox/Agents/project and pressing
+            // Enter appeared to do nothing and the workspace kept showing the
+            // project list.
+            if app.focus == app::FocusPane::Sidebar {
+                app.activate_sidebar();
+            } else if app.screen == Screen::Projects {
+                app.activate_project_selection();
+            } else {
+                app.open_inspector();
+            }
+        }
         KeyCode::Char('[') => match app.screen {
             Screen::Home => app.adjust_planning_horizon(false),
             Screen::Project => app.switch_view(-1),

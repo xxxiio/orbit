@@ -1,45 +1,45 @@
  ORBIT › Home / Today   3 projects · 1 inbox
-╭ Orbit ────────────╮┏ Today / Next • 12h • [/] horizon ━━━━━━━━━━━━━━┓╭ Today / Next tasks ─────────────────────────────────╮╭ Details ───────────────────────╮
-│▸ » Home / Today   │┃Today / Next                                    ┃│  ○ Wire the task table  planned                     ││Select an item to see           │
-│    Inbox          │┃TODAY / NEXT  •  accepted revision 50  •        ┃│  ○ Reconnect the replica  planned                   ││properties, dependencies and    │
-│    Projects       │┃evaluated 1792850150401                         ┃│  ~ Map the command palette  deferred                ││actions.                        │
-│    Agents         │┃Capacity 720min  •  proposed 75min  •  schedule ┃│  ~ Audit sync retries  deferred                     ││                                │
-│    Atlas Console ○│┃2  ready 0  blocked 0  deferred 7  completed 2  ┃│  ~ Harden the offline queue  deferred               ││                                │
-│    Beacon Sync ●  │┃PORTFOLIO • 2 actionable accepted task(s) • 0   ┃│  ~ Review attachment staging  deferred              ││                                │
-│    Cipher Notes ○ │┃visible task(s) with cross-project leverage     ┃│  ~ Trim the board cards  deferred                   ││                                │
-│                   │┃READ-ONLY PROPOSAL • pending offline commands   ┃│  ~ Verify the conflict review  deferred             ││                                │
-│                   │┃are not included • times shown as epoch         ┃│  ~ Collect note search examples  deferred           ││                                │
-│                   │┃milliseconds                                    ┃│  ✓ Document the connected console  done             ││                                │
-│                   │┃                                                ┃│  ✓ Cancel the old export path  done                 ││                                │
-│                   │┃SCHEDULED  task-capture-02  Wire the task table ┃│                                                     ││                                │
-│                   │┃Proposed slot: 1792850150401 → 1792852850401    ┃│                                                     ││                                │
-│                   │┃(milliseconds UTC)                              ┃│                                                     ││                                │
-│                   │┃    Project: project-1792850149273-3914829-0    ┃│                                                     ││                                │
-│                   │┃    Deadline: 1793022949254                     ┃│                                                     ││                                │
-│                   │┃Portfolio #1 • immediately unlocks 0 •          ┃│                                                     ││                                │
-│                   │┃same-project downstream 0 • cross-project       ┃│                                                     ││                                │
-│                   │┃downstream 0                                    ┃│                                                     ││                                │
-│                   │┃Why: Portfolio action #1 fits an uninterrupted  ┃│                                                     ││                                │
-│                   │┃45-minute window                                ┃│                                                     ││                                │
-│                   │┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛╰─────────────────────────────────────────────────────╯│                                │
-│                   │╭ Projects ─────────────────────────────────────────╮╭ Inbox ───────────────────────────────────────────╮│                                │
-│                   ││                         3                         ││                         1                        ││                                │
-│                   ││                     Projects                      ││                       Inbox                      ││                                │
-│                   ││                0 pending commands                 ││               tasks · status=inbox               ││                                │
-│                   ││                                                   ││                                                  ││                                │
-│                   ││                                                   ││                                                  ││                                │
-│                   ││                                                   ││                                                  ││                                │
-│                   ││                                                   ││                                                  ││                                │
-│                   │╰───────────────────────────────────────────────────╯╰──────────────────────────────────────────────────╯│                                │
-│                   │╭ Ready ───────────────────────────────╮╭ Inbox ────────────────────────────────────────────────────────╮│                                │
-│                   ││                   2                  ││  ○ Collect note search examples  inbox                        ││                                │
-│                   ││                 Ready                ││                                                               ││                                │
-│                   ││         tasks · status=ready         ││                                                               ││                                │
-│                   ││                                      ││                                                               ││                                │
-│                   ││                                      ││                                                               ││                                │
-│                   ││                                      ││                                                               ││                                │
-│                   ││                                      ││                                                               ││                                │
-│                   ││                                      ││                                                               ││                                │
-╰───────────────────╯╰──────────────────────────────────────╯╰───────────────────────────────────────────────────────────────╯╰────────────────────────────────╯
+╭ Orbit ────────────╮┏ Today / Next • 12h • [/] horizon ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓╭ Today / Next tasks ───────────────────────────────────────────────────╮
+│▸ » Home / Today   │┃Today / Next                                                    ┃│  ○ Wire the task table  planned                                       │
+│    Inbox          │┃TODAY / NEXT  •  accepted revision 50  •  evaluated             ┃│  ○ Reconnect the replica  planned                                     │
+│    Projects       │┃1792859725361                                                   ┃│  ~ Map the command palette  deferred                                  │
+│    Agents         │┃Capacity 720min  •  proposed 75min  •  schedule 2  ready 0      ┃│  ~ Audit sync retries  deferred                                       │
+│    Atlas Console ○│┃blocked 0  deferred 7  completed 2                              ┃│  ~ Harden the offline queue  deferred                                 │
+│    Beacon Sync ●  │┃PORTFOLIO • 2 actionable accepted task(s) • 0 visible task(s)   ┃│  ~ Review attachment staging  deferred                                │
+│    Cipher Notes ○ │┃with cross-project leverage                                     ┃│  ~ Trim the board cards  deferred                                     │
+│                   │┃READ-ONLY PROPOSAL • pending offline commands are not included •┃│  ~ Verify the conflict review  deferred                               │
+│                   │┃times shown as epoch milliseconds                               ┃│  ~ Collect note search examples  deferred                             │
+│                   │┃                                                                ┃│  ✓ Document the connected console  done                               │
+│                   │┃SCHEDULED  task-capture-02  Wire the task table                 ┃│  ✓ Cancel the old export path  done                                   │
+│                   │┃Proposed slot: 1792859725361 → 1792862425361 (milliseconds UTC) ┃│                                                                       │
+│                   │┃    Project: project-1792859724249-4112975-0                    ┃│                                                                       │
+│                   │┃    Deadline: 1793032524232                                     ┃│                                                                       │
+│                   │┃Portfolio #1 • immediately unlocks 0 • same-project downstream 0┃│                                                                       │
+│                   │┃• cross-project downstream 0                                    ┃│                                                                       │
+│                   │┃Why: Portfolio action #1 fits an uninterrupted 45-minute window ┃│                                                                       │
+│                   │┃    Why: Immediately unblocks 0 accepted task(s)                ┃│                                                                       │
+│                   │┃                                                                ┃│                                                                       │
+│                   │┃SCHEDULED  task-capture-09  Reconnect the replica               ┃│                                                                       │
+│                   │┃Proposed slot: 1792862425361 → 1792864225361 (milliseconds UTC) ┃│                                                                       │
+│                   │┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛╰───────────────────────────────────────────────────────────────────────╯
+│                   │╭ Projects ──────────────────────────────────────────────────────────╮╭ Inbox ────────────────────────────────────────────────────────────╮
+│                   ││                                  3                                 ││                                 1                                 │
+│                   ││                              Projects                              ││                               Inbox                               │
+│                   ││                         0 pending commands                         ││                       tasks · status=inbox                        │
+│                   ││                                                                    ││                                                                   │
+│                   ││                                                                    ││                                                                   │
+│                   ││                                                                    ││                                                                   │
+│                   ││                                                                    ││                                                                   │
+│                   │╰────────────────────────────────────────────────────────────────────╯╰───────────────────────────────────────────────────────────────────╯
+│                   │╭ Ready ───────────────────────────────────────────╮╭ Inbox ──────────────────────────────────────────────────────────────────────────────╮
+│                   ││                         2                        ││  ○ Collect note search examples  inbox                                              │
+│                   ││                       Ready                      ││                                                                                     │
+│                   ││               tasks · status=ready               ││                                                                                     │
+│                   ││                                                  ││                                                                                     │
+│                   ││                                                  ││                                                                                     │
+│                   ││                                                  ││                                                                                     │
+│                   ││                                                  ││                                                                                     │
+│                   ││                                                  ││                                                                                     │
+╰───────────────────╯╰──────────────────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────────────╯
  Actions: c New · / Search · r Refresh · a more actions · q quit
- Ctrl+Q quit · q quit (not typing)  Ready • ? help • : commands   j/k select · Tab focus · D details · Esc back
+ Ctrl+Q quit · q quit (not typing)  Ready • ? help • : commands   j/k select · Tab focus · Enter inspect · Esc back

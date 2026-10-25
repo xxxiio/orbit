@@ -5,143 +5,105 @@ template_digest: "179af91e65608fbfd07b28126ed729856e6524410956892a698b3f40e902e6
 project_owned: true
 record_contract: current-task
 record_schema_version: 1
-id: TASK-0007
+id: TASK-0009
 status: completed
-milestone_id: MILESTONE-0029
+milestone_id: MILESTONE-0030
 ---
 
-# Task: M29 TUI product experience, interaction quality and maintainability
+# Task: M30 I2–I4 and the navigation rail correction
 
 ## Objective
 
-Turn the already-functional Orbit TUI into a coherent daily-use terminal
-application: restore the working context, make actions discoverable, make forms
-safe and efficient, keep boards/tables/details readable at every supported
-terminal size, serve local and connected authority from one shell, and split the
-oversized modules with measured interaction improvements.
+Fix the reported navigation defect — whatever is selected in the sidebar must
+drive the workspace — and finish the remaining instruction scope: connected MCP
+blueprint outbox parity (M25 EC-004), previewable blueprint upgrades (EC-005) and
+habit recurrence ownership by an opt-in capability package (EC-006).
 
 ## Current behaviour
 
-M28 completed project-centric navigation, declarative blueprint views, rich task
-editing, acceptance criteria, attachments, agent-job inspection, contextual
-actions, the command palette, search and connected command durability. Daily use
-still exposed interaction defects: `ui_state` persisted `selected_id` as `None`;
-`main.rs` (148 KB) and `render.rs` (78 KB) concentrated unrelated
-responsibilities; the legacy connected TUI remained reachable through
-`ORBIT_TUI_LEGACY_CONNECTED`; the action bar repeated keys and omitted status; the
-palette had no ranking, recents or disabled guard; forms buried priority behind
-planning fields and reported validation only as a banner; the shell used fixed
-sidebar/detail widths and boxed Kanban columns; and the 20-project interaction
-path was unmeasured.
+After M30 I1 the rail looked unresponsive: on the Projects screen `Enter` ignored
+the focused sidebar row and always opened the workspace's selected project row,
+and activating a top-level destination dropped focus into the workspace so
+further `j`/`k` did nothing. M25 EC-004/005/006 were open: connected MCP blueprint
+writes posted directly to the authority and bypassed the replica outbox; binding
+was first-binding-wins with no upgrade preview; habit recurrence/streak math
+lived in `orbit-domain`.
 
 ## Desired behaviour
 
-A restart or view switch returns to the same project, view, component, selected
-entity and scroll position, with safe fallback when the entity or view is gone.
-The focused region, selected item and available high-value actions are obvious.
-Quick edits avoid advanced fields; forms preserve input and point at the failing
-field. Layout adapts from 60x18 to 160x45 with component-aware minimums and a
-horizontally windowed board. One shell handles local and connected operation;
-pending commands and conflicts are inspectable, recoverable and never presented
-as accepted; the legacy connected presentation is gone without losing the
-command capability. The event loop, keyboard dispatch, form/modal ownership and
-render layout are separated, and measured interaction latency improves.
+`Enter` activates the focused rail row on every screen; top-level rail
+destinations keep the rail focused while project activation hands the keyboard to
+the workspace. Connected blueprint writes are queued durably before any flush and
+report accepted/pending/conflict with immutable receipts and lost-ack replay.
+Blueprint upgrades are previewed with a typed diff, warnings/blockers and a
+fingerprint, and only applied with explicit confirmation; nothing upgrades
+automatically. Habit recurrence is computed by the opt-in
+`orbit.habit.recurrence` capability, not core, with explicit unavailable status
+when it is not installed.
 
 ## Scope
 
-- Durable navigation state: project/view/focus/component, stable selected id,
-  index and scroll offsets, with id-to-row resolution, clamping, corrupt-file
-  tolerance and a restore-skipped marker.
-- Ranked compact action bar, grouped action menu with disabled reasons,
-  context-aware hotkeys, ranked palette with MRU destinations and disabled
-  refusal, `E` quick edit, reordered task forms, field-level validation and
-  multiline caret presentation.
-- Component-aware responsive layout, Kanban header/rule/card presentation with
-  windowing and ownership-aware selection, table column priority, clamped detail
-  scroll, colour-independent theme with complete status glyphs.
-- Shared-shell connected pending inspector (`!`), conflict review with
-  fail-closed replacement, connected console covering the legacy record grammar,
-  accepted routine/strategy/milestone/schedule reads; deletion of the legacy
-  connected TUI and event loop.
-- Module extraction into `app/`, `input/`, `render/`, `connected_ops.rs`,
-  `local_backend.rs`; detail-model cache; title-only quick-edit refresh.
-- Deterministic 20-project/200-task/1,017-activity fixture, PTY perf probe,
-  before/after measurements, PTY scenarios A–G, documentation and captures.
+- Rail `Enter` precedence and focus behaviour, regression tests, guide wording.
+- Queue-first connected MCP blueprint writes, dispositions, receipts, offline
+  replay and lost-ack recovery; no direct connected write bypass.
+- `preview_blueprint_upgrade`/`apply_blueprint_upgrade` with fingerprint fencing,
+  CLI `upgrade-preview|upgrade`, connected refusal, tests and docs.
+- `orbit-habit-capability` package, runtime registration/executor, install and
+  project-grant gating, domain/application extraction, docs.
+- Records, evidence, documentation and full acceptance.
 
 ## Out of scope
 
-- Rebuilding M28 blueprint presentation, Basic workflow, attachments, criteria,
-  backend abstractions, quit handling or the PTY harness.
-- Domain models for visual concerns; direct SQL in the TUI; asynchronous runtime.
-- Flutter renderer, plugin marketplace or dynamic blueprint code execution.
-- Per-device project ACLs and server-side attachment GC (unchanged follow-ups).
-- Public release verification (M27 external gate).
+- Connected capability execution and MCP capability tools.
+- New top-level TUI screens or a second persistence model.
+- M27 public release publication and deployment verification.
+- Per-device project ACLs and server attachment GC.
 
 ## Dependencies
 
-- MILESTONE-0028 completed product capabilities and regression tests.
-- Local `orbit-server` binary for connected recovery acceptance.
-- Existing `orbit-client` typed connected command/record APIs.
+- M30 I1 capability composition, storage grants/receipts and TUI shell.
+- Existing replica outbox (`AuthorityConnection::queue_blueprint_transport`,
+  `flush`) and blueprint command receipts.
+- Existing habit occurrence storage and bundled habits workflow.
 
 ## Risks
 
-- Module extraction could change privacy or ordering semantics; mitigated by
-  verbatim moves and the full M28/M29 test suite after each move.
-- Removing the legacy connected TUI could drop operations; mitigated by porting
-  the record grammar, accepted reads and planning analyses before deletion.
-- Cache optimisations could show stale accepted data; mitigated by invalidating
-  at navigation/refresh/mutation chokepoints with regression tests.
-- Layout changes could break narrow terminals; mitigated by PTY checks at every
-  supported size.
-- Performance claims could outrun evidence; mitigated by recorded before/after
-  fixtures and honest treatment of PTY-dominated operations.
+- A queue-first write that reports accepted without confirmation would violate
+  the pending-vs-accepted rule; dispositions are read from the outbox row and an
+  unobservable outcome is pending.
+- Upgrade previews can be stale; apply recomputes inside a savepoint and refuses
+  fingerprint mismatches or blockers.
+- Moving recurrence out of core could silently change streak semantics; the
+  algorithm is moved verbatim and covered by the moved tests plus gating tests.
 
 ## Acceptance criteria
 
-- [x] AC-001: Selected item, component, scroll and focus restore across view
-  changes and restart; deleted/reordered items fall back safely; corrupt or
-  newer-version state does not block startup.
-- [x] AC-002: Focus, selection and context are preserved across modal open/close,
-  resize, view switches and Esc; the focused region and selected row are
-  unmistakable.
-- [x] AC-003: The compact bar exposes at most three context-ranked actions with
-  keys that actually run them; the menu and palette explain disabled actions;
-  the palette ranks deterministically, remembers destinations and refuses
-  disabled execution.
-- [x] AC-004: `E` quick edit changes title and priority through existing
-  commands; full task forms lead with everyday fields, keep input on error, mark
-  and focus the failing field, and confirm unsaved changes.
-- [x] AC-005: Layout adapts at 60x18, 80x24, 100x30, 120x35 and 160x45;
-  Kanban windows columns, keeps the selected card visible and uses real
-  workflow transitions; tables prioritise title/status/priority.
-- [x] AC-006: The theme stays legible without colour; status glyphs are complete
-  and distinct; empty states and action hints are accurate.
-- [x] AC-007: One shell serves local and connected operation; `!` inspects
-  pending commands, conflicts are reviewable and replaceable fail-closed, the
-  console covers the legacy grammar and accepted record reads, and the legacy
-  entry point/presentation is deleted.
-- [x] AC-008: `main.rs` is a simple event loop, keyboard dispatch has one
-  location, forms/modals/render have explicit owners, and prior tests pass.
-- [x] AC-009: The 20/200/1,017 fixture exercises switching, editing, search,
-  scrolling and detail inspection with recorded measurements; quick edit dropped
-  from ~173 ms to ~83 ms and render performs no backend reads for the detail pane.
-- [x] AC-010: PTY Scenarios A–G pass, documentation matches behaviour, captures
-  exist, and no known blocking data-loss/authorization/everyday-use defect
-  remains.
+- [x] AC-001: `Enter` activates the focused rail row on every screen; top-level
+  destinations keep rail focus; project activation moves to the workspace.
+- [x] AC-002: Connected MCP blueprint writes queue before flushing and report
+  `accepted`/`pending`/`conflict`; offline replay and lost-ack replay return the
+  original receipt exactly once.
+- [x] AC-003: Blueprint upgrades are previewable with typed diffs, warnings and
+  blockers plus a fingerprint; apply requires `--confirm` and the exact
+  fingerprint, preserves items and is idempotent.
+- [x] AC-004: Habit recurrence/streak math lives in `orbit-habit-capability` and
+  is gated by installation (and project grant for evidence); core domain no
+  longer computes it; existing habit data and non-recurrence flows are unchanged.
+- [x] AC-005: Workspace, clippy, fmt, PTY, MCP, docs, contracts and CLI acceptance
+  pass; M25 EC-001..EC-007 are satisfied with evidence.
 
 ## Validation
 
 ```sh
-cargo test --workspace --offline
-cargo clippy --offline -p orbit-domain -p orbit-application -p orbit-storage \
-  -p orbit-runtime -p orbit-sync -p orbit-blueprint -p orbit-client -p orbit-ui \
-  -p orbit-tui -p orbit-mcp -p orbit-cli -p orbit-server --all-targets -- -D warnings
 cargo fmt --all -- --check
-python3 -m unittest discover -s tests/documentation
-python3 -m pytest -q tests/contracts
-python3 -m pytest -q tests/acceptance/tui
-ORBIT_TUI_FULL_FIXTURE=1 python3 -m pytest -q tests/acceptance/tui/test_m29_fixture.py
-python3 scripts/tui-fixture.py --out /tmp/opencode/m29-fixture --json
-python3 tests/acceptance/tui/perf_probe.py --workspace /tmp/opencode/m29-fixture --repeat 5
-python3 scripts/tui-captures.py
+cargo test --workspace --offline          # 1,658 passed, 31 binaries
+cargo clippy -p orbit-domain -p orbit-application -p orbit-storage \
+  -p orbit-runtime -p orbit-sync -p orbit-blueprint -p orbit-client -p orbit-ui \
+  -p orbit-tui -p orbit-mcp -p orbit-cli -p orbit-server -p orbit-progress \
+  -p orbit-habit-capability --all-targets -- -D warnings
+cargo test -p orbit-habit-capability -p orbit-runtime -p orbit-mcp -p orbit-cli --offline
+python3 -m pytest -q tests/acceptance/tui tests/acceptance/mcp tests/contracts tests/documentation
+python3 tests/acceptance/local_cli_workflows.py --binary target/debug/orbit
+python3 -m pytest -q tests/acceptance/test_m30_capability_workflow.py
+getdone-validate-project
 ```

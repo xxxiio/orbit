@@ -35,14 +35,14 @@ ROOT = Path(__file__).resolve().parents[3]
 
 from pty_harness import (  # noqa: E402
     ENTER,
+    ESC,
     TuiSession,
     Workspace,
 )
 
-# The workspace layout is fixed by the shell: sidebar | main | details.
+# The shell is two regions at every width: sidebar | workspace. The item
+# inspector is an on-demand overlay, never a docked third column.
 SIDEBAR_WIDTH = 22
-DETAIL_WIDTH = 30
-WIDE_BREAKPOINT = 120
 
 COLS = 140
 ROWS = 40
@@ -245,8 +245,7 @@ def wait_tasks_painted(
 
 def _workspace_segment(line: str, cols: int) -> str:
     """Slice the main workspace column out of a reconstructed screen row."""
-    end = cols - DETAIL_WIDTH if cols >= WIDE_BREAKPOINT else cols
-    return line[SIDEBAR_WIDTH:end]
+    return line[SIDEBAR_WIDTH:cols]
 
 
 def _selected_titles(screen_text: str, titles: list[str], cols: int = COLS) -> list[str]:
@@ -292,8 +291,31 @@ def wait_selected(session: TuiSession, title: str, titles: list[str]) -> None:
     )
 
 
-def _detail_pane_text(session: TuiSession, cols: int = COLS) -> str:
-    return "\n".join(line[cols - DETAIL_WIDTH :] for line in session.screen_lines)
+def _open_inspector(session: TuiSession) -> str:
+    """Open the item inspector for the selected row and return its screen."""
+    session.send(ENTER, note="open the item inspector")
+    return session.wait_for_screen_text(
+        "Inspector ·", timeout=8.0, description="item inspector overlay"
+    )
+
+
+def _close_inspector(session: TuiSession) -> None:
+    session.send(ESC, note="close the item inspector")
+    session.wait_until_screen(
+        lambda view: "Inspector ·" not in view,
+        timeout=8.0,
+        description="item inspector closes",
+    )
+
+
+def _assert_inspector_describes(session: TuiSession, title: str) -> None:
+    """Enter opens the overlay for the selected row; Esc returns unchanged."""
+    screen = _open_inspector(session)
+    assert title in screen, (
+        f"the inspector did not describe the selected task {title!r}\n"
+        f"screen:\n{screen}\nEvidence: {session.evidence_dir}"
+    )
+    _close_inspector(session)
 
 
 # ---------------------------------------------------------------------------
@@ -328,22 +350,14 @@ def test_selection_survives_view_switch_and_restart(session_factory, tmp_path):
         f"but {first_title!r} was marked\nscreen:\n{session.screen_text}\n"
         f"Evidence: {session.evidence_dir}"
     )
-    assert first_title in _detail_pane_text(session), (
-        "the detail pane did not describe the selected task "
-        f"{first_title!r}\nscreen:\n{session.screen_text}\n"
-        f"Evidence: {session.evidence_dir}"
-    )
+    _assert_inspector_describes(session, first_title)
 
     # Move to the third row with two real key presses.
     expected_title = rows[2]
     session.send_keys(b"j", b"j", delay=0.15)
     wait_selected(session, expected_title, titles)
     assert expected_title != first_title
-    assert expected_title in _detail_pane_text(session), (
-        "the detail pane did not follow the moved selection "
-        f"{expected_title!r}\nscreen:\n{session.screen_text}\n"
-        f"Evidence: {session.evidence_dir}"
-    )
+    _assert_inspector_describes(session, expected_title)
 
     # Round-trip through another view and back.
     switch_view(session, b"]", "Board")
@@ -353,10 +367,7 @@ def test_selection_survives_view_switch_and_restart(session_factory, tmp_path):
     switch_view(session, b"[", "Tasks")
     wait_tasks_painted(session, titles)
     wait_selected(session, expected_title, titles)
-    assert expected_title in _detail_pane_text(session), (
-        "the detail pane lost the selected task after switching views\n"
-        f"screen:\n{session.screen_text}\nEvidence: {session.evidence_dir}"
-    )
+    _assert_inspector_describes(session, expected_title)
 
     session.quit_via(b"q")
     session.assert_clean_exit()
@@ -387,10 +398,7 @@ def test_selection_survives_view_switch_and_restart(session_factory, tmp_path):
     wait_view(restarted, "Tasks")
     wait_tasks_painted(restarted, titles)
     wait_selected(restarted, expected_title, titles)
-    assert expected_title in _detail_pane_text(restarted), (
-        "the detail pane did not restore the selected task after restart\n"
-        f"screen:\n{restarted.screen_text}\nEvidence: {restarted.evidence_dir}"
-    )
+    _assert_inspector_describes(restarted, expected_title)
     assert "panicked at" not in restarted.text
 
     restarted.quit_via(b"q")

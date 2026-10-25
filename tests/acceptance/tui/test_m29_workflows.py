@@ -61,7 +61,6 @@ from settle import wait_until_settled  # noqa: E402
 
 CTRL_S = b"\x13"
 
-DETAIL_WIDTH_140 = 30
 COLS = 140
 ROWS = 40
 
@@ -301,8 +300,6 @@ def _focused_pane(screen_text: str) -> str | None:
     for line in screen_text.splitlines():
         if "┏ Orbit" in line:
             return "sidebar"
-        if "┏ Details" in line:
-            return "detail"
         if "┏" in line:
             return "workspace"
     return None
@@ -324,7 +321,7 @@ def wait_workspace_focus(session: TuiSession, component_title: str) -> None:
 
 
 def focus_sidebar(session: TuiSession) -> None:
-    """Tab until the sidebar owns the heavy border (wide layouts add Detail)."""
+    """Tab until the sidebar owns the heavy border (two panes, always)."""
     for _ in range(3):
         if _focused_pane(session.screen_text) == "sidebar":
             return
@@ -394,8 +391,21 @@ def wait_selected_title(session: TuiSession, title: str, titles: list[str]) -> N
     )
 
 
-def _detail_pane_text(session: TuiSession, cols: int = COLS) -> str:
-    return "\n".join(line[cols - DETAIL_WIDTH_140 :] for line in session.screen_lines)
+def _open_inspector(session: TuiSession) -> str:
+    """Open the item inspector overlay for the selected row."""
+    session.send(ENTER, note="open the item inspector")
+    return session.wait_for_screen_text(
+        "Inspector ·", timeout=8.0, description="item inspector overlay"
+    )
+
+
+def _close_inspector(session: TuiSession) -> None:
+    session.send(ESC, note="close the item inspector")
+    session.wait_until_screen(
+        lambda view: "Inspector ·" not in view,
+        timeout=8.0,
+        description="item inspector closes",
+    )
 
 
 def _sidebar_selected_name(screen_text: str, names: list[str]) -> str | None:
@@ -768,11 +778,12 @@ def test_everyday_task_editing_workflow(session_factory, tmp_path):
         description="updated table row with the high priority",
     )
     assert "PRIORITY" in session.screen_text, session.screen_text
-    detail = _detail_pane_text(session)
+    detail = _open_inspector(session)
     assert "Priority" in detail and "high" in detail, (
-        "the detail pane did not show the new priority\n"
-        f"screen:\n{session.screen_text}\nEvidence: {session.evidence_dir}"
+        "the inspector did not show the new priority\n"
+        f"screen:\n{detail}\nEvidence: {session.evidence_dir}"
     )
+    _close_inspector(session)
     stored = _task_row(workspace, task_id)
     assert stored[1] == updated_title, stored
     assert stored[4] == "high", stored
@@ -887,24 +898,24 @@ def test_everyday_task_editing_workflow(session_factory, tmp_path):
     assert stored[2] == "in_progress", stored
 
     # Detail and activity for the same card.
-    session.send(ENTER, note="inspect the task detail")
-    session.wait_for_screen_text(" · detail", timeout=8.0, description="detail modal")
+    session.send(ENTER, note="inspect the task")
+    session.wait_for_screen_text("Inspector ·", timeout=8.0, description="inspector")
     detail_screen = session.wait_for_screen_text(
         "Description: First line of context",
         timeout=8.0,
-        description="detail shows the multiline description",
+        description="inspector shows the multiline description",
     )
     assert updated_title in detail_screen, (
-        f"the detail modal described another task\nscreen:\n{detail_screen}\n"
+        f"the inspector described another task\nscreen:\n{detail_screen}\n"
         f"Evidence: {session.evidence_dir}"
     )
-    session.send(ESC, note="close the detail modal")
+    session.send(ESC, note="close the inspector")
     wait_until_settled(
         session,
-        lambda view: " · detail" not in view
+        lambda view: "Inspector ·" not in view
         and _board_settled(view, [prefix], prefix),
         timeout=8.0,
-        description="detail modal closes and the board repaints",
+        description="inspector closes and the board repaints",
     )
     _wait_board_card_selected(session, prefix)
 
@@ -1423,13 +1434,13 @@ def test_quit_from_project_details_is_direct(session_factory, tmp_path):
     wait_project_header(session, "Quit Details")
     switch_view(session, b"]", "Tasks")
     wait_tasks_painted(session, ["Detail task"])
-    session.send(ENTER, note="open the task detail")
-    session.wait_for_screen_text(" · detail", timeout=8.0, description="detail modal")
+    session.send(ENTER, note="open the task inspector")
+    session.wait_for_screen_text("Inspector ·", timeout=8.0, description="inspector")
 
-    session.send(CTRL_Q, note="quit from the project detail modal")
+    session.send(CTRL_Q, note="quit from the project inspector")
     session.assert_clean_exit()
     assert "Quit Orbit?" not in session.text, (
-        "a read-only detail modal must quit without an unsaved-input prompt\n"
+        "a read-only inspector must quit without an unsaved-input prompt\n"
         f"Evidence: {session.evidence_dir}"
     )
 

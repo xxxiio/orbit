@@ -48,7 +48,8 @@ fn fresh_workspace_renders_home_without_querying_storage_in_renderer() {
     let text = buffer_text(&mut app, 120, 30);
     assert!(text.contains("ORBIT"), "{text}");
     assert!(text.contains("Today / Next"), "{text}");
-    assert!(text.contains("Details"), "{text}");
+    // The permanent Details column is gone: the inspector is opened on demand.
+    assert!(!text.contains("Details"), "{text}");
 }
 
 #[test]
@@ -161,7 +162,7 @@ fn narrow_terminals_render_a_single_readable_pane() {
     );
     assert!(
         !text.contains("Details"),
-        "narrow layout should not reserve a detail pane: {text}"
+        "the shell must never reserve a detail pane: {text}"
     );
 }
 
@@ -240,13 +241,15 @@ fn duplicate_record_submission_is_ignored_until_refresh() {
 }
 
 #[test]
-fn focus_cycles_between_three_panes_on_wide_terminals() {
+fn focus_cycles_between_the_two_painted_panes() {
     let mut app = app();
     app.set_viewport(120);
     app.focus = FocusPane::Workspace;
     app.focus_next(false);
-    assert_eq!(app.focus, FocusPane::Detail);
+    assert_eq!(app.focus, FocusPane::Sidebar);
     app.focus_next(false);
+    assert_eq!(app.focus, FocusPane::Workspace);
+    app.focus_next(true);
     assert_eq!(app.focus, FocusPane::Sidebar);
 }
 

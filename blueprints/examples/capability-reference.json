@@ -1,0 +1,57 @@
+{
+  "id": "capability-reference",
+  "version": 1,
+  "name": "Capability reference",
+  "description": "Demonstrates one durable, explicitly authorized capability action.",
+  "required_capabilities": [
+    "orbit.reference.work-item-note"
+  ],
+  "work_items": [
+    {
+      "id": "note-task",
+      "name": "Note task",
+      "initial_state": "open",
+      "states": [
+        "open",
+        "closed"
+      ],
+      "fields": [],
+      "transitions": [
+        {
+          "from": "open",
+          "to": "closed",
+          "actions": [
+            {
+              "id": "append_note",
+              "capability": "orbit.reference.work-item-note",
+              "description": "Append a durable note to this blueprint work item",
+              "parameters": {
+                "note": ""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "description": "Work items with durable capability notes.",
+      "layout": {
+        "type": "vertical"
+      },
+      "components": [
+        {
+          "id": "work",
+          "type": "kanban",
+          "source": "work_items",
+          "group_by": "state",
+          "limit": 100,
+          "title": "Work"
+        }
+      ]
+    }
+  ]
+}

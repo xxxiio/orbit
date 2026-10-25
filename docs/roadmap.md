@@ -85,7 +85,7 @@ features become opt-in packages. No cloud requirement.
 |---|---|---|
 | **I1: Blueprint model and registry** | Complete | Versioned manifests, registry, project binding, export/import, validator; blueprint crate tests and local/connected smoke |
 | **I2: Typed properties and lifecycle** | Complete | Typed fields, states, transitions, guards, templates, event history; smoke covers typed properties, guards, templates, capability refusal |
-| **I3: Composable capabilities and safe actions** | **Materially incomplete** | Capability catalog, action intents, executor registry and local `agent.launch` primitives exist, but every public publish path passes an empty installed-capability set, so capability-requiring blueprints cannot be installed; no CLI/MCP/HTTP action request/execute surface; executor has no in-repo callers |
+| **I3: Composable capabilities and safe actions** | **Partial** | Local CLI install/authorize/request/execute/reconcile and the deterministic reference capability are implemented, including the installation gate on publication (M25 EC-003). Connected parity (EC-004), previewable upgrades (EC-005) and habit extraction (EC-006) remain open; MCP exposes no capability tools. |
 | **I4: Bundled packs and domain extraction** | Partial | Four manifests exist; habit recurrence/streak calculation remains core, not an opt-in capability package |
 | **I5: Public headless surfaces** | Partial | CLI and HTTP blueprint surfaces plus receipts exist; connected MCP writes bypass the outbox/receipts; no blueprint upgrade operation; lost-ack blueprint replay lacks an E2E test |
 

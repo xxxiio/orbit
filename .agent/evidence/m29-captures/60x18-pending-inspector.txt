@@ -1,17 +1,17 @@
  ORBIT › Projects
  Getting started: press g p, then c, to create your first
 pr╔ Pending commands · 1 queued (not accepted) ══════════╗s
-▸ ║▸ [pending] project   project command project-3915081-║
+▸ ║▸ [pending] project   project command project-4113251-║
 Pr║                                                      ║…
   ║                                                      ║
 ┏ ║                                                      ║━┓
 ┃N║                                                      ║ ┃
-┃ ║command: command-3915081-1792850164309915062-2        ║ ┃
+┃ ║command: command-4113251-1792859740174890253-2        ║ ┃
 ┃ ║kind: project                                         ║ ┃
 ┃ ║state: pending                                        ║ ┃
 ┃ ║attempts: not recorded by this replica                ║ ┃
 ┃ ║local intent: {"name":"Pending                        ║ ┃
-┃ ║Scope","project_id":"project-3915081-17928501643096990║ ┃
+┃ ║Scope","project_id":"project-4113251-17928597401746290║ ┃
 ┃ ║f flush · c review conflict · Enter detail · r refresh║ ┃
 ┗━╚══════════════════════════════════════════════════════╝━┛
  Actions: / Search · r Refresh · a more · q quit

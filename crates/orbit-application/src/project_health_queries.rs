@@ -1,4 +1,5 @@
 use orbit_domain::{ActivitySubject, ProjectId, ProjectMode, ProjectProgressSignal, TaskStatus};
+use orbit_habit_capability::HabitRecurrenceStatus;
 use orbit_progress::{
     BlockerExposure, CanonicalTaskProgress, HealthPolicy, ProgressRollup, ProjectHealthProjection,
     ProjectProgressContribution, ProjectProgressEvidence, RecentActivityEvidence,
@@ -173,6 +174,7 @@ pub struct ModeAwareProjectHealthSnapshot {
     pub unavailable_signals: Vec<ProjectProgressSignal>,
 }
 
+#[allow(clippy::too_many_arguments)] // Explicit read inputs keep the existing public surface stable.
 pub fn get_mode_aware_project_health_snapshot<R>(
     repository: &R,
     clock: &impl Clock,
@@ -181,6 +183,7 @@ pub fn get_mode_aware_project_health_snapshot<R>(
     as_of_ms: i64,
     activity_lookback_minutes: u64,
     health_policy: HealthPolicy,
+    recurrence: &HabitRecurrenceStatus,
 ) -> Result<ModeAwareProjectHealthSnapshot, ApplicationError>
 where
     R: ProjectRepository
@@ -204,8 +207,9 @@ where
         activity_lookback_minutes,
         health_policy,
     )?;
-    let bound_evidence =
-        crate::get_combined_project_evidence_report(repository, project_id, periods, as_of_ms)?;
+    let bound_evidence = crate::get_combined_project_evidence_report(
+        repository, project_id, periods, as_of_ms, recurrence,
+    )?;
     let mut available_signals = Vec::new();
     let mut unavailable_signals = Vec::new();
     let mut values = Vec::new();

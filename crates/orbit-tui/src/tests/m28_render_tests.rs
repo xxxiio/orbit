@@ -195,12 +195,16 @@ fn tab_focus_and_key_prefix_do_not_collide() {
     handle_key(&mut app, KeyCode::Char('a'), KeyModifiers::NONE).unwrap();
     assert_eq!(app.screen, Screen::Agents);
     assert!(app.prefix.is_none());
-    handle_key(&mut app, KeyCode::Tab, KeyModifiers::NONE).unwrap();
-    assert_eq!(app.focus, FocusPane::Detail);
+    // Only the two painted panes participate; there is no hidden detail stop
+    // even at the wide breakpoint.
     handle_key(&mut app, KeyCode::Tab, KeyModifiers::NONE).unwrap();
     assert_eq!(app.focus, FocusPane::Sidebar);
+    handle_key(&mut app, KeyCode::Tab, KeyModifiers::NONE).unwrap();
+    assert_eq!(app.focus, FocusPane::Workspace);
     handle_key(&mut app, KeyCode::BackTab, KeyModifiers::NONE).unwrap();
-    assert_eq!(app.focus, FocusPane::Detail);
+    assert_eq!(app.focus, FocusPane::Sidebar);
+    handle_key(&mut app, KeyCode::BackTab, KeyModifiers::NONE).unwrap();
+    assert_eq!(app.focus, FocusPane::Workspace);
 }
 
 #[test]

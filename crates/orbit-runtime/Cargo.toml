@@ -8,6 +8,7 @@ license.workspace = true
 orbit-blueprint = { path = "../orbit-blueprint" }
 orbit-application = { path = "../orbit-application" }
 orbit-domain = { path = "../orbit-domain" }
+orbit-habit-capability = { path = "../orbit-habit-capability" }
 orbit-planner = { path = "../orbit-planner" }
 orbit-progress = { path = "../orbit-progress" }
 orbit-storage = { path = "../orbit-storage" }

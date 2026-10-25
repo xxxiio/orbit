@@ -1354,6 +1354,36 @@ impl AuthorityConnection {
             Self::Remote { replica, .. } => Ok(replica.markdown_unresolved()?),
         }
     }
+    /// Queue one blueprint mutation in the canonical ordered outbox.
+    ///
+    /// Connected blueprint writes have no direct transport path: the frozen
+    /// route and payload are durable local intent until the same global flush
+    /// that carries every other command family acknowledges them. Embedded
+    /// authority applies blueprint mutations synchronously and keeps no outbox.
+    pub fn queue_blueprint_transport(
+        &mut self,
+        id: &str,
+        route: &str,
+        body: &Value,
+    ) -> Result<CommandDisposition, ClientConnectionError> {
+        match self {
+            Self::Embedded(_) => Err(ClientConnectionError::Unsupported(
+                "embedded authority commits blueprint mutations immediately and keeps no outbox",
+            )),
+            Self::Remote { replica, .. } => {
+                replica.queue_blueprint_transport(id, route, body)?;
+                Ok(CommandDisposition::Pending)
+            }
+        }
+    }
+    /// Unresolved blueprint intentions, in global queue order. An entry here is
+    /// durable local intent only, never evidence of server acceptance.
+    pub fn blueprint_pending(&self) -> Result<Value, ClientConnectionError> {
+        match self {
+            Self::Embedded(_) => Ok(json!({"accepted":false,"queued":0,"commands":[]})),
+            Self::Remote { replica, .. } => Ok(replica.blueprint_pending()?),
+        }
+    }
     pub fn flush_markdown(&mut self) -> Result<FlushOutcome, ClientConnectionError> {
         match self {
             Self::Embedded(_) => Ok(FlushOutcome::Empty),

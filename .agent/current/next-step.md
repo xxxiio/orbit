@@ -5,102 +5,98 @@ template_digest: "b88835ce70ef09490ad55db0e910dc05ff721384d6ccad8d45eafedd7654aa
 project_owned: true
 record_contract: next-step
 record_schema_version: 1
-id: NEXT-0010
+id: NEXT-0012
 status: completed
-milestone_id: MILESTONE-0029
-advances_exit_criteria: [EC-001, EC-002, EC-003, EC-004, EC-005, EC-006, EC-007, EC-008, EC-009, EC-010]
+milestone_id: MILESTONE-0030
+advances_exit_criteria: [EC-001, EC-002, EC-003, EC-004, EC-005, EC-006, EC-007, EC-008]
 ---
 
 # Next Deterministic Step
 
 ## Objective
 
-Deliver M29: restore the TUI's working context, make actions and forms
-discoverable and safe, adapt layout from 60x18 to 160x45, consolidate local and
-connected operation into one shell, extract the oversized modules and improve
-measured interaction latency without changing M28 product capabilities.
+Fix the navigation rail so the selected sidebar entry drives the workspace, then
+finish the remaining instruction scope: connected MCP blueprint outbox parity
+(M25 EC-004), previewable blueprint upgrades (EC-005) and habit recurrence
+ownership by an opt-in capability package (EC-006).
 
 ## Why this is next
 
-M28 completed the functional surfaces; daily use exposed interaction defects and
-maintenance concentration. M29 was the only product-quality work that could be
-completed locally and materially improves every project. It is now complete;
-no further milestone is authorised by this record.
+The rail defect blocked everyday navigation, and the three open M25 criteria were
+the only remaining blueprint work that could be completed and verified locally;
+M27 is externally blocked.
 
 ## Preconditions
 
-- MILESTONE-0028 completed with its regression tests.
-- A local `orbit-server` binary for connected recovery acceptance.
-- Ratatui/Crossterm renderer and the existing PTY harness.
+- M30 I1 capability composition, receipts and TUI shell.
+- Existing replica outbox (`queue_blueprint_transport`, `flush`) and blueprint
+  command receipts.
+- Existing habit occurrence storage and bundled habits workflow.
 
 ## Inputs
 
-- `crates/orbit-tui/src/{main.rs,input/,app/,render/,backend.rs,ui_state.rs}`
-- `crates/orbit-client/src/unified.rs`
-- `tests/acceptance/tui/`
-- `scripts/tui-fixture.py`, `tests/acceptance/tui/perf_probe.py`
+- `crates/orbit-tui/src/{input,app}`, `crates/orbit-mcp/src`, `crates/orbit-client/src`,
+  `crates/orbit-storage/src/blueprints*`, `crates/orbit-runtime/src`,
+  `crates/orbit-cli/src/blueprint_commands.rs`, `crates/orbit-domain/src/habit_tracking.rs`.
+- `tests/acceptance/{tui,mcp,local_cli_workflows.py}` and `docs/**`.
 
 ## Ordered actions
 
-1. Persist and restore the stable selected entity, component and scroll offsets.
-2. Add the compact action bar, grouped menu, ranked palette, quick edit and
-   field-level form validation.
-3. Implement component-aware layout, Kanban windowing, table priority and a
-   restrained no-colour-safe theme.
-4. Port pending/conflict inspection and the record console into the shared
-   shell; delete the legacy connected presentation.
-5. Extract `app/`, `input/`, `render/`; measure the realistic fixture and fix
-   only measured hot spots.
-6. Run PTY Scenarios A–G, capture real screens, update docs and records.
+1. Fix `Enter` precedence and rail focus; add regression and PTY coverage.
+2. Route connected MCP blueprint writes through the outbox with honest
+   dispositions, receipts, offline replay and lost-ack recovery.
+3. Add preview/apply blueprint upgrades with typed diffs, warnings, blockers and
+   fingerprint fencing.
+4. Extract habit recurrence into `orbit-habit-capability`, register the
+   capability and gate streak/evidence reads on installation.
+5. Update docs, records and evidence; re-run workspace/PTY/MCP/CLI acceptance.
 
 ## Expected outputs
 
-- Durable navigation context and a coherent daily-use interface.
-- One shell for local and connected operation with honest pending state.
-- Maintainable module boundaries and recorded performance evidence.
+- A rail that drives the workspace on every screen.
+- Outbox-backed connected blueprint writes with immutable receipts.
+- Explicit, previewable, fenced blueprint upgrades.
+- Habit recurrence owned by an opt-in trusted capability package.
+- Passing focused and workspace acceptance, docs and records.
 
 ## Acceptance criteria
 
-- [x] NS-001: Selection, component, focus and scroll restore across view changes
-  and restart, with safe fallback for deleted/reordered items and corrupt files.
-- [x] NS-002: High-value actions are discoverable with keys that match their
-  behaviour; the palette ranks and refuses disabled actions.
-- [x] NS-003: Forms and quick edit behave predictably and preserve input.
-- [x] NS-004: Boards, tables and details stay readable at every supported size.
-- [x] NS-005: One shared shell handles local and connected operation; the legacy
-  presentation is deleted without capability loss.
-- [x] NS-006: The event loop is simple, dispatch has one owner, and measured
-  performance improves where the data justified it.
-- [x] NS-007: PTY Scenarios A–G pass; documentation and captures match behaviour.
+- [x] NS-001: `Enter` activates the focused rail row on every screen; top-level
+  destinations keep rail focus; project activation moves into the workspace.
+- [x] NS-002: Connected blueprint writes queue first and report
+  accepted/pending/conflict with offline and lost-ack replay.
+- [x] NS-003: Upgrades preview typed diffs with warnings/blockers and a
+  fingerprint; apply requires `--confirm` plus the exact fingerprint and never
+  happens automatically.
+- [x] NS-004: Habit recurrence lives in the opt-in capability package and reports
+  an explicit unavailable status when not installed/granted.
+- [x] NS-005: Workspace, clippy, fmt, PTY, MCP, local CLI, docs and contracts
+  suites pass and the records reflect only verified behaviour.
 
 ## Validation
 
 ```sh
-cargo test --workspace --offline
-cargo clippy --offline -p orbit-domain -p orbit-application -p orbit-storage \
-  -p orbit-runtime -p orbit-sync -p orbit-blueprint -p orbit-client -p orbit-ui \
-  -p orbit-tui -p orbit-mcp -p orbit-cli -p orbit-server --all-targets -- -D warnings
 cargo fmt --all -- --check
-python3 -m pytest -q tests/contracts
-python3 -m pytest -q tests/acceptance/tui
-ORBIT_TUI_FULL_FIXTURE=1 python3 -m pytest -q tests/acceptance/tui/test_m29_fixture.py
-python3 scripts/tui-captures.py
-./scripts/m15-full-automated.sh --profile full
+cargo test --workspace --offline
+cargo clippy -p orbit-domain -p orbit-application -p orbit-storage -p orbit-runtime \
+  -p orbit-sync -p orbit-blueprint -p orbit-client -p orbit-ui -p orbit-tui \
+  -p orbit-mcp -p orbit-cli -p orbit-server -p orbit-progress \
+  -p orbit-habit-capability --all-targets -- -D warnings
+python3 -m pytest -q tests/acceptance/tui tests/acceptance/mcp tests/contracts tests/documentation
+python3 tests/acceptance/local_cli_workflows.py --binary target/debug/orbit
+python3 -m pytest -q tests/acceptance/test_m30_capability_workflow.py
+getdone-validate-project
 ```
-
-Observed: workspace 1,563 passed; contracts 43; TUI 54 passed/1 skipped; full
-fixture 2 passed; 21 captures; M15 45/47 (withheld release workflow).
 
 ## Stop conditions
 
-- A blocking data-loss, authority or everyday-use defect remains.
-- PTY Scenarios A–G cannot run against the real binary.
-- Documentation claims exceed measured behaviour.
+- A blocking authority, data-loss or unauthorized-execution defect remains.
+- A criterion cannot be evidenced end to end.
 
-None of these applied at completion.
+None applied at completion.
 
 ## Out of scope
 
-- New domain capabilities or a Flutter renderer.
-- Per-device ACLs, server attachment GC and live Herdr acceptance.
-- Public release verification.
+- Connected capability execution and MCP capability tools.
+- M27 public release verification.
+- Per-device project ACLs and server attachment GC.

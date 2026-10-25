@@ -118,6 +118,29 @@ impl AuthoritativeHost {
         )
     }
 
+    /// Transition using the project's durable capability grants. A guarded
+    /// transition that requires a capability becomes usable once that capability
+    /// is authorized for the item's project; the renderer never supplies grants.
+    pub fn transition_project_work_item_authorized(
+        &mut self,
+        id: &str,
+        to: &str,
+        expected_revision: u64,
+    ) -> Result<orbit_blueprint::BlueprintWorkItem, RepositoryError> {
+        let item = self
+            .authority
+            .conn
+            .blueprint_work_item(id)?
+            .ok_or(RepositoryError::Conflict)?;
+        let grants = self
+            .authority
+            .conn
+            .authorized_capabilities(&item.project_id)?;
+        self.authority
+            .conn
+            .transition_blueprint_work_item(id, to, expected_revision, &grants)
+    }
+
     pub fn add_project_work_item_prerequisite(
         &mut self,
         item_id: &str,

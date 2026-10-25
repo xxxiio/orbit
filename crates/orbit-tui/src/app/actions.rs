@@ -111,6 +111,19 @@ impl App {
                 push_unique_action(&mut actions, action);
             }
         }
+        // Trusted capability actions for the selected work item. Unavailable
+        // offers stay listed (disabled with their reason) so the menu/palette
+        // explain why instead of hiding the action. Connected mode's closed
+        // allowlist below removes them: there is no parity (M25 EC-004).
+        if let Some(item_id) = self
+            .selected_item()
+            .filter(|item| item.kind == ItemKind::WorkItem)
+            .map(|item| item.id.clone())
+        {
+            for action in self.capability_actions_for(&item_id) {
+                push_unique_action(&mut actions, action);
+            }
+        }
         if self.client.is_connected() {
             // Closed allowlist for connected mode. Attachment list/import/open
             // and export are supported; `purge_attachments` stays out because
@@ -135,7 +148,6 @@ impl App {
                         | "refresh"
                         | "command_palette"
                         | "search"
-                        | "toggle_detail"
                         | "help"
                         | "go_home"
                         | "go_inbox"
@@ -235,7 +247,6 @@ impl App {
                 && !self.client.is_connected())
             .then_some("t"),
             "flush_pending" => self.client.is_connected().then_some("f"),
-            "toggle_detail" => Some("D"),
             "preview_plan" => (self.screen == Screen::Project).then_some("p"),
             "apply_plan" => {
                 (self.screen == Screen::Project && self.pending_plan.is_some()).then_some("P")
@@ -549,28 +560,6 @@ impl App {
             primary,
             selected: 0,
         });
-    }
-
-    pub fn open_detail(&mut self) {
-        match self.detail_model() {
-            Some(mut detail) => {
-                if detail.kind == ItemKind::Knowledge
-                    && let Ok(notes) = self.client.list_knowledge()
-                    && let Some(note) = notes
-                        .into_iter()
-                        .find(|note| note.id == detail.title || note.title == detail.title)
-                {
-                    detail.note = note
-                        .body_markdown
-                        .lines()
-                        .take(200)
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                }
-                self.modal = Some(Modal::Detail(detail));
-            }
-            None => self.notify("Select an item first", StatusKind::Warning),
-        }
     }
 
     pub fn open_palette(&mut self) {
@@ -925,29 +914,15 @@ impl App {
                 self.active_component = component;
                 self.selected = index;
                 self.focus = FocusPane::Workspace;
-                self.open_detail();
+                self.open_inspector();
                 // Record the row that was actually selected, not just rows
                 // that were already active when the palette opened.
                 destination = self.selected_item().map(|item| format!("item:{}", item.id));
                 false
             }
             PaletteAction::OpenKnowledge(id) => {
-                if let Ok(notes) = self.client.list_knowledge()
-                    && let Some(note) = notes.into_iter().find(|note| note.id == id)
-                {
-                    self.modal = Some(Modal::Detail(DetailModel {
-                        title: note.title.clone(),
-                        subtitle: format!("{} · {}", note.kind, note.status),
-                        status: note.status,
-                        kind: ItemKind::Knowledge,
-                        fields: vec![
-                            ("id".into(), note.id),
-                            ("kind".into(), note.kind),
-                            ("provenance".into(), note.provenance),
-                        ],
-                        note: note.body_markdown,
-                        actions: Vec::new(),
-                    }));
+                if self.open_inspector_for(InspectorSubject::Knowledge { id }) {
+                    // Inspecting a note is a successful destination.
                 } else {
                     self.notify("Knowledge note not found", StatusKind::Warning);
                 }
@@ -982,6 +957,16 @@ impl App {
             );
             return false;
         }
+        if action.id.starts_with("capability:") {
+            match self.capability_view_for_action(&action).cloned() {
+                Some(view) => self.start_capability_action(&view),
+                None => self.notify(
+                    "Capability offers changed; refresh the project and try again",
+                    StatusKind::Warning,
+                ),
+            }
+            return false;
+        }
         match action.id.as_str() {
             "open" if self.screen == Screen::Projects => {
                 if let Some(id) = action.payload {
@@ -990,7 +975,9 @@ impl App {
                     self.activate_project_selection();
                 }
             }
-            "open" | "open_knowledge" => self.open_detail(),
+            "open" | "open_knowledge" => {
+                self.open_inspector();
+            }
             "create_task" => self.start_form(FormMode::NewTask {
                 project_id: self
                     .project
@@ -1407,7 +1394,6 @@ impl App {
                 ),
             },
             "refresh" => self.refresh_current(),
-            "toggle_detail" => self.toggle_detail(),
             "command_palette" => self.open_palette(),
             "search" => self.open_search(),
             "help" => self.modal = Some(Modal::Help),
@@ -1663,6 +1649,69 @@ impl App {
                     ),
                 }
             }
+            PendingAction::ExecuteCapabilityAction {
+                command_id,
+                item_id,
+                capability,
+                action_id,
+                external_effect,
+            } => match self.client.execute_capability_action(&command_id) {
+                Ok(receipt) => {
+                    let kind = match receipt.outcome.as_str() {
+                        "succeeded" => StatusKind::Success,
+                        "uncertain" => StatusKind::Warning,
+                        _ => StatusKind::Error,
+                    };
+                    self.notify(
+                        format!(
+                            "Capability action {action_id} ({capability}) on {item_id}: {}{}",
+                            receipt.outcome,
+                            if external_effect {
+                                " · declared external effect"
+                            } else {
+                                ""
+                            }
+                        ),
+                        kind,
+                    );
+                    self.refresh_capability_actions();
+                    self.show_capability_result(receipt);
+                }
+                Err(error) => self.notify(
+                    format!(
+                        "Executing capability action {action_id} ({capability}) on {item_id} failed: {}",
+                        error.message
+                    ),
+                    StatusKind::Error,
+                ),
+            },
+            PendingAction::ReconcileCapabilityAction {
+                command_id,
+                succeed,
+            } => match self.client.reconcile_capability_action(&command_id, succeed) {
+                Ok(receipt) => {
+                    self.notify(
+                        format!(
+                            "Capability action {command_id} reconciled as {}",
+                            receipt.outcome
+                        ),
+                        if succeed {
+                            StatusKind::Success
+                        } else {
+                            StatusKind::Warning
+                        },
+                    );
+                    self.refresh_capability_actions();
+                    self.show_capability_result(receipt);
+                }
+                Err(error) => self.notify(
+                    format!(
+                        "Reconciling capability action {command_id} was refused: {}",
+                        error.message
+                    ),
+                    StatusKind::Error,
+                ),
+            },
         }
     }
 
@@ -1995,9 +2044,6 @@ impl App {
             format!("Today horizon set to {}h", self.planning_hours),
             StatusKind::Info,
         );
-        // Replacing the Home components can change which row is selected, so
-        // the detail pane is reseeded here instead of on the next frame.
-        self.seed_detail_cache();
     }
 
     /// Attachment owner kind for an item, when the entity supports attachments.
@@ -2031,9 +2077,9 @@ impl App {
 
     /// Toggle one criterion's completion through the backend.
     ///
-    /// Task status is never changed here. The docked detail pane shows
-    /// `Acceptance: done/total`, so a successful mutation invalidates its cache
-    /// and the next paint re-reads the accepted count.
+    /// Task status is never changed here. An open inspector shows
+    /// `Acceptance: done/total`, so a successful mutation rebuilds it from
+    /// accepted state instead of leaving a stale count.
     pub(crate) fn set_criterion_completed(
         &mut self,
         task_id: String,
@@ -2044,8 +2090,7 @@ impl App {
             self.client
                 .set_acceptance_criterion_completed(task_id, criterion_id, completed);
         if result.is_ok() {
-            self.invalidate_detail_cache();
-            self.seed_detail_cache();
+            self.refresh_inspector();
         }
         result
     }
@@ -2061,14 +2106,13 @@ impl App {
             .client
             .move_acceptance_criterion(task_id, criterion_id, position);
         if result.is_ok() {
-            self.invalidate_detail_cache();
-            self.seed_detail_cache();
+            self.refresh_inspector();
         }
         result
     }
 
-    /// Remove one criterion. The detail pane's `Acceptance` count changes, so
-    /// its cache is invalidated for both accepted and queued outcomes.
+    /// Remove one criterion. An open inspector's `Acceptance` count changes, so
+    /// it is rebuilt from accepted state.
     pub(crate) fn remove_criterion(
         &mut self,
         task_id: String,
@@ -2078,31 +2122,29 @@ impl App {
             .client
             .remove_acceptance_criterion(task_id, criterion_id);
         if result.is_ok() {
-            self.invalidate_detail_cache();
-            self.seed_detail_cache();
+            self.refresh_inspector();
         }
         result
     }
 
-    /// Remove one attachment. The detail pane's `Attachments` count changes, so
-    /// its cache is invalidated before the caller reopens the modal.
+    /// Remove one attachment. An open inspector's `Attachments` count changes,
+    /// so it is rebuilt before the caller reopens the modal.
     pub(crate) fn remove_attachment(
         &mut self,
         attachment_id: String,
     ) -> Result<bool, orbit_client::ClientError> {
         let result = self.client.remove_attachment(attachment_id);
         if result.is_ok() {
-            self.invalidate_detail_cache();
-            self.seed_detail_cache();
+            self.refresh_inspector();
             self.refresh_pending_count();
         }
         result
     }
 
     /// Stage or import one attachment through the backend. A connected stage
-    /// adds to the pending sum, so the cached count is refreshed here. The
-    /// detail pane's `Attachments` count also changes, so the cache is
-    /// invalidated in this wrapper rather than relying on the form caller.
+    /// adds to the pending sum, so the cached count is refreshed here. An open
+    /// inspector's `Attachments` count also changes, so it is rebuilt in this
+    /// wrapper rather than relying on the form caller.
     pub(crate) fn import_attachment(
         &mut self,
         owner_kind: String,
@@ -2114,8 +2156,7 @@ impl App {
             .client
             .import_attachment(owner_kind, owner_id, path, description);
         if result.is_ok() {
-            self.invalidate_detail_cache();
-            self.seed_detail_cache();
+            self.refresh_inspector();
             self.refresh_pending_count();
         }
         result
@@ -2357,7 +2398,7 @@ impl App {
     }
 }
 
-fn push_unique_action(actions: &mut Vec<AvailableAction>, action: AvailableAction) {
+pub(crate) fn push_unique_action(actions: &mut Vec<AvailableAction>, action: AvailableAction) {
     if !actions
         .iter()
         .any(|existing| existing.id == action.id && existing.payload == action.payload)

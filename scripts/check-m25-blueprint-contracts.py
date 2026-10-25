@@ -17,8 +17,22 @@ required = {
     'crates/orbit-blueprint/src/lib.rs': ('pub struct Blueprint',),
     'crates/orbit-cli/src/blueprint_commands.rs': ('pub enum BlueprintSubcommand', 'Validate {', 'Import {', 'ApplyTemplate {'),
     'crates/orbit-runtime/src/blueprint_execution.rs': ('BlueprintExecutorRegistry',),
+    'crates/orbit-runtime/src/capability_composition.rs': (
+        'TrustedComposition',
+        'request_capability_action',
+        'execute_capability_action',
+        'reconcile_capability_action',
+    ),
+    'crates/orbit-storage/src/capability_installs.rs': (
+        'install_capability',
+        'grant_capability',
+        'record_capability_receipt',
+    ),
     'crates/orbit-storage/src/blueprint_command_receipts.rs': (),
     'crates/orbit-mcp/src/blueprint_tools.rs': (),
+    'blueprints/examples/capability-reference.json': (
+        'orbit.reference.work-item-note',
+    ),
 }
 for rel, tokens in required.items():
     path = ROOT / rel

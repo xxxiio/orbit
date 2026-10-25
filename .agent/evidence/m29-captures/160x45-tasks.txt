@@ -1,45 +1,45 @@
  ORBIT › Atlas Console  Basic v1   3 projects · 1 inbox
-╭ Orbit ────────────╮   Overview │ ▸ Tasks │   Board │   Timeline  [ ] switch view                                            ╭ Details ───────────────────────╮
-│    Home / Today   │┏ Tasks ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓│Map the command palette         │
-│    Inbox          │┃  TITLE                                                                STATUS      PRIORITY DEADLINE   ┃│▶ inprogress                    │
-│    Projects       │┃  Trim the board cards                                                 ~ deferred                      ┃│                                │
-│    Agents         │┃  Cancel the old export path                                           ! cancelled                     ┃│PROPERTIES                      │
-│▸ » Atlas Console ○│┃▸ Map the command palette                                              ▶ in_progre…         2026-10-25 ┃│status       in_progress        │
-│    Beacon Sync ●  │┃  Wire the task table                                                  ◐ ready              2026-10-26 ┃│readiness    inprogress         │
-│    Cipher Notes ○ │┃  Audit sync retries                                                   ◐ review             2026-10-27 ┃│actionable   false              │
-│                   │┃  Harden the offline queue                                             ▶ in_progre…         2026-10-28 ┃│estimate     90m                │
-│                   │┃  Review attachment staging                                            ! blocked            2026-10-29 ┃│due          2026-10-25         │
-│                   │┃  Document the connected console                                       ✓ done               2026-10-30 ┃│deadline     2026-10-25 13:55Z  │
-│                   │┃                                                                                                       ┃│Attachments  none               │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│ACTIONS 19 · press a            │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-│                   │┃                                                                                                       ┃│                                │
-╰───────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛╰────────────────────────────────╯
+╭ Orbit ────────────╮   Overview │ ▸ Tasks │   Board │   Timeline  [ ] switch view
+│    Home / Today   │┏ Tasks ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+│    Inbox          │┃  TITLE                                                                                                  STATUS      PRIORITY DEADLINE   ┃
+│    Projects       │┃  Trim the board cards                                                                                   ~ deferred                      ┃
+│    Agents         │┃  Cancel the old export path                                                                             ! cancelled                     ┃
+│▸ » Atlas Console ○│┃▸ Map the command palette                                                                                ▶ in_progre…         2026-10-25 ┃
+│    Beacon Sync ●  │┃  Wire the task table                                                                                    ◐ ready              2026-10-26 ┃
+│    Cipher Notes ○ │┃  Audit sync retries                                                                                     ◐ review             2026-10-27 ┃
+│                   │┃  Harden the offline queue                                                                               ▶ in_progre…         2026-10-28 ┃
+│                   │┃  Review attachment staging                                                                              ! blocked            2026-10-29 ┃
+│                   │┃  Document the connected console                                                                         ✓ done               2026-10-30 ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+╰───────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
  Actions: Enter Open · e Edit · S Status · a more actions · q quit
- Ctrl+Q quit · q quit (not typing)  Atlas Console • Basic v1 • 4 views • r refresh   j/k select · h/l component · D details · Esc back
+ Ctrl+Q quit · q quit (not typing)  Atlas Console • Basic v1 • 4 views • r refresh   j/k select · h/l component · Enter inspect · Esc back

@@ -140,9 +140,9 @@ MILESTONE-0025
 
 ### MILESTONE-0025 — M25 Project Blueprint Framework
 
-- **Status:** deferred
+- **Status:** completed
 - **Outcome:** Users can define, install, pin and operate versioned project blueprints with typed work items, guarded transitions, templates and explicitly authorized capabilities in local and connected modes.
-- **Why now:** Blueprints are Orbit's extension model without per-project Rust code, and I3 capability actions are the largest unreachable block of already-written code.
+- **Why now:** Blueprints are Orbit's extension model without per-project Rust code; M30 completed the capability, connected-outbox, upgrade and habit-ownership criteria.
 - **Depends on:** MILESTONE-0024
 
 #### Scope
@@ -163,23 +163,21 @@ MILESTONE-0025
 
 - [x] EC-001: I1 manifests, registry, binding, import/export and validation are implemented and exercised.
 - [x] EC-002: I2 typed properties, transitions, guards and templates are implemented and exercised.
-- [ ] EC-003: A trusted capability can be installed through a public composition surface and an offered action can be explicitly requested, claimed, executed and reconciled end to end.
-- [ ] EC-004: Connected MCP blueprint writes use the canonical outbox and command receipts, including a lost-ack replay test.
-- [ ] EC-005: An explicit, previewable blueprint version upgrade path exists.
-- [ ] EC-006: Habit recurrence/streak behavior is owned by an opt-in capability package rather than core.
+- [x] EC-003: A trusted capability can be installed through a public composition surface and an offered action can be explicitly requested, claimed, executed and reconciled end to end.
+- [x] EC-004: Connected MCP blueprint writes use the canonical outbox and command receipts, including a lost-ack replay test.
+- [x] EC-005: An explicit, previewable blueprint version upgrade path exists.
+- [x] EC-006: Habit recurrence/streak behavior is owned by an opt-in capability package rather than core.
 - [x] EC-007: Local and connected blueprint smoke passes for install, binding, typed properties, guards, templates, offline replay, receipts and restart.
 
 #### Evidence
 
-- EC-001: `cargo test -p orbit-blueprint --locked`; `deploy/server/smoke-blueprint-workflows.py`.
+- EC-001: `cargo test -p orbit-blueprint`; `deploy/server/smoke-blueprint-workflows.py`.
 - EC-002: same blueprint smoke; `crates/orbit-storage/src/blueprint_template_tests.rs`.
-- EC-003: Unmet; executor primitives exist but publish paths pass an empty installed-capability set and no public action route exists.
-- EC-004: Unmet; connected MCP posts directly to blueprint endpoints.
-- EC-005: Unmet; binding is first-binding-wins and no upgrade operation exists.
-- EC-006: Unmet; habit recurrence remains core.
-- EC-007: `.agent/evidence/m15-final.zip` contains `blueprint-workflow-smoke`.
-
-M25 I1/I2 and normal command receipts are implemented and verified. The remaining criteria are deferred because M27 distribution and first-run usability block ordinary users more than further blueprint depth. Previous "source complete" reports covered the I1/I2 source shape only; they did not satisfy EC-003 through EC-006. Reconsider M25 after M27 when a public release and first-run path exist.
+- EC-003: `orbit-runtime`/`orbit-storage` capability tests (542 + 105), `tests/acceptance/test_m30_capability_workflow.py` (restart/replay, connected refusal), TUI capability-action tests and PTY scenario.
+- EC-004: `cargo test -p orbit-mcp` (76 passed, 8 outbox tests) and `tests/acceptance/mcp/test_m30_blueprint_outbox.py` (offline pending → accepted receipt → replay → lost-ack → duplicate-id conflict; server receipt counts).
+- EC-005: `crates/orbit-runtime/src/blueprint_upgrade.rs` with 13 tests; CLI 128 tests; `tests/acceptance/local_cli_workflows.py` (60 passed incl. preview → refusals → apply → restart).
+- EC-006: `crates/orbit-habit-capability` (5 tests), domain 56, application 17, runtime 542; install/authorize gating tests and the executed habits guide.
+- EC-007: `.agent/evidence/m15-final.zip` blueprint smoke plus the M30 acceptance runs above.
 
 #### Next milestone
 
@@ -435,6 +433,54 @@ MILESTONE-0029
 
 #### Next milestone
 
+MILESTONE-0030
+
+### MILESTONE-0030 — M30 TUI Workspace Simplification and Executable Blueprint Capabilities
+
+- **Status:** completed
+- **Outcome:** A two-region default TUI workspace with an explicit dismissible inspector, plus a trusted Blueprint capability that can be installed, authorized per project, offered, requested, claimed, executed and inspected through public CLI/TUI surfaces with durable receipts.
+- **Why now:** M28/M29 completed the project-centric TUI; the permanent Details column was a layout defect, and M25 EC-003 — the only capability path that makes the Blueprint extension model demonstrable — was unmet while every publication path supplied an empty installed-capability set. M27 remains externally blocked, so this is the highest-priority work that can be completed and verified locally.
+- **Depends on:** MILESTONE-0024, MILESTONE-0028, MILESTONE-0029
+
+#### Scope
+
+- Two-region default layout; explicit inspector overlay with full-screen fallback.
+- Durable trusted-capability installation, project-scoped authorization, offers, explicit requests, single-claim execution, receipts and reconciliation.
+- Deterministic built-in reference capability proving the whole public composition path.
+- Capability/action CLI with fail-closed connected behaviour.
+- TUI capability action discovery, inputs, confirmation and honest dispositions.
+- Focused tests, PTY scenarios, isolated end-to-end acceptance, documentation and records.
+
+#### Non-goals
+
+- Reopening M22–M29 or rebuilding the TUI architecture.
+- Arbitrary plugin loading, a marketplace or untrusted executable code.
+- Connected capability execution, MCP capability tools or public release publication.
+
+#### Exit criteria
+
+- [x] EC-001: Two-region default layout at 80x24, 120x35 and 160x45 with no permanent Details box.
+- [x] EC-002: Explicit inspector with preservation, focus restoration, small-terminal fallback, missing-entity fallback and edit round trip.
+- [x] EC-003: Trusted capability installed, authorized, offered, requested, claimed, executed and receipted through a public composition path.
+- [x] EC-004: Uninstalled, unauthorized, unsupported, invalid-input, revision and duplicate cases fail closed without duplicate effects.
+- [x] EC-005: TUI discoverability and execution with inputs, confirmation and accurate dispositions; no renderer mutations.
+- [x] EC-006: Documented CLI programmatic path; connected mode refuses rather than bypasses.
+- [x] EC-007: Isolated end-to-end acceptance including restart, plus PTY and runtime tests.
+- [x] EC-008: Documentation and records updated; M25 EC-003 closed with evidence.
+
+#### Evidence
+
+- EC-001: `orbit-tui` 17 inspector tests at 80x24/120x35/160x45; PTY `test_m30_inspector.py`.
+- EC-002: `Modal::Inspector` tests for Enter/Esc/D, full-screen boundary, deleted entity, edit round trip, render purity; PTY cases.
+- EC-003: `capability_composition.rs` + `capability_installs.rs`; runtime 527 and storage 105 tests; `tests/acceptance/test_m30_capability_workflow.py`.
+- EC-004: offers availability matrix and request/claim/result rejection tests in `capability_composition.rs`.
+- EC-005: `app/capability.rs` + 9 TUI tests + PTY `test_m30_capability_ui.py`.
+- EC-006: CLI `blueprint capability|action` in `blueprint_commands.rs`; connected refusal in `connected_blueprint.rs`; acceptance test asserts refusal.
+- EC-007: acceptance pytest restart/replay; workspace 1,623 tests; PTY 65 passed/1 skipped.
+- EC-008: updated docs tree; M25 EC-003 evidence; `.agent` records; `getdone-validate-project`.
+
+#### Next milestone
+
 none
 
 ## Deferred work
@@ -444,5 +490,5 @@ none
 - Distribution signing and authenticated publishing — requires a signing key and release channel; reconsider before any public binary release.
 - macOS/Windows/cross-compiled packaging — requires those toolchains and target machines; reconsider before advertising cross-platform support.
 - Real installed-version database upgrade and rollback — requires an older release fixture; reconsider before the first supported upgrade.
-- M25 capability installation/action execution, connected MCP outbox parity, blueprint upgrade path and habit recurrence extraction — M25 is deferred after M27; I1/I2 are complete, EC-003 through EC-006 remain unmet.
+- M25 is complete (EC-001..EC-007). Remaining product follow-ups: connected capability execution, MCP capability tools, per-device project ACLs and server attachment GC.
 - Official stable GitHub Release publication and real-release installation verification — deferred until a maintainer explicitly authorizes publishing; M27 can implement and fixture-test the pipeline without claiming a published release.

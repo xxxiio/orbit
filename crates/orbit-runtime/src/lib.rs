@@ -15,6 +15,9 @@ pub(crate) mod default_workflow;
 #[path = "attachment_authority_tests.rs"]
 mod attachment_authority_tests;
 
+#[cfg(test)]
+mod blueprint_upgrade_tests;
+
 use std::path::Path;
 
 /// Host-owned authoritative SQLite command and projection implementation.
@@ -28,8 +31,10 @@ pub mod authority_schedule;
 pub mod authority_strategy;
 pub mod blueprint_authority;
 pub mod blueprint_execution;
+pub mod blueprint_upgrade;
 pub mod canonical;
 pub mod capabilities;
+pub mod capability_composition;
 pub mod daily_planning;
 pub mod domain_commands;
 pub mod planning_actions;
@@ -55,6 +60,7 @@ pub mod workload_insights;
 pub use store::{AuthorityError, AuthorityEvent};
 pub mod authority_evidence;
 pub mod folder_commands;
+pub mod habit_capability;
 pub mod knowledge_files;
 pub mod knowledge_operations;
 pub mod knowledge_service;

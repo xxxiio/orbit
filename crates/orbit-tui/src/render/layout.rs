@@ -1,46 +1,28 @@
-//! Space allocation: the three-region shell plan and the per-component rects
-//! that turn a declared view layout into concrete rectangles.
-use crate::app::{App, FocusPane};
-use crate::theme::{
-    DETAIL_MAX, DETAIL_MIN, DETAIL_WIDTH, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_WIDTH, WIDE_BREAKPOINT,
-};
+//! Space allocation: the two-region shell plan and the per-component rects that
+//! turn a declared view layout into concrete rectangles.
+use crate::app::App;
+use crate::theme::{SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_WIDTH};
 use orbit_ui::{ComponentBody, ResolvedComponent};
 use ratatui::layout::{Direction, Rect};
 
-/// Widths for the three-region shell.
+/// Widths for the two-region shell. There is never a third column: the item
+/// inspector is an overlay, not a docked pane.
 pub(super) struct ShellPlan {
     pub(super) sidebar: u16,
     pub(super) workspace_floor: u16,
-    pub(super) detail: Option<u16>,
 }
 
 /// Decide the horizontal budget before drawing anything.
 ///
 /// * the sidebar is sized to its labels inside a compact band;
-/// * the detail pane only docks when the active component still gets its
-///   readable minimum (a board needs far more width than a metric row);
-/// * the workspace is a `Min` constraint, so it absorbs every column the
-///   sidebar/detail panes do not claim - including when details are toggled off.
+/// * the workspace is a `Min` constraint, so it absorbs every column beyond the
+///   sidebar.
 pub(super) fn shell_plan(width: u16, app: &App) -> ShellPlan {
     let sidebar = sidebar_width(width, app);
     let workspace_floor = workspace_min_width(app);
-    let mut detail = if app.show_detail && width >= WIDE_BREAKPOINT {
-        Some(detail_width(width))
-    } else {
-        None
-    };
-    if let Some(detail_width) = detail {
-        let remaining = width.saturating_sub(sidebar).saturating_sub(detail_width);
-        // The pane the user is working in never disappears; a docked detail
-        // pane yields instead of squashing the primary content.
-        if remaining < workspace_floor && app.focus != FocusPane::Detail {
-            detail = None;
-        }
-    }
     ShellPlan {
         sidebar,
         workspace_floor: workspace_floor.min(width.saturating_sub(sidebar)),
-        detail,
     }
 }
 
@@ -73,17 +55,6 @@ fn sidebar_width(width: u16, app: &App) -> u16 {
     // status glyph + 2 border columns.
     let wanted = u16::try_from(widest).unwrap_or(u16::MAX).saturating_add(8);
     wanted.clamp(SIDEBAR_MIN, SIDEBAR_MAX)
-}
-
-/// The detail pane grows with the terminal so properties and wrapped notes stay
-/// readable, but never starves the workspace.
-fn detail_width(width: u16) -> u16 {
-    let preferred = match width {
-        w if w >= 170 => DETAIL_MAX,
-        w if w >= 150 => 34,
-        _ => DETAIL_WIDTH,
-    };
-    preferred.clamp(DETAIL_MIN, DETAIL_MAX)
 }
 
 /// Width the active component needs to stay readable.

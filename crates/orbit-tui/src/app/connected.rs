@@ -52,8 +52,8 @@ impl App {
     /// rejected keeps its row and its warning.
     ///
     /// A non-empty flush can change accepted state (and staged uploads), so the
-    /// accepted workspace and the docked detail cache are refreshed before the
-    /// outbox is re-listed. Staged uploads that are still pending keep the
+    /// accepted workspace - and any open inspector built from it - is refreshed
+    /// before the outbox is re-listed. Staged uploads that are still pending keep the
     /// status on `Pending`, never `Success`.
     ///
     /// The caller owns the open modal, so this returns the refreshed rows and
@@ -76,8 +76,8 @@ impl App {
         };
         if before > 0 && kind != StatusKind::Error {
             // A flush can accept commands and staged uploads; the accepted view
-            // and the detail counts are stale until they are re-read.
-            // `refresh_after_mutation` invalidates and reseeds the detail cache.
+            // and the inspector's counts are stale until they are re-read.
+            // `refresh_after_mutation` rebuilds an open inspector.
             self.refresh_after_mutation();
         }
         self.refresh_pending_count();

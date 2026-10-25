@@ -28,13 +28,27 @@ registry.register(Box::new(approved_provider))?;
 let receipt = registry.execute_claimed(&mut host, "requested-command-id")?;
 ```
 
-## Outstanding M25 source integration
+## Current surface and remaining integration
 
 The registry is an **opt-in composition API**, not a background worker. Actual
 Herdr and other capability providers must be registered by trusted deployment
-composition and obey their own permissions. Next, expose explicit blueprint
-management and action-request commands through Orbit's CLI/MCP and connected
-server. Do not call `execute_claimed` directly from an untrusted HTTP request.
+composition and obey their own permissions. Do not call `execute_claimed`
+directly from an untrusted HTTP request.
+
+The local CLI now exposes the composition path:
+`orbit blueprint capability list|install|uninstall|authorize|revoke` and
+`orbit blueprint action offers|request|execute|show|list|reconcile`. The
+`TrustedComposition` used by the CLI registers the deterministic
+`orbit.reference.work-item-note` capability, whose executor writes one durable
+note row keyed by the action command ID. Installation, project authorization,
+request, claim, execution and receipt stay separate; publication of a manifest
+that requires a capability is gated by durable installation.
+
+Connected transports and MCP intentionally expose no capability
+administration or action-execution surface in this iteration. Connected mode
+refuses the CLI groups with `M25 EC-004`; MCP has no capability tools. Do not
+add a transport that can dispatch a capability without the same durable
+installation, grant, request and receipt contract.
 
 Executable Rust/workspace and deployment acceptance remain under M15.
 

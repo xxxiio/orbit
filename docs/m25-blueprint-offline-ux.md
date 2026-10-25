@@ -20,6 +20,6 @@ orbit blueprint --require-online install development
 
 The legacy `orbit blueprint queue` command was removed. Ordinary mutations automatically use the canonical outbox in connected mode.
 
-**Acceptance caveat:** Server-side command receipts are persisted atomically with the actual blueprint mutation, and ordinary offline replay/reconciliation is exercised by the blueprint smoke test. What is still unverified is the lost-acknowledgement blueprint replay path, which has no end-to-end test: the client preserves command identity, but exactly-once server-side effects under a lost HTTP acknowledgment are not yet proven by a test. Cross-platform and broad end-to-end release testing belongs to M15.
+**Acceptance evidence:** Server-side command receipts are persisted atomically with the actual blueprint mutation, and ordinary offline replay/reconciliation is exercised by the blueprint smoke test. Lost-acknowledgement replay is now covered: `orbit-mcp` unit tests simulate a lost response and a `pending`-to-`accepted` replay, and `tests/acceptance/mcp/test_m30_blueprint_outbox.py` proves against a real `orbit-server` that a command applied without a visible acknowledgement is replayed from the same identity, returns the original immutable receipt and applies exactly once. Cross-platform and broad end-to-end release testing belongs to M15.
 
 As of Development 294, the deprecated `queue` syntax is removed from the CLI parser; use `--offline` on normal mutation commands.

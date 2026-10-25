@@ -165,33 +165,84 @@ fn connected_tool_list() -> Value {
             "blueprint.item",
             "Inspect a blueprint-defined work item in your project scope"
         ),
-        tool(
+        // Connected blueprint writes have no direct transport. They queue in the
+        // canonical durable replica outbox first and then attempt the canonical
+        // flush, so each one accepts an optional `command_id` and reports
+        // `command_id`, `disposition` (accepted|pending|conflict), plus
+        // `receipt`/`result` when accepted or `reason` when conflicted/pending.
+        schema_tool(
             "blueprint.publish",
-            "Publish a validated immutable blueprint (developer, workspace scope)"
+            "Queue a validated immutable blueprint publication (developer, workspace scope). Returns command_id and disposition; receipt/result only when the authority accepted it",
+            json!({
+                "definition":{"type":"object","description":"Complete validated blueprint manifest"},
+                "command_id":{"type":"string","description":"Optional stable idempotency key; reuse it to replay the same write"},
+            }),
+            json!(["definition"]),
         ),
-        tool(
+        schema_tool(
             "blueprint.install",
-            "Install a bundled blueprint (developer, workspace scope)"
+            "Queue installation of a bundled blueprint (developer, workspace scope). Returns command_id and disposition; receipt/result only when the authority accepted it",
+            json!({
+                "id":{"type":"string"},
+                "command_id":{"type":"string","description":"Optional stable idempotency key; reuse it to replay the same write"},
+            }),
+            json!(["id"]),
         ),
-        tool(
+        schema_tool(
             "blueprint.bind",
-            "Bind a project to a pinned blueprint version (developer)"
+            "Queue a project binding to a pinned blueprint version (developer). Returns command_id and disposition; receipt/result only when the authority accepted it",
+            json!({
+                "project_id":{"type":"string"},
+                "id":{"type":"string"},
+                "version":{"type":"integer","minimum":0},
+                "command_id":{"type":"string","description":"Optional stable idempotency key; reuse it to replay the same write"},
+            }),
+            json!(["project_id", "id", "version"]),
         ),
-        tool(
+        schema_tool(
             "blueprint.create_item",
-            "Create an item in a scoped project (developer)"
+            "Queue creation of an item in a scoped project (developer). Returns command_id and disposition; receipt/result only when the authority accepted it",
+            json!({
+                "project_id":{"type":"string"},
+                "id":{"type":"string"},
+                "kind":{"type":"string"},
+                "properties":{"type":"object"},
+                "command_id":{"type":"string","description":"Optional stable idempotency key; reuse it to replay the same write"},
+            }),
+            json!(["project_id", "id", "kind"]),
         ),
-        tool(
+        schema_tool(
             "blueprint.transition",
-            "Transition a scoped work item with optimistic revision (developer)"
+            "Queue a scoped work item transition with optimistic revision (developer). Returns command_id and disposition; receipt/result only when the authority accepted it",
+            json!({
+                "id":{"type":"string"},
+                "to":{"type":"string"},
+                "expected_revision":{"type":"integer","minimum":0},
+                "command_id":{"type":"string","description":"Optional stable idempotency key; reuse it to replay the same write"},
+            }),
+            json!(["id", "to", "expected_revision"]),
         ),
-        tool(
+        schema_tool(
             "blueprint.properties",
-            "Update scoped item properties with optimistic revision (developer)"
+            "Queue a scoped item property update with optimistic revision (developer). Returns command_id and disposition; receipt/result only when the authority accepted it",
+            json!({
+                "id":{"type":"string"},
+                "expected_revision":{"type":"integer","minimum":0},
+                "changes":{"type":"object"},
+                "command_id":{"type":"string","description":"Optional stable idempotency key; reuse it to replay the same write"},
+            }),
+            json!(["id", "expected_revision"]),
         ),
-        tool(
+        schema_tool(
             "blueprint.template",
-            "Apply an atomic project template to a scoped project (developer)"
+            "Queue an atomic project template application to a scoped project (developer). Returns command_id and disposition; receipt/result only when the authority accepted it",
+            json!({
+                "project_id":{"type":"string"},
+                "template_id":{"type":"string"},
+                "namespace":{"type":"string"},
+                "command_id":{"type":"string","description":"Optional stable idempotency key; reuse it to replay the same write"},
+            }),
+            json!(["project_id", "template_id", "namespace"]),
         ),
         tool(
             "agent.job_context",

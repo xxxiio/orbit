@@ -65,26 +65,25 @@ Blueprints are Orbit's extension model without per-project Rust code or a mandat
 
 - [x] EC-001: I1 manifests, registry, binding, import/export and validation are implemented and exercised.
 - [x] EC-002: I2 typed properties, transitions, guards and templates are implemented and exercised.
-- [ ] EC-003: A trusted capability can be installed through a public composition surface and an offered action can be explicitly requested, claimed, executed and reconciled end to end.
-- [ ] EC-004: Connected MCP blueprint writes use the canonical outbox and command receipts, including a lost-ack replay test.
-- [ ] EC-005: An explicit, previewable blueprint version upgrade path exists.
-- [ ] EC-006: Habit recurrence/streak behavior is owned by an opt-in capability package rather than core.
+- [x] EC-003: A trusted capability can be installed through a public composition surface and an offered action can be explicitly requested, claimed, executed and reconciled end to end.
+- [x] EC-004: Connected MCP blueprint writes use the canonical outbox and command receipts, including a lost-ack replay test.
+- [x] EC-005: An explicit, previewable blueprint version upgrade path exists.
+- [x] EC-006: Habit recurrence/streak behavior is owned by an opt-in capability package rather than core.
 - [x] EC-007: Local and connected blueprint smoke passes for install, binding, typed properties, guards, templates, offline replay, receipts and restart.
 
 ## Evidence
 
 - EC-001: `cargo test -p orbit-blueprint --locked`; `deploy/server/smoke-blueprint-workflows.py`.
 - EC-002: same blueprint smoke; `crates/orbit-storage/src/blueprint_template_tests.rs`.
-- EC-003: Unmet. Executor primitives exist in `crates/orbit-runtime/src/blueprint_execution.rs`, but publish paths pass an empty installed-capability set and no CLI/MCP/HTTP action route exists.
-- EC-004: Unmet. `crates/orbit-mcp/src/blueprint_tools.rs` posts directly to blueprint endpoints rather than the outbox.
-- EC-005: Unmet. Binding is first-binding-wins and no upgrade operation exists.
-- EC-006: Unmet. Habit recurrence remains in `crates/orbit-domain/src/habit_tracking.rs`.
+- EC-003: Met through M30 I1. `crates/orbit-runtime/src/capability_composition.rs` (`TrustedComposition`, offers/request/execute/receipt/reconcile), `crates/orbit-storage/src/capability_installs.rs` (installation, project grants, receipts, reference notes), CLI `orbit blueprint capability|action …` and the example manifest `blueprints/examples/capability-reference.json`. Evidence: `cargo test -p orbit-runtime -p orbit-storage` (527 + 105 passed), `python3 -m pytest -q tests/acceptance/test_m30_capability_workflow.py` (1 passed: create project → install → publish → bind → offer → refuse `not_authorized` → authorize → request → execute → receipt → restart → replay without a second note → connected refusal), TUI capability actions in `crates/orbit-tui/src/app/capability.rs` with PTY coverage. Explicit reconciliation of `claimed`/`uncertain` records a settlement without re-execution.
+- EC-004: Met through M30 I2. `crates/orbit-mcp/src/blueprint_tools.rs` now queues every connected blueprint write through `AuthorityConnection::queue_blueprint_transport` before attempting the canonical flush, and reports `accepted`/`pending`/`conflict` from the outbox row; no `.post(` remains in the blueprint tools. Evidence: `cargo test -p orbit-mcp` (76 passed, incl. offline → pending → accepted replay, conflicting id, lost-ack replay with the original receipt), `python3 -m pytest -q tests/acceptance/mcp` (4 passed against the real server/MCP, `orbit_blueprint_command_receipts` count proofs).
+- EC-005: Met through M30 I3. `crates/orbit-runtime/src/blueprint_upgrade.rs` adds `preview_blueprint_upgrade` (typed diff of kinds/states/fields/transitions/actions/capabilities/views, warning/blocker classification, SHA-256 fingerprint over the diff plus the live item state) and `apply_blueprint_upgrade` (requires `--confirm` plus the exact fingerprint, recomputes inside one savepoint, refuses blockers/mismatch, preserves items, idempotent). CLI `blueprint upgrade-preview|upgrade`; publish/install/apply never rebind. Evidence: `cargo test -p orbit-runtime blueprint_upgrade` (13 passed), `cargo test -p orbit-cli` (128 passed), `python3 tests/acceptance/local_cli_workflows.py` (60 passed incl. preview → refusals → apply → restart).
+- EC-006: Met through M30 I4. The recurrence/streak algorithm now lives in the opt-in `crates/orbit-habit-capability` package (`orbit.habit.recurrence`, action `evaluate_periods`); `orbit-domain` keeps only occurrence/period value types and no longer exports streak computation. The runtime registers the capability in `TrustedComposition` but does not install or authorize it; application/project-evidence queries return an explicit `Unavailable` status unless it is installed (and granted for project-scoped reads), while habit counts/last-occurrence projections keep working. Evidence: `cargo test -p orbit-habit-capability -p orbit-domain -p orbit-application -p orbit-runtime` (5/56/17/542 passed), gating tests, docs `docs/guides/habits-routines-schedules.md` with executed commands.
 - EC-007: `.agent/evidence/m15-final.zip` contains the passing `blueprint-workflow-smoke` check.
 
 ## Remaining work
 
-- EC-003, EC-004, EC-005 and EC-006.
-- Then re-run the full M15 profile and update this record with new evidence.
+- All exit criteria are satisfied (EC-001..EC-007). Re-run the full M15 profile before release qualification and attach the new evidence zip; no M25 criterion is outstanding.
 
 ## Next milestone
 

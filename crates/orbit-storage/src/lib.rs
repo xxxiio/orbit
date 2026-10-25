@@ -37,6 +37,7 @@ pub mod blueprint_command_receipts;
 mod blueprint_template_tests;
 pub mod blueprint_work_items;
 pub mod blueprints;
+pub mod capability_installs;
 mod repositories;
 pub use agent_jobs::{AgentRuntimeObservation, RuntimeActivity};
 

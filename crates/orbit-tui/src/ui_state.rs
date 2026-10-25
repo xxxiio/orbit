@@ -36,8 +36,6 @@ pub struct UiState {
     pub selected_index: Option<usize>,
     #[serde(default)]
     pub scroll: Option<usize>,
-    #[serde(default)]
-    pub detail_scroll: Option<usize>,
 }
 
 /// State file location. `ORBIT_TUI_STATE` overrides it for tests and isolated
@@ -77,15 +75,17 @@ fn focus_name(focus: FocusPane) -> &'static str {
     match focus {
         FocusPane::Sidebar => "sidebar",
         FocusPane::Workspace => "workspace",
-        FocusPane::Detail => "detail",
     }
 }
 
-fn focus_from_name(name: &str) -> Option<FocusPane> {
+pub(crate) fn focus_from_name(name: &str) -> Option<FocusPane> {
     match name {
         "sidebar" => Some(FocusPane::Sidebar),
         "workspace" => Some(FocusPane::Workspace),
-        "detail" => Some(FocusPane::Detail),
+        // The docked detail pane is gone. A session saved by an older build
+        // must still restore: `detail` maps to the workspace, where the item
+        // inspector is now opened as an overlay.
+        "detail" => Some(FocusPane::Workspace),
         _ => None,
     }
 }
@@ -129,7 +129,6 @@ pub fn save(app: &App) -> Result<(), String> {
         selected_id: app.current_selected_id(),
         selected_index: Some(app.selected),
         scroll: Some(app.scroll),
-        detail_scroll: Some(app.detail_scroll),
     };
     if (app.workspace.is_none() || app.restore_skipped)
         && let Some(previous) = load()
@@ -147,7 +146,6 @@ pub fn save(app: &App) -> Result<(), String> {
         state.selected_id = previous.selected_id.or(state.selected_id);
         state.selected_index = previous.selected_index.or(state.selected_index);
         state.scroll = previous.scroll.or(state.scroll);
-        state.detail_scroll = previous.detail_scroll.or(state.detail_scroll);
     }
     let serialized = serde_json::to_string_pretty(&state).map_err(|error| error.to_string())?;
     if let Some(parent) = path.parent()
@@ -234,7 +232,6 @@ pub fn restore(app: &mut App) {
         state.active_component,
         state.view_id.as_deref(),
         state.scroll,
-        state.detail_scroll,
     );
 }
 
@@ -253,10 +250,26 @@ mod tests {
         ] {
             assert_eq!(screen_from_name(screen_name(screen)), Some(screen));
         }
-        for focus in [FocusPane::Sidebar, FocusPane::Workspace, FocusPane::Detail] {
+        for focus in [FocusPane::Sidebar, FocusPane::Workspace] {
             assert_eq!(focus_from_name(focus_name(focus)), Some(focus));
         }
         assert_eq!(screen_from_name("unknown"), None);
+    }
+
+    /// Session files written by the docked-pane build still load: the old
+    /// `detail` focus maps to the workspace instead of failing restoration.
+    #[test]
+    fn saved_detail_focus_restores_as_workspace() {
+        assert_eq!(focus_from_name("detail"), Some(FocusPane::Workspace));
+        let state: UiState = serde_json::from_str(
+            r#"{"version":1,"screen":"project","project_id":"p1","focus":"detail","detail_scroll":7}"#,
+        )
+        .unwrap();
+        assert_eq!(state.version, UI_STATE_VERSION);
+        assert_eq!(
+            state.focus.as_deref().and_then(focus_from_name),
+            Some(FocusPane::Workspace)
+        );
     }
 
     #[test]
@@ -273,7 +286,6 @@ mod tests {
         assert_eq!(state.active_component, None);
         assert_eq!(state.selected_index, None);
         assert_eq!(state.scroll, None);
-        assert_eq!(state.detail_scroll, None);
     }
 
     #[test]
@@ -290,7 +302,6 @@ mod tests {
             selected_id: Some("t9".into()),
             selected_index: Some(7),
             scroll: Some(4),
-            detail_scroll: Some(11),
         };
         let encoded = serde_json::to_string(&state).unwrap();
         let decoded: UiState = serde_json::from_str(&encoded).unwrap();
@@ -301,6 +312,5 @@ mod tests {
         assert_eq!(decoded.selected_id, state.selected_id);
         assert_eq!(decoded.selected_index, state.selected_index);
         assert_eq!(decoded.scroll, state.scroll);
-        assert_eq!(decoded.detail_scroll, state.detail_scroll);
     }
 }

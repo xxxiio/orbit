@@ -96,6 +96,14 @@ fn render(app: &mut App, width: u16, height: u16) -> String {
     text(&buffer(app, width, height))
 }
 
+/// Title of the currently open inspector.
+fn inspector_title(app: &App) -> String {
+    match &app.modal {
+        Some(Modal::Inspector(state)) => state.detail.title.clone(),
+        other => panic!("inspector modal expected, found {other:?}"),
+    }
+}
+
 fn selection_of(items: impl IntoIterator<Item = (String, String)>) -> Vec<SelectionItem> {
     items
         .into_iter()
@@ -268,8 +276,9 @@ fn compact_layout_names_both_panes_and_keeps_a_way_back() {
     assert!(workspace.contains("▸ Workspace"), "{workspace}");
     assert!(workspace.contains("Sidebar"), "{workspace}");
     assert!(workspace.contains("Tab switch"), "{workspace}");
-    assert!(workspace.contains("D details"), "{workspace}");
-    assert!(!workspace.contains("Details ─"), "{workspace}");
+    assert!(workspace.contains("Enter inspect"), "{workspace}");
+    assert!(!workspace.contains("Details"), "{workspace}");
+    assert!(!workspace.contains("D details"), "{workspace}");
 
     app.focus = FocusPane::Sidebar;
     let sidebar = render(&mut app, 60, 18);
@@ -357,42 +366,39 @@ fn table_columns_prioritise_title_then_status() {
 }
 
 #[test]
-fn detail_pane_clamps_scroll_and_shows_a_position_indicator() {
+fn inspector_scroll_is_bounded_and_keeps_the_footer_visible() {
     let mut app = project_app("m29-detail");
     switch_to(&mut app, "tasks");
-    app.focus = FocusPane::Detail;
-    app.detail_scroll = 0;
-    let top = render(&mut app, 120, 12);
-    assert!(top.contains("Alpha task"), "{top}");
+    app.selected = 0;
+    let list_scroll = app.scroll;
+    app.open_inspector();
+    let rendered = render(&mut app, 120, 20);
+    assert!(rendered.contains("Inspector · Alpha task"), "{rendered}");
+    assert!(rendered.contains("PROPERTIES"), "{rendered}");
+    assert!(
+        rendered.contains("Esc close · j/k scroll · Enter close"),
+        "the inspector footer must stay visible: {rendered}"
+    );
+
+    // Scrolling is clamped in the app path that owns the offset, and it never
+    // reaches into the workspace list.
+    for _ in 0..40 {
+        handle_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE).unwrap();
+    }
+    assert!(matches!(app.modal, Some(Modal::Inspector(_))));
+    assert_eq!(app.scroll, list_scroll, "the list scroll must not move");
+    let bottom = render(&mut app, 120, 20);
+    assert!(
+        bottom.contains("Esc close · j/k scroll · Enter close"),
+        "{bottom}"
+    );
+    for _ in 0..80 {
+        handle_key(&mut app, KeyCode::Char('k'), KeyModifiers::NONE).unwrap();
+    }
+    let top = render(&mut app, 120, 20);
     assert!(top.contains("PROPERTIES"), "{top}");
-    assert!(top.contains("↑↓ scroll"), "no overflow indicator: {top}");
-    assert!(top.lines().any(|line| line.contains(" 1-")), "{top}");
-
-    app.detail_scroll = 9_999;
-    let bottom = render(&mut app, 120, 12);
-    assert!(!bottom.trim().is_empty(), "{bottom}");
-    assert!(
-        bottom.contains("ACTIONS"),
-        "clamped scroll must land on the last page: {bottom}"
-    );
-    assert!(
-        !bottom.lines().any(|line| line.contains(" 1-")),
-        "scroll did not move: {bottom}"
-    );
-    assert!(bottom.contains("↑↓ scroll"), "{bottom}");
-
-    // Over-scrolling is clamped in the app, so the first ↑ moves instead
-    // of spending presses on an invisible offset.
-    let painted_max = app.detail_max_scroll.get();
-    app.detail_scroll = 9_999;
-    app.move_selection(-1);
-    assert!(
-        app.detail_scroll <= painted_max,
-        "detail scroll was not clamped in the app: {} > {painted_max}",
-        app.detail_scroll
-    );
-    let after_up = render(&mut app, 120, 12);
-    assert!(after_up.contains("ACTIONS"), "{after_up}");
+    handle_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).unwrap();
+    assert!(app.modal.is_none());
 }
 
 #[test]
@@ -417,10 +423,9 @@ fn board_selection_keeps_its_stable_id_across_refreshes_and_a_status_change() {
         app.current_selected_id().as_deref(),
         Some(selected_id.as_str())
     );
-    assert_eq!(
-        app.detail_model().unwrap().title,
-        "Beta task with a long title"
-    );
+    app.open_inspector();
+    assert_eq!(inspector_title(&app), "Beta task with a long title");
+    app.close_inspector();
 
     app.refresh_project();
     assert_eq!(
@@ -428,10 +433,9 @@ fn board_selection_keeps_its_stable_id_across_refreshes_and_a_status_change() {
         Some(selected_id.as_str()),
         "selection lost after refresh_project"
     );
-    assert_eq!(
-        app.detail_model().unwrap().title,
-        "Beta task with a long title"
-    );
+    app.open_inspector();
+    assert_eq!(inspector_title(&app), "Beta task with a long title");
+    app.close_inspector();
 
     app.execute_pending(app::PendingAction::SetTaskStatus {
         task_id: selected_id.clone(),
@@ -442,10 +446,9 @@ fn board_selection_keeps_its_stable_id_across_refreshes_and_a_status_change() {
         Some(selected_id.as_str()),
         "selection lost after a status transition"
     );
-    assert_eq!(
-        app.detail_model().unwrap().title,
-        "Beta task with a long title"
-    );
+    app.open_inspector();
+    assert_eq!(inspector_title(&app), "Beta task with a long title");
+    app.close_inspector();
 
     app.refresh_workspace();
     assert_eq!(
@@ -453,10 +456,9 @@ fn board_selection_keeps_its_stable_id_across_refreshes_and_a_status_change() {
         Some(selected_id.as_str()),
         "selection lost after refresh_workspace"
     );
-    assert_eq!(
-        app.detail_model().unwrap().title,
-        "Beta task with a long title"
-    );
+    app.open_inspector();
+    assert_eq!(inspector_title(&app), "Beta task with a long title");
+    app.close_inspector();
 }
 
 #[test]
@@ -924,7 +926,6 @@ fn only_the_active_board_marks_or_pans_a_selected_card() {
     let mut app = base_app("m29-two-boards");
     app.screen = Screen::Home;
     app.focus = FocusPane::Workspace;
-    app.show_detail = false;
     app.active_component = 0;
     app.selected = 11;
     app.home = orbit_ui::ResolvedView {

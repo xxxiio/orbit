@@ -13,7 +13,7 @@
 │ ║        Move to review                                                                        ║ ┃
 │ ║        Move to deferred                                                                      ║ ┃
 │ ║        Move to done                                                                          ║ ┃
-│ ║        Move to cancelled                                                                     ║ ┃
+│ ║        ⚠ Move to cancelled                                                                   ║ ┃
 │ ║  E     Quick edit                                                                            ║ ┃
 │ ║ More actions                                                                                 ║ ┃
 │ ║        Edit details                                                                          ║ ┃

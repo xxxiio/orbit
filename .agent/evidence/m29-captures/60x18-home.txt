@@ -1,10 +1,10 @@
  ORBIT › Home / Today   3 projects · 1 inbox
-▸ Workspace │  Sidebar │ Tab switch · D details
+▸ Workspace │  Sidebar │ Tab switch · Enter inspect
 ┏ Today / Next • 12h • [/… ┓╭ Today / Next tasks ──────────╮
 ┃Today / Next              ┃│  ○ Wire the task table       │
 ┃TODAY / NEXT  •  accepted ┃│  ○ Reconnect the replica     │
 ┃revision 50  •  evaluated ┃│  ~ Map the command palette   │
-┃1792850149767             ┃│  ~ Audit sync retries        │
+┃1792859724729             ┃│  ~ Audit sync retries        │
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛╰──────────────────────────────╯
 ╭ Projects ──────────────────╮╭ Inbox ─────────────────────╮
 │              3             ││              1             │

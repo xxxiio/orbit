@@ -11,6 +11,7 @@ impl SqliteStore {
         store.ensure_blueprint_work_item_schema()?;
         store.ensure_blueprint_actions_schema()?;
         store.ensure_blueprint_receipts_schema()?;
+        store.ensure_capability_install_schema()?;
         Ok(store)
     }
 
@@ -26,6 +27,7 @@ impl SqliteStore {
         store.ensure_blueprint_work_item_schema()?;
         store.ensure_blueprint_actions_schema()?;
         store.ensure_blueprint_receipts_schema()?;
+        store.ensure_capability_install_schema()?;
         Ok(store)
     }
 

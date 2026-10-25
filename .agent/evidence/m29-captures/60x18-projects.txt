@@ -1,5 +1,5 @@
  ORBIT › Projects   3 projects · 1 inbox
-▸ Workspace │  Sidebar │ Tab switch · D details
+▸ Workspace │  Sidebar │ Tab switch · Enter inspect
 Projects  Enter open · c new project · : palette · q quit …
 
 ┏ 3 project(s) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓

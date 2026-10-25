@@ -232,6 +232,31 @@ reconciliation work rather than retrying blindly: inspect the outbox, then
 remove or replace the staged intent explicitly. Checking criteria never changes
 task status.
 
+**Connected blueprint writes are durable intents, not direct posts.** In
+connected mode, `blueprint.publish`, `blueprint.install`, `blueprint.bind`,
+`blueprint.create_item`, `blueprint.transition`, `blueprint.properties` and
+`blueprint.template` have exactly one transport: each freezes its route and wire
+payload into the canonical, globally ordered replica outbox first, then attempts
+the same flush that carries every other command family. There is no direct write
+route, so an unreachable or offline authority cannot lose the intention.
+`blueprint.list`, `blueprint.show`, `blueprint.binding` and `blueprint.item`
+remain direct reads and never queue.
+
+| Field | Meaning |
+|---|---|
+| `command_id` | The stable identity of this write. Supplied as an optional string argument, otherwise generated and returned. Reuse it to replay the same write; reusing it for a different body conflicts. |
+| `disposition` | Exactly `accepted`, `pending` or `conflict`. |
+| `accepted` / `pending` | Booleans that mirror `disposition`; both are `false` for `conflict`. |
+| `receipt` / `result` | Present only when accepted. `receipt` is the authority's immutable acceptance envelope (command ID plus response) read back from the outbox; `result` is the applied blueprint, binding, work item or template plan. A replay returns the identical receipt and never repeats the mutation. |
+| `reason` / `state` | Present when pending or conflicted: the outbox state and the reviewable reason. |
+
+While the authority is unreachable the response is `pending` with the command ID
+and no server payload. Repeating the identical call after reconnecting (or
+`authority.flush`) submits the same frozen intention and reports `accepted` once
+the server acknowledges it. A pending acknowledgement that was actually applied
+on the server is replayed from the same identity, so the retry returns the
+original receipt instead of a second mutation.
+
 **Attachment tools remain local-only.** The connected registry deliberately
 does not advertise `attachment.*`: the connected CLI and TUI own staging,
 upload, cross-client retrieval and online-only removal, while connected MCP
@@ -239,6 +264,23 @@ would have no honest attachment surface in this build. Use
 `orbit attachment add|list|inspect|export|remove|flush` against a connected
 replica instead. Attachment tools in the local registry continue to work
 against a local workspace.
+
+**Capability actions have no MCP tools in this iteration.** Capability
+installation, project authorization, action requests, execution and
+reconciliation are exposed only by the local `orbit blueprint capability` and
+`orbit blueprint action` commands. The MCP registries deliberately advertise no
+capability administration or action-execution tool: there is no hypothetical
+name to discover, and adding one without an executor and grant contract would
+misrepresent authority. Use the CLI against the local authoritative workspace.
+Connected mode refuses those CLI groups explicitly; it does not queue a request
+that cannot execute.
+
+The local `blueprint.transition` tool does resolve the project's durable
+capability grants, so a transition guarded by a capability works after that
+capability has been installed and authorized for the project through the CLI.
+The tool still takes only the item, target state and expected revision; grants
+come from durable state, not from the tool call. See the
+[trusted capability developer guide](../developers/extensions-and-capabilities.md).
 
 `workflow.apply` and workflow binding remain local-authoritative; connected
 mode reports that clearly instead of queueing an unsupported mutation.
@@ -260,7 +302,8 @@ use `workflow.list`, select an immutable version, then `blueprint.bind` (or
 `workflow.apply`) only for an authorized project. `blueprint.create_item`,
 `blueprint.transition`, and `blueprint.properties` are user-directed mutations;
 declaring an action does **not** grant arbitrary shell or agent access. Basic is
-the default binding for newly created projects.
+the default binding for newly created projects. For capability actions, use the
+local CLI: MCP has no install, authorize, request, execute or reconcile tools.
 
 **Rich tasks:** use `task.get` and `task.update` for description, priority and
 labels; `task.acceptance.*` for ordered criteria; and `task.activity` for

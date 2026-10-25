@@ -1,8 +1,6 @@
 //! Frame chrome: header, body regions, sidebar, workspace panes, action bar,
 //! status line and the bordered blocks the rest of the renderer draws into.
-use super::components::{
-    draw_components, draw_detail, draw_projects_screen, render_selectable_list,
-};
+use super::components::{draw_components, draw_projects_screen, render_selectable_list};
 use super::layout::shell_plan;
 use crate::app::{App, FocusPane, Screen, StatusKind};
 use crate::theme::MEDIUM_BREAKPOINT;
@@ -115,22 +113,17 @@ fn draw_body_regions(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
     let plan = shell_plan(area.width, app);
-    let mut constraints = vec![
-        Constraint::Length(plan.sidebar),
-        Constraint::Min(plan.workspace_floor.max(1)),
-    ];
-    if let Some(detail) = plan.detail {
-        constraints.push(Constraint::Length(detail));
-    }
+    // Exactly two regions: sidebar + workspace. The workspace takes every
+    // column the sidebar does not claim, at every terminal width.
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints(constraints)
+        .constraints([
+            Constraint::Length(plan.sidebar),
+            Constraint::Min(plan.workspace_floor.max(1)),
+        ])
         .split(area);
     draw_sidebar(frame, chunks[0], app);
     draw_main(frame, chunks[1], app);
-    if let Some(chunk) = chunks.get(2) {
-        draw_detail(frame, *chunk, app);
-    }
 }
 /// Narrow terminals keep one pane at a time, but never hide the way back: the
 /// pane bar names both panes, marks the focused one and names the key that
@@ -165,7 +158,10 @@ fn draw_pane_bar(frame: &mut Frame, area: Rect, app: &App) {
         ));
         spans.push(Span::styled("│", app.theme.border()));
     }
-    spans.push(Span::styled(" Tab switch · D details", app.theme.muted()));
+    spans.push(Span::styled(
+        " Tab switch · Enter inspect",
+        app.theme.muted(),
+    ));
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
@@ -397,19 +393,20 @@ fn status_hint(app: &App, width: u16) -> &'static str {
         return "j/k select · Esc back";
     }
     match app.screen {
-        Screen::Home => "j/k select · Tab focus · D details · Esc back",
-        Screen::Inbox => "j/k select · Enter detail · D details · Esc back",
-        Screen::Projects => "j/k select · Enter open · D details · Esc back",
-        Screen::Agents => "j/k select · Enter detail · D details · Esc back",
-        Screen::Project => "j/k select · h/l component · D details · Esc back",
+        Screen::Home => "j/k select · Tab focus · Enter inspect · Esc back",
+        // Enter on the Projects list opens the project; `D` inspects the row.
+        Screen::Inbox => "j/k select · Enter inspect · D inspect · Esc back",
+        Screen::Projects => "j/k select · Enter open · D inspect · Esc back",
+        Screen::Agents => "j/k select · Enter inspect · D inspect · Esc back",
+        Screen::Project => "j/k select · h/l component · Enter inspect · Esc back",
     }
 }
 
 /// A shorter reminder for terminals where the full one does not fit.
 fn short_status_hint(app: &App) -> &'static str {
     match app.screen {
-        Screen::Project => "h/l component · D details",
-        _ => "Tab focus · D details",
+        Screen::Project => "h/l component · Enter inspect",
+        _ => "Tab focus · Enter inspect",
     }
 }
 

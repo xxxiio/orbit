@@ -34,9 +34,7 @@ pub use attachment::{
 pub use dependency::{Blocker, BlockerStatus, Dependency, WorkRef};
 pub use error::DomainError;
 pub use habit::{Habit, HabitCadence};
-pub use habit_tracking::{
-    HabitOccurrence, HabitPeriod, HabitPeriodResult, HabitStreakSummary, evaluate_habit_periods,
-};
+pub use habit_tracking::{HabitOccurrence, HabitPeriod};
 pub use ids::{
     AcceptanceCriterionId, ActivityId, AttachmentId, HabitId, HabitOccurrenceId, KnowledgeItemId,
     KnowledgeResourceId, MilestoneId, ProjectId, RoutineId, ScheduleBlockId, TaskId,

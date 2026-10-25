@@ -21,6 +21,11 @@ Connected captures (pending inspector, connected console) start a disposable
 server binary is missing or the authority cannot start, those two captures are
 reported as skipped with the reason instead of writing a misleading screen.
 
+The item inspector and the capability-action captures use the two-region shell:
+``Enter`` opens an overlay above 80x20 and a full-screen panel below it, and the
+capability captures seed the reference manifest plus the reference capability so
+the offer, the schema form, the pending request and its durable receipt are real.
+
 Usage::
 
     python3 scripts/tui-captures.py                 # write every capture
@@ -64,6 +69,21 @@ DEFAULT_SERVER_BINARY = REPO_ROOT / "target" / "debug" / "orbit-server"
 
 HOME_HEADER_RE = r"(?m)^\s*ORBIT\s*›\s*Home / Today"
 PROJECTS_HEADER_RE = r"(?m)^\s*ORBIT\s*›\s*Projects"
+
+# The item inspector replaces the old docked Details column: `Enter` opens it for
+# the selected row, `D` toggles it anywhere, `Esc` closes it.
+INSPECTOR_MARKER = "Inspector ·"
+INSPECTOR_FOOTER = "Esc close · j/k scroll · Enter close"
+
+# Trusted capability actions (local authority only). The reference capability is
+# registered by the CLI's trusted composition and the reference manifest wires it
+# to one work item, so the same fixture the M30 acceptance suite uses produces a
+# real offer, request and receipt.
+CAPABILITY = "orbit.reference.work-item-note"
+CAPABILITY_MANIFEST = REPO_ROOT / "blueprints" / "examples" / "capability-reference.json"
+CAPABILITY_PROJECT = "Capability Demo"
+CAPABILITY_ITEM_MARKER = "item-1"
+CAPABILITY_ACTION_LABEL = "Action Append a durable note"
 
 # Fixed seed data: names, ids and statuses never change between runs. Dates are
 # relative to the run so the planning views always show live work.
@@ -180,6 +200,46 @@ def _open_board(session: TuiSession) -> None:
     )
 
 
+def _open_project_named(session: TuiSession, name: str) -> None:
+    """Open one project by name (the capability fixture has a single project)."""
+    session.send_keys(b"g", b"p", delay=0.15)
+    session.wait_for_screen_regex(
+        PROJECTS_HEADER_RE, timeout=10.0, description="Projects screen"
+    )
+    session.wait_for_screen_text(name, timeout=10.0, description=f"{name} row")
+    session.send(ENTER, note=f"open {name}")
+    session.wait_for_screen_text(name, timeout=15.0, description=f"{name} workspace")
+
+
+def _open_capability_item(session: TuiSession) -> None:
+    """Select the work item that declares the reference capability action."""
+    _open_project_named(session, CAPABILITY_PROJECT)
+    session.wait_for_screen_text(
+        CAPABILITY_ITEM_MARKER, timeout=15.0, description="capability work item"
+    )
+    # Offers are resolved on selection/navigation changes; an explicit refresh
+    # makes the capture independent of the first frame's timing.
+    session.send(b"r", note="refresh accepted data")
+    session.wait_until_screen(
+        lambda view: CAPABILITY_ITEM_MARKER in view,
+        timeout=15.0,
+        description="work item after refresh",
+    )
+
+
+def _pump_until(session: TuiSession, predicate, *, attempts: int = 30, description: str) -> str:
+    """Send Down until ``predicate`` holds on a freshly-read screen."""
+    for _ in range(attempts):
+        try:
+            return session.wait_until_screen(predicate, timeout=0.4, description=description)
+        except AssertionError:
+            session.send(b"j", note="move to the next action")
+    raise AssertionError(
+        f"{description} never became true\nscreen:\n{session.screen_text}\n"
+        f"Evidence: {session.evidence_dir}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Surface actions: each receives a freshly launched session.
 # ---------------------------------------------------------------------------
@@ -200,11 +260,84 @@ def _board(session: TuiSession) -> None:
     _open_board(session)
 
 
-def _task_detail(session: TuiSession) -> None:
+def _inspector(session: TuiSession) -> None:
     _open_tasks(session)
     session.send_keys(b"j", b"j", delay=0.15)
-    session.send(ENTER, note="open the selected task detail")
-    session.wait_for_screen_text(" · detail", timeout=10.0, description="task detail modal")
+    session.send(ENTER, note="open the selected item's inspector")
+    session.wait_for_screen_text(INSPECTOR_MARKER, timeout=10.0, description="inspector")
+    session.wait_for_screen_text(
+        INSPECTOR_FOOTER, timeout=10.0, description="inspector footer"
+    )
+
+
+def _inspector_full_screen(session: TuiSession) -> None:
+    """At 60x18 the inspector covers the frame instead of floating over it."""
+    _open_tasks(session)
+    session.send_keys(b"j", b"j", delay=0.15)
+    session.send(ENTER, note="open the inspector full screen")
+    session.wait_for_screen_text(INSPECTOR_MARKER, timeout=10.0, description="inspector")
+    session.wait_until_screen(
+        lambda view: view.splitlines()[0].startswith("╔"),
+        timeout=10.0,
+        description="full-screen inspector frame",
+    )
+
+
+def _capability_actions(session: TuiSession) -> None:
+    """The contextual menu lists the capability action with its refusal code."""
+    _open_capability_item(session)
+    session.send(b"a", note="open the contextual action menu")
+    session.wait_for_screen_text("Actions ·", timeout=10.0, description="action menu")
+    _pump_until(
+        session,
+        lambda view: CAPABILITY_ACTION_LABEL in view,
+        description="capability action row",
+    )
+
+
+def _capability_inspector(session: TuiSession) -> None:
+    """Inspector capability block: one available offer and one durable receipt.
+
+    Runs the real request → confirm → execute path first, so the history block
+    shows a receipt the trusted executor actually appended.
+    """
+    _open_capability_item(session)
+    session.send(b"a", note="open the contextual action menu")
+    session.wait_for_screen_text("Actions ·", timeout=10.0, description="action menu")
+    _pump_until(
+        session,
+        lambda view: any(
+            CAPABILITY_ACTION_LABEL in line and "▸" in line for line in view.splitlines()
+        ),
+        description="capability action selected",
+    )
+    session.send(ENTER, note="open the capability form")
+    session.wait_for_screen_text("Note body", timeout=10.0, description="schema form")
+    session.send_text("durable note from the capture", delay=0.02)
+    session.send(ENTER, note="record the pending request")
+    session.wait_for_screen_text(
+        "Request recorded (pending", timeout=10.0, description="pending confirmation"
+    )
+    session.send(ENTER, note="run the trusted executor")
+    session.wait_for_screen_text(
+        "Capability action · succeeded", timeout=15.0, description="succeeded result"
+    )
+    session.send(ENTER, note="close the result")
+    session.send(ENTER, note="open the inspector")
+    session.wait_for_screen_text(
+        "CAPABILITY ACTIONS", timeout=10.0, description="inspector capability block"
+    )
+    # The capability block is painted after ACTIONS, so the inspector has to be
+    # scrolled before the durable receipt row is inside the frame.
+    session.send_keys(*([b"j"] * 6), delay=0.15)
+    session.wait_for_screen_text(
+        "RECENT CAPABILITY ACTIONS", timeout=10.0, description="durable history block"
+    )
+    session.wait_for_screen_text(
+        "orbit.reference.work-item-note · command",
+        timeout=10.0,
+        description="durable receipt row",
+    )
 
 
 def _action_menu(session: TuiSession) -> None:
@@ -295,6 +428,7 @@ class Capture:
     action: Callable[[TuiSession], None]
     shows: str
     keys: str
+    fixture: str = "local"
 
     @property
     def size(self) -> str:
@@ -308,16 +442,16 @@ class Capture:
 CAPTURES: list[Capture] = [
     Capture("home", 60, 18, False, _home,
             "Compact shell: only the workspace is visible, and the pane bar above it names both panes "
-            "plus `Tab switch · D details`. The Home grid still fits at this height, so every component "
-            "is painted and long lines truncate inside their panel.",
+            "plus `Tab switch · Enter inspect`. The Home grid still fits at this height, so every "
+            "component is painted and long lines truncate inside their panel.",
             "launch at 60x18"),
     Capture("home", 100, 30, False, _home,
-            "Sidebar + workspace (details dock only from 120 columns), the Today/Next planning component "
-            "and the compact action bar.",
+            "The default two-region shell (sidebar + workspace) with the Today/Next planning component "
+            "and the compact action bar; no column is reserved for details.",
             "launch at 100x30"),
     Capture("home", 160, 45, False, _home,
-            "Full three-region shell: the sidebar sizes to its labels, the workspace keeps every Home "
-            "component and the detail pane is docked on the right.",
+            "The same two regions on a large terminal: the sidebar sizes to its labels and the workspace "
+            "takes every remaining column for all Home components.",
             "launch at 160x45"),
     Capture("projects", 60, 18, False, _projects,
             "Projects list at the smallest supported size, with the seeded project and its status glyph.",
@@ -327,19 +461,21 @@ CAPTURES: list[Capture] = [
             "and the contextual action bar.",
             "g p"),
     Capture("projects", 160, 45, False, _projects,
-            "Projects list with the docked detail pane for the selected project.",
+            "Projects list owning the whole width beyond the sidebar; `D` opens the selected project row "
+            "in the inspector, while `Enter` opens the project.",
             "g p"),
     Capture("tasks", 60, 18, False, _tasks,
             "The Tasks table in compact mode: one pane, the title column plus the status and priority "
             "columns that fit. The deadline column is dropped rather than squashed; open the row's "
-            "detail for every field.",
+            "inspector for every field.",
             "g p, Enter, ], j j"),
     Capture("tasks", 100, 30, False, _tasks,
             "The Tasks table with a selected row (`▸` rail and filled row), the status glyph and "
-            "priority; details are not docked at this width, so Enter/D opens them.",
+            "priority; the table keeps the full remaining width because no details column is docked.",
             "g p, Enter, ], j j"),
     Capture("tasks", 160, 45, False, _tasks,
-            "The Tasks table at full width: every column gets room and the detail pane stays docked.",
+            "The Tasks table at full width: every column gets room and `Enter` opens the inspector as "
+            "an overlay instead of shrinking the table.",
             "g p, Enter, ], j j"),
     Capture("board", 60, 18, False, _board,
             "The Kanban in compact mode: two readable columns of ten (`columns 2-3 of 10`), the column "
@@ -350,16 +486,20 @@ CAPTURES: list[Capture] = [
             "following the selected card and the quick-edit/status hints.",
             "g p, Enter, ] ]"),
     Capture("board", 160, 45, False, _board,
-            "The wide Kanban with the details pane docked: five readable columns of ten (`columns 1-5 of "
+            "The wide Kanban without a details column: six readable columns of ten (`columns 1-6 of "
             "10`), column headers with counts, the selected-card marker and per-column status glyphs.",
             "g p, Enter, ] ]"),
-    Capture("task-detail", 100, 30, False, _task_detail,
-            "The task detail overlay (`… · detail`): status, readiness, estimate, due date, deadline, "
-            "attachments and every action the selection authorizes.",
+    Capture("inspector", 60, 18, False, _inspector_full_screen,
+            "A terminal below 80x20 cannot show a readable overlay, so the inspector takes the whole "
+            "frame (`╔ Inspector · … ╗`): title, status, PROPERTIES and the authorized ACTIONS.",
             "g p, Enter, ], j j, Enter"),
-    Capture("task-detail", 160, 45, False, _task_detail,
-            "The same task detail overlay on a large terminal, where the property list and the full "
-            "action list fit without scrolling.",
+    Capture("inspector", 100, 30, False, _inspector,
+            "The item inspector as an inset overlay: the two-region shell stays visible behind it, and "
+            "the footer reads `Esc close · j/k scroll · Enter close · a actions · e edit`.",
+            "g p, Enter, ], j j, Enter"),
+    Capture("inspector", 160, 45, False, _inspector,
+            "The same inspector inset over the two-region shell; its body is capped in height, so a long "
+            "action list still scrolls with `j`/`k`, and closing it returns the selection unchanged.",
             "g p, Enter, ], j j, Enter"),
     Capture("action-menu", 100, 30, False, _action_menu,
             "The grouped action menu (`Actions · …`): Suggested operations first, then More actions; "
@@ -391,6 +531,18 @@ CAPTURES: list[Capture] = [
             "The connected command console (`queued intents are PENDING`) after a read-only `sync.status`: "
             "read-only output appears inline, nothing is queued.",
             "connected launch, :, Connected commands, sync.status"),
+    Capture("capability-action-menu", 100, 30, False, _capability_actions,
+            "The contextual action menu on a blueprint work item, scrolled to the capability action: the "
+            "offer is listed while it is still refused, with its code and reason "
+            "(`not_authorized: …`), so it is never silently hidden.",
+            "g p, Enter Capability Demo, r, a, j…",
+            fixture="capability-refused"),
+    Capture("capability-inspector", 120, 35, False, _capability_inspector,
+            "The inspector's capability blocks after one real request: `CAPABILITY ACTIONS` lists the "
+            "offer with its transition and `RECENT CAPABILITY ACTIONS` shows the durable `succeeded` "
+            "receipt with its command id.",
+            "g p, Enter Capability Demo, a, Enter, type note, Enter, Enter, Enter, Enter",
+            fixture="capability-authorized"),
 ]
 
 
@@ -463,6 +615,42 @@ def seed_workspace(base: Path, *, verbose: bool = False) -> Workspace:
             )
         for status in transitions:
             _cli(workspace, "task", "status", task_id, status)
+    return workspace
+
+
+def seed_capability_workspace(base: Path, *, authorize: bool) -> Workspace:
+    """One project bound to the reference manifest with one capability work item.
+
+    This is the same fixture the M30 acceptance suite builds through the real
+    CLI: install the reference capability, publish the manifest, bind it, create
+    the item and (optionally) grant the capability for the project.
+    """
+    base.mkdir(parents=True, exist_ok=True)
+    workspace = Workspace.create(base)
+    project = _cli(workspace, "project", "add", CAPABILITY_PROJECT)["project"]["id"]
+    _cli(workspace, "blueprint", "capability", "install", CAPABILITY)
+    _cli(workspace, "blueprint", "import", str(CAPABILITY_MANIFEST))
+    _cli(
+        workspace,
+        "blueprint",
+        "apply",
+        project,
+        "capability-reference",
+        "--version",
+        "1",
+    )
+    _cli(workspace, "blueprint", "create-item", project, "item-1", "note-task")
+    if authorize:
+        _cli(
+            workspace,
+            "blueprint",
+            "capability",
+            "authorize",
+            CAPABILITY,
+            "--project",
+            project,
+            "--confirm",
+        )
     return workspace
 
 
@@ -631,6 +819,18 @@ def run_captures(
 
     print(f"seeding deterministic workspace under {work_root}/workspace", flush=True)
     local = seed_workspace(work_root / "workspace", verbose=verbose)
+    fixtures: dict[str, Workspace] = {"local": local}
+
+    def workspace_for(capture: Capture) -> Workspace:
+        """Seed each extra fixture once; the local workspace is shared."""
+        if capture.fixture not in fixtures:
+            print(f"seeding {capture.fixture} fixture under {work_root}/{capture.fixture}", flush=True)
+            fixtures[capture.fixture] = seed_capability_workspace(
+                work_root / capture.fixture,
+                authorize=capture.fixture == "capability-authorized",
+            )
+        return fixtures[capture.fixture]
+
     selected = [
         capture
         for capture in CAPTURES
@@ -656,7 +856,7 @@ def run_captures(
                 continue
             workspace = authority.workspace
         else:
-            workspace = local
+            workspace = workspace_for(capture)
         print(f"[{label}] capturing…", flush=True)
         session: TuiSession | None = None
         try:
@@ -681,13 +881,16 @@ def run_captures(
 def _readme(written: list[Path], skipped: list[tuple[Capture, str]]) -> str:
     present = {path.name for path in written}
     lines = [
-        "# M29 terminal captures",
+        "# M30 terminal captures (two-region shell and item inspector)",
         "",
         "Real `target/debug/orbit-tui` sessions driven through",
         "`tests/acceptance/tui/pty_harness.py`. Each `.txt` file is the *reconstructed screen*",
         "at the moment named below — not a stream log, not a hand-written mock. Trailing",
         "padding and trailing blank lines are removed; everything else is exactly what the",
         "terminal showed.",
+        "",
+        "The directory keeps the `m29-captures` name it was created under; every screen below is",
+        "regenerated from the M30 shell (sidebar + workspace, inspector overlay, capability actions).",
         "",
         "## Reproduce",
         "",
@@ -700,6 +903,11 @@ def _readme(written: list[Path], skipped: list[tuple[Capture, str]]) -> str:
         "eleven tasks spanning the Basic workflow statuses, estimates and deadlines), writes",
         "PTY evidence under a temporary directory, and replaces this directory's `.txt` files.",
         "`--only <surface>` limits a run; `--list` prints the inventory.",
+        "",
+        "The two capability captures use a second and third throw-away workspace: one project bound",
+        "to `blueprints/examples/capability-reference.json`, the reference capability",
+        "`orbit.reference.work-item-note` installed and its single work item created — refused for",
+        "the menu capture, authorized and executed once for the inspector capture.",
         "",
         "Connected captures each start a disposable `orbit-server` on a free loopback port,",
         "enrol a throw-away device and queue one real intention, so every connected screen shows",
@@ -735,11 +943,16 @@ def _readme(written: list[Path], skipped: list[tuple[Capture, str]]) -> str:
             "  and a filled style; the status glyph (`✓ ! ◐ ▶ ○ ~`) repeats the state without colour.",
             "- In the sidebar `»` marks the current destination and `●` is the project status `active`;",
             "  the selected row still uses the `▸` rail.",
+            "- The default frame is two regions: a 22-column sidebar and a workspace that owns every",
+            "  remaining column. Nothing is docked on the right; there is no `Details` box.",
             "- Below 76 columns only one pane is visible; the row above it reads",
-            "  `▸ Workspace │ Sidebar │ Tab switch · D details`.",
-            "- From 76 columns the sidebar is shown. Details dock from 120 columns only while the active",
-            "  component still gets its readable minimum width; if docking would squeeze it the pane is",
-            "  refused (unless the detail pane owns focus), and `D`/`Enter` opens the detail overlay.",
+            "  `▸ Workspace │  Sidebar │ Tab switch · Enter inspect`.",
+            "- The item inspector is an overlay (`╔ Inspector · … ╗`) at 80x20 and above, and takes the",
+            "  whole frame below that (see `60x18-inspector.txt`). Its footer is",
+            "  `Esc close · j/k scroll · Enter close · a actions · e edit`.",
+            "- `CAPABILITY ACTIONS` / `RECENT CAPABILITY ACTIONS` only appear for blueprint work items in",
+            "  the local authoritative workspace; `120x35-capability-inspector.txt` is scrolled to the",
+            "  durable `succeeded` receipt row.",
             "- The action bar is the second-to-last row; the status line is the last row.",
             "- Connected captures show `CONNECTED … N pending · ! inspect` when the header can fit it;",
             "  the 60x18 connected capture is the narrow case where it is dropped. Every queued row is",

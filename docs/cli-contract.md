@@ -213,6 +213,105 @@ There is no knowledge command group in this build. The note and folder commands
 replace the retired structured-knowledge interface. A linked note or a project
 success criterion is the supported way to record task acceptance criteria.
 
+## Trusted capability actions
+
+Capability administration and action commands are local-authority only in this
+iteration. Connected mode refuses the whole `capability` and `action` groups
+with `capability actions require the local authoritative workspace; connected
+parity is tracked as M25 EC-004`; it does not queue an unexecutable request.
+
+Installation, authorization, request and execution are separate facts and must
+happen in that order:
+
+```sh
+orbit blueprint capability install CAPABILITY_ID
+orbit blueprint import MANIFEST.json
+orbit blueprint apply PROJECT_ID BLUEPRINT_ID
+orbit blueprint capability authorize CAPABILITY_ID --project PROJECT_ID --confirm
+orbit blueprint action offers ITEM_ID --json
+orbit blueprint action request ITEM_ID --action ACTION_ID --revision N \
+  --command COMMAND_ID --input '{"note":"..."}' --json
+orbit blueprint action execute COMMAND_ID --json
+```
+
+Publication is gated by durable installation: importing a manifest whose
+`required_capabilities` are unavailable fails with
+`unavailable capability: <id>`. Installation alone grants no project authority;
+`authorize` creates one project grant and requires `--confirm`. An offer is
+advisory and is re-checked when the request is persisted.
+
+Stable JSON shapes:
+
+- offer availability is `{"state":"available"}` or
+  `{"state":"unavailable","code":"...","reason":"..."}` with codes
+  `capability_missing`, `capability_disabled`, `capability_not_installed`,
+  `executor_missing`, `requirement_missing` and `not_authorized`;
+- a request carries `state: "pending"`, a stable `command_id`, the item revision,
+  the action/capability and `plan_json`;
+- a receipt carries `outcome` (`succeeded`, `failed` or `uncertain`), `provider`,
+  `command_id`, `item_id`, `action_id`, `detail` and `recorded_at_ms`;
+- `show` returns the request plus `receipt` (or `null`);
+- `reconcile` returns `{"recovered_from":"claimed"|"uncertain","receipt":{...}}`.
+
+A request is intent, not execution. `execute` claims once and never re-dispatches
+a recorded receipt. `failed` and `uncertain` outcomes are not retried
+automatically; `claimed` without a receipt and `uncertain` are resolvable only
+with `orbit blueprint action reconcile COMMAND_ID --succeed|--fail --confirm`.
+A `pending` request cannot be reconciled.
+
+Exit behaviour follows the normal classes: unavailable actions, missing
+`--confirm` and the connected refusal exit `2`; invalid inputs, revision
+conflicts and unreconcilable action states exit `4`. `--json` changes formatting,
+not exit semantics.
+
+## Workflow version upgrades
+
+Publishing or installing a newer manifest never rebinds a project, and
+`orbit blueprint apply` keeps its original meaning (replace the whole workflow,
+no compatibility check). A version change on an existing project uses a separate
+preview/apply pair:
+
+```sh
+orbit blueprint upgrade-preview PROJECT_ID --id BLUEPRINT_ID --version N --json
+orbit blueprint upgrade PROJECT_ID --id BLUEPRINT_ID --version N \
+  --fingerprint HEX --confirm --json
+```
+
+Stable JSON shapes:
+
+- the preview result carries `schema` (`orbit.blueprint-upgrade-preview.v1`),
+  `project_id`, `project_revision`, `current` (`null` when unbound), `target`,
+  `kinds`, `views`, `warnings`, `blockers` and `fingerprint`;
+- every warning/blocker is `{code, message, subjects}` where `subjects` is the
+  list of live work-item ids or schema identifiers the finding was computed
+  from. Blocker codes are `kind_removed_with_live_items`,
+  `state_removed_with_live_items`, `field_removed_with_values`,
+  `field_type_incompatible`, `field_choice_value_unsupported`,
+  `field_required_without_default`, `field_now_required_missing_value`,
+  `property_not_in_target_schema`, `required_capability_unavailable` and
+  `target_validation_failed`;
+- `upgrade` echoes the approved report and adds `binding`, `previous` (or
+  `null`) and `already_applied`;
+- `views` is `{added, removed, changed}` and never blocks an upgrade;
+- `warnings` includes `transition_removed`, `action_removed`,
+  `field_type_widened`, `field_choice_options_trimmed` and
+  `target_version_not_newer` for changes that keep existing items valid.
+
+The fingerprint is a hex SHA-256 over the canonical preview payload: current
+binding, target id/version, both manifest digests, the accepted revision (the
+command-ledger tip) and every live work item's id, kind, state, revision and
+properties. It is recomputed inside the same savepoint as the binding write, so
+a preview taken before another accepted change is refused, not applied.
+
+Refusals write nothing: `--confirm` is mandatory (missing it exits `2`, a usage
+error), and a blocker, unpublished target or fingerprint mismatch exits `4` with
+the reason on stderr as `repository_error`. Replaying the identical approved
+upgrade returns the same binding with `already_applied: true`; when the project is
+already pinned to the target there is no approved change left, so the command is
+a no-op success and does not compare the fingerprint. Upgrade commands are
+local-authoritative only in this build; connected mode refuses them rather than
+queueing a change whose preview it cannot verify.
+
 ## External effects
 
 Agent launch, continuation and other external actions are not safe to retry

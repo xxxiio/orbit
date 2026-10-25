@@ -2,6 +2,15 @@ use crate::app::{self, App, FormFieldKind, Modal, StatusKind};
 use crate::input::text::{text_backspace, text_delete, text_insert};
 use crossterm::event::{KeyCode, KeyModifiers};
 
+/// Follow-up modal launched from the inspector. Recorded explicitly so the
+/// inspector reopens for the same subject afterwards.
+#[derive(Clone, Copy)]
+enum FollowUp {
+    Actions,
+    Edit,
+    QuickEdit,
+}
+
 pub(crate) fn handle_modal(
     app: &mut App,
     code: KeyCode,
@@ -239,11 +248,24 @@ pub(crate) fn handle_modal(
             }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                 keep = false;
-                if let app::PendingAction::DiscardFormChanges { form } = pending.clone() {
-                    app.modal = Some(Modal::Form(*form));
-                    app.notify("Form restored; unsaved changes preserved", StatusKind::Info);
-                } else {
-                    app.notify("Cancelled; no change was submitted", StatusKind::Info);
+                match pending.clone() {
+                    app::PendingAction::DiscardFormChanges { form } => {
+                        app.modal = Some(Modal::Form(*form));
+                        app.notify("Form restored; unsaved changes preserved", StatusKind::Info);
+                    }
+                    // A capability request was already recorded durably. Its
+                    // absence of a receipt is exactly "pending", never cancelled.
+                    app::PendingAction::ExecuteCapabilityAction { command_id, .. } => {
+                        app.notify(
+                            format!(
+                                "Request {command_id} remains pending (not executed). Run it later with `orbit blueprint action execute {command_id}`."
+                            ),
+                            StatusKind::Pending,
+                        );
+                    }
+                    _ => {
+                        app.notify("Cancelled; no change was submitted", StatusKind::Info);
+                    }
                 }
             }
             _ => {
@@ -566,16 +588,150 @@ pub(crate) fn handle_modal(
             KeyCode::PageUp => state.scroll = state.scroll.saturating_sub(10),
             _ => {}
         },
-        Modal::Detail(_) => match code {
-            KeyCode::Esc | KeyCode::Enter => keep = false,
+        Modal::Inspector(state) => match code {
+            // `Esc`, `Enter` and `D` close; the pane that had the keyboard gets
+            // it back. Scrolling belongs to the inspector's own offset.
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('D') => {
+                let state = state.clone();
+                keep = false;
+                app.retire_inspector(state);
+            }
             KeyCode::Down | KeyCode::Char('j') => {
-                app.modal_scroll = app.modal_scroll.saturating_add(1)
+                state.scroll = state.scroll.saturating_add(1);
+                app.inspector_scroll = state.scroll;
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                app.modal_scroll = app.modal_scroll.saturating_sub(1)
+                state.scroll = state.scroll.saturating_sub(1);
+                app.inspector_scroll = state.scroll;
             }
-            KeyCode::PageDown => app.modal_scroll = app.modal_scroll.saturating_add(10),
-            KeyCode::PageUp => app.modal_scroll = app.modal_scroll.saturating_sub(10),
+            KeyCode::PageDown => {
+                state.scroll = state.scroll.saturating_add(10);
+                app.inspector_scroll = state.scroll;
+            }
+            KeyCode::PageUp => {
+                state.scroll = state.scroll.saturating_sub(10);
+                app.inspector_scroll = state.scroll;
+            }
+            // Rebuild the inspected entity only, never the current selection.
+            KeyCode::Char('r') => {
+                app.refresh_current();
+                let subject = state.subject.clone();
+                match app.build_detail_for_subject(&subject) {
+                    Some(detail) => {
+                        state.detail = detail;
+                        state.unavailable = false;
+                    }
+                    None => state.unavailable = true,
+                }
+            }
+            _ => {
+                // Follow-up modals act on the inspected entity, so the cursor
+                // is put back on that subject first. A subject that vanished
+                // refuses instead of acting on an unrelated row.
+                let subject = state.subject.clone();
+                let follow_up = match code {
+                    KeyCode::Char('a') | KeyCode::Char('s') => Some(FollowUp::Actions),
+                    KeyCode::Char('e') => Some(FollowUp::Edit),
+                    KeyCode::Char('E') => Some(FollowUp::QuickEdit),
+                    _ => None,
+                };
+                if let Some(follow_up) = follow_up {
+                    if !app.focus_inspector_subject(&subject) {
+                        app.notify("This item is no longer available", StatusKind::Warning);
+                        state.unavailable = true;
+                    } else {
+                        let state = state.clone();
+                        keep = false;
+                        app.begin_inspector_follow_up(state);
+                        match follow_up {
+                            FollowUp::Actions => app.open_action_menu(),
+                            FollowUp::Edit => app.edit_selected(),
+                            FollowUp::QuickEdit => app.quick_edit_selected(),
+                        }
+                    }
+                }
+            }
+        },
+        Modal::CapabilityResult {
+            reconcile_command,
+            selected,
+            lines,
+            title,
+        } => match code {
+            KeyCode::Esc => {
+                keep = false;
+                if let Some(command_id) = reconcile_command {
+                    // Closing without a decision never promotes the outcome.
+                    app.notify(
+                        format!(
+                            "Outcome for {command_id} remains uncertain (never completed). Reconcile explicitly with `orbit blueprint action reconcile {command_id} --succeed` or `--fail`."
+                        ),
+                        StatusKind::Warning,
+                    );
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(command_id) = reconcile_command {
+                    let succeed = *selected == 0;
+                    keep = false;
+                    let _ = lines;
+                    let _ = title;
+                    app.modal = Some(Modal::Confirm {
+                        title: "Reconcile uncertain outcome".into(),
+                        body: format!(
+                            "Record command {command_id} as {}? This is an explicit operator decision; it does not re-run the capability.",
+                            if succeed { "succeeded" } else { "failed" }
+                        ),
+                        pending: app::PendingAction::ReconcileCapabilityAction {
+                            command_id: command_id.clone(),
+                            succeed,
+                        },
+                    });
+                } else {
+                    keep = false;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') if reconcile_command.is_some() => {
+                *selected = (*selected + 1).min(1);
+            }
+            KeyCode::Up | KeyCode::Char('k') if reconcile_command.is_some() => {
+                *selected = selected.saturating_sub(1);
+            }
+            KeyCode::Tab | KeyCode::BackTab if reconcile_command.is_some() => {
+                *selected = 1 - *selected;
+            }
+            KeyCode::Char('y') | KeyCode::Char('Y') if reconcile_command.is_some() => {
+                let command_id = reconcile_command.clone().unwrap_or_default();
+                keep = false;
+                let _ = lines;
+                let _ = title;
+                app.modal = Some(Modal::Confirm {
+                    title: "Reconcile uncertain outcome".into(),
+                    body: format!(
+                        "Record command {command_id} as succeeded? This is an explicit operator decision; it does not re-run the capability."
+                    ),
+                    pending: app::PendingAction::ReconcileCapabilityAction {
+                        command_id,
+                        succeed: true,
+                    },
+                });
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') if reconcile_command.is_some() => {
+                let command_id = reconcile_command.clone().unwrap_or_default();
+                keep = false;
+                let _ = lines;
+                let _ = title;
+                app.modal = Some(Modal::Confirm {
+                    title: "Reconcile uncertain outcome".into(),
+                    body: format!(
+                        "Record command {command_id} as failed? This is an explicit operator decision; it does not re-run the capability."
+                    ),
+                    pending: app::PendingAction::ReconcileCapabilityAction {
+                        command_id,
+                        succeed: false,
+                    },
+                });
+            }
             _ => {}
         },
         Modal::TodayActions { menu, selected } => match code {
@@ -680,8 +836,8 @@ pub(crate) fn handle_modal(
                         // Manual inspector refresh re-reads accepted state as
                         // well as the outbox, exactly like acknowledging with
                         // `f`: the server may have advanced since the last
-                        // accepted read. `refresh_after_mutation` invalidates
-                        // and reseeds the detail cache.
+                        // accepted read. `refresh_after_mutation` rebuilds the
+                        // open inspector from the refreshed state.
                         app.refresh_after_mutation();
                         app.refresh_pending_count();
                         match app.client.pending_commands() {

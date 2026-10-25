@@ -978,6 +978,7 @@ name = "orbit-application"
 version = "0.1.0"
 dependencies = [
  "orbit-domain",
+ "orbit-habit-capability",
  "orbit-planner",
  "orbit-progress",
 ]
@@ -1037,6 +1038,15 @@ name = "orbit-domain"
 version = "0.1.0"
 
 [[package]]
+name = "orbit-habit-capability"
+version = "0.1.0"
+dependencies = [
+ "orbit-domain",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "orbit-mcp"
 version = "0.1.0"
 dependencies = [
@@ -1071,6 +1081,7 @@ dependencies = [
  "orbit-application",
  "orbit-blueprint",
  "orbit-domain",
+ "orbit-habit-capability",
  "orbit-planner",
  "orbit-progress",
  "orbit-storage",

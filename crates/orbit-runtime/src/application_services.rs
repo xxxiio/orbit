@@ -128,7 +128,14 @@ impl<'a> ApplicationQueries<'a> {
         periods: &[orbit_domain::HabitPeriod],
         as_of_ms: i64,
     ) -> Result<orbit_application::CombinedProjectEvidenceReport, ApplicationError> {
-        orbit_application::get_combined_project_evidence_report(self.store, id, periods, as_of_ms)
+        let recurrence = self.habit_recurrence_status_for_project(id)?;
+        orbit_application::get_combined_project_evidence_report(
+            self.store,
+            id,
+            periods,
+            as_of_ms,
+            &recurrence,
+        )
     }
     pub fn project_health(
         &self,
@@ -152,6 +159,7 @@ impl<'a> ApplicationQueries<'a> {
         lookback_minutes: u64,
         policy: orbit_progress::HealthPolicy,
     ) -> Result<orbit_application::ModeAwareProjectHealthSnapshot, ApplicationError> {
+        let recurrence = self.habit_recurrence_status_for_project(id)?;
         orbit_application::get_mode_aware_project_health_snapshot(
             self.store,
             &RuntimeClock,
@@ -160,7 +168,53 @@ impl<'a> ApplicationQueries<'a> {
             as_of_ms,
             lookback_minutes,
             policy,
+            &recurrence,
         )
+    }
+
+    /// The opt-in gate for habit recurrence at the host/projection boundary.
+    ///
+    /// A project-scoped read requires both a durable installation and a grant for
+    /// that exact project, matching `capability_status` semantics. This is the
+    /// seam documented in the habits guide: without it, evidence reports return an
+    /// explicit unavailable status instead of computing streaks in core.
+    fn habit_recurrence_status_for_project(
+        &self,
+        project_id: &orbit_domain::ProjectId,
+    ) -> Result<orbit_habit_capability::HabitRecurrenceStatus, ApplicationError> {
+        let installed: bool = self
+            .store
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM orbit_capability_installations WHERE capability_id=?1)",
+                [orbit_habit_capability::CAPABILITY_ID],
+                |row| row.get(0),
+            )
+            .map_err(|error| {
+                ApplicationError::Repository(orbit_application::RepositoryError::Other(
+                    error.to_string(),
+                ))
+            })?;
+        if !installed {
+            return Ok(orbit_habit_capability::HabitRecurrenceStatus::not_installed());
+        }
+        let authorized: bool = self
+            .store
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM orbit_capability_grants
+                 WHERE capability_id=?1 AND project_id=?2)",
+                [orbit_habit_capability::CAPABILITY_ID, project_id.as_str()],
+                |row| row.get(0),
+            )
+            .map_err(|error| {
+                ApplicationError::Repository(orbit_application::RepositoryError::Other(
+                    error.to_string(),
+                ))
+            })?;
+        Ok(if authorized {
+            orbit_habit_capability::HabitRecurrenceStatus::available()
+        } else {
+            orbit_habit_capability::HabitRecurrenceStatus::not_authorized(project_id.as_str())
+        })
     }
     pub fn activities(&self) -> Result<Vec<orbit_domain::ActivityRecord>, ApplicationError> {
         use orbit_application::ActivityRepository;

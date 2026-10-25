@@ -6,5 +6,6 @@ license.workspace = true
 
 [dependencies]
 orbit-domain = { path = "../orbit-domain" }
+orbit-habit-capability = { path = "../orbit-habit-capability" }
 orbit-planner = { path = "../orbit-planner" }
 orbit-progress = { path = "../orbit-progress" }

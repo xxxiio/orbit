@@ -1372,9 +1372,14 @@ fn flush_refreshes_accepted_state_and_separates_accepted_from_pending() {
     let authority = Authority::start(vec![("/v1/authoritative/snapshot", snapshot())]);
     let (mut app, path) = connected_app(&authority.base, "flush-refresh");
     app.go_screen(Screen::Inbox);
-    // Build the docked detail cache for the selected task.
-    let _ = app.detail_model();
-    let builds = app.detail_cache_builds.get();
+    // Open the inspector for the selected task: one build, on the input path.
+    app.open_inspector();
+    assert!(
+        matches!(app.modal, Some(crate::app::Modal::Inspector(_))),
+        "{}",
+        app.status.text
+    );
+    let builds = app.inspector_builds.get();
     let refreshes = app.workspace_refreshes.get();
 
     let intent = crate::connected_actions::parse_intent(
@@ -1394,10 +1399,10 @@ fn flush_refreshes_accepted_state_and_separates_accepted_from_pending() {
         app.workspace_refreshes.get() > refreshes,
         "a non-empty flush must re-read accepted state"
     );
-    let _ = app.detail_model();
+    app.refresh_inspector();
     assert!(
-        app.detail_cache_builds.get() > builds,
-        "a non-empty flush must invalidate the detail cache"
+        app.inspector_builds.get() > builds,
+        "a refresh must rebuild the open inspector"
     );
     assert!(
         app.status.text.contains("accepted by the server"),

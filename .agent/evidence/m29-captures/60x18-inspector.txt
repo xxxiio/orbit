@@ -1,0 +1,18 @@
+╔ Inspector · Map the command palette ═════════════════════╗
+║Map the command palette                                   ║
+║▶ inprogress                                              ║
+║                                                          ║
+║PROPERTIES                                                ║
+║status: in_progress                                       ║
+║readiness: inprogress                                     ║
+║actionable: false                                         ║
+║estimate: 90m                                             ║
+║due: 2026-10-25                                           ║
+║deadline: 2026-10-25 16:35Z                               ║
+║Attachments: none                                         ║
+║                                                          ║
+║ACTIONS 19 · press a                                      ║
+║• Open details                                            ║
+║• Edit task                                               ║
+║ Esc close · j/k scroll · Enter close · a actions · e edit║
+╚══════════════════════════════════════════════════════════╝

@@ -984,6 +984,145 @@ impl App {
                 error: None,
                 dirty: false,
             }),
+            FormMode::CapabilityAction {
+                item_id,
+                revision,
+                capability,
+                action_id,
+                command_id,
+                external_effect,
+            } => {
+                let Some(view) = self.capability_offers.iter().find(|view| {
+                    view.item_id == item_id
+                        && view.offer.action_id == action_id
+                        && view.offer.capability == capability
+                }) else {
+                    self.notify(
+                        "Capability offers changed; refresh the project and try again",
+                        StatusKind::Warning,
+                    );
+                    return None;
+                };
+                let schema = view.offer.input_schema.clone();
+                let declared = view.offer.declared_parameters.clone();
+                let description = view.offer.description.clone();
+                let from = view.offer.from.clone();
+                let to = view.offer.to.clone();
+                let properties = schema
+                    .get("properties")
+                    .and_then(serde_json::Value::as_object)
+                    .cloned()
+                    .unwrap_or_default();
+                let required: std::collections::BTreeSet<String> = schema
+                    .get("required")
+                    .and_then(serde_json::Value::as_array)
+                    .map(|keys| {
+                        keys.iter()
+                            .filter_map(serde_json::Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let declared = declared.as_object().cloned().unwrap_or_default();
+                let mut fields = Vec::new();
+                for (key, property) in &properties {
+                    let kind = property
+                        .get("type")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default();
+                    let label = property
+                        .get("description")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| key.clone());
+                    let is_required = required.contains(key);
+                    let default = declared.get(key);
+                    let field = match kind {
+                        "string" => {
+                            let value = default
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned();
+                            let mut field = Self::text_field(
+                                key,
+                                &label,
+                                value,
+                                is_required,
+                                if is_required {
+                                    "required text"
+                                } else {
+                                    "optional text"
+                                },
+                            );
+                            if let Some(min) = property
+                                .get("minLength")
+                                .and_then(serde_json::Value::as_u64)
+                            {
+                                field.hint = format!("text, at least {min} character(s)");
+                            }
+                            field
+                        }
+                        "integer" => {
+                            let value = match default {
+                                Some(serde_json::Value::Number(number)) => number.to_string(),
+                                Some(serde_json::Value::String(text)) => text.clone(),
+                                _ => String::new(),
+                            };
+                            Self::integer_field(
+                                key,
+                                &label,
+                                value,
+                                is_required,
+                                if is_required {
+                                    "required integer"
+                                } else {
+                                    "optional integer"
+                                },
+                            )
+                        }
+                        "boolean" => Self::boolean_field(
+                            key,
+                            &label,
+                            default
+                                .and_then(serde_json::Value::as_bool)
+                                .unwrap_or(false),
+                        ),
+                        other => {
+                            self.notify(
+                                format!(
+                                    "Capability action input '{key}' uses unsupported type '{other}'"
+                                ),
+                                StatusKind::Error,
+                            );
+                            return None;
+                        }
+                    };
+                    fields.push(field);
+                }
+                Some(FormState {
+                    title: format!("Action · {description}"),
+                    hint: if external_effect {
+                        format!(
+                            "{capability} · {from} → {to} · declares an external effect; execution is a separate confirmation"
+                        )
+                    } else {
+                        format!("{capability} · {from} → {to}")
+                    },
+                    mode: FormMode::CapabilityAction {
+                        item_id: item_id.clone(),
+                        revision,
+                        capability: capability.clone(),
+                        action_id: action_id.clone(),
+                        command_id: command_id.clone(),
+                        external_effect,
+                    },
+                    fields,
+                    focused: 0,
+                    invalid: None,
+                    error: None,
+                    dirty: false,
+                })
+            }
         }
     }
 
@@ -1246,6 +1385,24 @@ impl App {
             FormMode::BindEvidence { project_id, unbind } => self
                 .submit_bind_evidence(&form, &project_id, unbind)
                 .map_err(FormError::from),
+            FormMode::CapabilityAction {
+                item_id,
+                revision,
+                capability,
+                action_id,
+                command_id,
+                external_effect,
+            } => self
+                .submit_capability_action(
+                    &form,
+                    &item_id,
+                    revision,
+                    &capability,
+                    &action_id,
+                    &command_id,
+                    external_effect,
+                )
+                .map_err(FormError::from),
         };
         match result {
             Ok(()) => {
@@ -1285,6 +1442,10 @@ impl App {
                     }
                 }
                 self.reopen_after_mutation(&form.mode);
+                // A successful save may have replaced the inspector with its
+                // edit form: reopen the inspector for the same subject now that
+                // the form is gone, with the rebuilt detail.
+                self.resume_pending_inspector();
             }
             Err(error) => self.form_error_with_field(form, error),
         }
@@ -2011,6 +2172,117 @@ impl App {
             },
             StatusKind::Success,
         );
+        Ok(())
+    }
+
+    /// Submit one trusted capability action.
+    ///
+    /// The form's staged command id is reused as-is: a transient rejection
+    /// keeps the form open and re-submitting the same form replays the identical
+    /// request identity. A successful request only records durable pending
+    /// intent; execution is the separate confirmation that owns the next step.
+    #[allow(clippy::too_many_arguments)]
+    fn submit_capability_action(
+        &mut self,
+        form: &FormState,
+        item_id: &str,
+        revision: u64,
+        capability: &str,
+        action_id: &str,
+        command_id: &str,
+        external_effect: bool,
+    ) -> Result<(), String> {
+        let mut inputs: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+        for field in &form.fields {
+            let value = field.value.trim();
+            match field.kind {
+                FormFieldKind::Text | FormFieldKind::Multiline => {
+                    if value.is_empty() {
+                        if field.required {
+                            return Err(format!("{} is required", field.label));
+                        }
+                        // Optional empties are omitted, never sent as "".
+                        continue;
+                    }
+                    inputs.insert(
+                        field.key.clone(),
+                        serde_json::Value::String(value.to_owned()),
+                    );
+                }
+                FormFieldKind::Integer => {
+                    if value.is_empty() {
+                        if field.required {
+                            return Err(format!("{} is required", field.label));
+                        }
+                        continue;
+                    }
+                    let parsed = value
+                        .parse::<i64>()
+                        .map_err(|_| format!("{} must be an integer", field.label))?;
+                    inputs.insert(field.key.clone(), serde_json::Value::Number(parsed.into()));
+                }
+                FormFieldKind::Boolean => {
+                    inputs.insert(
+                        field.key.clone(),
+                        serde_json::Value::Bool(field.value == "true"),
+                    );
+                }
+                // Capability schemas only declare text/integer/boolean; a
+                // Choice field would mean the schema validator was bypassed.
+                FormFieldKind::Choice(_) => {
+                    return Err(format!(
+                        "{} uses an unsupported capability input type",
+                        field.label
+                    ));
+                }
+            }
+        }
+        let request =
+            match self
+                .client
+                .request_capability_action(orbit_client::OrbitCapabilityRequest {
+                    item_id: item_id.to_owned(),
+                    expected_revision: revision,
+                    action_id: action_id.to_owned(),
+                    command_id: command_id.to_owned(),
+                    inputs,
+                }) {
+                Ok(request) => request,
+                Err(error) => {
+                    let message = format!("Capability request rejected: {}", error.message);
+                    self.notify(message.clone(), StatusKind::Error);
+                    return Err(message);
+                }
+            };
+        self.notify(
+            format!(
+                "Request recorded for {capability} ({action_id}) (pending, command {}). Nothing has executed yet.",
+                request.command_id
+            ),
+            StatusKind::Pending,
+        );
+        // The durable lifecycle changed even though the item did not: refresh
+        // the cached offers/history so the inspector never shows stale state.
+        self.refresh_capability_actions();
+        self.modal = Some(Modal::Confirm {
+            title: "Run capability action".into(),
+            body: format!(
+                "Request recorded (pending, command {id}).{effect} Run the trusted executor now?\n\nEsc leaves it pending; run it later with `orbit blueprint action execute {id}`.",
+                id = request.command_id,
+                effect = if external_effect {
+                    " This action declares an external effect."
+                } else {
+                    ""
+                }
+            ),
+            pending: PendingAction::ExecuteCapabilityAction {
+                command_id: request.command_id,
+                item_id: request.item_id,
+                capability: request.capability,
+                action_id: request.action_id,
+                external_effect,
+            },
+        });
         Ok(())
     }
 }

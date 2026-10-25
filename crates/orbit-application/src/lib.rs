@@ -55,7 +55,9 @@ pub use habit_commands::{
 pub use habit_occurrence_commands::{
     RecordHabitOccurrenceWithActivityCommand, record_habit_occurrence_with_activity,
 };
-pub use habit_occurrence_queries::{habit_streak_summary, list_habit_occurrences};
+pub use habit_occurrence_queries::{
+    HabitStreakSummaryOutcome, habit_streak_summary, list_habit_occurrences,
+};
 pub use habit_queries::{get_habit, list_habits};
 pub use knowledge_queries::KnowledgeTermOccurrence;
 pub use milestone_commands::{
@@ -129,6 +131,7 @@ pub use task_queries::{get_task, list_tasks, list_tasks_by_status};
 pub use task_scope::validate_task_scope;
 
 pub use metric_evidence_commands::{record_metric_observation, set_metric_target};
+pub use orbit_habit_capability::{HabitPeriodResult, HabitRecurrenceStatus, HabitStreakSummary};
 pub use ports::{MetricEvidenceRepository, MetricObservation, MetricTargetRecord};
 pub use project_evidence_queries::{
     BoundMetricEvidence, CombinedProjectEvidenceReport, get_combined_project_evidence_report,

@@ -3,7 +3,8 @@
 use super::components::{human_bytes, render_selectable_list};
 use super::layout::centered_rect;
 use super::shell::{modal_block, truncate_ellipsis};
-use crate::app::{App, FormFieldKind, FormState, Modal, PaletteEntry, Screen};
+use crate::app::{App, FormFieldKind, FormState, InspectorState, Modal, PaletteEntry, Screen};
+use crate::theme::inspector_fullscreen;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -15,8 +16,15 @@ pub(super) fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
     let Some(modal) = &app.modal else {
         return;
     };
-    let (width, height) = modal_size(area, modal);
-    let popup = centered_rect(area, width, height);
+    // The inspector is an overlay while the terminal can show a readable one,
+    // and takes the whole frame (no margin) when it cannot.
+    let popup = match modal {
+        Modal::Inspector(_) if inspector_fullscreen(area.width, area.height) => area,
+        _ => {
+            let (width, height) = modal_size(area, modal);
+            centered_rect(area, width, height)
+        }
+    };
     frame.render_widget(Clear, popup);
     match modal {
         Modal::Form(form) => draw_form(frame, popup, app, form),
@@ -51,6 +59,65 @@ pub(super) fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                 )),
             ];
             frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+        }
+        Modal::CapabilityResult {
+            title,
+            lines,
+            reconcile_command,
+            selected,
+        } => {
+            let block = modal_block(title, app);
+            let inner = block.inner(popup);
+            frame.render_widget(block, popup);
+            let mut body: Vec<Line> = lines.iter().cloned().map(Line::from).collect();
+            body.push(Line::from(""));
+            if let Some(command_id) = reconcile_command {
+                body.push(Line::from(Span::styled(
+                    "Reconcile explicitly (the capability is never re-run):",
+                    app.theme.warning(),
+                )));
+                for (index, label) in [
+                    "Reconcile as succeeded (--succeed)",
+                    "Reconcile as failed (--fail)",
+                ]
+                .iter()
+                .enumerate()
+                {
+                    let is_selected = index == *selected;
+                    body.push(Line::from(vec![
+                        Span::styled(
+                            if is_selected { "▸ " } else { "  " },
+                            if is_selected {
+                                app.theme.accent()
+                            } else {
+                                app.theme.muted()
+                            },
+                        ),
+                        Span::styled(
+                            (*label).to_owned(),
+                            if is_selected {
+                                app.theme.selected()
+                            } else {
+                                app.theme.text()
+                            },
+                        ),
+                    ]));
+                }
+                body.push(Line::from(vec![
+                    Span::styled("command: ", app.theme.muted()),
+                    Span::styled(command_id.clone(), app.theme.text()),
+                ]));
+                body.push(Line::from(Span::styled(
+                    "↑/↓ choose · Enter opens the confirmation · Esc leaves it uncertain (not completed)",
+                    app.theme.warning(),
+                )));
+            } else {
+                body.push(Line::from(Span::styled(
+                    "Enter/Esc close",
+                    app.theme.muted(),
+                )));
+            }
+            frame.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }), inner);
         }
         Modal::ActionMenu {
             title,
@@ -116,7 +183,14 @@ pub(super) fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
                         },
                     ),
                     Span::styled(key_text, app.theme.accent()),
-                    Span::styled(action.label.clone(), label_style),
+                    Span::styled(
+                        if action.destructive {
+                            format!("⚠ {}", action.label)
+                        } else {
+                            action.label.clone()
+                        },
+                        label_style,
+                    ),
                     Span::styled(reason, app.theme.muted()),
                 ])));
             }
@@ -176,74 +250,7 @@ pub(super) fn draw_modal(frame: &mut Frame, area: Rect, app: &App) {
             );
         }
         Modal::Help => draw_help(frame, popup, app),
-        Modal::Detail(detail) => {
-            let block = modal_block(&format!("{} · detail", detail.title), app);
-            let inner = block.inner(popup);
-            frame.render_widget(block, popup);
-            let mut lines = vec![
-                Line::from(vec![
-                    Span::styled(
-                        format!("{} ", crate::theme::Theme::status_glyph(&detail.status)),
-                        app.theme.status(&detail.status),
-                    ),
-                    Span::styled(detail.subtitle.clone(), app.theme.muted()),
-                ]),
-                Line::from(""),
-            ];
-            for (key, value) in &detail.fields {
-                for (index, line) in value.lines().enumerate() {
-                    if index == 0 {
-                        lines.push(Line::from(vec![
-                            Span::styled(format!("{key}: "), app.theme.muted()),
-                            Span::styled(line.to_owned(), app.theme.text()),
-                        ]));
-                    } else {
-                        lines.push(Line::from(vec![
-                            Span::styled(format!("{}  ", " ".repeat(key.len())), app.theme.muted()),
-                            Span::styled(line.to_owned(), app.theme.text()),
-                        ]));
-                    }
-                }
-            }
-            if !detail.note.is_empty() {
-                lines.push(Line::from(""));
-                lines.extend(detail.note.lines().map(Line::from));
-            }
-            if !detail.actions.is_empty() {
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    "Actions (press a to run)",
-                    app.theme.title(),
-                )));
-                for action in &detail.actions {
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            if action.enabled { "• " } else { "× " },
-                            if action.enabled {
-                                app.theme.accent()
-                            } else {
-                                app.theme.muted()
-                            },
-                        ),
-                        Span::styled(action.label.clone(), app.theme.text()),
-                        Span::styled(
-                            action
-                                .disabled_reason
-                                .as_ref()
-                                .map(|reason| format!(" — {reason}"))
-                                .unwrap_or_default(),
-                            app.theme.muted(),
-                        ),
-                    ]));
-                }
-            }
-            frame.render_widget(
-                Paragraph::new(lines)
-                    .wrap(Wrap { trim: false })
-                    .scroll((app.modal_scroll.min(u16::MAX as usize) as u16, 0)),
-                inner,
-            );
-        }
+        Modal::Inspector(state) => draw_inspector(frame, popup, app, state),
         Modal::Criteria(state) => {
             let block = modal_block(&format!("Acceptance criteria · {}", state.task_title), app);
             let inner = block.inner(popup);
@@ -1150,6 +1157,254 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
         inner,
     );
 }
+/// The item inspector.
+///
+/// Everything here comes from `state`: the renderer never reads the backend and
+/// never rebuilds the model. Scrolling moves `state.scroll` (owned by input
+/// dispatch), so the footer stays pinned while the body scrolls.
+fn draw_inspector(frame: &mut Frame, area: Rect, app: &App, state: &InspectorState) {
+    let block = modal_block(&format!("Inspector · {}", state.detail.title), app);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(inner);
+    let detail = &state.detail;
+    let mut lines: Vec<Line> = Vec::new();
+    if state.unavailable {
+        // An explicit fallback, never an empty panel: the subject vanished
+        // (deleted row, closed project, filtered out) but the user still needs
+        // to know what they were looking at.
+        lines.push(Line::from(Span::styled(
+            "This item is no longer available",
+            app.theme.warning(),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("last known: ", app.theme.muted()),
+            Span::styled(detail.title.clone(), app.theme.title()),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("kind: ", app.theme.muted()),
+            Span::styled(detail.kind.as_str().to_owned(), app.theme.text()),
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled(
+            detail.title.clone(),
+            app.theme.title(),
+        )));
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{} ", crate::theme::Theme::status_glyph(&detail.status)),
+                app.theme.status(&detail.status),
+            ),
+            Span::styled(detail.subtitle.clone(), app.theme.muted()),
+        ]));
+        if !detail.fields.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled("PROPERTIES", app.theme.section())));
+            for (key, value) in &detail.fields {
+                for (index, row) in value.lines().enumerate() {
+                    if index == 0 {
+                        lines.push(Line::from(vec![
+                            Span::styled(format!("{key}: "), app.theme.muted()),
+                            Span::styled(row.to_owned(), app.theme.text()),
+                        ]));
+                    } else {
+                        // Continuation of a multi-line value, indented by the
+                        // key column so the wrapped block stays readable.
+                        lines.push(Line::from(vec![
+                            Span::styled(format!("{}  ", " ".repeat(key.len())), app.theme.muted()),
+                            Span::styled(row.to_owned(), app.theme.text()),
+                        ]));
+                    }
+                }
+            }
+        }
+        if !detail.note.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled("NOTE", app.theme.section())));
+            lines.extend(detail.note.lines().map(Line::from));
+        }
+        if !detail.actions.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("ACTIONS ", app.theme.section()),
+                Span::styled(
+                    format!("{} · press a", detail.actions.len()),
+                    app.theme.muted(),
+                ),
+            ]));
+            for action in &detail.actions {
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        if action.enabled { "• " } else { "× " },
+                        if action.enabled {
+                            app.theme.accent()
+                        } else {
+                            app.theme.muted()
+                        },
+                    ),
+                    Span::styled(action.label.clone(), app.theme.text()),
+                    Span::styled(
+                        action
+                            .disabled_reason
+                            .as_ref()
+                            .map(|reason| format!(" — {reason}"))
+                            .unwrap_or_default(),
+                        app.theme.muted(),
+                    ),
+                ]));
+            }
+        }
+        push_capability_block(&mut lines, app, state);
+    }
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((u16::try_from(state.scroll).unwrap_or(u16::MAX), 0)),
+        rows[0],
+    );
+    let footer = if state.unavailable {
+        " Esc close · j/k scroll · Enter close"
+    } else {
+        " Esc close · j/k scroll · Enter close · a actions · e edit"
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(footer, app.theme.muted()))),
+        rows[1],
+    );
+}
+
+/// Capability availability and recent durable action states for the inspected
+/// work item. Painted entirely from the cache on [`App`].
+fn push_capability_block<'a>(lines: &mut Vec<Line<'a>>, app: &App, state: &InspectorState) {
+    let crate::app::InspectorSubject::Item {
+        kind: orbit_ui::model::ItemKind::WorkItem,
+        id,
+        ..
+    } = &state.subject
+    else {
+        return;
+    };
+    let offers: Vec<&crate::app::CapabilityActionView> = app
+        .capability_offers
+        .iter()
+        .filter(|view| &view.item_id == id)
+        .collect();
+    let history: Vec<&orbit_client::OrbitCapabilityAction> = app
+        .capability_history
+        .iter()
+        .filter(|row| &row.item_id == id)
+        .collect();
+    if offers.is_empty() && history.is_empty() && app.capability_error.is_none() {
+        return;
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("CAPABILITY ACTIONS ", app.theme.section()),
+        Span::styled(
+            format!("{} · press a to run", offers.len()),
+            app.theme.muted(),
+        ),
+    ]));
+    if let Some(error) = &app.capability_error {
+        lines.push(Line::from(vec![
+            Span::styled("× ", app.theme.warning()),
+            Span::styled(error.clone(), app.theme.warning()),
+        ]));
+    }
+    for view in offers {
+        let offer = &view.offer;
+        let marker = if offer.availability.is_available() {
+            "• "
+        } else {
+            "× "
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                marker,
+                if offer.availability.is_available() {
+                    app.theme.accent()
+                } else {
+                    app.theme.muted()
+                },
+            ),
+            Span::styled(format!("Action {}", offer.description), app.theme.text()),
+            Span::styled(
+                match &offer.availability {
+                    orbit_client::OrbitCapabilityAvailability::Available => format!(
+                        " — {} · {} → {} · available",
+                        offer.capability, offer.from, offer.to
+                    ),
+                    orbit_client::OrbitCapabilityAvailability::Unavailable { code, reason } => {
+                        format!(
+                            " — {} · {} → {} · {code}: {reason}",
+                            offer.capability, offer.from, offer.to
+                        )
+                    }
+                },
+                app.theme.muted(),
+            ),
+        ]));
+        if let Some(command_id) = &view.command_id {
+            lines.push(Line::from(vec![
+                Span::styled("    pending request: ", app.theme.muted()),
+                Span::styled(command_id.clone(), app.theme.warning()),
+            ]));
+        }
+    }
+    if !history.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("RECENT CAPABILITY ACTIONS ", app.theme.section()),
+            Span::styled(
+                format!("{} · durable state", history.len()),
+                app.theme.muted(),
+            ),
+        ]));
+        for row in &history {
+            let unreconciled = matches!(row.state.as_str(), "uncertain" | "claimed");
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("{:<10}", row.state),
+                    if unreconciled {
+                        app.theme.warning()
+                    } else {
+                        app.theme.text()
+                    },
+                ),
+                Span::styled(
+                    format!(
+                        "{} · {} · command {}",
+                        row.action_id, row.capability, row.command_id
+                    ),
+                    app.theme.muted(),
+                ),
+            ]));
+            if unreconciled {
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        "    requires reconciliation (never completed): ",
+                        app.theme.warning(),
+                    ),
+                    Span::styled(
+                        format!(
+                            "orbit blueprint action reconcile {} --succeed|--fail",
+                            row.command_id
+                        ),
+                        app.theme.muted(),
+                    ),
+                ]));
+            }
+        }
+    }
+}
+
 fn palette_lines<'a>(app: &App, entries: &[PaletteEntry], selected: usize) -> Vec<ListItem<'a>> {
     entries
         .iter()
@@ -1199,8 +1454,9 @@ fn modal_size(area: Rect, modal: &Modal) -> (u16, u16) {
     let width = area.width.saturating_sub(4).clamp(20, 96);
     let height = match modal {
         Modal::Help => area.height.saturating_sub(4).clamp(12, 32),
-        Modal::Detail(detail) => {
-            let content = 8
+        Modal::Inspector(state) => {
+            let detail = &state.detail;
+            let content = 10
                 + detail.fields.len() as u16
                 + detail.note.lines().count() as u16
                 + detail.actions.len() as u16;
@@ -1212,6 +1468,9 @@ fn modal_size(area: Rect, modal: &Modal) -> (u16, u16) {
         Modal::Message { lines, .. } => (lines.len() as u16 + 5)
             .min(area.height.saturating_sub(4))
             .max(8),
+        Modal::CapabilityResult { lines, .. } => (lines.len() as u16 + 9)
+            .min(area.height.saturating_sub(4))
+            .max(12),
         Modal::Palette { entries, .. } => (entries.len() as u16 + 5)
             .min(area.height.saturating_sub(4))
             .max(10),

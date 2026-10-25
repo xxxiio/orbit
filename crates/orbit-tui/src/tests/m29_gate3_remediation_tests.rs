@@ -1,8 +1,8 @@
 //! Gate-3 remediation regressions that need no authority server.
 //!
-//! The docked detail pane caches its model, so every mutation that changes a
-//! shown count must go through `App` and invalidate that cache. These tests are
-//! the accepted-data contract for that cache.
+//! The inspector model is built by explicit input paths, so every mutation that
+//! changes a shown count must rebuild it from accepted state. These tests are
+//! the accepted-data contract for that rebuild.
 use crate::app::{FormMode, Modal, PendingAction, Screen};
 use crate::*;
 
@@ -63,8 +63,11 @@ fn project_app(stem: &str) -> (App, String) {
     (app, task.id)
 }
 
+/// Build the inspector model for the current selection on demand (the same
+/// explicit path the inspector uses) and read one field.
 fn detail_field(app: &App, field: &str) -> Option<String> {
-    app.detail_model().and_then(|model| {
+    let subject = app.current_inspector_subject()?;
+    app.build_detail_for_subject(&subject).and_then(|model| {
         model
             .fields
             .into_iter()
@@ -75,11 +78,12 @@ fn detail_field(app: &App, field: &str) -> Option<String> {
 
 fn open_detail_field(app: &mut App, field: &str) -> Option<String> {
     app.modal = None;
-    app.open_detail();
-    let Some(Modal::Detail(model)) = app.modal.take() else {
-        panic!("detail modal missing: {}", app.status.text);
+    app.open_inspector();
+    let Some(Modal::Inspector(state)) = app.modal.take() else {
+        panic!("inspector modal missing: {}", app.status.text);
     };
-    model
+    state
+        .detail
         .fields
         .into_iter()
         .find(|(key, _)| key == field)
@@ -87,7 +91,7 @@ fn open_detail_field(app: &mut App, field: &str) -> Option<String> {
 }
 
 #[test]
-fn toggling_a_criterion_updates_the_docked_and_opened_detail_counts() {
+fn toggling_a_criterion_updates_the_rebuilt_inspector_counts() {
     let (mut app, task_id) = project_app("criterion-toggle");
     app.client
         .add_acceptance_criterion(task_id.clone(), "Works offline".into())
@@ -95,9 +99,6 @@ fn toggling_a_criterion_updates_the_docked_and_opened_detail_counts() {
     app.client
         .add_acceptance_criterion(task_id.clone(), "Syncs".into())
         .unwrap();
-    // The direct backend writes above bypass the App cache invalidation that
-    // every user-facing mutation performs.
-    app.invalidate_detail_cache();
     assert_eq!(
         detail_field(&app, "Acceptance").as_deref(),
         Some("0/2 checked")
@@ -115,12 +116,12 @@ fn toggling_a_criterion_updates_the_docked_and_opened_detail_counts() {
     assert_eq!(
         detail_field(&app, "Acceptance").as_deref(),
         Some("1/2 checked"),
-        "docked detail must show the accepted count after a toggle"
+        "the rebuilt inspector must show the accepted count after a toggle"
     );
     assert_eq!(
         open_detail_field(&mut app, "Acceptance").as_deref(),
         Some("1/2 checked"),
-        "the opened detail must not read a stale cache"
+        "the opened inspector must not show a stale count"
     );
 
     // Removing a criterion changes the denominator too.
@@ -168,8 +169,6 @@ fn removing_an_attachment_updates_the_detail_count() {
             None,
         )
         .unwrap();
-    // Direct backend write: invalidate as a user-facing import would.
-    app.invalidate_detail_cache();
     assert_eq!(
         detail_field(&app, "Attachments").as_deref(),
         Some("1 file(s)")
@@ -201,9 +200,9 @@ fn removing_an_attachment_updates_the_detail_count() {
 }
 
 #[test]
-fn criterion_edits_are_reflected_in_the_cached_detail() {
-    // Editing criterion text is a form path; the modal reopens from accepted
-    // state and the detail count must still describe the accepted list.
+fn criterion_edits_are_reflected_in_the_inspector_detail() {
+    // Editing criterion text is a form path; the inspector rebuilds from
+    // accepted state and its count must still describe the accepted list.
     let (mut app, task_id) = project_app("criterion-edit");
     app.client
         .add_acceptance_criterion(task_id.clone(), "First".into())

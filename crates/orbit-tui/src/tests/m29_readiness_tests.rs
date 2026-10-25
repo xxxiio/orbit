@@ -528,58 +528,51 @@ fn hiding_the_focused_detail_pane_returns_focus_to_the_workspace() {
     app.switch_view_by_index(board);
     app.active_component = 0;
 
-    // The viewport must be wide before `D` toggles the docked pane.
+    // Only the two painted panes can own the keyboard, at every width.
     render(&mut app, 160, 45);
     assert_eq!(app.focus, FocusPane::Workspace);
     app.focus_next(false);
     assert_eq!(
         app.focus,
-        FocusPane::Detail,
-        "Tab reaches the detail pane at the wide breakpoint"
+        FocusPane::Sidebar,
+        "Tab cycles the sidebar at the wide breakpoint"
     );
-    let focused_detail = render(&mut app, 160, 45);
+    app.focus_next(false);
+    assert_eq!(app.focus, FocusPane::Workspace);
+    let focused_workspace = render(&mut app, 160, 45);
     assert!(
-        focused_detail
+        focused_workspace
             .lines()
-            .any(|line| line.contains('┏') && line.contains("Details")),
-        "the detail pane should paint as focused: {focused_detail}"
+            .any(|line| line.contains('┏') && line.contains("Task board")),
+        "the workspace paints as focused: {focused_workspace}"
+    );
+    assert!(
+        !focused_workspace.contains("Details"),
+        "no detail pane exists to claim focus: {focused_workspace}"
     );
 
+    // `D` opens the inspector, which never owns pane focus, and `D` closes it
+    // again with the workspace selection and focus untouched.
+    let selected = app.selected;
     handle_key(&mut app, KeyCode::Char('D'), KeyModifiers::NONE).unwrap();
-    assert!(!app.show_detail);
+    assert!(
+        matches!(app.modal, Some(Modal::Inspector(_))),
+        "D opens the inspector: {}",
+        app.status.text
+    );
     assert_eq!(
         app.focus,
         FocusPane::Workspace,
-        "focus must not stay on a hidden pane"
+        "the overlay must not steal pane focus"
     );
+    handle_key(&mut app, KeyCode::Char('D'), KeyModifiers::NONE).unwrap();
+    assert!(app.modal.is_none());
+    assert_eq!(app.focus, FocusPane::Workspace);
 
-    let selected = app.selected;
-    let detail_scroll = app.detail_scroll;
     handle_key(&mut app, KeyCode::Char('j'), KeyModifiers::NONE).unwrap();
-    assert_ne!(
-        app.selected, selected,
-        "j moves the workspace selection after D"
-    );
-    assert_eq!(
-        app.detail_scroll, detail_scroll,
-        "j must not scroll the hidden detail pane"
-    );
+    assert_ne!(app.selected, selected, "j still moves the selection");
     handle_key(&mut app, KeyCode::Char('k'), KeyModifiers::NONE).unwrap();
     assert_eq!(app.selected, selected, "k moves it back");
-
-    let hidden = render(&mut app, 160, 45);
-    assert!(
-        hidden
-            .lines()
-            .any(|line| line.contains('┏') && line.contains("Task board")),
-        "the workspace is the focused pane: {hidden}"
-    );
-    assert!(
-        !hidden
-            .lines()
-            .any(|line| line.contains('┏') && line.contains("Details")),
-        "the hidden pane cannot claim focus: {hidden}"
-    );
 }
 
 // ---------------------------------------------------------------------------

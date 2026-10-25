@@ -526,6 +526,24 @@ impl ConnectedOrbitClient {
         self.note_queued(id);
         Ok(())
     }
+    /// Stage one blueprint mutation in the canonical ordered outbox. The route
+    /// and payload are frozen here so a replay can never reconstruct mutable
+    /// input, and a repeated identity is either a no-op or a conflict.
+    pub fn queue_blueprint_transport(
+        &mut self,
+        id: &str,
+        route: &str,
+        body: &Value,
+    ) -> Result<(), AuthorityError> {
+        self.replica.queue_blueprint_transport(id, route, body)?;
+        self.note_queued(id);
+        Ok(())
+    }
+    /// Unresolved blueprint intentions, in global queue order. This never
+    /// projects a pending intention into accepted state.
+    pub fn blueprint_pending(&self) -> Result<Value, AuthorityError> {
+        self.replica.blueprint_pending()
+    }
     pub fn queue_folder_move(
         &mut self,
         id: &str,

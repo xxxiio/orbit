@@ -118,7 +118,7 @@ fn quit_confirmation_appears_for_unsaved_text_and_exposes_both_choices() {
 #[test]
 fn quit_is_independent_of_selection_and_focus() {
     let mut app = app();
-    app.focus = FocusPane::Detail;
+    app.focus = FocusPane::Workspace;
     app.selected = 99;
     assert!(app.request_quit());
     app.focus = FocusPane::Sidebar;

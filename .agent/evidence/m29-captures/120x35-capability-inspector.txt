@@ -1,0 +1,35 @@
+ ORBIT › Capability Demo  capability-reference v1   1 projects · 0 inbox
+╭ Orbit ─────────────╮ ▸ Overview  [ ] switch view
+│    Home / Today    │┏ Work ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+│    Inbox           │┃▾ Open 1                                          Closed 0                                      ┃
+│    Projects        │┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ─────────────────────────────────────────────── ┃
+│    Agents          │┃▸ · note-task item-1                            — empty                                         ┃
+│▸ » Capability De… ○│┃                                                                                                ┃
+│           ╔ Inspector · note-task item-1 ════════════════════════════════════════════════════════════════╗           ┃
+│           ║• Attach file                                                                                 ║           ┃
+│           ║• Attachments                                                                                 ║           ┃
+│           ║• Move to closed                                                                              ║           ┃
+│           ║• Inspect dependencies                                                                        ║           ┃
+│           ║• New task                                                                                    ║           ┃
+│           ║• New work item                                                                               ║           ┃
+│           ║• Preview plan                                                                                ║           ┃
+│           ║• Bind evidence                                                                               ║           ┃
+│           ║• Action Append a durable note to this blueprint work item                                    ║           ┃
+│           ║                                                                                              ║           ┃
+│           ║CAPABILITY ACTIONS 1 · press a to run                                                         ║           ┃
+│           ║• Action Append a durable note to this blueprint work item — orbit.reference.work-item-note · ║           ┃
+│           ║open → closed · available                                                                     ║           ┃
+│           ║                                                                                              ║           ┃
+│           ║RECENT CAPABILITY ACTIONS 1 · durable state                                                   ║           ┃
+│           ║succeeded append_note · orbit.reference.work-item-note · command                              ║           ┃
+│           ║command-4113430-1792859759243524262-1                                                         ║           ┃
+│           ║                                                                                              ║           ┃
+│           ║ Esc close · j/k scroll · Enter close · a actions · e edit                                    ║           ┃
+│           ╚══════════════════════════════════════════════════════════════════════════════════════════════╝           ┃
+│                    │┃                                                                                                ┃
+│                    │┃                                                                                                ┃
+│                    │┃                                                                                                ┃
+│                    │┃2 columns · j/k card · h/l panel · S status · E quick edit · Enter open                         ┃
+╰────────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ Actions: Enter Open · e Edit · i Attach · a more actions · q quit
+ Ctrl+Q quit · q quit (not typing)  Capability action append_note (orbit.reference.work-item-note) on item-1: succeeded

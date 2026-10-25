@@ -1061,12 +1061,15 @@ pub struct HabitConsistencyEvidence {
 
 /// Compute the share of elapsed, evaluated habit periods fulfilled. An empty window is
 /// unknown rather than 0%: it must not silently penalize a newly linked habit.
+///
+/// Callers pass one flag per evaluated period. The recurrence package owns how a
+/// period becomes fulfilled; this crate only aggregates the resulting evidence.
 pub fn habit_consistency_evidence(
-    periods: &[orbit_domain::HabitPeriodResult],
+    fulfilled: &[bool],
 ) -> Result<HabitConsistencyEvidence, ProgressError> {
     let evaluated_periods =
-        u32::try_from(periods.len()).map_err(|_| ProgressError::ArithmeticOverflow)?;
-    let fulfilled_periods = u32::try_from(periods.iter().filter(|p| p.fulfilled).count())
+        u32::try_from(fulfilled.len()).map_err(|_| ProgressError::ArithmeticOverflow)?;
+    let fulfilled_periods = u32::try_from(fulfilled.iter().filter(|fulfilled| **fulfilled).count())
         .map_err(|_| ProgressError::ArithmeticOverflow)?;
     let consistency = if evaluated_periods == 0 {
         None
@@ -1135,7 +1138,6 @@ pub fn metric_target_evidence(
 #[cfg(test)]
 mod mode_evidence_tests {
     use super::*;
-    use orbit_domain::HabitPeriod;
 
     #[test]
     fn habit_evidence_is_unknown_without_evaluated_periods() {
@@ -1146,17 +1148,8 @@ mod mode_evidence_tests {
 
     #[test]
     fn habit_evidence_counts_fulfilled_periods_not_raw_occurrences() {
-        let periods = [true, false, true]
-            .into_iter()
-            .enumerate()
-            .map(|(i, fulfilled)| orbit_domain::HabitPeriodResult {
-                period: HabitPeriod::new(i as i64, i as i64 + 1).unwrap(),
-                completions: if fulfilled { 2 } else { 0 },
-                fulfilled,
-                duration_minutes: 0,
-            })
-            .collect::<Vec<_>>();
-        let result = habit_consistency_evidence(&periods).unwrap();
+        let fulfilled = [true, false, true];
+        let result = habit_consistency_evidence(&fulfilled).unwrap();
         assert_eq!(result.fulfilled_periods, 2);
         assert_eq!(result.consistency.unwrap().value(), 6667);
     }

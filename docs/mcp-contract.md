@@ -16,6 +16,16 @@ Developer mutation surfaces include task creation/status, project/milestone stat
 
 Every mutation routes through `orbit-application` and therefore preserves domain validation, atomic activity journaling, agent attribution, and semantic sync-outbox behavior.
 
+## Capability actions
+
+Capability installation, project authorization, action requests, execution and
+reconciliation are local-CLI operations in this iteration. The MCP registries
+advertise no capability administration or action-execution tools, and connected
+mode refuses the corresponding CLI groups rather than queueing a request that
+cannot execute. The local blueprint transition tool does use the project's
+durable capability grants, so a capability-guarded transition becomes usable
+after the capability is installed and authorized through the CLI.
+
 ## Audit identity
 
 Mutations use `ActivityOrigin::Agent("<agent-id>:<session-id>")`. Agent-created knowledge additionally records `KnowledgeProvenance::Agent(<agent-id>)`.

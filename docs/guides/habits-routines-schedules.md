@@ -39,13 +39,146 @@ orbit habit list --paused
 orbit habit list --active --query run
 ```
 
-### What is deferred
+### Recurrence and streaks are an opt-in capability
 
-Automatic recurrence expansion and streak extraction are **not implemented** in
-this build. There is no "every Monday" recurrence command and no streak field
-in habit history. Use a weekly target plus explicit `check` calls and `history`
-for consistency tracking. Do not infer a streak from consecutive rows unless
-your own reporting defines the period boundaries.
+Habit **storage** stays in core: adding, listing, pausing/resuming and checking
+habits, `orbit habit history`, the TUI habit tracker counts, and last-occurrence
+projections all work without any extra capability. They read the same
+`habits`/`habit_occurrences` rows as before.
+
+**Recurrence and streak evaluation** — per-period completions, daily/weekly
+targets, current and longest streak, totals, and the habit consistency shown in
+project evidence — is *not* computed by core. It is provided by the optional
+trusted capability `orbit.habit.recurrence`, action `evaluate_periods`. Until
+that capability is installed (and, for project evidence, authorized for the
+project), the host returns an explicit unavailable result instead of silently
+computing a streak:
+
+```json
+{
+  "type": "project_evidence_report",
+  "project_id": "project-1792889943866-342239-0",
+  "progress_bp": null,
+  "habits": [
+    {
+      "id": "habit-1792889943970-342261-0",
+      "available": false,
+      "fulfilled": 0,
+      "evaluated": 0,
+      "progress_bp": null
+    }
+  ],
+  "metrics": []
+}
+```
+
+There is no "every Monday" calendar expansion in this build. Callers still
+supply explicit period boundaries; the capability evaluates occurrences inside
+those half-open windows.
+
+#### Install and authorize it
+
+Use an isolated database so the commands are reproducible:
+
+```sh
+export ORBIT_DB=/tmp/orbit-habit-capability.db
+orbit project add "Habit docs" --json
+orbit habit add "Morning review" --json
+orbit habit check HABIT_ID --at-ms 1000 --duration-minutes 20 --json
+orbit project evidence bind PROJECT_ID habit HABIT_ID --json
+```
+
+Before installation, `capability list` and the evidence report explain why no
+streak exists:
+
+```sh
+orbit blueprint capability list --project PROJECT_ID --json
+```
+
+```json
+{
+  "type": "authority",
+  "result": [
+    {
+      "actions": ["evaluate_periods"],
+      "authorized_projects": [],
+      "available": false,
+      "capability_id": "orbit.habit.recurrence",
+      "executor_registered": true,
+      "installed": false,
+      "permission": "read",
+      "provider": "orbit",
+      "requires": [],
+      "unavailable_reason": "capability_not_installed: orbit.habit.recurrence is not installed"
+    }
+  ]
+}
+```
+
+(The list also contains the independently registered reference capability; the
+snippet is trimmed to the habit row.)
+
+Installation records the contract; it does not grant project authority. The next
+step installs and then authorizes exactly one project:
+
+```sh
+orbit blueprint capability install orbit.habit.recurrence --json
+orbit blueprint capability authorize orbit.habit.recurrence \
+  --project PROJECT_ID --confirm --json
+```
+
+After installation but before authorization, the reason is explicit:
+
+```json
+"available": false,
+"installed": true,
+"unavailable_reason": "not_authorized: orbit.habit.recurrence is not authorized for the requested project"
+```
+
+After authorization the same report computes the streak:
+
+```sh
+orbit project evidence report PROJECT_ID \
+  --start-ms 0 --end-ms 2000 --as-of-ms 2000 --json
+```
+
+```json
+{
+  "type": "project_evidence_report",
+  "project_id": "project-1792889943866-342239-0",
+  "progress_bp": 10000,
+  "habits": [
+    {
+      "id": "habit-1792889943970-342261-0",
+      "available": true,
+      "fulfilled": 1,
+      "evaluated": 1,
+      "progress_bp": 10000
+    }
+  ],
+  "metrics": []
+}
+```
+
+Uninstall removes the contract and every grant; revoke removes only one project's
+grant:
+
+```sh
+orbit blueprint capability revoke orbit.habit.recurrence --project PROJECT_ID
+orbit blueprint capability uninstall orbit.habit.recurrence
+```
+
+#### Where the gate lives
+
+The host/projection seam is `ApplicationQueries::project_evidence_report` and
+`ApplicationQueries::mode_aware_project_health` in
+`crates/orbit-runtime/src/application_services.rs`. They check the durable
+installation and the project grant, then pass a `HabitRecurrenceStatus` into
+`orbit-application`. `habit_streak_summary` accepts the same status and returns
+`HabitStreakSummaryOutcome::Unavailable { capability_id, reason }` without
+reading occurrences when the capability is unavailable. The algorithm itself
+lives in the `orbit-habit-capability` package; `orbit-domain` keeps only
+`HabitOccurrence`/`HabitPeriod` value types and validation.
 
 ## Routines
 
@@ -105,7 +238,9 @@ orbit project evidence report PROJECT_ID \
 ```
 
 Evidence is evaluated in an explicit window. Habit consistency is not a test
-pass or a measure of task completion. See
+pass or a measure of task completion. Recurrence is opt-in: bind the habit and
+install/authorize `orbit.habit.recurrence` as shown above, otherwise the report
+returns the habit as unavailable with no streak. See
 [projects and planning](projects-and-planning.md).
 
 ## Common errors

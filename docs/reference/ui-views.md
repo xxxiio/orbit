@@ -112,6 +112,11 @@ bytes.
 | `agent_jobs` | yes | `agent_jobs` | jobs |
 | `milestone_progress` | yes | `milestones` | milestones |
 
+The `detail` component stays a workspace component: it paints one item's fields
+inside the view that declares it. It is not the TUI's item inspector, which is a
+separate overlay opened with `Enter`/`D` and driven by the current selection
+(see [TUI workspace](../guides/tui-workspace.md#the-item-inspector)).
+
 ## Data sources
 
 The source list is closed. Each component declares which of these registered,
@@ -154,9 +159,9 @@ Each component resolves to:
 - A typed `ComponentBody`: text, list, table, metric, detail, kanban, timeline,
   habit tracker, metric history, knowledge references, agent jobs, milestone
   progress or missing-component explanation.
-- A `SelectionItem` list in visual order. The detail panel and action menu use
-  this order, so kanban/timeline ordering cannot point at a different row than
-  the highlighted one.
+- A `SelectionItem` list in visual order. The item inspector and the action menu
+  use this order, so kanban/timeline ordering cannot point at a different row
+  than the highlighted one.
 
 A missing component or invalid binding affects only that component. The rest of
 the view remains renderable and the UI explains the required capability.

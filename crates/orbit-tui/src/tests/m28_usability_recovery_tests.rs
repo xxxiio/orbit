@@ -341,8 +341,7 @@ fn session_state_round_trips_active_project_and_view() {
     app.active_component = component_index;
     app.selected = row;
     app.scroll = row;
-    app.detail_scroll = 3;
-    app.focus = FocusPane::Detail;
+    app.focus = FocusPane::Workspace;
     let expected_view = app.current_view().map(|view| view.id.clone());
     assert!(expected_view.is_some(), "project view resolved");
 
@@ -354,8 +353,7 @@ fn session_state_round_trips_active_project_and_view() {
     assert_eq!(loaded.selected_index, Some(row));
     assert_eq!(loaded.active_component, Some(component_index));
     assert_eq!(loaded.scroll, Some(row));
-    assert_eq!(loaded.detail_scroll, Some(3));
-    assert_eq!(loaded.focus.as_deref(), Some("detail"));
+    assert_eq!(loaded.focus.as_deref(), Some("workspace"));
 
     let mut restored = session_app(database.path());
     ui_state::restore(&mut restored);
@@ -370,7 +368,7 @@ fn session_state_round_trips_active_project_and_view() {
     );
     assert_eq!(
         restored.focus,
-        FocusPane::Detail,
+        FocusPane::Workspace,
         "focus must survive project restore"
     );
     assert_eq!(restored.active_component, component_index);
@@ -380,7 +378,6 @@ fn session_state_round_trips_active_project_and_view() {
     );
     assert_eq!(restored.selected, row);
     assert_eq!(restored.scroll, row);
-    assert_eq!(restored.detail_scroll, 3);
 
     unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
     let _ = std::fs::remove_file(&state_file);
@@ -702,12 +699,10 @@ fn selection_restore_tolerates_empty_views_and_missing_components() {
         Some(5),
         Some(home_view.as_str()),
         Some(3),
-        Some(2),
     );
     assert_eq!(app.active_component, 0);
     assert_eq!(app.selected, 0);
     assert_eq!(app.scroll, 3, "scroll applies for a component with no rows");
-    assert_eq!(app.detail_scroll, 2);
 
     app.home.components = vec![orbit_ui::ResolvedComponent {
         id: "empty".into(),
@@ -723,11 +718,9 @@ fn selection_restore_tolerates_empty_views_and_missing_components() {
         Some(2),
         Some("another-view"),
         Some(1),
-        None,
     );
     assert_eq!(app.active_component, 0);
     assert_eq!(app.selected, 0);
-    assert_eq!(app.detail_scroll, 2);
     assert_eq!(
         app.scroll, 0,
         "a scroll from another view is not applied to this component"
@@ -739,7 +732,6 @@ fn selection_restore_tolerates_empty_views_and_missing_components() {
         Some(0),
         Some(home_view.as_str()),
         Some(1),
-        None,
     );
     assert_eq!(app.scroll, 1, "matching view and component keep the scroll");
 }
@@ -763,8 +755,7 @@ fn session_state_survives_project_refresh_after_restore() {
     app.active_component = component_index;
     app.selected = row;
     app.scroll = row;
-    app.detail_scroll = 4;
-    app.focus = FocusPane::Detail;
+    app.focus = FocusPane::Workspace;
     ui_state::save(&app).unwrap();
 
     let mut restored = session_app(database.path());
@@ -791,7 +782,7 @@ fn session_state_survives_project_refresh_after_restore() {
     );
     assert_eq!(restored.active_component, component_index);
     assert_eq!(restored.scroll, row);
-    assert_eq!(restored.focus, FocusPane::Detail);
+    assert_eq!(restored.focus, FocusPane::Workspace);
 
     restored.refresh_after_mutation();
     assert!(
@@ -810,7 +801,7 @@ fn session_state_survives_project_refresh_after_restore() {
     );
     assert_eq!(restored.active_component, component_index);
     assert_eq!(restored.scroll, row);
-    assert_eq!(restored.focus, FocusPane::Detail);
+    assert_eq!(restored.focus, FocusPane::Workspace);
 
     unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
     let _ = std::fs::remove_file(&state_file);
@@ -1095,7 +1086,7 @@ fn session_state_preserves_the_session_when_the_workspace_fails_to_load() {
     app.switch_view_by_index(view_index);
     app.active_component = component_index;
     app.selected = row;
-    app.focus = FocusPane::Detail;
+    app.focus = FocusPane::Sidebar;
     ui_state::save(&app).unwrap();
     let view_id = app.current_view().map(|view| view.id.clone());
 
@@ -1113,7 +1104,7 @@ fn session_state_preserves_the_session_when_the_workspace_fails_to_load() {
     assert_eq!(merged.selected_index, Some(row));
     assert_eq!(merged.active_component, Some(component_index));
     assert_eq!(merged.screen.as_deref(), Some("project"));
-    assert_eq!(merged.focus.as_deref(), Some("detail"));
+    assert_eq!(merged.focus.as_deref(), Some("sidebar"));
 
     unsafe { std::env::remove_var("ORBIT_TUI_STATE") };
     let _ = std::fs::remove_file(&state_file);
@@ -1169,7 +1160,7 @@ fn session_state_survives_a_skipped_restore_after_recovery() {
     app.switch_view_by_index(view_index);
     app.active_component = component_index;
     app.selected = row;
-    app.focus = FocusPane::Detail;
+    app.focus = FocusPane::Workspace;
     ui_state::save(&app).unwrap();
     let view_id = app.current_view().map(|view| view.id.clone());
 

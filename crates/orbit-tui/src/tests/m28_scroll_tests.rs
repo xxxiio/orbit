@@ -89,12 +89,16 @@ fn help_modal_scrolls_to_later_lines() {
     assert!(after.contains("Ctrl+Q / Ctrl+C"), "{after}");
 }
 
+/// The inspector owns its own scroll; cycling focus or closing it never moves
+/// the workspace list offset.
 #[test]
-fn detail_focus_resets_its_own_scroll() {
+fn inspector_scroll_is_independent_of_focus_and_the_list() {
     let mut app = app();
     app.focus = FocusPane::Workspace;
-    app.detail_scroll = 7;
+    app.scroll = 7;
     app.focus_next(false);
-    assert_eq!(app.focus, FocusPane::Detail);
-    assert_eq!(app.detail_scroll, 0);
+    assert_eq!(app.focus, FocusPane::Sidebar);
+    app.focus_next(true);
+    assert_eq!(app.focus, FocusPane::Workspace);
+    assert_eq!(app.scroll, 7, "focus must not reset the list scroll");
 }

@@ -4,15 +4,18 @@
 through the same local authority as the CLI; it does not maintain a second
 project model or write SQLite directly.
 
-The shell has three regions:
+The shell has two regions:
 
 - **Sidebar** — Home/Today, Inbox, Projects, Agents and then the project list.
   `»` marks the current destination, `▸` marks the selected row, and a project
   row's status glyph is separate (`●` means the project status is `active`).
-- **Workspace** — the selected global aggregation or the active project view.
-- **Details** — the selected item's properties, dependencies and available
-  actions. The pane docks at the wide breakpoint and opens as an overlay below
-  it.
+- **Workspace** — the selected global aggregation or the active project view. It
+  receives every column the sidebar does not use.
+
+The selected item's properties, note and available actions live in the **item
+inspector**, which is never a third column: `Enter` or `D` opens it over the
+workspace and `Esc` or `Enter` closes it. See
+[The item inspector](#the-item-inspector).
 
 The header is a breadcrumb (`ORBIT › Atlas Console`). A project screen adds the
 pinned workflow (`Basic v1` or `generated default`) and `[stale]` when its last
@@ -23,32 +26,32 @@ row reports the latest accepted, pending, rejected, stale or unavailable result.
 The action bar never advertises an action the application cannot authorize;
 disabled actions stay in the action menu with an explicit reason.
 
-The layout adapts to the terminal width and to what the active component needs:
+The layout adapts to the terminal width:
 
 | Width | Layout |
 |---|---|
-| 120 columns or wider | Sidebar, workspace and the docked details pane; `D` toggles it |
-| 76–119 columns | Sidebar and workspace; details open with `D` or `Enter` |
+| 76 columns or wider | Sidebar and workspace, side by side |
 | narrower than 76 columns | One pane at a time; `Tab` switches sidebar and workspace |
 
-At 120 columns or wider the details pane is always docked: the widest sidebar
-and detail panes still leave the workspace more than the largest component
-minimum (a board needs 56 columns), so docking is never refused there. `D`
-toggles the pane; hiding it returns focus to the workspace, and `Tab` then
-cycles only the visible panes. Below 120 columns there is no room to dock, so
-`D` or `Enter` opens the detail overlay instead. From 160 columns the sidebar
-may widen to fit longer project names; below that it stays a fixed width so the
-workspace does not jump when you switch projects.
+Nothing is docked on the right at any width. The sidebar stays a fixed width so
+the workspace does not jump when you switch projects; from 160 columns it may
+widen to fit longer project names. The workspace is the flexible region and
+absorbs every remaining column, at 160 columns as much as at 80.
 
-Selection changes build the detail model only while the pane is visible. After
-widening from a narrow terminal, or after showing the pane again, the first
-frame after a selection may show a placeholder until the next input or refresh
-rebuilds it; rendering itself never reads detail data.
+The inspector adapts instead of the shell:
+
+| Terminal | Inspector |
+|---|---|
+| 80 columns and 20 rows or larger | Inset overlay; the shell stays visible around it |
+| narrower than 80 columns or shorter than 20 rows | Whole frame; the shell chrome is covered |
+
+Selection changes build the inspector model only when you open it, refresh or
+resume it after an edit; rendering itself never reads detail data.
 
 Below 76 columns a pane bar replaces the hidden region:
 
 ```text
-▸ Workspace │  Sidebar │ Tab switch · D details
+▸ Workspace │  Sidebar │ Tab switch · Enter inspect
 ```
 
 It names both panes, marks the focused one with `▸`, and keeps the way back
@@ -64,7 +67,7 @@ component and shows a rail such as `component 2/5 · h/l switch · focus`.
 `Esc` is contextual:
 
 - with an overlay open it closes the overlay (a dirty form asks before
-  discarding);
+  discarding, and the item inspector closes on `Esc`, `Enter` or `D`);
 - on a normal screen it steps back through navigation history — project →
   Projects → Home — restoring the view, focus, sidebar position and selected
   row you came from;
@@ -99,16 +102,19 @@ launch flag. See [Connected mode](#connected-mode).
 
 `j`/`k` and the arrow keys move the selection in the focused region; `h`/`l`
 move between workspace components while the workspace is focused; `Tab` and
-`Shift+Tab` cycle sidebar → workspace → details (details only while docked).
-`Enter` opens the selected project, activates the selected sidebar destination,
-or opens the selected item's detail.
+`Shift+Tab` cycle the two painted panes, sidebar and workspace, and nothing
+else. `Enter` activates the focused sidebar row, opens the workspace's selected
+project on the Projects screen, or opens the selected item in the inspector.
+Activating Home, Inbox, Agents or Projects keeps the rail focused so `j`/`k`
+keeps driving the right pane; opening a project hands the keyboard to the
+workspace, and `Shift+Tab` returns to the rail.
 
 | Key | Action |
 |---|---|
-| `j` / `k`, `↓` / `↑` | Move selection, or scroll the focused text pane / detail |
+| `j` / `k`, `↓` / `↑` | Move selection, or scroll the focused text pane / inspector |
 | `h` / `l`, `←` / `→` | Previous/next workspace component (workspace focus) |
-| `Tab` / `Shift+Tab` | Cycle focus: sidebar, workspace, docked details |
-| `Enter` | Open the selected project/item, activate the sidebar row, or open details |
+| `Tab` / `Shift+Tab` | Cycle focus: sidebar, workspace |
+| `Enter` | Activate the focused sidebar row, open the selected project row on Projects, or open the selected item's inspector |
 | `Esc` | Close an overlay, else go back one navigation step |
 | `[` / `]` | Previous/next project view; planning horizon on Home; component on Inbox/Agents |
 | `1`–`9` | Jump to a project view by position |
@@ -143,7 +149,7 @@ or opens the selected item's detail.
 | `f` | Connected mode: flush pending commands |
 | `!` | Connected mode: inspect pending and rejected commands |
 | `:` then *Connected commands…* | Connected command console |
-| `D` | Toggle the docked details pane, or open details as an overlay |
+| `D` | Open the selected item's inspector, or close it while it is open |
 | `?` | Keyboard help |
 | `q` | Quit a normal screen or a non-text overlay |
 | `Ctrl+Q` / `Ctrl+C` | Quit from anywhere, including text inputs and overlays |
@@ -153,10 +159,57 @@ conflict replacement or console prompt is focused, printable keys including `q`
 are entered as text. Use `Ctrl+Q` or `Ctrl+C` to quit from that state.
 
 Outside those text surfaces, `q` quits normal screens, the action menu, the
-detail, message and generic confirmation overlays, and the pending/conflict
-inspector; Help closes. It is ignored in the criteria and attachments lists.
+item inspector, message and generic confirmation overlays, and the
+pending/conflict inspector; Help closes. It is ignored in the criteria and attachments lists.
 `Ctrl+Q`/`Ctrl+C` always work, including at the quit confirmation. If typed text
 is unsaved, Orbit asks for confirmation before discarding it.
+
+## The item inspector
+
+The inspector is the one surface that shows everything Orbit knows about the
+selected row. It is an overlay, never a docked column, so the workspace keeps its
+full width while you are working and the panel appears only when you ask for it.
+
+Open it with `Enter` on the selected task, work item, note, habit, agent job or
+aggregation row. With the workspace focused on the Projects screen, `Enter`
+opens the selected project row; with the rail focused, `Enter` activates the
+highlighted rail entry instead, so use `D` to inspect the selected project row.
+`D` opens the inspector anywhere and
+closes it again while it is open; `Esc` and `Enter` close it too. When the
+focused component has no selected row, Orbit reports `No selection` instead of
+opening an empty panel.
+
+| Key | In the inspector |
+|---|---|
+| `j` / `k`, arrows | Scroll one line |
+| PageUp / PageDown | Scroll ten lines |
+| `a` / `s` | Contextual action menu for the inspected entity |
+| `e` / `E` | Full edit / quick edit of the inspected entity |
+| `r` | Re-read accepted state and rebuild this panel only |
+| `Esc`, `Enter`, `D` | Close and hand the keyboard back |
+
+The body is the title with its status glyph and subtitle, then `PROPERTIES`
+(status, readiness, estimate, due date, deadline, attachments and so on), `NOTE`
+when the entity carries one, and `ACTIONS` with the number of operations the
+selection authorizes. Blueprint work items add `CAPABILITY ACTIONS` and
+`RECENT CAPABILITY ACTIONS`; see [Capability actions](#capability-actions).
+
+Opening and closing the inspector leaves the rest of the shell untouched: the
+selected row, the active workspace component and the list scroll do not change,
+and focus returns to the pane that owned the keyboard (sidebar or workspace).
+`Tab` and `Shift+Tab` cycle only those two panes, so an open inspector never
+joins the focus ring.
+
+`a`, `e` and `E` act on the *inspected* entity rather than on whatever the
+workspace selection happens to be, and a successful edit reopens the inspector
+on the same entity with the new values. If the entity disappeared between
+opening and acting — a deleted row, a closed project, a row filtered out of the
+view — the panel says `This item is no longer available` with the last known
+title and kind instead of an empty frame, and `r` re-checks it.
+
+The footer names the keys that work: `Esc close · j/k scroll · Enter close ·
+a actions · e edit`, and only `Esc close · j/k scroll · Enter close` for an
+entity that no longer resolves.
 
 ## Projects and workflow views
 
@@ -229,7 +282,7 @@ orbit blueprint bind --help
 
 ## Tasks: quick edit versus full edit
 
-`Enter` on a task opens its detail: status, readiness, estimate, due date,
+`Enter` on a task opens its inspector: status, readiness, estimate, due date,
 deadline, description, priority, labels, dependency state, attachment count and
 the actions the selection authorizes. `e` opens the full edit form; `E` opens
 the quick edit.
@@ -325,7 +378,7 @@ The palette includes:
 - global destinations and open projects;
 - the current project's views;
 - contextual item actions, including acceptance criteria, activity history,
-  attachments and workflow changes;
+  attachments, workflow changes and capability actions;
 - new project and exactly one **New task** entry (it carries the contextual
   project), plus new knowledge note on the local authority;
 - **Install bundled blueprint** and **Bind blueprint version**;
@@ -338,6 +391,63 @@ In connected mode it also lists **Pending commands** (the same list as `!`) and
 view's rows and recent knowledge notes (at most 50 hits), and `Enter` jumps to
 the hit.
 
+## Capability actions
+
+A blueprint work item can offer a **capability action**: a typed operation that a
+trusted host executes, with its own durable request and receipt. Capability
+actions exist only in the local authoritative workspace.
+
+They appear in exactly three places, all fed by one catalogue:
+
+- the contextual action menu (`a`) for the selected work item;
+- the command palette (`:`) — search for the action's description;
+- the inspector (`a` inside it), where `CAPABILITY ACTIONS` lists the offers and
+  `RECENT CAPABILITY ACTIONS` lists the durable ones.
+
+An offer that cannot run stays listed and dimmed with its code and reason
+instead of being hidden, and `Enter` on it reports the reason without running
+anything:
+
+| Code | Meaning |
+|---|---|
+| `not_authorized` | The capability is installed but not granted for this project |
+| `capability_not_installed` | The deployment has no durable installation for it |
+| `executor_missing` | The trusted composition has no executable action or executor |
+| `requirement_missing` | A capability requirement or a declared requirement is unsatisfied |
+| `capability_missing` | The capability is not registered in the trusted composition |
+| `capability_disabled` | The capability is registered but disabled |
+
+Running one opens a form built from the action's declared input schema. The
+reference capability asks for `note` (required text) and an optional `tag`;
+required fields, integer fields and invalid values are validated before
+submission, exactly like the other forms. Submitting records a **pending**
+request with a stable command id and then asks
+`Request recorded (pending, command <id>). Run the trusted executor now?`.
+`Esc` leaves the request pending — it can be run later with
+`orbit blueprint action execute <id>` — and `Enter` executes it once and only
+once: the same command id never appends a second effect.
+
+The result panel reports `succeeded`, `failed` or `uncertain` with the provider,
+action, capability, item, command id and detail:
+
+- `succeeded` — the trusted executor recorded the outcome; re-running the command
+  returns the same receipt;
+- `failed` — the action failed and is never retried automatically; a new attempt
+  needs a new explicit request;
+- `uncertain` — the provider did not confirm a result. This is **not completed**
+  and Orbit says so. The panel offers `Reconcile as succeeded (--succeed)` and
+  `Reconcile as failed (--fail)` behind a second `Reconcile uncertain outcome`
+  confirmation, and the capability is never re-run by reconciling. Closing the
+  panel without a decision leaves the outcome uncertain instead of promoting it.
+
+After a request, execution or reconciliation the cached offers and history are
+re-read, so the inspector shows the durable state (`pending`, `claimed`,
+`succeeded`, `failed`, `uncertain`) rather than the state of the previous frame.
+
+Connected mode has no capability projection. The actions are not listed at all,
+nothing is queued, and the local-authority path behind them refuses with
+`Capability actions require the local authoritative workspace; connected parity is tracked as M25 EC-004.`
+
 ## Boards, tables and small terminals
 
 A **kanban** shows the workflow's status columns in workflow order, including
@@ -345,25 +455,25 @@ empty ones (`— empty`). Columns never shrink into unreadable slivers: each
 column keeps a readable minimum of about 20 cells, and the board windows
 horizontally instead.
 The legend under the board reports the window (`columns 2-4 of 10`) and the
-board keys. The window follows the selected card even while the details pane
-owns the keyboard; it leaves the card only when another component becomes the
-active workspace component.
+board keys. The window follows the selected card and leaves it only when another
+component becomes the active workspace component; opening the inspector does not
+move the window.
 
-- `j`/`k` move through the flattened cards across columns; the details pane and
-  the column window follow.
+- `j`/`k` move through the flattened cards across columns; the column window
+  follows.
 - `h`/`l` switch workspace components, not columns.
 - The selected column header is marked `▾` and underlined with `━`; the
   selected card carries `▸` when the board owns the keyboard and `›` when the
   column is selected but focus is elsewhere.
-- `S` opens status transitions, `E` quick edit, `Enter` the detail.
+- `S` opens status transitions, `E` quick edit, `Enter` the inspector.
 
 **Table** components keep the title column plus the status, priority and date
 columns that fit. Secondary columns are dropped rather than squashed into
 single characters, and cells end in `…` when truncated; open the row for the
 full value. A status column narrower than six cells falls back to its glyph.
 
-Lists, tables and boards scroll with the selection. A text or detail pane
-scrolls with `j`/`k` when it owns focus. On very narrow or short terminals a
+Lists, tables and boards scroll with the selection. A text pane scrolls with
+`j`/`k` when it owns focus, and so does the inspector while it is open. On very narrow or short terminals a
 view with several components shows one focused component at a time with the
 `component n/m` rail, so `h`/`l` and `Tab` never lose data.
 
@@ -377,7 +487,7 @@ path with `ORBIT_TUI_STATE`) using an atomic replace:
   restore correctly);
 - the focused pane and the sidebar/project-list positions;
 - the active component, the selected item's stable id and its index, plus the
-  scroll offset and detail-pane scroll.
+  scroll offset.
 
 Restarting `orbit-tui` reopens the same project and view with the same selected
 row. If the project or view no longer exists, Orbit falls back to the nearest
@@ -386,9 +496,13 @@ and keeps the previous navigation intent rather than overwriting it with an
 empty shell. A corrupt or future-version state file is ignored; startup is never
 blocked by it.
 
-These never persist: form text and unsaved edits, the open overlay, palette,
-search or console queries, the in-memory recent-destinations list, and any
-credential or token. A queued connected command persists because it is durable
+A session file written by the previous docked-pane build still restores: a
+saved `"focus": "detail"` loads as the workspace focus, and the obsolete
+`detail_scroll` field is ignored instead of failing the restore.
+
+These never persist: form text and unsaved edits, the open overlay (including
+the inspector), palette, search or console queries, the in-memory
+recent-destinations list, and any credential or token. A queued connected command persists because it is durable
 authority intent, not because it is TUI state.
 
 ## First run and empty states
@@ -615,9 +729,19 @@ terminal is left in an unusual state by an external kill, run `stty sane` and
 - **The connected header has no `CONNECTED` label** — the header drops its
   summary only when the row cannot fit it, so the breadcrumb stays readable. The
   session is still connected; `!` shows queued work.
-- **Narrow terminal** — use `Tab` to switch panes, `h`/`l` for components and
-  `D`/`Enter` for the detail overlay. Details are never silently truncated; they
-  open over the workspace instead.
+- **Narrow terminal** — use `Tab` to switch panes and `h`/`l` for components.
+  `D`/`Enter` opens the inspector: an inset overlay from 80x20, and the whole
+  frame below that. Its content is never silently truncated; it scrolls with
+  `j`/`k` and PageUp/PageDown.
+- **A capability action is dimmed with a code** — the offer is real but cannot
+  run yet. `not_authorized` needs `orbit blueprint capability authorize`,
+  `capability_not_installed` needs `orbit blueprint capability install`, and the
+  other codes name a trusted-composition gap. Nothing is queued while an offer
+  is unavailable.
+- **A capability outcome is `uncertain`** — the provider did not confirm a
+  result, so the request is not completed. Reconcile it explicitly in the result
+  panel with `Reconcile as succeeded (--succeed)` or
+  `Reconcile as failed (--fail)`; Orbit never re-runs the action to resolve it.
 - **`q` does nothing in a text prompt, criteria or attachments list** — use
   `Ctrl+Q` or `Ctrl+C`; elsewhere `q` leaves the screen or overlay.
 - **Nothing renders** — confirm the terminal is interactive and at least a few

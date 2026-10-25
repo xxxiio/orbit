@@ -12,11 +12,12 @@ application services.
 - **Workspace** — typed resolved components (text, list, table, metric, detail,
   kanban, task list, timeline, habit tracker, metric history, knowledge
   references, agent jobs, milestone progress).
-- **Details** — selected-item properties, dependencies and contextual actions;
-  docked at 120 columns and wider (`D` toggles it), otherwise an overlay.
+- **Item inspector** — selected-item properties, dependencies, contextual and
+  capability actions. It is an overlay (`Enter`/`D` opens, `Esc` closes) and
+  becomes a whole-frame view below 80x20; there is no docked column.
 - **Overlays** — prompts, confirmations, action menus, command palette, search,
-  help, details, criteria, attachments, activity, pending/conflict review and the
-  connected console.
+  help, inspector, capability results, criteria, attachments, activity,
+  pending/conflict review and the connected console.
 
 One shell serves local and connected deployments. Connected mode uses the same
 `App` and renderer over a connected `Backend`. Project and task reads come from
@@ -49,7 +50,7 @@ and theming only.
 | `render/mod.rs` | Frame split into header/body/status and the modal layer. |
 | `render/layout.rs` | Shell width plan, component minimum/preferred sizes, rect allocation, single-component decision. |
 | `render/shell.rs` | Header, sidebar, compact pane bar, project tabs, action bar, status line, panel blocks. |
-| `render/components.rs` | Component bodies, table column planning, Kanban windowing, Projects screen, docked details. |
+| `render/components.rs` | Component bodies, table column planning, Kanban windowing, Projects screen, component bodies. |
 | `render/modals.rs` | Every overlay, form field rendering and multi-line caret preview, keyboard help. |
 | `backend.rs` | `Backend::{Local, Connected}`, typed client calls, refresh/flush, per-command outcomes, cached detail/pending reads. |
 | `local_backend.rs` | The only constructor that opens an embedded local authority. |
@@ -84,7 +85,7 @@ handles. It is the only authority boundary in the process.
 
 `ui_state` persists navigation intent only: screen, project id, view id, focus,
 sidebar/project-list positions, active component, selected entity id and index,
-scroll and detail scroll. It never stores form text, queries, overlay state,
+scroll. It never stores form text, queries, overlay state,
 domain records or credentials. The palette's recent-destination list is
 in-memory by design.
 
@@ -155,49 +156,45 @@ Rules for changes:
 - Missing components or failed refresh retain the rest of the view and show an
   explicit unavailable/stale state.
 
-### Detail-cache contract
+### Inspector model contract
 
-The docked detail pane is painted every frame at the wide breakpoint while it
-is shown, so the frame path is **cache-only**:
+The inspector is an overlay, not a docked pane, so its model is built once on an
+input path and then painted from state:
 
-- `App::cached_detail_model()` returns the cached model for the current key, or
-  `None`. It never builds a model and never reads the backend. A miss paints a
-  neutral placeholder for that frame (the project name, or a “select an item”
-  hint), then the next frame is a hit.
-- The model is built once, outside render, by `App::seed_detail_cache()`. Every
-  input or lifecycle path that changes the pane's subject or accepted data calls
-  it: selection and component movement, cursor restore, screen/project/view
-  navigation, refresh and mutations. Seeding is what makes the first frame after
-  a change a cache hit. An invisible pane (hidden with `D`, or below 120
-  columns) returns without a build, so a selection made there performs no detail
-  reads; an explicit request (`open_detail`/overlays) still builds the model.
-  After widening or re-showing the pane, a selection made while it was hidden
-  shows the placeholder until the next input or refresh seeds the cache.
-- The key is (`screen`, project id, view id, projects selection, active
-  component, selected index, selected entity id, detail revision).
-- Any refresh, mutation, screen/project/view/component change, selection change
-  or restore calls `invalidate_detail_cache()`, which bumps the revision. The
-  revision exists because an in-place refresh can keep the same identity, and
-  the next seed rebuilds the model (including task detail, criteria count and
-  attachment count reads).
+- `App::open_inspector()` builds the model for the current selection, records the
+  subject (`InspectorSubject`), the originating focus and the scroll offset, then
+  opens `Modal::Inspector`. Rendering reads that stored model only: it never
+  builds a model and never issues a backend read.
+- Every path that changes the inspected subject or its accepted data calls
+  `App::refresh_inspector()` (selection/component movement, cursor restore,
+  screen/project/view navigation, refresh, mutations and capability execution).
+  If the subject no longer exists the inspector shows
+  `This item is no longer available` with its last known title/kind instead of
+  silently switching to a different item.
+- Closing the inspector (`Esc`, `Enter` or `D`) restores the pane that owned the
+  keyboard before it opened. `Tab`/`Shift+Tab` cycle only the visible
+  sidebar/workspace panes; there is no hidden focus stop.
+- The inspector footer is `Esc close · j/k scroll · Enter close · a actions ·
+  e edit`. `a` opens the contextual action menu, `e`/`E` launch the existing edit
+  forms, and a successful save reopens the inspector on the same entity.
 - A title-only quick edit is a **project-screen** fast path: it re-resolves that
   project and patches the one row instead of re-reading the whole workspace.
   From Home/Inbox the same save takes the ordinary refresh, and a priority
   change always does because ranking can change.
-- Stale detail scroll is clamped (`MAX_DETAIL_SCROLL`) so a restored offset can
-  never scroll the pane out of view. The renderer records the last painted
-  maximum in `detail_max_scroll` so scrolling up from an over-scrolled value
-  moves immediately.
-- Tests count cache builds: repeated wide renders must add none, selection and
-  refresh must rebuild exactly once, and render must never seed.
+- Tests count inspector builds: repeated frames add none, opening or an explicit
+  refresh builds exactly once, and render never builds.
 
 ## Responsive behaviour
 
-| Width | Layout |
+| Width / height | Layout |
 |---|---|
-| ≥ 120 columns | Sidebar, workspace and the docked detail pane (`D` toggles it) |
-| 76–119 columns | Sidebar and workspace; details are an overlay |
+| ≥ 76 columns | Sidebar and workspace (two regions, no third column) |
 | < 76 columns | One primary pane selected by focus, with a pane bar |
+| Inspector at ≥ 80x20 | Inset overlay over the two regions |
+| Inspector below 80x20 | Whole-frame inspector |
+
+No width docks a details column; the workspace always receives every column the
+sidebar does not claim.
 
 Each component declares a readable minimum and a preferred size in
 `render/layout.rs` (a board needs 56×8, a table 34×5, a metric 16×3). The view's

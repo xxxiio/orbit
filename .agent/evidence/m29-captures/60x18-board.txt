@@ -1,5 +1,5 @@
  ORBIT › Atlas Console  Basic v1   3 projects · 1 inbox
-▸ Workspace │  Sidebar │ Tab switch · D details
+▸ Workspace │  Sidebar │ Tab switch · Enter inspect
    Overview │   Tasks │ ▸ Board │   Timeline
 ┏ Task board ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃  Planned 0                  ▾ Ready 1                    ┃

@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/orbit-domain",
+  "crates/orbit-habit-capability",
   "crates/orbit-blueprint",
   "crates/orbit-ui",
   "crates/orbit-application",

@@ -15,11 +15,12 @@ pub enum Screen {
     Project,
 }
 
+/// The panes that are actually painted and can own the keyboard. There is no
+/// inspector variant: the inspector is an overlay, never a focus target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FocusPane {
     Sidebar,
     Workspace,
-    Detail,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,6 +152,17 @@ pub enum FormMode {
         project_id: String,
         unbind: bool,
     },
+    /// One trusted capability action, with the exact command id minted once for
+    /// this form. Re-submitting after a transient failure reuses it; opening the
+    /// form again for a new attempt mints a new one.
+    CapabilityAction {
+        item_id: String,
+        revision: u64,
+        capability: String,
+        action_id: String,
+        command_id: String,
+        external_effect: bool,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -255,6 +267,20 @@ pub enum PendingAction {
     /// Stage a reviewed connected batch in one replica transaction.
     QueueBatch {
         intents: Vec<connected_actions::Intent>,
+    },
+    /// Run the trusted executor for a recorded pending request. This is the
+    /// only dispatch path; `pending` is never presented as completed before it.
+    ExecuteCapabilityAction {
+        command_id: String,
+        item_id: String,
+        capability: String,
+        action_id: String,
+        external_effect: bool,
+    },
+    /// Explicitly settle an `uncertain` outcome. Never re-executes.
+    ReconcileCapabilityAction {
+        command_id: String,
+        succeed: bool,
     },
 }
 
@@ -367,7 +393,9 @@ pub enum Modal {
         selected: usize,
     },
     Help,
-    Detail(DetailModel),
+    /// Explicit item inspector. The model is built by an input path and stored
+    /// here, so painting a frame never touches the backend.
+    Inspector(InspectorState),
     Criteria(CriteriaModal),
     Attachments(AttachmentsModal),
     Activity(ActivityModal),
@@ -410,6 +438,17 @@ pub enum Modal {
         selected: usize,
         output: Vec<String>,
         error: Option<String>,
+    },
+    /// Result of one explicit capability execution.
+    ///
+    /// `reconcile_command` is set only for an `uncertain` outcome: the outcome is
+    /// never treated as completed and the two explicit decisions are the only
+    /// way to settle it.
+    CapabilityResult {
+        title: String,
+        lines: Vec<String>,
+        reconcile_command: Option<String>,
+        selected: usize,
     },
 }
 
@@ -476,19 +515,69 @@ pub(crate) struct CursorState {
     pub(crate) scroll: Vec<usize>,
 }
 
-/// Identity of the detail pane's current subject. A cached [`DetailModel`] is
-/// only reused while every input that can change it stays equal; the revision
-/// covers in-place refreshes that keep the same subject but replace its data.
+/// Identity of what the inspector is looking at.
 ///
-/// [`DetailModel`]: orbit_ui::model::DetailModel
+/// The identity is recorded explicitly so a rebuild can distinguish "the same
+/// subject" from "the subject vanished or moved": a rebuild never falls back to
+/// whatever row happens to be selected now.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct DetailCacheKey {
-    pub(crate) screen: Screen,
-    pub(crate) project_id: Option<String>,
-    pub(crate) view_id: Option<String>,
-    pub(crate) projects_selection: usize,
-    pub(crate) active_component: usize,
-    pub(crate) selected: usize,
-    pub(crate) selected_id: Option<String>,
-    pub(crate) revision: u64,
+pub enum InspectorSubject {
+    /// A row on the Projects screen, identified by its durable project id.
+    Project { project_id: String },
+    /// A row inside a resolved view, identified by its stable item id.
+    Item {
+        screen: Screen,
+        project_id: Option<String>,
+        view_id: Option<String>,
+        component_id: String,
+        kind: ItemKind,
+        id: String,
+    },
+    /// A knowledge note opened from search or the palette, outside a view row.
+    Knowledge { id: String },
+}
+
+/// One offered capability action bound to the item and revision it was
+/// resolved against, plus the command id of an already-recorded pending
+/// request for that action (if one exists).
+///
+/// This is a cached input-path model. The renderer reads it; it never resolves
+/// offers itself.
+#[derive(Clone, Debug)]
+pub struct CapabilityActionView {
+    pub item_id: String,
+    pub revision: u64,
+    pub command_id: Option<String>,
+    pub offer: orbit_client::OrbitCapabilityOffer,
+}
+
+impl CapabilityActionView {
+    pub fn action_key(&self) -> String {
+        format!(
+            "capability:{}:{}",
+            self.offer.capability, self.offer.action_id
+        )
+    }
+}
+
+/// The inspector modal's complete state.
+///
+/// `detail` is the last successfully built model. When the subject disappears
+/// it is kept so the fallback can name what the user was inspecting, while
+/// `unavailable` tells the renderer to paint the explicit "no longer available"
+/// message instead of an empty panel.
+#[derive(Clone, Debug)]
+pub struct InspectorState {
+    pub subject: InspectorSubject,
+    pub detail: DetailModel,
+    pub scroll: usize,
+    /// Pane that owned the keyboard when the inspector opened. Closing returns
+    /// focus there, never to a pane that is not painted.
+    pub return_focus: FocusPane,
+    /// Set while a follow-up modal launched from the inspector (action menu,
+    /// edit form, status confirmation) is open. The inspector reopens when that
+    /// modal closes and the subject still exists.
+    pub reopen_after_mutation: bool,
+    /// The subject is gone from accepted state.
+    pub unavailable: bool,
 }

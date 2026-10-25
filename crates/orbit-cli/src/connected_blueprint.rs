@@ -113,6 +113,15 @@ fn endpoint(command: BlueprintSubcommand) -> Result<BlueprintEndpoint, CliError>
                     .into(),
             ));
         }
+        UpgradePreview { .. } | Upgrade { .. } => {
+            // A version upgrade is fenced by an accepted-state preview and a
+            // preview fingerprint. The connected transport cannot read that
+            // state, so it refuses instead of queueing an unverifiable change.
+            return Err(CliError::Usage(
+                "workflow version upgrades are local-authoritative in this build; use the local workspace"
+                    .into(),
+            ));
+        }
         Binding { project } => {
             query.push(("project_id".into(), project));
             ("blueprints/binding", None)
@@ -154,6 +163,11 @@ fn endpoint(command: BlueprintSubcommand) -> Result<BlueprintEndpoint, CliError>
             "blueprints/template",
             Some(json!({"project_id": project, "template_id": template, "namespace": namespace})),
         ),
+        Capability { .. } | Action { .. } => {
+            return Err(CliError::Usage(
+                super::blueprint_commands::CONNECTED_CAPABILITY_REFUSAL.into(),
+            ));
+        }
     };
     Ok((path, query, body, file))
 }
@@ -187,6 +201,16 @@ pub(super) fn run(
         BlueprintSubcommand::Pending | BlueprintSubcommand::Flush
     ) {
         return run_outbox(server, db, command);
+    }
+    // Capability execution is local-authority only in this iteration. Refuse
+    // explicitly instead of queueing a command that can never execute.
+    if matches!(
+        &command,
+        BlueprintSubcommand::Capability { .. } | BlueprintSubcommand::Action { .. }
+    ) {
+        return Err(CliError::Usage(
+            super::blueprint_commands::CONNECTED_CAPABILITY_REFUSAL.into(),
+        ));
     }
     // Default to a durable intention, then attempt canonical global outbox replay.
     // This freezes file input and command identity before contacting the server.

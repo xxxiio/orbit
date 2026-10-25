@@ -1,0 +1,45 @@
+ ORBIT › Atlas Console  Basic v1   3 projects · 1 inbox
+╭ Orbit ────────────╮   Overview │ ▸ Tasks │   Board │   Timeline  [ ] switch view
+│    Home / Today   │┏ Tasks ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+│    Inbox          │┃  TITLE                                                                                                  STATUS      PRIORITY DEADLINE   ┃
+│    Projects       │┃  Trim the╔ Inspector · Map the command palette ═════════════════════════════════════════════════════════╗ deferred                      ┃
+│    Agents         │┃  Cancel t║Map the command palette                                                                       ║ cancelled                     ┃
+│▸ » Atlas Console ○│┃▸ Map the ║▶ inprogress                                                                                  ║ in_progre…         2026-10-25 ┃
+│    Beacon Sync ●  │┃  Wire the║                                                                                              ║ ready              2026-10-26 ┃
+│    Cipher Notes ○ │┃  Audit sy║PROPERTIES                                                                                    ║ review             2026-10-27 ┃
+│                   │┃  Harden t║status: in_progress                                                                           ║ in_progre…         2026-10-28 ┃
+│                   │┃  Review a║readiness: inprogress                                                                         ║ blocked            2026-10-29 ┃
+│                   │┃  Document║actionable: false                                                                             ║ done               2026-10-30 ┃
+│                   │┃          ║estimate: 90m                                                                                 ║                               ┃
+│                   │┃          ║due: 2026-10-25                                                                               ║                               ┃
+│                   │┃          ║deadline: 2026-10-25 16:35Z                                                                   ║                               ┃
+│                   │┃          ║Attachments: none                                                                             ║                               ┃
+│                   │┃          ║                                                                                              ║                               ┃
+│                   │┃          ║ACTIONS 19 · press a                                                                          ║                               ┃
+│                   │┃          ║• Open details                                                                                ║                               ┃
+│                   │┃          ║• Edit task                                                                                   ║                               ┃
+│                   │┃          ║• Edit details                                                                                ║                               ┃
+│                   │┃          ║• Acceptance criteria                                                                         ║                               ┃
+│                   │┃          ║• Attach file                                                                                 ║                               ┃
+│                   │┃          ║• Attachments                                                                                 ║                               ┃
+│                   │┃          ║• Activity history                                                                            ║                               ┃
+│                   │┃          ║• Add dependency                                                                              ║                               ┃
+│                   │┃          ║• Move to waiting                                                                             ║                               ┃
+│                   │┃          ║• Move to blocked                                                                             ║                               ┃
+│                   │┃          ║• Move to review                                                                              ║                               ┃
+│                   │┃          ║• Move to deferred                                                                            ║                               ┃
+│                   │┃          ║• Move to done                                                                                ║                               ┃
+│                   │┃          ║• Move to cancelled                                                                           ║                               ┃
+│                   │┃          ║• Inspect dependencies                                                                        ║                               ┃
+│                   │┃          ║• New task                                                                                    ║                               ┃
+│                   │┃          ║• New work item                                                                               ║                               ┃
+│                   │┃          ║• Preview plan                                                                                ║                               ┃
+│                   │┃          ║• Bind evidence                                                                               ║                               ┃
+│                   │┃          ║                                                                                              ║                               ┃
+│                   │┃          ║ Esc close · j/k scroll · Enter close · a actions · e edit                                    ║                               ┃
+│                   │┃          ╚══════════════════════════════════════════════════════════════════════════════════════════════╝                               ┃
+│                   │┃                                                                                                                                         ┃
+│                   │┃                                                                                                                                         ┃
+╰───────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ Actions: Enter Open · e Edit · S Status · a more actions · q quit
+ Ctrl+Q quit · q quit (not typing)  Atlas Console • Basic v1 • 4 views • r refresh   j/k select · h/l component · Enter inspect · Esc back

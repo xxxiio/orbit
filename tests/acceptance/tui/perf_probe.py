@@ -51,7 +51,7 @@ DENSE_PROJECT = "Performance Lab"
 DEVELOPMENT_PROJECT = "Sync Reliability"
 SEARCH_MODAL_RE = re.compile(r"[╭╔]\s*Search\b")
 HOME_HEADER_RE = r"(?m)^\s*ORBIT\s*›\s*Home / Today"
-DETAIL_ACTIONS = "Actions (press a to run)"
+DETAIL_MARKER = "PROPERTIES"
 PREFIX_HINT = "h Home"
 
 
@@ -277,16 +277,16 @@ class ProbeRun:
     def _measure_task_detail(self, session: TuiSession) -> None:
         self._open_dense_tasks(session)
         started = _now_ms()
-        session.send(ENTER, note="open task detail")
+        session.send(ENTER, note="open task inspector")
         session.wait_for_screen_text(
-            DETAIL_ACTIONS, timeout=10.0, description="task detail modal"
+            DETAIL_MARKER, timeout=10.0, description="task inspector properties"
         )
         self.record("open_task_detail", started)
-        session.send(ESC, note="close task detail")
+        session.send(ESC, note="close task inspector")
         session.wait_until_screen(
-            lambda view: DETAIL_ACTIONS not in view,
+            lambda view: "Inspector ·" not in view,
             timeout=5.0,
-            description="task detail modal to close",
+            description="task inspector to close",
         )
 
     def _measure_scroll(self, session: TuiSession) -> None:

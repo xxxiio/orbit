@@ -43,7 +43,7 @@ fn run() -> Result<(), String> {
 fn navigation_signature(app: &App) -> String {
     let project = app.project.as_ref();
     format!(
-        "{:?}|{}|{}|{:?}|{}|{}|{}|{}|{}|{}|{}",
+        "{:?}|{}|{}|{:?}|{}|{}|{}|{}|{}|{}",
         app.screen,
         project.map(|project| project.id.as_str()).unwrap_or(""),
         project
@@ -59,7 +59,6 @@ fn navigation_signature(app: &App) -> String {
             .map(|item| item.id.as_str())
             .unwrap_or(""),
         app.scroll,
-        app.detail_scroll,
     )
 }
 
@@ -191,6 +190,15 @@ mod m29_perf_render_tests;
 #[cfg(test)]
 #[path = "tests/m29_readiness_tests.rs"]
 mod m29_readiness_tests;
+#[cfg(test)]
+#[path = "tests/m30_capability_action_tests.rs"]
+mod m30_capability_action_tests;
+#[cfg(test)]
+#[path = "tests/m30_inspector_tests.rs"]
+mod m30_inspector_tests;
+#[cfg(test)]
+#[path = "tests/m30_sidebar_navigation_tests.rs"]
+mod m30_sidebar_navigation_tests;
 #[cfg(test)]
 #[path = "tests/tests.rs"]
 mod tests;

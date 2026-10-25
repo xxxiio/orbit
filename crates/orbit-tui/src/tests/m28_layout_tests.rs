@@ -88,9 +88,11 @@ fn common_terminal_sizes_remain_readable_and_keep_quit_visible() {
         );
         assert!(rendered.contains("Task board"), "{width}x{height}");
         assert!(rendered.contains("Inbox"), "{width}x{height}");
-        if width >= 120 {
-            assert!(rendered.contains("Details"), "{width}x{height}");
-        }
+        // Two regions at every width: the item inspector is an overlay.
+        assert!(
+            !rendered.contains("Details"),
+            "{width}x{height}: no docked Details column is allowed: {rendered}"
+        );
     }
 }
 

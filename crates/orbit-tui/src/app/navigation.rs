@@ -88,7 +88,6 @@ impl App {
         #[cfg(test)]
         self.workspace_refreshes
             .set(self.workspace_refreshes.get().wrapping_add(1));
-        self.invalidate_detail_cache();
         // Capture the cursor before the accepted data is replaced, otherwise
         // restore_cursor has nothing stable to resolve the selected id against.
         self.sync_cursor();
@@ -148,9 +147,10 @@ impl App {
                 );
             }
         }
-        // Seed here rather than lazily in render: the detail pane must stay a
-        // cache hit on the first frame after a refresh.
-        self.seed_detail_cache();
+        // Rebuild an open inspector for its recorded subject. This never opens
+        // one, so a refresh cannot make the overlay appear on its own.
+        self.refresh_capability_actions();
+        self.refresh_inspector();
     }
 
     fn rebuild_global_views(&mut self) {
@@ -357,7 +357,6 @@ impl App {
     /// `refresh_current` is the full workspace read, so the fast path would be
     /// a lie. Those screens use the ordinary refresh instead.
     pub fn refresh_after_task_title(&mut self, task_id: &str, title: &str) {
-        self.invalidate_detail_cache();
         if self.screen != Screen::Project {
             self.refresh_current();
             return;
@@ -417,7 +416,10 @@ impl App {
     }
 
     fn open_project_internal(&mut self, project_id: &str, record_history: bool) {
-        self.invalidate_detail_cache();
+        // Opening a project is deliberate navigation: the overlay closes and a
+        // stashed inspector never reopens over it.
+        self.close_inspector();
+        self.pending_inspector = None;
         if record_history {
             self.push_history();
         }
@@ -428,7 +430,6 @@ impl App {
             .cloned()
         else {
             self.notify(format!("Unknown project: {project_id}"), StatusKind::Error);
-            self.seed_detail_cache();
             return;
         };
         self.sync_cursor();
@@ -462,9 +463,7 @@ impl App {
     }
 
     pub fn refresh_project(&mut self) {
-        self.invalidate_detail_cache();
         let Some(state) = &self.project else {
-            self.seed_detail_cache();
             return;
         };
         let project_id = state.id.clone();
@@ -533,7 +532,8 @@ impl App {
                 }
             }
         }
-        self.seed_detail_cache();
+        self.refresh_capability_actions();
+        self.refresh_inspector();
     }
 
     pub fn current_view(&self) -> Option<&ResolvedView> {
@@ -549,161 +549,393 @@ impl App {
         }
     }
 
-    /// Invalidate the cached detail pane model. Any refresh, mutation or
-    /// navigation that can change the pane's subject calls this; the cache key
-    /// also covers identity changes, but an in-place refresh keeps the same
-    /// identity, so the revision is what forces a rebuild there.
-    pub(crate) fn invalidate_detail_cache(&self) {
-        self.detail_revision
-            .set(self.detail_revision.get().wrapping_add(1));
-    }
-
-    fn detail_cache_key(&self) -> DetailCacheKey {
-        let project = self.project.as_ref();
-        DetailCacheKey {
-            screen: self.screen,
-            project_id: project.map(|project| project.id.clone()),
-            view_id: project
-                .and_then(|project| project.views.get(project.active_view))
-                .map(|view| view.id.clone()),
-            projects_selection: self.projects_selection,
-            active_component: self.active_component,
-            selected: self.selected,
-            selected_id: self.selected_item().map(|item| item.id.clone()),
-            revision: self.detail_revision.get(),
-        }
-    }
-
-    /// Build the detail model for the current subject, seeding the render
-    /// cache when the docked pane is visible.
-    ///
-    /// Explicit consumers (`open_detail`, overlays) must work even when the
-    /// pane is hidden, so an invisible pane builds directly instead of
-    /// touching the cache.
-    pub fn detail_model(&self) -> Option<DetailModel> {
-        if !self.detail_visible() {
-            return self.build_detail_model();
-        }
-        self.seed_detail_cache();
-        self.detail_cache
-            .borrow()
-            .as_ref()
-            .and_then(|(_, detail)| detail.clone())
-    }
-
-    /// Cache-only read used by the renderer.
-    ///
-    /// Rendering must never issue backend reads: in connected mode
-    /// `task_detail`, `acceptance_criteria` and `list_attachments` are HTTP
-    /// calls. Input paths seed the cache (see [`Self::seed_detail_cache`]); a
-    /// miss paints a neutral placeholder for one frame instead.
-    ///
-    /// Only a visible pane is seeded, so after a selection made while the pane
-    /// was hidden (or below the wide breakpoint) the first wide frame shows
-    /// the placeholder until the next input or refresh seeds the cache.
-    pub fn cached_detail_model(&self) -> Option<DetailModel> {
-        let key = self.detail_cache_key();
-        let cache = self.detail_cache.borrow();
-        match cache.as_ref() {
-            Some((cached_key, detail)) if *cached_key == key => detail.clone(),
-            _ => None,
-        }
-    }
-
-    /// True when a frame would actually paint the docked detail pane.
-    ///
-    /// Mirrors the renderer's condition: the pane is docked only while the
-    /// user keeps it shown and the terminal is at the wide breakpoint.
-    pub(crate) fn detail_visible(&self) -> bool {
-        self.show_detail && self.viewport_width >= crate::theme::WIDE_BREAKPOINT
-    }
-
-    /// Build and store the detail model for the current subject when the cache
-    /// does not already describe it.
-    ///
-    /// Every path that changes the pane's subject or its accepted data
-    /// (selection, component, cursor restore, navigation, refresh, mutations)
-    /// calls this once, outside render, so the next frame is a cache hit.
-    /// A hidden pane returns immediately: building for a pane that is not
-    /// drawn would issue connected-mode HTTP reads for nothing.
-    pub(crate) fn seed_detail_cache(&self) {
-        if !self.detail_visible() {
-            return;
-        }
-        let key = self.detail_cache_key();
-        let cached = self
-            .detail_cache
-            .borrow()
-            .as_ref()
-            .is_some_and(|(cached_key, _)| *cached_key == key);
-        if cached {
-            return;
-        }
-        let detail = self.build_detail_model();
-        *self.detail_cache.borrow_mut() = Some((key, detail));
-    }
-
-    fn build_detail_model(&self) -> Option<DetailModel> {
-        #[cfg(test)]
-        self.detail_cache_builds
-            .set(self.detail_cache_builds.get() + 1);
+    /// Identity of the item the cursor is on, or `None` when there is nothing
+    /// to inspect. On the Projects screen the selected project row is the
+    /// subject; everywhere else it is the selected item of the active
+    /// component.
+    pub(crate) fn current_inspector_subject(&self) -> Option<InspectorSubject> {
         if self.screen == Screen::Projects {
             return self
                 .selected_project()
-                .map(|project| ui_actions::detail_for(&project_selection(project), false));
+                .map(|project| InspectorSubject::Project {
+                    project_id: project.id.clone(),
+                });
         }
-        let project_scope = self.screen == Screen::Project;
-        let item = self.selected_item()?;
-        let mut detail = ui_actions::detail_for(item, project_scope);
-        if item.kind == ItemKind::Task
-            && let Some(task) = self.task_dto(&item.id)
-        {
-            {
-                if !task.description.trim().is_empty() {
-                    detail
-                        .fields
-                        .push(("Description".into(), task.description.clone()));
+        let view = self.current_view()?;
+        let component = view.components.get(self.active_component)?;
+        let item = component.selected(self.selected)?;
+        Some(InspectorSubject::Item {
+            screen: self.screen,
+            project_id: self.project.as_ref().map(|project| project.id.clone()),
+            view_id: Some(view.id.clone()),
+            component_id: component.id.clone(),
+            kind: item.kind,
+            id: item.id.clone(),
+        })
+    }
+
+    /// Build the inspector model for `subject`.
+    ///
+    /// This is the only place the inspector issues detail reads
+    /// (`task_detail`, `acceptance_criteria`, `list_attachments`, knowledge
+    /// bodies). It therefore runs on input paths only - opening, refreshing and
+    /// resuming after a mutation - and never from the renderer.
+    ///
+    /// `None` means the subject is no longer in accepted state: a deleted task,
+    /// a closed project, a filtered-out row or a different view. Callers must
+    /// paint the explicit fallback instead of inspecting the current selection.
+    pub(crate) fn build_detail_for_subject(
+        &self,
+        subject: &InspectorSubject,
+    ) -> Option<DetailModel> {
+        #[cfg(test)]
+        self.inspector_builds.set(self.inspector_builds.get() + 1);
+        match subject {
+            InspectorSubject::Project { project_id } => {
+                let project = self
+                    .projects
+                    .iter()
+                    .find(|project| &project.id == project_id)?;
+                Some(ui_actions::detail_for(&project_selection(project), false))
+            }
+            InspectorSubject::Knowledge { id } => {
+                let note = self
+                    .client
+                    .list_knowledge()
+                    .ok()?
+                    .into_iter()
+                    .find(|note| &note.id == id)?;
+                Some(DetailModel {
+                    title: note.title.clone(),
+                    subtitle: format!("{} · {}", note.kind, note.status),
+                    status: note.status,
+                    kind: ItemKind::Knowledge,
+                    fields: vec![
+                        ("id".into(), note.id),
+                        ("kind".into(), note.kind),
+                        ("provenance".into(), note.provenance),
+                    ],
+                    note: note.body_markdown,
+                    actions: Vec::new(),
+                })
+            }
+            InspectorSubject::Item {
+                screen,
+                project_id,
+                view_id,
+                component_id,
+                kind,
+                id,
+            } => {
+                // The subject is only reachable while the screen, project and
+                // view it was opened from are still the active ones. A view
+                // switch must show the fallback, not silently inspect a row
+                // that happens to share the id or position.
+                if self.screen != *screen {
+                    return None;
                 }
-                if let Some(priority) = &task.priority {
-                    detail.fields.push(("Priority".into(), priority.clone()));
+                let active_project = self.project.as_ref().map(|project| project.id.clone());
+                if active_project != *project_id {
+                    return None;
                 }
-                if !task.labels.is_empty() {
-                    detail
-                        .fields
-                        .push(("Labels".into(), task.labels.join(", ")));
+                let view = self.current_view()?;
+                if view_id.as_deref() != Some(view.id.as_str()) {
+                    return None;
                 }
-                if let Ok(criteria) = self.client.acceptance_criteria(&item.id) {
-                    let done = criteria.iter().filter(|item| item.completed).count();
-                    if !criteria.is_empty() {
+                let component = view
+                    .components
+                    .iter()
+                    .find(|component| &component.id == component_id)?;
+                let item = component
+                    .selection
+                    .iter()
+                    .find(|item| &item.id == id && item.kind == *kind)?;
+                let mut detail = ui_actions::detail_for(item, self.screen == Screen::Project);
+                if item.kind == ItemKind::Task
+                    && let Some(task) = self.task_dto(&item.id)
+                {
+                    if !task.description.trim().is_empty() {
+                        detail
+                            .fields
+                            .push(("Description".into(), task.description.clone()));
+                    }
+                    if let Some(priority) = &task.priority {
+                        detail.fields.push(("Priority".into(), priority.clone()));
+                    }
+                    if !task.labels.is_empty() {
+                        detail
+                            .fields
+                            .push(("Labels".into(), task.labels.join(", ")));
+                    }
+                    if let Ok(criteria) = self.client.acceptance_criteria(&item.id) {
+                        let done = criteria.iter().filter(|item| item.completed).count();
+                        if !criteria.is_empty() {
+                            detail.fields.push((
+                                "Acceptance".into(),
+                                format!("{done}/{} checked", criteria.len()),
+                            ));
+                        }
+                    }
+                    if let Ok(attachments) = self.client.list_attachments("task", &item.id) {
                         detail.fields.push((
-                            "Acceptance".into(),
-                            format!("{done}/{} checked", criteria.len()),
+                            "Attachments".into(),
+                            if attachments.is_empty() {
+                                "none".into()
+                            } else {
+                                format!("{} file(s)", attachments.len())
+                            },
                         ));
                     }
                 }
-                if let Ok(attachments) = self.client.list_attachments("task", &item.id) {
-                    detail.fields.push((
-                        "Attachments".into(),
-                        if attachments.is_empty() {
-                            "none".into()
-                        } else {
-                            format!("{} file(s)", attachments.len())
-                        },
-                    ));
+                if item.kind == ItemKind::Knowledge
+                    && let Ok(notes) = self.client.list_knowledge()
+                    && let Some(note) = notes
+                        .into_iter()
+                        .find(|note| note.id == item.id || note.title == item.title)
+                {
+                    detail.note = note
+                        .body_markdown
+                        .lines()
+                        .take(200)
+                        .collect::<Vec<_>>()
+                        .join("\n");
                 }
+                if item.kind == ItemKind::WorkItem {
+                    for action in self.capability_actions_for(&item.id) {
+                        super::actions::push_unique_action(&mut detail.actions, action);
+                    }
+                }
+                Some(detail)
             }
         }
-        Some(detail)
+    }
+
+    /// Open the inspector for the selected item.
+    ///
+    /// An empty view has nothing meaningful to inspect, so it reports
+    /// `No selection` instead of painting an empty panel.
+    pub fn open_inspector(&mut self) -> bool {
+        let Some(subject) = self.current_inspector_subject() else {
+            self.notify("No selection", StatusKind::Warning);
+            return false;
+        };
+        self.open_inspector_for(subject)
+    }
+
+    pub(crate) fn open_inspector_for(&mut self, subject: InspectorSubject) -> bool {
+        if matches!(
+            &subject,
+            InspectorSubject::Item {
+                kind: ItemKind::WorkItem,
+                ..
+            }
+        ) {
+            // An explicit open may read: this is how the inspector's capability
+            // block reflects durable state at the moment the user asks for it.
+            self.refresh_capability_actions();
+        }
+        let Some(detail) = self.build_detail_for_subject(&subject) else {
+            self.notify("No selection", StatusKind::Warning);
+            return false;
+        };
+        let scroll = if self.inspector_subject.as_ref() == Some(&subject) {
+            self.inspector_scroll
+        } else {
+            0
+        };
+        // Only painted panes can own the keyboard, so this is always a pane the
+        // user can actually return to.
+        let return_focus = self.focus;
+        self.inspector_subject = Some(subject.clone());
+        self.inspector_scroll = scroll;
+        self.modal = Some(Modal::Inspector(InspectorState {
+            subject,
+            detail,
+            scroll,
+            return_focus,
+            reopen_after_mutation: false,
+            unavailable: false,
+        }));
+        true
+    }
+
+    /// Close the inspector and hand the keyboard back to the pane that had it.
+    ///
+    /// The workspace selection, active component and list scroll are untouched:
+    /// the inspector is an overlay, not a pane that replaced the workspace.
+    pub fn close_inspector(&mut self) {
+        if !matches!(self.modal, Some(Modal::Inspector(_))) {
+            return;
+        }
+        if let Some(Modal::Inspector(state)) = self.modal.take() {
+            self.retire_inspector(state);
+        }
+    }
+
+    /// Record a closing inspector's scroll/focus. Shared with key dispatch,
+    /// which moves the modal out of `App` while it is handling a key.
+    pub(crate) fn retire_inspector(&mut self, state: InspectorState) {
+        self.inspector_subject = Some(state.subject);
+        self.inspector_scroll = state.scroll;
+        self.focus = state.return_focus;
+        self.pending_inspector = None;
+    }
+
+    /// Rebuild the open inspector for its recorded subject.
+    ///
+    /// Called from the refresh and mutation paths instead of the old detail
+    /// cache seeding. It never opens an inspector that is not already open, so
+    /// navigating or refreshing cannot make the overlay appear on its own.
+    pub fn refresh_inspector(&mut self) {
+        let Some(Modal::Inspector(state)) = &self.modal else {
+            return;
+        };
+        let subject = state.subject.clone();
+        let built = self.build_detail_for_subject(&subject);
+        let Some(Modal::Inspector(state)) = &mut self.modal else {
+            return;
+        };
+        match built {
+            Some(detail) => {
+                state.detail = detail;
+                state.unavailable = false;
+            }
+            // Keep the last known model: the fallback names what the user was
+            // inspecting instead of showing a blank panel.
+            None => state.unavailable = true,
+        }
+    }
+
+    /// Stash the open inspector while a follow-up modal runs. The recorded
+    /// intent is what makes the inspector reopen afterwards.
+    pub(crate) fn begin_inspector_follow_up(&mut self, mut state: InspectorState) {
+        state.reopen_after_mutation = true;
+        self.pending_inspector = Some(state);
+    }
+
+    /// Reopen a stashed inspector once its follow-up modal has closed.
+    ///
+    /// A vanished subject is not inspected again: there is nothing to show, and
+    /// silently inspecting a different row would be worse than staying closed.
+    pub fn resume_pending_inspector(&mut self) {
+        if self.modal.is_some() {
+            return;
+        }
+        let Some(state) = self.pending_inspector.take() else {
+            return;
+        };
+        if !state.reopen_after_mutation {
+            return;
+        }
+        let Some(detail) = self.build_detail_for_subject(&state.subject) else {
+            return;
+        };
+        self.inspector_subject = Some(state.subject.clone());
+        self.inspector_scroll = state.scroll;
+        self.modal = Some(Modal::Inspector(InspectorState {
+            subject: state.subject,
+            detail,
+            scroll: state.scroll,
+            return_focus: state.return_focus,
+            reopen_after_mutation: false,
+            unavailable: false,
+        }));
+    }
+
+    /// Move the cursor back onto a recorded subject so the existing
+    /// selection-driven actions (`a`, `e`, `E`) act on the inspected entity.
+    ///
+    /// Returns `false` when the subject is no longer in the current view; the
+    /// caller then refuses instead of acting on an unrelated row.
+    pub(crate) fn focus_inspector_subject(&mut self, subject: &InspectorSubject) -> bool {
+        match subject {
+            InspectorSubject::Project { project_id } => {
+                let Some(index) = self
+                    .projects
+                    .iter()
+                    .position(|project| &project.id == project_id)
+                else {
+                    return false;
+                };
+                self.projects_selection = index;
+                self.focus = FocusPane::Workspace;
+                true
+            }
+            InspectorSubject::Item {
+                screen,
+                project_id,
+                view_id,
+                component_id,
+                kind,
+                id,
+            } => {
+                if self.screen != *screen {
+                    return false;
+                }
+                let active_project = self.project.as_ref().map(|project| project.id.clone());
+                if active_project != *project_id {
+                    return false;
+                }
+                let Some(view) = self.current_view() else {
+                    return false;
+                };
+                if view_id.as_deref() != Some(view.id.as_str()) {
+                    return false;
+                }
+                let Some(component) = view
+                    .components
+                    .iter()
+                    .position(|component| &component.id == component_id)
+                else {
+                    return false;
+                };
+                let Some(row) = view.components[component]
+                    .selection
+                    .iter()
+                    .position(|item| &item.id == id && item.kind == *kind)
+                else {
+                    return false;
+                };
+                self.active_component = component;
+                self.selected = row;
+                self.focus = FocusPane::Workspace;
+                true
+            }
+            InspectorSubject::Knowledge { id } => {
+                let Some(view) = self.current_view() else {
+                    return false;
+                };
+                let located =
+                    view.components
+                        .iter()
+                        .enumerate()
+                        .find_map(|(component, resolved)| {
+                            resolved
+                                .selection
+                                .iter()
+                                .position(|item| &item.id == id)
+                                .map(|row| (component, row))
+                        });
+                let Some((component, row)) = located else {
+                    return false;
+                };
+                self.active_component = component;
+                self.selected = row;
+                self.focus = FocusPane::Workspace;
+                true
+            }
+        }
     }
 
     pub fn switch_view(&mut self, delta: isize) {
-        self.invalidate_detail_cache();
+        // A view switch is deliberate navigation: the overlay closes and a
+        // stashed inspector never reopens over the new view.
+        self.close_inspector();
+        self.pending_inspector = None;
         let Some(state) = &self.project else {
-            self.seed_detail_cache();
             return;
         };
         if state.views.is_empty() {
-            self.seed_detail_cache();
             return;
         }
         let next = state
@@ -717,15 +949,15 @@ impl App {
             }
             self.restore_cursor();
         }
-        // `restore_cursor` reseeds on a real switch; a clamped no-op switch
-        // still needs a warm cache for the next frame.
-        self.seed_detail_cache();
+        self.refresh_capability_actions();
     }
 
     pub fn switch_view_by_index(&mut self, index: usize) {
-        self.invalidate_detail_cache();
+        // The inspector identity is view-scoped: switching views closes it and
+        // drops the pending intent rather than reopening over another view.
+        self.close_inspector();
+        self.pending_inspector = None;
         let Some(state) = &self.project else {
-            self.seed_detail_cache();
             return;
         };
         if index < state.views.len() {
@@ -735,15 +967,30 @@ impl App {
             }
             self.restore_cursor();
         }
-        self.seed_detail_cache();
+        self.refresh_capability_actions();
     }
 
     pub fn activate_sidebar(&mut self) {
         match self.sidebar_selection {
-            0 => self.go_screen(Screen::Home),
-            1 => self.go_screen(Screen::Inbox),
-            2 => self.go_screen(Screen::Projects),
-            3 => self.go_screen(Screen::Agents),
+            0 => {
+                self.go_screen(Screen::Home);
+                // Browsing the rail is not a move into the workspace: keep the
+                // rail focused so j/k keeps switching screens. Opening a
+                // project still hands the keyboard to the workspace.
+                self.focus = FocusPane::Sidebar;
+            }
+            1 => {
+                self.go_screen(Screen::Inbox);
+                self.focus = FocusPane::Sidebar;
+            }
+            2 => {
+                self.go_screen(Screen::Projects);
+                self.focus = FocusPane::Sidebar;
+            }
+            3 => {
+                self.go_screen(Screen::Agents);
+                self.focus = FocusPane::Sidebar;
+            }
             index => {
                 if let Some(project) = self.projects.get(index - 4) {
                     let id = project.id.clone();
@@ -758,7 +1005,10 @@ impl App {
     }
 
     fn go_screen_internal(&mut self, screen: Screen, record_history: bool) {
-        self.invalidate_detail_cache();
+        // Changing screen is deliberate navigation: the overlay closes and a
+        // stashed inspector never reopens over the destination.
+        self.close_inspector();
+        self.pending_inspector = None;
         if record_history && self.screen != screen {
             self.push_history();
         }
@@ -784,6 +1034,8 @@ impl App {
         self.restore_cursor();
         if screen == Screen::Project {
             self.refresh_project();
+        } else {
+            self.refresh_capability_actions();
         }
     }
 
@@ -834,22 +1086,6 @@ impl App {
 
     pub fn set_viewport(&mut self, width: u16) {
         self.viewport_width = width;
-        if width < crate::theme::WIDE_BREAKPOINT && self.focus == FocusPane::Detail {
-            self.focus = FocusPane::Workspace;
-        }
-    }
-
-    /// Toggle the docked detail pane.
-    ///
-    /// Hiding the pane while it owns the keyboard would strand focus on a pane
-    /// the user can no longer see, so focus returns to the workspace. `Tab`
-    /// then cycles only the visible panes.
-    pub fn toggle_detail(&mut self) {
-        self.show_detail = !self.show_detail;
-        if !self.show_detail && self.focus == FocusPane::Detail {
-            self.focus = FocusPane::Workspace;
-        }
-        self.seed_detail_cache();
     }
 }
 
