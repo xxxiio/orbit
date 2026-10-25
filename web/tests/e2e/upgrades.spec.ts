@@ -117,7 +117,7 @@ test.describe('workflow upgrades', () => {
 
     // The default target is the newest published version of the same id.
     await expect(page.getByText(/A newer Development version is published/)).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByText(/Development v2/)).toBeVisible()
+    await expect(page.getByText('Development v2', { exact: true }).first()).toBeVisible()
     await expect(page.getByText(/^fingerprint /)).toBeVisible()
     await expect(page.getByText('Release notes').first()).toBeVisible()
     await expect(page.getByText('notes').first()).toBeVisible()
