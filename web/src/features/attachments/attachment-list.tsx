@@ -86,11 +86,13 @@ function uploadErrorCopy(error: ApiError): string {
 function UploadRow({
   attempt,
   onRetry,
+  onCancel,
   onDismiss,
   onRefresh,
 }: {
   attempt: UploadAttempt
   onRetry: () => void
+  onCancel: () => void
   onDismiss: () => void
   onRefresh: () => void
 }) {
@@ -157,7 +159,11 @@ function UploadRow({
             </>
           )}
         </div>
-        {!uploading ? (
+        {uploading ? (
+          <Button variant="quiet" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
             {attempt.status === 'uncertain' ? (
               <>
@@ -178,7 +184,7 @@ function UploadRow({
               Dismiss
             </Button>
           </div>
-        ) : null}
+        )}
       </div>
     </li>
   )
@@ -356,6 +362,7 @@ export function AttachmentList({ ownerKind, ownerId, emptyHint }: AttachmentList
   const upload = useImportAttachment()
   const remove = useRemoveAttachment()
   const inputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const [description, setDescription] = useState('')
   const [attempt, setAttempt] = useState<UploadAttempt | null>(null)
   const [removal, setRemoval] = useState<RemoveAttempt | null>(null)
@@ -368,11 +375,18 @@ export function AttachmentList({ ownerKind, ownerId, emptyHint }: AttachmentList
   }, [announcement])
 
   const uploading = attempt?.status === 'uploading'
+  // A lost response may already have stored the file. Choosing another file
+  // would mint a new attachment id and create a second row, so the picker stays
+  // closed until Retry, Refresh or Dismiss resolves the attempt.
+  const uncertainUpload = attempt?.status === 'uncertain'
+  const uploadBlocked = uploading || uncertainUpload
   const attachments = list.data ?? []
 
   const runUpload = async (next: UploadAttempt) => {
     setAnnouncement(null)
     setAttempt({ ...next, status: 'uploading', progress: null, error: null })
+    const controller = new AbortController()
+    abortRef.current = controller
     try {
       await upload.mutateAsync({
         commandId: next.commandId,
@@ -384,6 +398,7 @@ export function AttachmentList({ ownerKind, ownerId, emptyHint }: AttachmentList
         filename: next.filename,
         contentType: next.contentType,
         description: next.description || undefined,
+        signal: controller.signal,
         onProgress: (progress: ByteUploadProgress) => {
           setAttempt((current) =>
             current && current.key === next.key
@@ -400,11 +415,20 @@ export function AttachmentList({ ownerKind, ownerId, emptyHint }: AttachmentList
       await list.refetch()
       setAnnouncement(`${next.filename} uploaded.`)
     } catch (error) {
+      if (controller.signal.aborted) {
+        setAttempt(null)
+        setAnnouncement('Upload cancelled.')
+        return
+      }
       const apiError = isApiError(error) ? error : null
       const status: UploadStatus = apiError && isAmbiguousError(apiError) ? 'uncertain' : 'rejected'
       setAttempt({ ...next, status, progress: null, error: apiError })
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null
     }
   }
+
+  const cancelUpload = () => abortRef.current?.abort()
 
   const chooseFile = (file: File | undefined) => {
     if (!file) return
@@ -475,7 +499,7 @@ export function AttachmentList({ ownerKind, ownerId, emptyHint }: AttachmentList
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             placeholder="What this file shows"
-            disabled={uploading}
+            disabled={uploadBlocked}
           />
         </Field>
         <div className="flex shrink-0 items-center gap-2">
@@ -485,7 +509,7 @@ export function AttachmentList({ ownerKind, ownerId, emptyHint }: AttachmentList
             className="sr-only"
             data-attachment-file-input
             aria-label="Choose a file to upload"
-            disabled={uploading}
+            disabled={uploadBlocked}
             onChange={(event) => {
               chooseFile(event.target.files?.[0])
               event.target.value = ''
@@ -495,7 +519,7 @@ export function AttachmentList({ ownerKind, ownerId, emptyHint }: AttachmentList
             leadingIcon={<PlusIcon size={15} />}
             loading={uploading}
             onClick={() => inputRef.current?.click()}
-            disabled={uploading}
+            disabled={uploadBlocked}
           >
             Upload file
           </Button>
@@ -504,7 +528,6 @@ export function AttachmentList({ ownerKind, ownerId, emptyHint }: AttachmentList
             size="sm"
             onClick={() => void list.refetch()}
             loading={list.isFetching}
-            disabled={uploading}
             aria-label="Refresh attachments"
           >
             <RefreshIcon size={14} />
@@ -514,10 +537,11 @@ export function AttachmentList({ ownerKind, ownerId, emptyHint }: AttachmentList
       </div>
 
       {attempt ? (
-        <ul aria-label="Uploads in progress">
+        <ul aria-label={uploading ? 'Upload in progress' : 'Upload attempts'}>
           <UploadRow
             attempt={attempt}
             onRetry={() => void runUpload(attempt)}
+            onCancel={cancelUpload}
             onDismiss={() => setAttempt(null)}
             onRefresh={() => {
               setAttempt(null)

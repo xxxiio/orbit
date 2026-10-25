@@ -63,8 +63,10 @@ export function fetchMarkdownRelations(
 
 /**
  * Writes to disk first and only then accepts the receipt, so an error response
- * can still mean "the file changed". Callers must treat failures as `uncertain`
- * and re-read the document/manifest before retrying with a fresh command id.
+ * can still mean "the file changed". Callers must treat failures as `uncertain`:
+ * re-read the document, and if the bytes still match, replay the **same**
+ * command id (same id + same payload replays; a new id is never needed while the
+ * outcome is unknown).
  */
 export function sendMarkdownCommand(request: MarkdownCommandRequest): Promise<MarkdownReceipt> {
   return api.post<MarkdownReceipt>(`${BASE}/markdown-commands`, request)

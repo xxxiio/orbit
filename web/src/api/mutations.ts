@@ -1004,6 +1004,8 @@ export interface ImportAttachmentVariables {
   description?: string
   /** Bytes handed to the network; never acceptance. */
   onProgress?: (progress: ByteUploadProgress) => void
+  /** Cancels the in-flight upload; the ids stay reusable for a later attempt. */
+  signal?: AbortSignal
 }
 
 export interface ImportAttachmentOutcome {
@@ -1048,7 +1050,12 @@ export function useImportAttachment(): CommandMutation<
         content_type: variables.contentType,
         description: variables.description,
       }
-      return importAttachment(metadata, variables.file, variables.onProgress)
+      return importAttachment(
+        metadata,
+        variables.file,
+        variables.onProgress,
+        variables.signal,
+      )
         .then(
           (result: AttachmentImportResult): ImportAttachmentOutcome => ({
             revision: result.revision,
@@ -1154,8 +1161,10 @@ export interface MarkdownCommandVariables {
 
 /**
  * Knowledge writes are published to disk before the receipt is accepted, so an
- * error does not prove nothing changed. Treat it as `uncertain` and re-read the
- * document or manifest before retrying with a fresh command id.
+ * error does not prove nothing changed. Treat it as `uncertain`: re-read the
+ * document, and if the bytes still match what the command expects, replay the
+ * **same** command id (same id + same payload replays; a new id is never needed
+ * while the outcome is unknown).
  */
 export function useMarkdownCommand(): CommandMutation<MarkdownReceipt, MarkdownCommandVariables> {
   return useApiMutation<MarkdownReceipt, MarkdownCommandVariables>({

@@ -587,6 +587,7 @@ export function HomePage() {
             onClick={() => {
               void snapshot.refetch()
               void readiness.refetch()
+              void agentAttention.refetch()
             }}
             disabled={snapshot.isFetching || readiness.isFetching}
             className={snapshot.isFetching || readiness.isFetching ? 'opacity-70' : undefined}
@@ -613,24 +614,37 @@ export function HomePage() {
       </dl>
 
       {counts.total === 0 ? (
-        <section className="rounded-lg border border-dashed border-line-strong/70 bg-surface/45">
-          <EmptyState
-            icon={<CheckCircleIcon size={21} />}
-            title="Nothing planned yet"
-            description="Capture your first task with the button below, or press c anywhere in Orbit. Deadlines, priorities and projects can come later."
-            action={
-              <Button leadingIcon={<PlusIcon size={15} />} onClick={() => openNewTask()}>
-                Create the first task
-              </Button>
-            }
-            secondaryAction={
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/projects">Open projects</Link>
-              </Button>
-            }
-            className="min-h-[20rem]"
+        <div className="flex flex-col gap-4">
+          <section className="rounded-lg border border-dashed border-line-strong/70 bg-surface/45">
+            <EmptyState
+              icon={<CheckCircleIcon size={21} />}
+              title="Nothing planned yet"
+              description="Capture your first task with the button below, or press c anywhere in Orbit. Deadlines, priorities and projects can come later."
+              action={
+                <Button leadingIcon={<PlusIcon size={15} />} onClick={() => openNewTask()}>
+                  Create the first task
+                </Button>
+              }
+              secondaryAction={
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/projects">Open projects</Link>
+                </Button>
+              }
+              className="min-h-[20rem]"
+            />
+          </section>
+          {/* Agent jobs outlive the task list they reference; the attention rail
+              is a device-wide read and must not disappear with an empty task list. */}
+          <AgentAttentionPanel
+            jobs={agentAttention.data ?? []}
+            projectName={(id) => projectById.get(id)?.name ?? null}
+            taskTitle={(id) => taskById.get(id)?.title ?? null}
+            loading={agentAttention.isPending}
+            error={agentAttention.error && !agentAttention.data ? agentAttention.error : null}
+            onRetry={() => void agentAttention.refetch()}
+            retrying={agentAttention.isFetching}
           />
-        </section>
+        </div>
       ) : (
         <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="flex min-w-0 flex-col gap-4">

@@ -19,6 +19,7 @@ import { SkeletonText } from '@/components/ui/skeleton'
 import { useMarkdownInventory, userMessage } from '@/hooks'
 import { humanizeIdentifier } from '@/lib/humanize'
 import { workflowText } from '@/domain'
+import { emptyTextOption } from '@/features/workflows/declarations'
 import { noteHref } from '@/features/knowledge/knowledge-model'
 
 function panelTitle(component: WorkflowViewComponent): string {
@@ -153,6 +154,7 @@ export function KnowledgeRefsPanel({ component, variant = 'list' }: KnowledgePan
   const declaredColumns = component.columns ?? []
   const noteColumns = new Set(['title', 'path', 'id', 'note_id'])
   const unrepresented = declaredColumns.filter((column) => !noteColumns.has(column.toLowerCase()))
+  const emptyText = emptyTextOption(component)
 
   return (
     <PanelShell
@@ -186,7 +188,10 @@ export function KnowledgeRefsPanel({ component, variant = 'list' }: KnowledgePan
           headingLevel="p"
           icon={<BookIcon size={18} />}
           title="No notes in the vault yet"
-          description="Create a note in Knowledge; it becomes available to every workflow reference panel."
+          description={
+            emptyText ??
+            'Create a note in Knowledge; it becomes available to every workflow reference panel.'
+          }
           action={
             <Button asChild variant="secondary" size="sm">
               <Link to="/knowledge">Open Knowledge</Link>

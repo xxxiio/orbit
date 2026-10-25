@@ -5,7 +5,7 @@
  * an explicit resume that queues a new job. Neither launches an executor and
  * neither completes the Orbit task; the copy says both facts on screen.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   isApiError,
@@ -23,7 +23,7 @@ import {
   userMessage,
   type ApiError,
 } from '@/hooks'
-import type { AgentHandoff } from '@/api/adapters'
+import type { AgentHandoff, AgentReview } from '@/api/adapters'
 import type { TaskStatus } from '@/api/contracts'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -50,6 +50,7 @@ import {
   agentKindLabel,
   agentStateLabel,
   agentStateTone,
+  isAgentJobTerminal,
   nextActionExplanation,
   nextActionLabel,
   reviewDecisionLabel,
@@ -151,14 +152,18 @@ function ReviewSection({
   handoffs: AgentHandoff[]
   review: ReturnType<typeof useAgentReview>['data']
   taskStatus: TaskStatus | null
-  onRefresh: () => void
+  onRefresh: () => Promise<{ ok: boolean; review: AgentReview | null }>
 }) {
   const submit = useSubmitAgentReview()
   const [decision, setDecision] = useState<'approved' | 'changes_requested'>('approved')
   const [reason, setReason] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const attemptRef = useRef<{ key: string; atMs: number } | null>(null)
+  // Clearing `attemptRef` does not re-render, and `blindRetry` is derived during
+  // render; this forces the form to notice that the pinned attempt is gone.
+  const [, bumpAttempt] = useReducer((value: number) => value + 1, 0)
 
   const latest = handoffs[handoffs.length - 1]
   const key = `${jobId}\u0000${latest?.handoffId ?? ''}\u0000${decision}\u0000${reason}`
@@ -172,6 +177,40 @@ function ReviewSection({
     const timer = window.setTimeout(() => setAnnouncement(null), 6000)
     return () => window.clearTimeout(timer)
   }, [announcement])
+
+  /**
+   * An explicit refresh is the way out of an unconfirmed review. If the server
+   * still has no review for this job, the pinned attempt did not land, so it is
+   * safe to drop the key and let the person choose another decision. If a review
+   * does exist, the recorded-review branch replaces this form.
+   */
+  const refresh = async () => {
+    setRefreshing(true)
+    try {
+      const current = await onRefresh()
+      if (!current.ok) {
+        setLocalError('The job could not be refreshed. Try again before recording a decision.')
+        return
+      }
+      if (current.review) {
+        setAnnouncement('Refreshed: the review on record is shown below.')
+      } else if (attemptRef.current) {
+        attemptRef.current = null
+        submit.reset()
+        setLocalError(null)
+        bumpAttempt()
+        setAnnouncement(
+          'Refreshed: no review is on record. The unconfirmed attempt was discarded; you can record a decision.',
+        )
+      } else {
+        setAnnouncement('Refreshed: no review is on record yet.')
+      }
+    } catch {
+      setLocalError('The job could not be refreshed. Try again before recording a decision.')
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const record = async () => {
     if (!latest) {
@@ -202,7 +241,7 @@ function ReviewSection({
           ? 'Review recorded as approved. The task was not completed.'
           : 'Review recorded as changes requested. The task is unchanged.',
       )
-      onRefresh()
+      void onRefresh()
     } catch {
       // The server's answer is rendered below.
     }
@@ -354,7 +393,8 @@ function ReviewSection({
             {uncertain ? uncertainMessage(commandError) : userMessage(commandError)}
           </p>
           <p className="mt-1">
-            Refresh the job before recording a different decision; a review may already exist.
+            Retry the same review unchanged, or refresh the job. A refresh that finds no review
+            discards this unconfirmed attempt so you can choose a different decision.
           </p>
         </div>
       ) : null}
@@ -362,7 +402,8 @@ function ReviewSection({
       {blindRetry ? (
         <p role="alert" className="mt-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning-ink">
           These fields no longer match the review whose outcome is unknown. Retry it unchanged, or
-          refresh the job first.
+          refresh the job. If no review is on record, the refresh discards the unconfirmed attempt
+          and this form accepts a new decision.
         </p>
       ) : null}
 
@@ -378,7 +419,8 @@ function ReviewSection({
         <Button
           size="sm"
           variant="quiet"
-          onClick={onRefresh}
+          onClick={() => void refresh()}
+          loading={refreshing}
           disabled={submit.isPending}
         >
           Refresh the job
@@ -415,7 +457,7 @@ export function AgentJobPage() {
 
   if (job.isPending && !job.data) return <JobSkeleton />
 
-  if (job.error) {
+  if (job.error && !job.data) {
     if (isApiError(job.error) && job.error.status === 403) return <NotVisiblePanel id={jobId} />
     return (
       <Panel>
@@ -438,13 +480,22 @@ export function AgentJobPage() {
   const current = job.data
   const overviewItem = overview.data?.find((item) => item.jobId === current.id) ?? null
   const latestHandoff = handoffs.data?.[handoffs.data.length - 1] ?? null
-  const refreshAll = () => {
-    void job.refetch()
-    void handoffs.refetch()
-    void review.refetch()
-    void resumeContext.refetch()
-    void overview.refetch()
-    void snapshot.refetch()
+  const canResume = isAgentJobTerminal(current.state)
+  const refreshAll = async (): Promise<{ ok: boolean; review: AgentReview | null }> => {
+    // `throwOnError` for the review read: a failed refetch resolves with the
+    // cached value in React Query v5, and acting on that stale value could
+    // discard an attempt that actually landed.
+    const results = await Promise.allSettled([
+      job.refetch(),
+      handoffs.refetch(),
+      review.refetch({ throwOnError: true }),
+      resumeContext.refetch(),
+      overview.refetch(),
+      snapshot.refetch(),
+    ])
+    const reviewResult = results[2]
+    if (reviewResult.status !== 'fulfilled') return { ok: false, review: null }
+    return { ok: true, review: (reviewResult.value.data ?? null) as AgentReview | null }
   }
 
   const startResume = async () => {
@@ -515,7 +566,7 @@ export function AgentJobPage() {
             variant="secondary"
             size="sm"
             leadingIcon={<RefreshIcon size={15} />}
-            onClick={refreshAll}
+            onClick={() => void refreshAll()}
             loading={job.isFetching}
           >
             Refresh
@@ -639,13 +690,7 @@ export function AgentJobPage() {
           <Section
             title="Resume context"
             description="What a new job would inherit: the original brief, the latest handoff and the review. The browser shows this; it does not launch the executor."
-            aside={
-              resumeContext.data ? (
-                <Badge tone={resumeContext.data.runtimeLaunchAuthorized ? 'warning' : 'neutral'}>
-                  {resumeContext.data.runtimeLaunchAuthorized ? 'Launch authorized' : 'No launch from here'}
-                </Badge>
-              ) : null
-            }
+            aside={resumeContext.data ? <Badge tone="neutral">No launch from here</Badge> : null}
           >
             {resumeContext.isPending && !resumeContext.data ? (
               <div aria-busy="true">
@@ -715,19 +760,27 @@ export function AgentJobPage() {
                   </div>
                 ) : null}
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => void startResume()}
-                    loading={resume.isPending}
-                    disabled={!resumeContext.data}
-                  >
-                    {resume.disposition === 'uncertain' ? 'Retry the same resume' : 'Resume as a new job'}
-                  </Button>
-                  <span className="text-2xs text-ink-muted">
-                    Prior job <span className="font-mono">{shortAgentId(current.id)}</span> stays as it is.
-                  </span>
-                </div>
+                {canResume ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => void startResume()}
+                      loading={resume.isPending}
+                      disabled={!resumeContext.data}
+                    >
+                      {resume.disposition === 'uncertain' ? 'Retry the same resume' : 'Resume as a new job'}
+                    </Button>
+                    <span className="text-2xs text-ink-muted">
+                      Prior job <span className="font-mono">{shortAgentId(current.id)}</span> stays as it is.
+                    </span>
+                  </div>
+                ) : (
+                  <p className="rounded-md border border-line bg-surface-sunken/40 px-3 py-2 text-xs leading-5 text-ink-muted">
+                    This job is {agentStateLabel(current.state)}. The server resumes only a
+                    completed, failed or interrupted job, so no successor can be queued while it is
+                    still {agentStateLabel(current.state).toLowerCase()}.
+                  </p>
+                )}
                 <p role="status" aria-live="polite" className="min-h-4 text-2xs text-ink-muted">
                   {resume.isPending ? (
                     <span className="inline-flex items-center gap-1.5">

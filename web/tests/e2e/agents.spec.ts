@@ -43,7 +43,12 @@ test.describe('agent jobs', () => {
     await expect(page.getByText('job-seed-4').first()).toBeVisible()
     await expect(page.getByRole('region', { name: 'Review' })).toBeVisible()
     await expect(page.getByText('Approving records a review. It does not complete the task.')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Resume as a new job' })).toBeVisible()
+    // A running job is not resumable: the server requires a terminal
+    // predecessor, so the control is replaced by an explanation.
+    await expect(page.getByRole('button', { name: 'Resume as a new job' })).toHaveCount(0)
+    await expect(
+      page.getByText(/The server resumes only a completed, failed or interrupted job/i),
+    ).toBeVisible()
     // No launch/run affordance exists anywhere on the page.
     await expect(page.getByRole('button', { name: /launch|start agent|run agent/i })).toHaveCount(0)
 
@@ -68,6 +73,81 @@ test.describe('agent jobs', () => {
 
     // The task is untouched by a review.
     expect(await taskStatus(page, server, job!.taskId)).toBe(before)
+  })
+
+  test('an unconfirmed review is discarded by a refresh that finds no review', async ({
+    page,
+    workspace,
+  }) => {
+    const { server } = workspace
+
+    await goto(page, server, '/agents/job-seed-4')
+    await expect(page.getByRole('region', { name: 'Review' })).toBeVisible()
+
+    // Drop the response without applying anything: the server still has no
+    // review, so an explicit refresh can prove the attempt did not land.
+    await page.route('**/v1/authoritative/agent-jobs/review', async (route) => {
+      await route.abort('failed')
+    })
+    await page.getByLabel(/Reason/).fill('Checked the handoff; approve this time.')
+    await page.getByRole('button', { name: 'Record review' }).click()
+    await expect(page.getByText('The review was not confirmed.')).toBeVisible()
+
+    // Changing the decision is blocked until the unknown attempt is resolved.
+    await page.getByRole('button', { name: 'Request changes' }).click()
+    await expect(
+      page.getByText(/These fields no longer match the review whose outcome is unknown/i),
+    ).toBeVisible()
+
+    await page.getByRole('button', { name: 'Refresh the job' }).click()
+    await expect(
+      page.getByText(/no review is on record. The unconfirmed attempt was discarded/i),
+    ).toBeVisible()
+    await expect(
+      page.getByText(/These fields no longer match the review whose outcome is unknown/i),
+    ).toHaveCount(0)
+
+    await page.unroute('**/v1/authoritative/agent-jobs/review')
+    await page.getByRole('button', { name: 'Request changes' }).click()
+    await page.getByRole('button', { name: 'Record review' }).click()
+    await expect(
+      page.getByText('Review recorded as changes requested. The task is unchanged.'),
+    ).toBeVisible()
+
+    const reviewResponse = await page.request.get(
+      `${server.base}/v1/authoritative/agent-jobs/review?id=job-seed-4`,
+    )
+    expect(reviewResponse.status()).toBe(200)
+    expect(((await reviewResponse.json()) as { decision: string }).decision).toBe(
+      'changes_requested',
+    )
+  })
+
+  test('an interrupted job resumes into a new job that appears in the overview', async ({
+    page,
+    workspace,
+  }) => {
+    const { server } = workspace
+
+    await goto(page, server, '/agents/job-seed-5')
+    await expect(page.getByText('Interrupted').first()).toBeVisible()
+    await expect(
+      page.getByText(/The server resumes only a completed, failed or interrupted job/i),
+    ).toHaveCount(0)
+    await page.getByRole('button', { name: 'Resume as a new job' }).click()
+
+    await page.waitForURL(
+      (url) => /^\/agents\/[^/]+$/.test(url.pathname) && !url.pathname.endsWith('/job-seed-5'),
+      { timeout: 15_000 },
+    )
+    const newId = decodeURIComponent(new URL(page.url()).pathname.split('/').pop() ?? '')
+    expect(newId).not.toBe('job-seed-5')
+    // Resume queues a new job; it does not launch it.
+    await expect(page.getByText('Preparing').first()).toBeVisible()
+    await expect(page.getByRole('button', { name: /launch|start agent|run agent/i })).toHaveCount(0)
+
+    await goto(page, server, '/agents')
+    await expect(page.locator(`[data-agent-job="${newId}"]`)).toBeVisible()
   })
 
   test('a foreign job id is reported as not visible, never as missing', async ({

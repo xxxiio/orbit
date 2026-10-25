@@ -54,7 +54,17 @@ test.describe('knowledge notes', () => {
     await page.getByRole('button', { name: 'Edit' }).click()
     const editor = page.getByLabel('Note body')
     await editor.fill('Second body with [[n-orbit-overview]].\n')
+    const saveRequest = page.waitForRequest(
+      (request) =>
+        request.method() === 'POST' &&
+        request.url().includes('/v1/authoritative/markdown-commands'),
+    )
     await page.getByRole('button', { name: 'Save note' }).click()
+    // `expected` is the fresh read, not the editor's cached copy.
+    const saved = JSON.parse((await saveRequest).postData() ?? '{}') as {
+      command: { expected: string }
+    }
+    expect(saved.command.expected).toBe(created.body)
     await expect(page.getByText('Note saved.')).toBeVisible()
     await expect(page.getByText('Second body with')).toBeVisible()
 
@@ -87,6 +97,65 @@ test.describe('knowledge notes', () => {
     await page.reload()
     await expect(page.getByText('Second body with')).toBeVisible()
     await expect(page.getByText(movedPath).first()).toBeVisible()
+  })
+
+  test('a file changed by another writer is refused before this page sends an Update', async ({
+    page,
+    workspace,
+  }) => {
+    const { server } = workspace
+    const notePath = 'notes/decisions/cookie-sessions.md'
+
+    await goto(page, server, `/knowledge/${notePath}`)
+    await expect(page.getByRole('heading', { level: 2, name: /cookie-sessions/i })).toBeVisible()
+    await page.getByRole('button', { name: 'Edit' }).click()
+
+    const original = await documentAt(page, server, notePath)
+    const otherBody = `${original.body}\nWritten by the other reader.\n`
+    const other = await page.request.post(
+      `${server.base}/v1/authoritative/markdown-commands`,
+      {
+        data: {
+          command_id: 'spec-other-writer-update',
+          command: {
+            kind: 'Update',
+            note_id: 'n-decision-cookie-sessions',
+            expected: original.body,
+            replacement: otherBody,
+          },
+        },
+        headers: { 'content-type': 'application/json', 'x-orbit-csrf': '1' },
+      },
+    )
+    expect(other.status(), 'the other writer must be accepted').toBe(200)
+
+    // Count only page-originated commands: the external write above is already
+    // recorded, and this listener starts after it.
+    const pageCommands: string[] = []
+    page.on('request', (request) => {
+      if (
+        request.method() === 'POST' &&
+        request.url().includes('/v1/authoritative/markdown-commands')
+      ) {
+        pageCommands.push(request.url())
+      }
+    })
+
+    await page
+      .getByLabel('Note body')
+      .fill('# Decision: cookie sessions\n\nA page edit that must not land.\n')
+    await page.getByRole('button', { name: 'Save note' }).click()
+
+    await expect(
+      page.getByText(
+        'The file changed on disk while this editor was open. Reload the note before saving; nothing has been overwritten.',
+      ),
+    ).toBeVisible()
+    expect(pageCommands, 'the stale editor must not send its Update').toHaveLength(0)
+
+    const onDisk = await documentAt(page, server, notePath)
+    expect(onDisk.body).toBe(otherBody)
+    expect(onDisk.body).not.toContain('A page edit that must not land')
   })
 
   test('an unconfirmed write is recoverable by reload and retries the same command', async ({

@@ -37,6 +37,7 @@ export function importAttachment(
   metadata: AttachmentImportMetadata,
   bytes: Blob | ArrayBuffer | Uint8Array,
   onProgress?: (progress: ByteUploadProgress) => void,
+  signal?: AbortSignal,
 ): Promise<AttachmentImportResult> {
   const path = withQuery(`${BASE}/attachment-import`, {
     command_id: metadata.command_id,
@@ -52,6 +53,7 @@ export function importAttachment(
   return postBytesWithProgress<AttachmentImportResult>(path, bytes, {
     contentType: metadata.content_type,
     onProgress,
+    signal,
   })
 }
 

@@ -45,10 +45,32 @@ describe('knowledge markdown model', () => {
     expect(noteTitleFromPath('notes/research/readiness.md')).toBe('readiness')
   })
 
-  it('decodes a router splat per segment and preserves folder separators', () => {
-    expect(notePathFromSplat('/notes/a%20b.md')).toBe('notes/a b.md')
+  it('uses the router splat as-is instead of decoding it a second time', () => {
+    // React Router decoded `%20` once already; a literal `%20` in a filename
+    // must stay literal rather than become a space.
+    expect(notePathFromSplat('/notes/a%20b.md')).toBe('notes/a%20b.md')
+    expect(notePathFromSplat('/notes/a b.md')).toBe('notes/a b.md')
     expect(notePathFromSplat('notes/research/readiness.md')).toBe('notes/research/readiness.md')
     expect(notePathFromSplat(undefined)).toBe('')
+  })
+
+  it('guarantees a newline before an edited body', () => {
+    expect(joinMarkdown('---\norbit_id: n-1\n---', 'Body.')).toBe('---\norbit_id: n-1\n---\nBody.')
+    expect(joinMarkdown('---\norbit_id: n-1\n---\n', 'Body.')).toBe('---\norbit_id: n-1\n---\nBody.')
+    expect(joinMarkdown('', 'Body.')).toBe('Body.')
+  })
+
+  it("parses orbit_id with the server's exact identity rules", () => {
+    const note = (line: string) => splitMarkdown(`---\n${line}\n---\nBody.\n`).noteId
+    expect(note('orbit_id: n-1')).toBe('n-1')
+    expect(note('orbit_id: note_42')).toBe('note_42')
+    expect(note('orbit_id:  spaced')).toBeNull()
+    expect(note('orbit_id:\ttabbed')).toBeNull()
+    expect(note('orbit_id: trailing ')).toBeNull()
+    expect(note('orbit_id: note.1')).toBeNull()
+    expect(note('orbit_id: n-1\norbit_id: n-2')).toBeNull()
+    expect(note(`orbit_id: ${'a'.repeat(129)}`)).toBeNull()
+    expect(splitMarkdown('---\r\norbit_id: n-1\r\n---\r\nBody.\r\n').noteId).toBe('n-1')
   })
 
   it('separates unresolved references from resolvable outgoing links', () => {

@@ -1096,10 +1096,15 @@ export async function seedWorkspace(
     const orbitInProgress = tasks.filter(
       (task) => task.projectId === PROJECT_IDS.orbit && task.status === 'in_progress',
     )
+    const developmentTasks = tasks.filter(
+      (task) => task.projectId === PROJECT_IDS.development && task.status === 'in_progress',
+    )
     const developmentTask =
-      tasks.find(
-        (task) => task.projectId === PROJECT_IDS.development && task.status === 'in_progress',
-      ) ?? tasks.find((task) => task.projectId === PROJECT_IDS.development)
+      developmentTasks[0] ??
+      tasks.find((task) => task.projectId === PROJECT_IDS.development)
+    // A separate terminal job, driven through the public command route, so the
+    // browser can exercise resume without waiting for an executor.
+    const interruptedTask = developmentTasks[1] ?? null
     const jobTasks = [
       ...orbitInProgress.slice(0, 3),
       ...(developmentTask ? [developmentTask] : []),
@@ -1217,6 +1222,59 @@ export async function seedWorkspace(
         }
       }
       agentJobs.push({ id: jobId, taskId: task.id, handoffId })
+    }
+
+    // 8. A terminal job with a durable handoff: starting it, recording the
+    //    handoff and interrupting the record through `agent-jobs/command` makes
+    //    it resumable. The external session never existed, which is exactly the
+    //    case the browser must not misrepresent as launchable.
+    if (interruptedTask) {
+      const jobId = 'job-seed-5'
+      if (existing.has(jobId)) {
+        agentJobs.push({ id: jobId, taskId: interruptedTask.id, handoffId: `h-${jobId}` })
+      } else {
+        await transport
+          .post('/v1/authoritative/agent-jobs/start', {
+            job_id: jobId,
+            task_id: interruptedTask.id,
+            agent_kind: 'opencode',
+            machine_ref: machineRef,
+            repository_ref: 'orbit',
+            worktree: false,
+            at_ms: anchor + 6_000,
+          })
+          .catch((error) => {
+            throw withLabel(error, `agent job ${jobId}`, '/v1/authoritative/agent-jobs/start')
+          })
+        await transport
+          .post('/v1/authoritative/agent-jobs/handoffs', {
+            job_id: jobId,
+            handoff_id: `h-${jobId}`,
+            payload: {
+              summary: 'Interrupted after the handoff was recorded.',
+              validation: 'the durable handoff is on record; no runtime session was started',
+              next_steps: ['resume as a new job when an executor is available'],
+            },
+            at_ms: anchor + 7_000,
+          })
+          .catch((error) => {
+            throw withLabel(error, `agent job ${jobId} handoff`, '/v1/authoritative/agent-jobs/handoffs')
+          })
+        await transport
+          .post('/v1/authoritative/agent-jobs/command', {
+            command_id: `seed-${jobId}-interrupt`,
+            job_id: jobId,
+            // `start` reserves queued at 0 and accepts prepare at 1; interrupt
+            // fences on the state the start route left behind.
+            expected_revision: 1,
+            action: 'interrupt',
+            at_ms: anchor + 8_000,
+          })
+          .catch((error) => {
+            throw withLabel(error, `agent job ${jobId} interrupt`, '/v1/authoritative/agent-jobs/command')
+          })
+        agentJobs.push({ id: jobId, taskId: interruptedTask.id, handoffId: `h-${jobId}` })
+      }
     }
   }
 

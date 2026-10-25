@@ -20,6 +20,16 @@ export const AGENT_STATES = [
   'unreachable',
 ] as const
 
+/**
+ * The only states the server accepts as a resume predecessor. A running job
+ * cannot be resumed: the successor is offered after it reaches one of these.
+ */
+export const AGENT_TERMINAL_STATES = ['completed', 'failed', 'interrupted'] as const
+
+export function isAgentJobTerminal(state: string): boolean {
+  return (AGENT_TERMINAL_STATES as readonly string[]).includes(state)
+}
+
 const STATE_LABELS: Record<string, string> = {
   queued: 'Queued',
   preparing: 'Preparing',

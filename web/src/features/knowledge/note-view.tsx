@@ -71,6 +71,7 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
   const [stale, setStale] = useState(false)
   const [announcement, setAnnouncement] = useState<string | null>(null)
   const [moveOpen, setMoveOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
   const attemptRef = useRef<SaveAttempt | null>(null)
 
   useEffect(() => {
@@ -86,7 +87,7 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
 
   const inventoryEntry = inventory.data?.find((note) => note.path === path)
   const title = inventoryEntry?.title || noteTitleFromPath(path)
-  const writing = command.isPending
+  const writing = command.isPending || saving
   const refused = command.disposition === 'rejected'
   const uncertain = command.disposition === 'uncertain'
   const commandError: ApiError | null = refused || uncertain ? command.error : null
@@ -101,9 +102,28 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
   }
 
   const reload = async () => {
+    const dirty = editing && baseline !== null && draft !== splitMarkdown(baseline).body
+    if (
+      dirty &&
+      !window.confirm('Discard the unsaved edits and reload this note from disk?')
+    ) {
+      return
+    }
     resetEdit()
-    setAnnouncement('Note reloaded from disk.')
-    await Promise.all([document.refetch(), inventory.refetch()])
+    command.reset()
+    setLocalError(null)
+    setAnnouncement(null)
+    try {
+      await Promise.all([
+        document.refetch({ throwOnError: true }),
+        inventory.refetch({ throwOnError: true }),
+      ])
+      setAnnouncement('Note reloaded from disk.')
+    } catch {
+      setLocalError(
+        'The note could not be re-read, so the text on screen may be older than the file. Try again.',
+      )
+    }
   }
 
   const send = async (attempt: SaveAttempt) => {
@@ -120,6 +140,9 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
   }
 
   const save = async () => {
+    // The pre-read below is asynchronous: without this guard a double click
+    // would send the same edit twice before the first command is pending.
+    if (saving || command.isPending) return
     if (!noteId) {
       setLocalError(
         'This file has no orbit_id in its frontmatter, so the server cannot accept an edit. Add the id outside Orbit first.',
@@ -135,47 +158,61 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
       return
     }
 
-    const key = `${path}\u0000${baseline}\u0000${draft}`
-    if (attemptRef.current?.key === key) {
-      await send(attemptRef.current)
-      return
-    }
+    setSaving(true)
+    try {
+      const key = `${path}\u0000${baseline}\u0000${draft}`
+      if (attemptRef.current?.key === key) {
+        await send(attemptRef.current)
+        return
+      }
 
-    // Read the file again immediately before writing. The editor's baseline is
-    // a fence, not a cached body to overwrite blindly.
-    const fresh = await document.refetch()
-    const freshRaw = fresh.data?.body
-    if (freshRaw === undefined) {
-      setLocalError('The note could not be re-read, so nothing was sent. Try again.')
-      return
-    }
-    if (freshRaw !== baseline) {
-      setStale(true)
-      setLocalError(
-        'The file changed on disk since you began editing. Reload the note and reapply your change.',
-      )
-      return
-    }
-    const freshParts = splitMarkdown(freshRaw)
-    if (freshParts.noteId !== noteId) {
-      setLocalError(
-        'The note identity changed on disk. Reload the note before editing; nothing was sent.',
-      )
-      return
-    }
+      // Read the file again immediately before writing. The editor's baseline
+      // is a fence, not a cached body to overwrite blindly. `throwOnError`
+      // matters: in React Query v5 a plain `refetch()` resolves with stale
+      // `data` when the read fails, which would build an Update from bytes the
+      // server never confirmed.
+      let freshRaw: string | undefined
+      try {
+        const fresh = await document.refetch({ throwOnError: true })
+        freshRaw = fresh.data?.body
+      } catch {
+        setLocalError('The note could not be re-read, so nothing was sent. Try again.')
+        return
+      }
+      if (freshRaw === undefined) {
+        setLocalError('The note could not be re-read, so nothing was sent. Try again.')
+        return
+      }
+      if (freshRaw !== baseline) {
+        setStale(true)
+        setLocalError(
+          'The file changed on disk since you began editing. Reload the note and reapply your change.',
+        )
+        return
+      }
+      const freshParts = splitMarkdown(freshRaw)
+      if (freshParts.noteId !== noteId) {
+        setLocalError(
+          'The note identity changed on disk. Reload the note before editing; nothing was sent.',
+        )
+        return
+      }
 
-    const attempt: SaveAttempt = {
-      key,
-      commandId: newCommandId(),
-      command: {
-        kind: 'Update',
-        note_id: noteId,
-        expected: freshRaw,
-        replacement: joinMarkdown(freshParts.frontmatter, draft),
-      },
+      const attempt: SaveAttempt = {
+        key,
+        commandId: newCommandId(),
+        command: {
+          kind: 'Update',
+          note_id: noteId,
+          expected: freshRaw,
+          replacement: joinMarkdown(freshParts.frontmatter, draft),
+        },
+      }
+      attemptRef.current = attempt
+      await send(attempt)
+    } finally {
+      setSaving(false)
     }
-    attemptRef.current = attempt
-    await send(attempt)
   }
 
   if (document.isPending && !document.data) {
@@ -297,7 +334,7 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
               )}
               {editing ? (
                 <Button size="sm" loading={writing} onClick={() => void save()}>
-                  {uncertain || refused ? 'Retry the same change' : 'Save note'}
+                  {uncertain ? 'Retry the same change' : 'Save note'}
                 </Button>
               ) : null}
             </div>
@@ -368,7 +405,7 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
                 {uncertain ? uncertainMessage(commandError) : userMessage(commandError)}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                {attemptRef.current ? (
+                {uncertain && attemptRef.current ? (
                   <Button
                     size="sm"
                     variant="secondary"
@@ -416,6 +453,15 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
           }
         />
         <PanelBody>
+          {inventory.error && !inventory.data ? (
+            <p
+              role="alert"
+              className="mb-3 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning-ink"
+            >
+              The note identity index could not be read, so relation ids are shown without
+              resolving them to paths. {userMessage(inventory.error)}
+            </p>
+          ) : null}
           {!noteId ? (
             <p className="text-xs leading-5 text-ink-muted">
               Relations are unavailable without an <span className="font-mono">orbit_id</span>.
@@ -598,8 +644,16 @@ function NoteMoveDialog({
       setBlindRetry(false)
     }
 
-    const fresh = await source.refetch()
-    const raw = fresh.data?.body
+    // As in `save`, a failed refetch must reject instead of resolving with the
+    // cached body: `expected` is a fence on bytes the server must still hold.
+    let raw: string | undefined
+    try {
+      const fresh = await source.refetch({ throwOnError: true })
+      raw = fresh.data?.body
+    } catch {
+      setError('The note could not be re-read, so nothing was moved. Try again.')
+      return
+    }
     if (raw === undefined) {
       setError('The note could not be re-read, so nothing was moved. Try again.')
       return

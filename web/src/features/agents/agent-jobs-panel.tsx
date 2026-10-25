@@ -5,9 +5,10 @@
  * jobs this device owns. Rows link to the job detail; this panel never offers a
  * start or launch control, because starting a job is an executor-side action.
  */
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import type { WorkflowViewComponent } from '@/api/adapters'
+import type { AgentJobOverview, WorkflowViewComponent } from '@/api/adapters'
+import { emptyTextOption } from '@/features/workflows/declarations'
 import { useAgentOverview, useWorkspaceSnapshot, userMessage } from '@/hooks'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -34,6 +35,83 @@ function panelTitle(component: WorkflowViewComponent): string {
   return humanizeIdentifier(component.type)
 }
 
+/**
+ * Columns a declared `agent_jobs` table can render from the overview read. A
+ * name outside this table is refused by name rather than replaced with a
+ * different column.
+ */
+const AGENT_JOB_COLUMNS: Record<string, string> = {
+  job: 'Job',
+  job_id: 'Job',
+  id: 'Job',
+  state: 'State',
+  task: 'Task',
+  task_id: 'Task',
+  project: 'Project',
+  project_id: 'Project',
+  handoffs: 'Handoffs',
+  handoff_count: 'Handoffs',
+  next_action: 'Next action',
+  review: 'Review',
+  review_decision: 'Review',
+  updated: 'Updated',
+  updated_at: 'Updated',
+  attention: 'Attention',
+  needs_attention: 'Attention',
+}
+
+const DEFAULT_AGENT_JOB_COLUMNS = [
+  'state',
+  'task',
+  'project',
+  'handoffs',
+  'next_action',
+  'review',
+  'updated',
+]
+
+function normaliseColumn(name: string): string {
+  return name.trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function columnCell(
+  key: string,
+  job: AgentJobOverview,
+  tasks: Map<string, string>,
+  projects: Map<string, string>,
+): ReactNode {
+  switch (key) {
+    case 'state':
+      return (
+        <Badge tone={agentStateTone(job.state)} dot>
+          {agentStateLabel(job.state)}
+        </Badge>
+      )
+    case 'task':
+    case 'task_id':
+      return tasks.get(job.taskId) ?? shortAgentId(job.jobId)
+    case 'project':
+    case 'project_id':
+      return projects.get(job.projectId) ?? job.projectId
+    case 'handoffs':
+    case 'handoff_count':
+      return `${job.handoffCount} handoff${job.handoffCount === 1 ? '' : 's'}`
+    case 'next_action':
+      return nextActionLabel(job.nextAction)
+    case 'review':
+    case 'review_decision':
+      return reviewDecisionLabel(job.reviewDecision)
+    case 'updated':
+    case 'updated_at':
+      return formatMoment(job.updatedAtMs)
+    case 'attention':
+    case 'needs_attention':
+      return job.needsAttention ? <Badge tone="warning">Needs attention</Badge> : '—'
+    default:
+      return shortAgentId(job.jobId)
+  }
+}
+
 export function AgentJobsPanel({ component }: { component: WorkflowViewComponent }) {
   const overview = useAgentOverview()
   const snapshot = useWorkspaceSnapshot()
@@ -46,6 +124,23 @@ export function AgentJobsPanel({ component }: { component: WorkflowViewComponent
   const tasks = useMemo(
     () => new Map((snapshot.data?.tasks ?? []).map((task) => [task.id, task.title])),
     [snapshot.data?.tasks],
+  )
+
+  const table = component.type === 'table'
+  const emptyText = emptyTextOption(component)
+  const declaredColumns = (component.columns ?? [])
+    .map((column) => column.trim())
+    .filter((column) => column.length > 0)
+  const columnKeys = table
+    ? declaredColumns.length > 0
+      ? declaredColumns.map(normaliseColumn)
+      : DEFAULT_AGENT_JOB_COLUMNS
+    : []
+  const unsupportedColumns = columnKeys.filter((column) => !AGENT_JOB_COLUMNS[column])
+  // Preserve the declared spelling in the refusal, not the normalised key.
+  const unsupportedNames = unsupportedColumns.map(
+    (column) =>
+      declaredColumns.find((declared) => normaliseColumn(declared) === column) ?? column,
   )
 
   if (source !== 'agent_jobs') {
@@ -76,6 +171,26 @@ export function AgentJobsPanel({ component }: { component: WorkflowViewComponent
             icon={<LayersIcon size={18} />}
             title="Not available in the browser yet"
             description="This build cannot evaluate a declared filter or sort over agent jobs. The overview is ordered by the server's update time; another order would not be the declaration."
+            className="min-h-[12rem]"
+          />
+        </PanelBody>
+      </Panel>
+    )
+  }
+
+  if (table && unsupportedNames.length > 0) {
+    return (
+      <Panel className="flex min-w-0 flex-col">
+        <PanelHeader title={panelTitle(component)} className="flex-wrap gap-y-2" />
+        <PanelBody className="min-w-0 flex-1 p-0">
+          <EmptyState
+            compact
+            headingLevel="p"
+            icon={<LayersIcon size={18} />}
+            title="Not available in the browser yet"
+            description={`This table declares the ${unsupportedNames
+              .map((name) => `“${name}”`)
+              .join(', ')} column${unsupportedNames.length === 1 ? '' : 's'}. The agent-job overview exposes state, task, project, handoffs, next action, review and update time; the panel refuses rather than substituting a different column.`}
             className="min-h-[12rem]"
           />
         </PanelBody>
@@ -124,7 +239,9 @@ export function AgentJobsPanel({ component }: { component: WorkflowViewComponent
         description={
           compact
             ? 'Every job this device can see, newest update first. A compact list; open one for review and resume.'
-            : 'Jobs owned by this device, newest update first. Opening one is a read; the detail page offers review and resume only.'
+            : table
+              ? 'The declared columns over this device\'s jobs, newest update first. Opening one is a read; the detail page offers review and resume only.'
+              : 'Jobs owned by this device, newest update first. Opening one is a read; the detail page offers review and resume only.'
         }
         className="flex-wrap gap-y-2"
       />
@@ -135,13 +252,60 @@ export function AgentJobsPanel({ component }: { component: WorkflowViewComponent
             headingLevel="p"
             icon={<AgentsIcon size={18} />}
             title="No agent jobs are visible to this device"
-            description="Jobs are started by an executor or the command line, not by this panel."
+            description={
+              emptyText ?? 'Jobs are started by an executor or the command line, not by this panel.'
+            }
             action={
               <Button asChild variant="secondary" size="sm">
                 <Link to="/agents">Open Agents</Link>
               </Button>
             }
           />
+        ) : table ? (
+          <div className="overflow-x-auto">
+            <table aria-label="Agent jobs" className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-line bg-surface-sunken/70 text-left">
+                  {columnKeys.map((column, index) => (
+                    <th
+                      key={`${column}:${index}`}
+                      scope="col"
+                      className="whitespace-nowrap px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint"
+                    >
+                      {AGENT_JOB_COLUMNS[column]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((job) => (
+                  <tr
+                    key={job.jobId}
+                    data-agent-job={job.jobId}
+                    className="border-b border-line last:border-b-0 hover:bg-surface-hover/40"
+                  >
+                    {columnKeys.map((column, index) => (
+                      <td
+                        key={`${column}:${index}`}
+                        className="whitespace-nowrap px-4 py-2 align-middle text-xs text-ink-soft"
+                      >
+                        {index === 0 ? (
+                          <Link
+                            to={`/agents/${encodeURIComponent(job.jobId)}`}
+                            className="underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                          >
+                            {columnCell(column, job, tasks, projects)}
+                          </Link>
+                        ) : (
+                          columnCell(column, job, tasks, projects)
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : compact ? (
           <ul aria-label="All agent jobs" className="divide-y divide-line">
             {jobs.map((job) => (

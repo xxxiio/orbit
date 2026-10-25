@@ -39,7 +39,7 @@ be mistaken for a failed acceptance flow. Those flows live in
 | `agent-job-detail-light-1440x900.png` | Job detail: state, revision, runtime refs, timestamps and handoff |
 | `agent-job-review-light-1440x900.png`, `agent-job-review-light-390x844.png` | Review form with the "approving does not complete the task" notice and resume context |
 | `home-attention-light-1440x900.png` | Home's agent-attention panel, fed by the attention read |
-| `registry-knowledge-refs-light-1440x900.png` | Research workspace: the declared knowledge table and `knowledge_refs` panel over real notes |
+| `registry-knowledge-refs-light-1440x900.png` | Research workspace: the declared `knowledge_refs` panel over real notes (no knowledge table is declared or captured here) |
 | `registry-agent-jobs-light-1440x900.png` | Development workspace: the declared `agent_jobs` panel and compact list over real jobs |
 
 Viewport: 1440x900 desktop, 390x844 phone. Theme comes from `orbit.theme`; the

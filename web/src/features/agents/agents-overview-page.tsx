@@ -158,7 +158,12 @@ export function AgentsOverviewPage() {
       list.push(job)
       groups.set(job.state, list)
     }
-    return AGENT_STATES.filter((state) => groups.has(state)).map((state) => ({
+    // Known states keep the manifest order. A state this build has no label for
+    // is still grouped under its server value instead of being dropped.
+    const known = AGENT_STATES.filter((state) => groups.has(state))
+    const knownSet = new Set<string>(AGENT_STATES)
+    const unknown = [...groups.keys()].filter((state) => !knownSet.has(state)).sort()
+    return [...known, ...unknown].map((state) => ({
       state,
       jobs: groups.get(state) ?? [],
     }))

@@ -18,17 +18,46 @@ export interface MarkdownParts {
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n)?/
 
+/**
+ * The server accepts an `orbit_id` only as the exact line `orbit_id: <id>` with
+ * one space, an id of 1–128 ASCII letters/digits/`-`/`_`, and exactly one such
+ * line in the frontmatter. Anything else is not a note identity the authority
+ * would accept, so the browser reports no id instead of inventing one.
+ */
+const ORBIT_ID_LINE = /^orbit_id: ([A-Za-z0-9_-]{1,128})$/
+
+function noteIdFromFrontmatter(frontmatter: string): string | null {
+  let id: string | null = null
+  for (const rawLine of frontmatter.split('\n')) {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    // `str::lines()` on the server accepts CRLF; only the exact key with a
+    // following space is a candidate. Other spellings are ignored metadata.
+    if (!line.startsWith('orbit_id: ')) continue
+    if (id !== null) return null
+    const match = ORBIT_ID_LINE.exec(line)
+    if (!match) return null
+    id = match[1]
+  }
+  return id
+}
+
 export function splitMarkdown(raw: string): MarkdownParts {
   const match = FRONTMATTER.exec(raw)
   if (!match) return { frontmatter: '', body: raw, noteId: null }
   const frontmatter = raw.slice(0, match[0].length)
   const body = raw.slice(match[0].length)
-  const idLine = /^orbit_id:\s*(\S+)\s*$/m.exec(match[1])
-  return { frontmatter, body, noteId: idLine ? idLine[1] : null }
+  return { frontmatter, body, noteId: noteIdFromFrontmatter(match[1]) }
 }
 
+/**
+ * Rebuild the exact file body. Frontmatter that ends at its closing delimiter
+ * without a newline still needs a separator, or the first body line would be
+ * glued to `---` and change what the server reads back as identity.
+ */
 export function joinMarkdown(frontmatter: string, body: string): string {
-  return `${frontmatter}${body}`
+  if (frontmatter.length === 0) return body
+  const separator = frontmatter.endsWith('\n') ? '' : '\n'
+  return `${frontmatter}${separator}${body}`
 }
 
 /**
@@ -44,20 +73,14 @@ export function isNotePath(value: string): boolean {
     .every((segment) => segment.length > 0 && !segment.startsWith('.') && segment !== '..')
 }
 
-/** Strip the leading slash and decode a router splat into a vault-relative path. */
+/**
+ * Strip the leading slash from a router splat. React Router has already
+ * decoded each path segment once; decoding again would turn a literal `%20`
+ * in a filename into a space and address a different file.
+ */
 export function notePathFromSplat(splat: string | undefined): string {
   if (!splat) return ''
-  const withoutSlash = splat.replace(/^\/+/, '')
-  return withoutSlash
-    .split('/')
-    .map((segment) => {
-      try {
-        return decodeURIComponent(segment)
-      } catch {
-        return segment
-      }
-    })
-    .join('/')
+  return splat.replace(/^\/+/, '')
 }
 
 /** A link that survives folders and spaces: each segment is encoded, slashes stay. */
