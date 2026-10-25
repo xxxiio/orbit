@@ -19,6 +19,12 @@ import type {
 } from '@/api/adapters'
 import type { TransitionGuard } from '@/api/contracts'
 import { humanizeIdentifier } from '@/lib/humanize'
+import {
+  resolveColumns,
+  resolveSort,
+  type ColumnDescriptor,
+  type SortDescriptor,
+} from '@/lib/declarations'
 
 /* ------------------------------------------------------------------ */
 /* Kinds, states, fields                                               */
@@ -196,50 +202,42 @@ export function workItemSortDeclaration(
   component: WorkflowViewComponent,
   workflow: Workflow | undefined,
 ): WorkItemSortDeclaration {
-  const declared = component.sort?.trim()
-  if (!declared) return { compare: null, refusal: null }
-  const key = declared.toLowerCase()
-
   const fieldIds = new Set<string>()
   for (const kind of workflow?.kinds ?? []) {
     for (const field of kind.fields) fieldIds.add(field.id)
   }
-
-  if (key === 'title' || key === 'name') {
-    return {
-      compare: (left, right) => {
-        const leftKind = kindFor(workflow, left.kind)
-        const rightKind = kindFor(workflow, right.kind)
-        return workItemTitle(left, leftKind).localeCompare(workItemTitle(right, rightKind), undefined, {
-          numeric: true,
-          sensitivity: 'base',
-        })
-      },
-      refusal: null,
-    }
-  }
-  if (key === 'kind') {
-    return {
+  const descriptors: SortDescriptor<WorkItem>[] = [
+    {
+      key: 'title',
+      aliases: ['name'],
+      compare: (left, right) =>
+        workItemTitle(left, kindFor(workflow, left.kind)).localeCompare(
+          workItemTitle(right, kindFor(workflow, right.kind)),
+          undefined,
+          { numeric: true, sensitivity: 'base' },
+        ),
+    },
+    {
+      key: 'kind',
+      aliases: [],
       compare: (left, right) => left.kind.localeCompare(right.kind),
-      refusal: null,
-    }
-  }
-  if (key === 'state' || key === 'status') {
-    return {
+    },
+    {
+      key: 'state',
+      aliases: ['status'],
       compare: (left, right) => left.state.localeCompare(right.state),
-      refusal: null,
-    }
-  }
-  if (fieldIds.has(declared)) {
-    return {
-      compare: (left, right) => compareValues(left.properties[declared], right.properties[declared]),
-      refusal: null,
-    }
-  }
-  return {
-    compare: null,
-    refusal: `This panel sorts work items by “${declared}”, which is not a property of its kinds.`,
-  }
+    },
+    ...[...fieldIds].map((fieldId) => ({
+      key: fieldId,
+      aliases: [],
+      compare: (left: WorkItem, right: WorkItem) =>
+        compareValues(left.properties[fieldId], right.properties[fieldId]),
+    })),
+  ]
+  const resolved = resolveSort({ sort: component.sort }, descriptors, (declared) =>
+    `This panel sorts work items by “${declared}”, which is not a property of its kinds.`,
+  )
+  return { compare: resolved.compare, refusal: resolved.refusal }
 }
 
 export function sortWorkItems(
@@ -270,17 +268,29 @@ const DEFAULT_COLUMNS: WorkItemColumn[] = [
   { key: 'state', label: 'State' },
 ]
 
+/** The four virtual columns every work-item table or list can render. */
+const VIRTUAL_COLUMN_DESCRIPTORS: readonly ColumnDescriptor[] = [
+  { key: 'title', aliases: ['name'], label: 'Work item' },
+  { key: 'kind', aliases: ['type'], label: 'Kind' },
+  { key: 'state', aliases: ['status'], label: 'State' },
+  { key: 'revision', aliases: [], label: 'Revision' },
+]
+
+const VIRTUAL_KEYS = new Set(['title', 'kind', 'state', 'revision'])
+
 /**
  * Map a declared `columns` list onto the fields of the view's kinds. `title`,
- * `kind` and `state` are the three virtual columns; anything else must name a
- * declared field. Unknown names are reported, not silently dropped.
+ * `kind`, `state` and `revision` are the virtual columns; anything else must
+ * name a declared field. Unknown names are reported, not silently dropped.
  */
 export function workItemColumnPlan(
   component: WorkflowViewComponent,
   workflow: Workflow | undefined,
 ): WorkItemColumnPlan {
   const declared = component.columns ?? []
-  if (declared.length === 0) return { columns: DEFAULT_COLUMNS.map((column) => ({ ...column })), unsupported: [] }
+  if (declared.length === 0) {
+    return { columns: DEFAULT_COLUMNS.map((column) => ({ ...column })), unsupported: [] }
+  }
 
   const fields = new Map<string, WorkItemField>()
   for (const kind of workflow?.kinds ?? []) {
@@ -288,42 +298,26 @@ export function workItemColumnPlan(
       if (!fields.has(field.id)) fields.set(field.id, field)
     }
   }
+  const fieldDescriptors: ColumnDescriptor[] = [...fields.values()].map((field) => ({
+    key: field.id,
+    aliases: [],
+    label: fieldLabel(field, field.id),
+  }))
+  const descriptors = [...VIRTUAL_COLUMN_DESCRIPTORS, ...fieldDescriptors]
 
-  const columns: WorkItemColumn[] = []
-  const unsupported: string[] = []
-  for (const name of declared) {
-    const key = name.trim()
-    if (key.length === 0) continue
-    const lower = key.toLowerCase()
-    if (lower === 'title' || lower === 'name') {
-      columns.push({ key: 'title', label: 'Work item' })
-      continue
+  const resolved = resolveColumns(declared, descriptors, (descriptor) => {
+    if (VIRTUAL_KEYS.has(descriptor.key)) {
+      return { key: descriptor.key as WorkItemColumn['key'], label: descriptor.label }
     }
-    if (lower === 'kind' || lower === 'type') {
-      columns.push({ key: 'kind', label: 'Kind' })
-      continue
-    }
-    if (lower === 'state' || lower === 'status') {
-      columns.push({ key: 'state', label: 'State' })
-      continue
-    }
-    if (lower === 'revision') {
-      columns.push({ key: 'revision', label: 'Revision' })
-      continue
-    }
-    const field = fields.get(key)
-    if (field) {
-      columns.push({ key: 'field', label: fieldLabel(field, key), field })
-      continue
-    }
-    unsupported.push(key)
-  }
+    return { key: 'field' as const, label: descriptor.label, field: fields.get(descriptor.key) }
+  })
 
   // The title is the row's primary action and cannot be hidden.
+  const columns = resolved.columns
   if (!columns.some((column) => column.key === 'title')) {
     columns.unshift({ key: 'title', label: 'Work item' })
   }
-  return { columns, unsupported }
+  return { columns, unsupported: resolved.unsupported }
 }
 
 /* ------------------------------------------------------------------ */

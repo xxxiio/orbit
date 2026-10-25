@@ -121,7 +121,7 @@ describe('upgrade diff', () => {
     render(<UpgradeDiff preview={preview} viewTitle={viewTitle} />)
     expect(screen.getByText('Release notes')).toBeInTheDocument()
     expect(screen.getByText('View agents')).toBeInTheDocument()
-    expect(screen.getByText(/Layout grid\/2 → vertical\/1/)).toBeInTheDocument()
+    expect(screen.getByText(/Layout Grid\/2 → Vertical\/1/)).toBeInTheDocument()
   })
 
   it('shows warnings without turning them into blockers', () => {

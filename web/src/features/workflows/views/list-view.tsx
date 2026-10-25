@@ -3,7 +3,7 @@ import { defaultNowMs, useTaskGraph, useTaskReadiness, userMessage } from '@/hoo
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ListIcon } from '@/components/ui/icons'
-import { Skeleton } from '@/components/ui/skeleton'
+import { SkeletonText } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
 import { formatMoment, formatMinutes, priorityLabels, readinessReasonLabel, statusLabel, statusTones, useTaskDrawer } from '@/features/tasks'
 import type { ViewRendererProps } from '../view-types'
@@ -14,11 +14,12 @@ import {
   describeFilter,
   emptyTextOption,
   listOptionDeclaration,
-  sortByDeclaration,
   taskMatchesDeclaredFilter,
   taskSortDeclaration,
   unsupportedTaskFilterKeys,
 } from '../view-metadata'
+import { taskSortDescriptor } from '../declarations'
+import { filterSortLimit } from './resource-surface'
 import {
   ComponentPanel,
   DeclaredActionsNote,
@@ -125,17 +126,16 @@ function TaskSummaryList({
     )
   }
 
-  const matched = sortByDeclaration(
-    tasks.filter((task) =>
+  const { matched, limited } = filterSortLimit(tasks, {
+    matches: (task) =>
       taskMatchesDeclaredFilter(
         task,
         filter,
         withReadiness ? readinessByTask.get(task.id) : undefined,
       ),
-    ),
-    sortDeclaration.sort,
-  )
-  const limited = component.limit && component.limit > 0 ? matched.slice(0, component.limit) : matched
+    sort: taskSortDescriptor(component),
+    limit: component.limit,
+  })
 
   return (
     <ComponentPanel
@@ -178,9 +178,8 @@ function TaskSummaryList({
       }
     >
       {withReadiness && readiness.isPending && !readiness.data ? (
-        <div className="flex flex-col gap-2 px-4 py-3" aria-busy="true">
-          <Skeleton className="h-3 w-2/3" />
-          <Skeleton className="h-3 w-1/2" />
+        <div className="px-4 py-3" aria-busy="true">
+          <SkeletonText lines={2} />
         </div>
       ) : limited.length === 0 ? (
         <EmptyState

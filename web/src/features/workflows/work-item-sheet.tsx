@@ -18,7 +18,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type ReactNode,
 } from 'react'
 import type { WorkItem, WorkItemField, WorkItemKind, Workflow } from '@/api/adapters'
 import {
@@ -31,20 +30,17 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Drawer } from '@/components/ui/drawer'
-import { Field } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import { AlertCircleIcon, CheckCircleIcon, LoaderIcon } from '@/components/ui/icons'
-import { Switch } from '@/components/ui/switch'
+import { Section } from '@/components/ui/section'
 import {
   EditGuardProvider,
   InlineFieldError,
-  LabeledSelect,
-  PropertyField,
   useDirtyGuard,
   type EditorHandle,
 } from '@/components/forms'
-import { humanizeIdentifier } from '@/lib/humanize'
+import { capabilityLabel, humanizeIdentifier } from '@/lib/humanize'
 import { workflowText } from '@/domain'
+import { INTEGER_PATTERN, PropertyEditor } from './work-item-fields'
 import {
   actionsForState,
   fieldLabel,
@@ -58,33 +54,6 @@ import {
   transitionsFromState,
   workItemTitle,
 } from './work-item-model'
-
-const INTEGER_PATTERN = /^-?\d+$/
-
-function Section({
-  title,
-  description,
-  aside,
-  children,
-}: {
-  title: string
-  description?: ReactNode
-  aside?: ReactNode
-  children: ReactNode
-}) {
-  return (
-    <section className="px-5 py-5" aria-label={title}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-ink">{title}</h3>
-          {description ? <p className="mt-0.5 text-xs leading-5 text-ink-muted">{description}</p> : null}
-        </div>
-        {aside}
-      </div>
-      <div className="mt-3">{children}</div>
-    </section>
-  )
-}
 
 /** A text property: the draft flushes on blur, Enter, or a guarded close. */
 function TextProperty({
@@ -121,20 +90,16 @@ function TextProperty({
   useDirtyGuard(field.id, () => draft !== committed && draft !== submitted.current, commit)
 
   return (
-    <PropertyField label={fieldLabel(field, field.id)} pending={pending}>
-      <Input
-        value={draft}
-        disabled={disabled}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key !== 'Enter') return
-          event.preventDefault()
-          commit()
-        }}
-        placeholder={`Add ${fieldLabel(field, field.id).toLowerCase()}`}
-      />
-    </PropertyField>
+    <PropertyEditor
+      mode="edit"
+      field={field}
+      value={draft}
+      onChange={(next) => setDraft(typeof next === 'string' ? next : '')}
+      disabled={disabled}
+      pending={pending}
+      onBlur={commit}
+      onEnter={commit}
+    />
   )
 }
 
@@ -199,33 +164,25 @@ function IntegerProperty({
   useDirtyGuard(field.id, () => draft !== committed && draft !== submitted.current, commit)
 
   return (
-    <Field
-      label={fieldLabel(field, field.id)}
-      error={error ?? undefined}
+    <PropertyEditor
+      mode="edit"
+      field={field}
+      value={draft}
+      onChange={(next) => {
+        setDraft(typeof next === 'string' ? next : '')
+        setClearingNote(null)
+      }}
+      disabled={disabled}
+      pending={pending}
+      error={error}
       hint={
         pending
           ? 'Saving…'
           : (clearingNote ?? 'Whole numbers only. Clearing a stored number is not supported.')
       }
-    >
-      <Input
-        type="number"
-        inputMode="numeric"
-        step={1}
-        value={draft}
-        disabled={disabled}
-        onChange={(event) => {
-          setDraft(event.target.value)
-          setClearingNote(null)
-        }}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key !== 'Enter') return
-          event.preventDefault()
-          commit()
-        }}
-      />
-    </Field>
+      onBlur={commit}
+      onEnter={commit}
+    />
   )
 }
 
@@ -243,15 +200,14 @@ function BooleanProperty({
   onCommit: (value: boolean) => void
 }) {
   return (
-    <PropertyField label={fieldLabel(field, field.id)} pending={pending}>
-      <Switch
-        label={value === true ? 'Yes' : 'No'}
-        checked={value === true}
-        disabled={disabled}
-        onCheckedChange={onCommit}
-        aria-label={`${fieldLabel(field, field.id)}: ${value === true ? 'yes' : 'no'}`}
-      />
-    </PropertyField>
+    <PropertyEditor
+      mode="edit"
+      field={field}
+      value={value === true}
+      onChange={(next) => onCommit(next === true)}
+      disabled={disabled}
+      pending={pending}
+    />
   )
 }
 
@@ -268,20 +224,16 @@ function ChoiceProperty({
   disabled: boolean
   onCommit: (value: string) => void
 }) {
-  const options =
-    field.kind.type === 'choice'
-      ? field.kind.options.map((option) => ({ value: option, label: humanizeIdentifier(option) }))
-      : []
   return (
-    <LabeledSelect
-      label={fieldLabel(field, field.id)}
-      ariaLabel={fieldLabel(field, field.id)}
+    <PropertyEditor
+      mode="edit"
+      field={field}
       value={typeof value === 'string' ? value : ''}
-      placeholder="Not set"
-      options={options}
+      onChange={(next) => {
+        if (typeof next === 'string') onCommit(next)
+      }}
       disabled={disabled}
-      hint={pending ? 'Saving…' : undefined}
-      onValueChange={onCommit}
+      pending={pending}
     />
   )
 }
@@ -350,7 +302,7 @@ function TransitionRow({
           )}
           {transition.requiredCapability ? (
             <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-2xs leading-4 text-warning-ink">
-              <Badge tone="warning">Requires capability {transition.requiredCapability}</Badge>
+              <Badge tone="warning">Requires capability {capabilityLabel(transition.requiredCapability)}</Badge>
               <span>
                 Browser sessions are granted no capabilities, so the server will refuse this move.
               </span>
@@ -538,7 +490,7 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
                   properties.isPending ? (
                     <LoaderIcon size={14} className="animate-spin text-accent" aria-label="Saving a property" />
                   ) : (
-                    <span className="whitespace-nowrap font-mono text-2xs text-ink-faint">revision {item.revision}</span>
+                    <span className="whitespace-nowrap font-mono text-2xs text-ink-faint">Revision {item.revision}</span>
                   )
                 }
               >
@@ -707,9 +659,9 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
                           <Badge tone="neutral">Not executable here</Badge>
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <Badge tone="info">Requires capability {action.capability}</Badge>
+                          <Badge tone="info">Requires capability {capabilityLabel(action.capability)}</Badge>
                           {edge.requiredCapability && edge.requiredCapability !== action.capability ? (
-                            <Badge tone="warning">Move requires {edge.requiredCapability}</Badge>
+                            <Badge tone="warning">Move requires {capabilityLabel(edge.requiredCapability)}</Badge>
                           ) : null}
                         </div>
                         <div className="mt-2 border-t border-line pt-2">

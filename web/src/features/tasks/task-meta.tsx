@@ -173,9 +173,7 @@ export function formatDateTime(ms: number): string {
 }
 
 /** Clock time only, for schedule blocks and windows. */
-export function formatTimeOfDay(ms: number): string {
-  return timeFormatter.format(new Date(ms))
-}
+export { formatTimeOfDay } from '@/domain/datetime'
 
 export function formatDate(ms: number): string {
   return dateFormatter.format(new Date(ms))

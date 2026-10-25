@@ -287,21 +287,22 @@ function ViewDiff({ diff, viewTitle }: { diff: WorkflowViewUpgrade; viewTitle: (
                   <li key={change.view}>
                     <span className="font-medium text-ink">{viewTitle(change.view)}</span>
                     <span className="block text-2xs text-ink-muted">
-                      Layout {change.layoutBefore} → {change.layoutAfter}
+                      Layout {humanizeIdentifier(change.layoutBefore)} →{' '}
+                      {humanizeIdentifier(change.layoutAfter)}
                     </span>
                     {change.componentsAdded.length > 0 ? (
                       <span className="block text-2xs text-success-ink">
-                        Panels added: {change.componentsAdded.join(', ')}
+                        Panels added: {change.componentsAdded.map(humanizeIdentifier).join(', ')}
                       </span>
                     ) : null}
                     {change.componentsRemoved.length > 0 ? (
                       <span className="block text-2xs text-warning-ink">
-                        Panels removed: {change.componentsRemoved.join(', ')}
+                        Panels removed: {change.componentsRemoved.map(humanizeIdentifier).join(', ')}
                       </span>
                     ) : null}
                     {change.componentsChanged.length > 0 ? (
                       <span className="block text-2xs text-ink-muted">
-                        Panels changed: {change.componentsChanged.join(', ')}
+                        Panels changed: {change.componentsChanged.map(humanizeIdentifier).join(', ')}
                       </span>
                     ) : null}
                   </li>

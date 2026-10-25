@@ -52,12 +52,12 @@ import {
   declaredWorkspaceViews,
   pinnedKindForView,
   reservedDeclaredViews,
+  useWorkItemDrawer,
   viewBadge,
   viewBadgeCount,
   viewHeaderAction,
   workspaceViewTabs,
 } from '@/features/workflows'
-import { useWorkItemDrawer } from '@/features/workflows/use-work-item-drawer'
 
 /** The two workspace tools that are not workflow views. Reserved ids. */
 const PLANNING_ID = 'planning'
@@ -301,9 +301,15 @@ export function ProjectWorkspacePage() {
     ) {
       return null
     }
+    // Same rule for work items: the badge counts a read the page owns.
+    if (badge.kind === 'work_items' && (workItems.error || !workItems.data)) {
+      return null
+    }
     const count = viewBadgeCount(view, {
       tasks,
       milestones: projectMilestones,
+      workItems: workItems.data,
+      workflow: workflow.workflow,
       readinessByTask: badgeReadinessByTask,
     })
     if (count === null) return null

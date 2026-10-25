@@ -24,12 +24,12 @@ import {
   SettingsIcon,
 } from '@/components/ui/icons'
 import { Panel, PanelBody, PanelFooter, PanelHeader } from '@/components/ui/panel'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/components/ui/utils'
 import { humanizeIdentifier } from '@/lib/humanize'
 import { projectStatusLabel, workflowCopy, workflowText } from '@/domain'
-import { UpgradeDiff, UpgradeReceipt } from '@/features/workflows/upgrade-preview'
+import { UpgradeDiff, UpgradeReceipt } from '@/features/workflows'
 
 function IdentityRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -94,9 +94,8 @@ function WorkflowChoice({
 function ViewList({ workflow, loading }: { workflow: Workflow | undefined; loading: boolean }) {
   if (loading && !workflow) {
     return (
-      <div className="flex flex-col gap-2" aria-busy="true">
-        <Skeleton className="h-3 w-2/3" />
-        <Skeleton className="h-3 w-1/2" />
+      <div aria-busy="true">
+        <SkeletonText lines={2} />
       </div>
     )
   }

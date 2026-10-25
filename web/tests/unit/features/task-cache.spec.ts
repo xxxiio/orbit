@@ -106,4 +106,30 @@ describe('accepted task write-back', () => {
     expect(client.getQueryData(queryKeys.task('t-1'))).toBeUndefined()
     expect(client.getQueryData(queryKeys.snapshot())).toBeUndefined()
   })
+
+  it('never rewinds a newer cached record with an older accepted command', () => {
+    const client = testQueryClient()
+    client.setQueryData(queryKeys.task('t-1'), detailRecord({ priority: 'high' }))
+    client.setQueryData(
+      queryKeys.snapshot(),
+      snapshotAt(14, {
+        tasks: [taskRecord({ id: 't-1', title: 'Newer title', priority: 'high' })],
+      }),
+    )
+
+    // A late or replayed answer carries revision 12 while the browser has 14.
+    writeAcceptedTask(client, accepted({ title: 'Older title', priority: 'low' }), 12)
+
+    const snapshot = client.getQueryData<ReturnType<typeof snapshotAt>>(queryKeys.snapshot())
+    expect(snapshot?.tasks[0]).toMatchObject({ title: 'Newer title', priority: 'high' })
+    const detail = toTaskDetail(
+      client.getQueryData<TaskDetailResponse>(queryKeys.task('t-1')) as TaskDetailResponse,
+    )
+    expect(detail.priority).toBe('high')
+
+    // An answer at the cached tip is written.
+    writeAcceptedTask(client, accepted({ title: 'Accepted title', priority: 'urgent' }), 14)
+    const after = client.getQueryData<ReturnType<typeof snapshotAt>>(queryKeys.snapshot())
+    expect(after?.tasks[0]).toMatchObject({ title: 'Accepted title', priority: 'urgent' })
+  })
 })

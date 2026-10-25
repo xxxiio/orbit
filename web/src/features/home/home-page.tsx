@@ -29,7 +29,7 @@ import {
   RefreshIcon,
 } from '@/components/ui/icons'
 import { Panel } from '@/components/ui/panel'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
 import { useWorkspaceActions } from '@/lib/workspace-actions'
 import {
@@ -179,9 +179,8 @@ function HomeSection({
           ) : null}
         </div>
       ) : loading && count === 0 ? (
-        <div className="space-y-2 px-4 py-3" aria-busy="true">
-          <Skeleton className="h-3 w-2/3" />
-          <Skeleton className="h-3 w-1/2" />
+        <div className="px-4 py-3" aria-busy="true">
+          <SkeletonText lines={2} />
         </div>
       ) : count === 0 ? (
         <p className="px-4 py-4 text-xs leading-5 text-ink-muted">{empty}</p>

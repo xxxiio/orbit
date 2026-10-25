@@ -5,10 +5,7 @@ import type { ApiError } from '@/api/errors'
 import type { ReadinessEntry, TaskGraphNodeView } from '@/api/adapters'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-} from '@/components/ui/icons'
+import { PlainHeader, SortHeader } from '@/components/ui/table'
 import { cn } from '@/components/ui/utils'
 import {
   formatMinutes,
@@ -69,61 +66,6 @@ export interface TaskTableProps {
   showMilestone?: boolean
   showLabels?: boolean
   showStatus?: boolean
-}
-
-function SortHeader({
-  label,
-  sortKey,
-  sort,
-  onSortChange,
-}: {
-  label: string
-  sortKey: TaskSortKey
-  sort?: TaskSort
-  onSortChange?: (sort: TaskSort) => void
-}) {
-  const active = sort?.key === sortKey
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        if (!onSortChange) return
-        onSortChange({
-          key: sortKey,
-          direction: active && sort?.direction === 'asc' ? 'desc' : 'asc',
-        })
-      }}
-      className={cn(
-        'group inline-flex items-center gap-1 rounded-sm text-2xs font-semibold uppercase tracking-label',
-        active ? 'text-ink' : 'text-ink-faint hover:text-ink-soft',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
-      )}
-      aria-label={`Sort by ${label}${active ? (sort?.direction === 'asc' ? ', ascending' : ', descending') : ''}`}
-    >
-      {label}
-      {active ? (
-        sort?.direction === 'asc' ? (
-          <ArrowUpIcon size={11} />
-        ) : (
-          <ArrowDownIcon size={11} />
-        )
-      ) : (
-        <ArrowDownIcon size={11} className="opacity-0 transition-opacity group-hover:opacity-50" />
-      )}
-    </button>
-  )
-}
-
-function PlainHeader({ label, width }: { label: string; width?: string }) {
-  return (
-    <th
-      scope="col"
-      style={width ? { width } : undefined}
-      className="border-b border-line bg-surface-sunken/95 px-3.5 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint backdrop-blur"
-    >
-      {label}
-    </th>
-  )
 }
 
 function EstimateCell({ task }: { task: Task }) {

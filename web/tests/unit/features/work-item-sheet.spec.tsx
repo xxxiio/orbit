@@ -94,7 +94,7 @@ describe('work-item sheet declarations', () => {
     const moves = screen.getByRole('region', { name: 'Moves' })
     expect(within(moves).getByText(/Requires Priority to be High\./)).toBeInTheDocument()
     expect(
-      within(moves).getByText('Requires capability orbit.release.approve'),
+      within(moves).getByText('Requires capability Orbit release approve'),
     ).toBeInTheDocument()
     expect(
       within(moves).getByText(/Browser sessions are granted no capabilities/),
@@ -113,7 +113,7 @@ describe('work-item sheet declarations', () => {
       within(actions).getByText('Append a durable note to this ticket.'),
     ).toBeInTheDocument()
     expect(
-      within(actions).getByText('Requires capability orbit.release.note'),
+      within(actions).getByText('Requires capability Orbit release note'),
     ).toBeInTheDocument()
     expect(within(actions).getByText('note')).toBeInTheDocument()
     expect(within(actions).getByText('string')).toBeInTheDocument()
@@ -141,7 +141,7 @@ describe('work-item sheet declarations', () => {
 
   it('shows the revision and the stored property values', () => {
     renderSheet(openTicket)
-    expect(screen.getByText('Revision 3')).toBeInTheDocument()
+    expect(screen.getAllByText('Revision 3').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Low').length).toBeGreaterThan(0)
   })
 })

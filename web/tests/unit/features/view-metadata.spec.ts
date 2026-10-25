@@ -159,10 +159,11 @@ describe('workflow view metadata', () => {
     // Mixed overviews and schedule-led timelines get no count badge.
     expect(viewBadge(view('overview', [metric, table]))).toBeNull()
     expect(viewBadge(view('timeline', [scheduleTimeline]))).toBeNull()
-    // A work-item view has no browser count read yet, so it claims no badge.
+    // A work-item view badges its own read: the work-item family is not the
+    // milestone family, and an unread list never produces a number.
     expect(
       viewBadge(view('items', [component({ id: 'wi', type: 'kanban', source: 'work_items' })])),
-    ).toBeNull()
+    ).toEqual({ kind: 'work_items', noun: 'work items' })
     expect(viewBadge(view('empty', []))).toBeNull()
   })
 
@@ -637,6 +638,39 @@ describe('reserved view ids and tab counts', () => {
         ],
       }),
     ).toBe(1)
+
+    // Work items count their own family: a board counts the resolved kind, and
+    // a list counts every kind its filter selects. An unread list is null.
+    const itemBoard = view('items', [
+      component({ id: 'wb', type: 'kanban', source: 'work_items', limit: 2 }),
+    ])
+    const items = [
+      workItem({ id: 'w-1' }),
+      workItem({ id: 'w-2' }),
+      workItem({ id: 'w-3' }),
+      workItem({ id: 'w-4', kind: 'assessment' }),
+    ]
+    expect(
+      viewBadgeCount(itemBoard, {
+        tasks: [],
+        milestones: [],
+        workItems: items,
+        workflow: workflowWithKinds,
+      }),
+    ).toBe(2)
+    expect(viewBadgeCount(itemBoard, { tasks: [], milestones: [] })).toBeNull()
+
+    const itemList = view('items', [
+      component({ id: 'wl', type: 'list', source: 'work_items' }),
+    ])
+    expect(
+      viewBadgeCount(itemList, {
+        tasks: [],
+        milestones: [],
+        workItems: items,
+        workflow: workflowWithKinds,
+      }),
+    ).toBe(4)
   })
 })
 

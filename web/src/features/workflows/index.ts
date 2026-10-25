@@ -47,3 +47,10 @@ export { MilestoneCreateDialog, NewMilestoneButton } from './milestone-create-di
 export { NewWorkItemButton, NewWorkItemDialog } from './work-item-create-dialog'
 export { WorkItemSheet, type WorkItemSheetProps } from './work-item-sheet'
 export { pinnedKindForView } from './work-item-model'
+export { useWorkItemDrawer } from './use-work-item-drawer'
+export {
+  NoticeList,
+  UpgradeDiff,
+  UpgradeReceipt,
+  noticeLabel,
+} from './upgrade-preview'

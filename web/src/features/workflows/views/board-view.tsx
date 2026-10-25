@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Task } from '@/api/adapters'
 import type { TaskStatus } from '@/api/contracts'
 import {
@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/ui/empty-state'
 import { GridIcon, LoaderIcon } from '@/components/ui/icons'
-import { Skeleton } from '@/components/ui/skeleton'
+import { SkeletonText } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
 import {
   isTerminalStatus,
@@ -42,17 +42,27 @@ import {
   componentTypeName,
   describeFilter,
   emptyTextOption,
-  sortByDeclaration,
   taskMatchesDeclaredFilter,
   taskSortDeclaration,
   unsupportedTaskFilterKeys,
 } from '../view-metadata'
+import { taskSortDescriptor } from '../declarations'
+import { filterSortLimit } from './resource-surface'
 import {
   ComponentPanel,
   DeclaredActionsNote,
   ProvenanceNote,
   UnavailablePanel,
 } from './shared'
+import {
+  BoardCard,
+  BoardColumn,
+  BoardColumnEmpty,
+  BoardKeyboardHint,
+  BoardScrollRegion,
+  useBoardKeyboard,
+} from './board-chrome'
+import { limitNote } from './table-chrome'
 import { WorkItemBoardView } from './work-item-views'
 
 interface BoardColumn {
@@ -95,44 +105,47 @@ function BoardSurface({
   const { pending, error, errorTaskId, errorField, changeStatus } = useTaskCommandState(command)
   const widthNote = columnWidthNote(component)
 
-  const [focus, setFocus] = useState<string | null>(null)
   const [moveFor, setMoveFor] = useState<string | null>(null)
   // After an accepted move the card mounts in a new column; focus follows it so
   // the keyboard cursor is not lost when the DOM node is replaced.
   const refocusAfterMove = useRef<string | null>(null)
   const [announcement, setAnnouncement] = useState<string | null>(null)
-  const cardRefs = useRef(new Map<string, HTMLButtonElement>())
 
   const filter = component.filter ?? {}
   const actionableNote = actionableFilterNote(filter)
   const sortDeclaration = useMemo(() => taskSortDeclaration(component), [component])
+  const sortDescriptor = useMemo(() => taskSortDescriptor(component), [component])
 
   const { boardTasks, matchedCount } = useMemo(() => {
-    const matched = tasks.filter((task) =>
-      readinessFilter
-        ? taskMatchesDeclaredFilter(task, filter, {
-            taskId: task.id,
-            title: task.title,
-            status: task.status,
-            actionable: readinessFilter.get(task.id) === true,
-            reason: '',
-            blockingTaskIds: [],
-            prerequisiteIds: [],
-            earliestStartAtMs: task.earliestStartAtMs,
-            deadlineAtMs: task.deadlineAtMs,
-            estimatedMinutes: task.estimatedMinutes,
-            projectId: task.projectId,
-          })
-        : taskMatchesDeclaredFilter(task, filter),
-    )
-    const sorted = sortByDeclaration(matched, sortDeclaration.sort)
-    const limited =
-      component.limit && component.limit > 0 ? sorted.slice(0, component.limit) : sorted
+    const { matched, limited } = filterSortLimit(tasks, {
+      matches: (task) =>
+        readinessFilter
+          ? taskMatchesDeclaredFilter(task, filter, {
+              taskId: task.id,
+              title: task.title,
+              status: task.status,
+              actionable: readinessFilter.get(task.id) === true,
+              reason: '',
+              blockingTaskIds: [],
+              prerequisiteIds: [],
+              earliestStartAtMs: task.earliestStartAtMs,
+              deadlineAtMs: task.deadlineAtMs,
+              estimatedMinutes: task.estimatedMinutes,
+              projectId: task.projectId,
+            })
+          : taskMatchesDeclaredFilter(task, filter),
+      sort: sortDescriptor,
+      limit: component.limit,
+    })
     return { boardTasks: limited, matchedCount: matched.length }
-  }, [tasks, filter, readinessFilter, component.limit, sortDeclaration])
+  }, [tasks, filter, readinessFilter, component.limit, sortDescriptor])
 
   const columns = useMemo(() => buildColumns(boardTasks), [boardTasks])
-  const flatOrder = useMemo(() => columns.flatMap((column) => column.tasks), [columns])
+  const keyboard = useBoardKeyboard<Task>(
+    columns.map((column) => ({ key: column.status, rows: column.tasks })),
+    { onMove: (task) => setMoveFor(task.id) },
+  )
+  const cardRefs = keyboard.cardRefs
 
   const projectNames = useMemo(
     () => new Map(projects.map((entry) => [entry.id, entry.name])),
@@ -140,25 +153,13 @@ function BoardSurface({
   )
   const projectName = projectNames.get(project.id) ?? project.name
 
-  const setCardRef = useCallback((taskId: string, element: HTMLButtonElement | null) => {
-    if (element) cardRefs.current.set(taskId, element)
-    else cardRefs.current.delete(taskId)
-  }, [])
-
-  // Roving focus: moving the logical cursor moves real focus, so the next
-  // keypress (including Enter) reaches the same card.
-  useEffect(() => {
-    if (!focus) return
-    cardRefs.current.get(focus)?.focus({ preventScroll: false })
-  }, [focus])
-
   useEffect(() => {
     if (!refocusAfterMove.current) return
     const element = cardRefs.current.get(refocusAfterMove.current)
     if (!element) return
     element.focus({ preventScroll: true })
     refocusAfterMove.current = null
-  }, [boardTasks])
+  }, [boardTasks, cardRefs])
 
   useEffect(() => {
     if (command.disposition === 'accepted') {
@@ -169,50 +170,6 @@ function BoardSurface({
       setAnnouncement(`The server refused the move: ${userMessage(command.error)}`)
     }
   }, [command.disposition, command.error])
-
-  const focusCard = (taskId: string | undefined) => {
-    if (taskId) setFocus(taskId)
-  }
-
-  const moveFocus = (task: Task, key: 'h' | 'j' | 'k' | 'l') => {
-    const columnIndex = columns.findIndex((column) => column.tasks.some((entry) => entry.id === task.id))
-    if (columnIndex < 0) return
-    const column = columns[columnIndex]
-    const rowIndex = column.tasks.findIndex((entry) => entry.id === task.id)
-
-    if (key === 'j' || key === 'k') {
-      const nextIndex = rowIndex + (key === 'j' ? 1 : -1)
-      focusCard(column.tasks[nextIndex]?.id)
-      return
-    }
-
-    const direction = key === 'l' ? 1 : -1
-    for (let index = columnIndex + direction; index >= 0 && index < columns.length; index += direction) {
-      const candidate = columns[index]
-      if (candidate.tasks.length === 0) continue
-      const row = Math.min(rowIndex, candidate.tasks.length - 1)
-      focusCard(candidate.tasks[row]?.id)
-      return
-    }
-  }
-
-  const onCardKeyDown = (event: KeyboardEvent<HTMLButtonElement>, task: Task) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) return
-    const key = event.key.toLowerCase()
-    if (key === 'm') {
-      event.preventDefault()
-      event.stopPropagation()
-      setMoveFor(task.id)
-      return
-    }
-    if (key !== 'h' && key !== 'j' && key !== 'k' && key !== 'l') return
-    event.preventDefault()
-    event.stopPropagation()
-    moveFocus(task, key)
-  }
-
-  const firstCardId = flatOrder[0]?.id ?? null
-  const tabStop = focus ?? firstCardId
 
   return (
     <>
@@ -233,55 +190,37 @@ function BoardSurface({
           }
         />
       ) : (
-        <div className="scrollbar-slim -mx-1 overflow-x-auto px-1 pb-2">
-          <div
-            role="group"
-            aria-label="Task board"
-            className="flex min-w-full items-start gap-3"
-          >
-            {columns.map((column) => (
-              <section
-                key={column.status}
-                aria-label={`${statusLabel(column.status)} column, ${column.tasks.length} task${
-                  column.tasks.length === 1 ? '' : 's'
-                }`}
-                className="flex shrink-0 flex-col rounded-lg border border-line bg-surface-sunken/35"
-                style={{ width: columnWidth }}
-              >
-                <header className="flex items-center gap-2 border-b border-line px-2.5 py-2">
-                  <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', statusDots[column.status])} />
-                  <h3 className="text-xs font-semibold text-ink">{statusLabel(column.status)}</h3>
-                  <span className="ml-auto rounded-full bg-surface px-1.5 py-0.5 text-2xs tabular-nums text-ink-muted">
-                    {column.tasks.length}
-                  </span>
-                </header>
-
-                <ul className="flex flex-1 flex-col gap-1.5 p-1.5">
-                  {column.tasks.length === 0 ? (
-                    <li className="px-1 py-3 text-2xs text-ink-faint">Nothing here</li>
-                  ) : (
+        <BoardScrollRegion label="Task board">
+          {columns.map((column) => (
+            <BoardColumn
+              key={column.status}
+              label={statusLabel(column.status)}
+              count={column.tasks.length}
+              noun="task"
+              dotClassName={statusDots[column.status]}
+              width={columnWidth}
+            >
+              {column.tasks.length === 0 ? (
+                <BoardColumnEmpty />
+              ) : (
                     column.tasks.map((task) => {
                       const isPending = pending?.taskId === task.id
                       const rowError = errorTaskId === task.id ? error : null
                       return (
                         <li key={task.id}>
-                          <article
-                            data-board-card={task.id}
-                            className={cn(
-                              'rounded-md border border-line bg-surface px-2.5 py-2 shadow-[0_1px_0_hsl(var(--ink)/0.03)] transition-colors',
-                              'hover:border-line-strong',
-                              rowError && 'border-danger/40',
-                            )}
+                          <BoardCard
+                            cardId={task.id}
+                            className={cn(rowError && 'border-danger/40')}
                           >
                             <div className="flex items-start gap-1">
                               <button
-                                ref={(element) => setCardRef(task.id, element)}
+                                ref={(element) => keyboard.setCardRef(task.id, element)}
                                 type="button"
                                 data-board-action=""
-                                tabIndex={tabStop === task.id ? 0 : -1}
-                                onFocus={() => setFocus(task.id)}
+                                tabIndex={keyboard.tabStop === task.id ? 0 : -1}
+                                onFocus={() => keyboard.setFocus(task.id)}
                                 onClick={() => openTask(task.id)}
-                                onKeyDown={(event) => onCardKeyDown(event, task)}
+                                onKeyDown={(event) => keyboard.onCardKeyDown(event, task)}
                                 className={cn(
                                   'min-w-0 flex-1 rounded-sm text-left text-sm font-medium leading-5 text-ink',
                                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
@@ -352,16 +291,14 @@ function BoardSurface({
                                 taskStatus={task.status}
                               />
                             ) : null}
-                          </article>
+                          </BoardCard>
                         </li>
                       )
                     })
                   )}
-                </ul>
-              </section>
-            ))}
-          </div>
-        </div>
+            </BoardColumn>
+          ))}
+        </BoardScrollRegion>
       )}
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
@@ -371,24 +308,12 @@ function BoardSurface({
           {sortDeclaration.sort
             ? ` Cards within a column are sorted by ${sortDeclaration.sort.key} ${sortDeclaration.sort.direction === 'asc' ? 'ascending' : 'descending'} as declared.`
             : ''}
-          {matchedCount > boardTasks.length
-            ? ` Showing the first ${boardTasks.length} of ${matchedCount} tasks; the workflow sets this limit.`
-            : ''}
+          {limitNote(boardTasks.length, matchedCount)}
           {widthNote ? ` ${widthNote}` : ''}
           {component.actions.length > 0 ? ' ' : ''}
           <DeclaredActionsNote component={component} />
         </ProvenanceNote>
-        <p className="hidden items-center gap-1 text-2xs text-ink-muted md:flex">
-          <kbd className="command-key">h</kbd>
-          <kbd className="command-key">j</kbd>
-          <kbd className="command-key">k</kbd>
-          <kbd className="command-key">l</kbd>
-          <span>move</span>
-          <kbd className="command-key">m</kbd>
-          <span>move status</span>
-          <kbd className="command-key">↵</kbd>
-          <span>open</span>
-        </p>
+        <BoardKeyboardHint />
       </div>
 
       <p role="status" aria-live="polite" className="sr-only">
@@ -430,9 +355,8 @@ function ActionableBoard({
   if (readiness.isPending && !readiness.data) {
     return (
       <ComponentPanel title={componentTypeName(props.component)}>
-        <div className="flex flex-col gap-2" aria-busy="true">
-          <Skeleton className="h-3 w-1/2" />
-          <Skeleton className="h-3 w-1/3" />
+        <div aria-busy="true">
+          <SkeletonText lines={2} />
         </div>
       </ComponentPanel>
     )

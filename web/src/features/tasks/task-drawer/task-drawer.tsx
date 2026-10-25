@@ -115,8 +115,9 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
         .then((outcome) => {
           // The drawer builds `set_details` from the record it holds. Write the
           // accepted record back before the next edit can read the old one, so
-          // two fast edits cannot revert each other.
-          writeAcceptedTask(queryClient, outcome.task)
+          // two fast edits cannot revert each other. The accepted revision
+          // guards the write: a late answer never rewinds a newer record.
+          writeAcceptedTask(queryClient, outcome.task, outcome.revision)
           return outcome
         })
         .finally(() => {

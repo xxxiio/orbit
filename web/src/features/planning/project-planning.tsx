@@ -34,7 +34,8 @@ import { Panel, PanelBody, PanelFooter, PanelHeader } from '@/components/ui/pane
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/components/ui/utils'
-import { formatDateTime, formatTimeOfDay, useTaskDrawer } from '@/features/tasks'
+import { formatDateTime, useTaskDrawer } from '@/features/tasks'
+import { formatTimeOfDay } from '@/domain'
 import {
   DISPOSITION_LABELS,
   DISPOSITION_TONES,

@@ -38,6 +38,7 @@ import {
 } from './errors'
 import { handleUnauthorized } from './session-store'
 import { queryKeys } from './queries'
+import { acceptLedgerRevision, acceptTaskRecord, acceptWorkItemRecord, workItemRevision } from './accepted-write'
 import {
   toApprovedScheduleReceipt,
   toAttachment,
@@ -61,7 +62,6 @@ import type {
   AttachmentOwnerKind,
   AuthoritySnapshotResponse,
   BlueprintUpgradePreview,
-  BlueprintWorkItemRecord,
   CreateWorkItemBody,
   MarkdownCommand,
   MarkdownReceipt,
@@ -225,41 +225,19 @@ export function useApiMutation<TData, TVariables>({
 /* ------------------------------------------------------------------ */
 
 /**
- * Write the revision an accepted response carries back into the snapshot it
- * fences on, never lowering what is already cached: a duplicate receipt carries
- * the revision the *original* command had, which can be older than the tip this
- * browser already knows about.
- *
- * Without this, two commands in one interaction (a bulk loop, status then
- * priority in the drawer) would both fence on the pre-write revision and the
- * server would correctly reject the second as stale.
+ * Cache coherence lives in `./accepted-write`: the revision guards, the task
+ * record write-back and the work-item record write-back are one helper family
+ * shared by every command hook. Re-exported here because this module is the
+ * command surface `@/hooks` publishes.
  */
-export function acceptRevision(
-  queryClient: QueryClient,
-  queryKey: QueryKey,
-  revision: number,
-): void {
-  queryClient.setQueryData<{ revision: number }>(queryKey, (previous) =>
-    previous ? { ...previous, revision: Math.max(previous.revision, revision) } : previous,
-  )
-}
-
-/**
- * Every ledger write advances the *global* authority revision, and both cached
- * snapshots (`snapshot` and `milestones`) read the same `MAX(cursor)`. Advancing
- * only one of them lets the other fence a later command against an older
- * revision and 409 "stale" even though nothing it reads changed. So every
- * accepted ledger write calls this once, and neither cached revision is ever
- * lowered (a replayed receipt carries the original, older revision).
- */
-export function acceptLedgerRevision(queryClient: QueryClient, revision: number): void {
-  acceptRevision(queryClient, queryKeys.snapshot(), revision)
-  acceptRevision(queryClient, queryKeys.milestones(), revision)
-  // An accepted ledger write can change the item set (and therefore the
-  // upgrade fingerprint) any open preview was computed from. Refreshing it here
-  // keeps Apply from ever confirming a comparison the person was not shown.
-  void queryClient.invalidateQueries({ queryKey: queryKeys.upgradePreviewAll() })
-}
+export {
+  acceptLedgerRevision,
+  acceptRevision,
+  acceptTaskRecord,
+  acceptWorkItemRecord,
+  workItemRecord,
+  workItemRevision,
+} from './accepted-write'
 
 /**
  * The freshest revision this browser knows about. Read inside `mutationFn`,
@@ -285,93 +263,6 @@ export function milestoneRevision(queryClient: QueryClient): number {
     throw new ClientStateError('The milestone list is still loading. Try again in a moment.')
   }
   return snapshot.revision
-}
-
-/**
- * One cached work-item record, whatever the cached shape: the project list is an
- * array, a single-item snapshot is the record itself.
- */
-type CachedWorkItem = BlueprintWorkItemRecord | BlueprintWorkItemRecord[] | undefined
-
-function findCachedWorkItem(cached: CachedWorkItem, id: string): BlueprintWorkItemRecord | undefined {
-  if (!cached) return undefined
-  if (Array.isArray(cached)) return cached.find((candidate) => candidate.id === id)
-  return cached.id === id ? cached : undefined
-}
-
-/**
- * Work items fence on their own `u64` revision. Read it from the freshest
- * cached copy — every query under the work-item family, list or single record —
- * and take the highest revision found: revisions only ever increase, so the
- * maximum is the newest fence and a stale duplicate cache entry can never
- * *lower* the revision a command fences on.
- */
-export function workItemRevision(queryClient: QueryClient, id: string): number {
-  const cached = queryClient.getQueriesData<CachedWorkItem>({
-    queryKey: queryKeys.workItemsAll(),
-  })
-  let revision: number | null = null
-  for (const [, data] of cached) {
-    const item = findCachedWorkItem(data, id)
-    if (!item) continue
-    revision = revision === null ? item.revision : Math.max(revision, item.revision)
-  }
-  if (revision === null) {
-    throw new ClientStateError('Reload this project before changing its work items.')
-  }
-  return revision
-}
-
-/** An accepted work item as the cached list stores it (the wire record). */
-export function workItemRecord(item: WorkItem): BlueprintWorkItemRecord {
-  return {
-    id: item.id,
-    project_id: item.projectId,
-    kind: item.kind,
-    state: item.state,
-    properties: item.properties,
-    revision: item.revision,
-  }
-}
-
-/**
- * Write the record an accepted work-item response carries back into every
- * cached copy of it: the project list(s) that hold it and any single-item
- * snapshot. This is cache coherence, not an optimistic update — it runs only
- * after the server accepted the write and stores exactly what it returned.
- *
- * The revision discipline matches `acceptRevision` for the ledger: a cached
- * copy is never rewound. A replayed or out-of-order answer carrying an older
- * revision leaves the newer record in place, so the next command fences on the
- * tip this browser has already seen instead of a revision the server will
- * refuse as stale.
- */
-export function acceptWorkItemRecord(queryClient: QueryClient, item: WorkItem): void {
-  const record = workItemRecord(item)
-  const cached = queryClient.getQueriesData<CachedWorkItem>({
-    queryKey: queryKeys.workItemsAll(),
-  })
-  for (const [key, data] of cached) {
-    if (!data) continue
-    if (Array.isArray(data)) {
-      const index = data.findIndex((candidate) => candidate.id === record.id)
-      if (index >= 0) {
-        if (data[index].revision > record.revision) continue
-        const next = [...data]
-        next[index] = record
-        queryClient.setQueryData(key, next)
-        continue
-      }
-      // A create accepted before the list's first refetch: append to *this*
-      // project's list only (the key is `['work-items', projectId]`).
-      if (key[1] === item.projectId) {
-        queryClient.setQueryData(key, [...data, record])
-      }
-      continue
-    }
-    if (data.id !== record.id || data.revision > record.revision) continue
-    queryClient.setQueryData(key, record)
-  }
 }
 
 /** Revision-derived reads that a domain write makes stale. */
@@ -618,6 +509,7 @@ export function useTaskCommand(): CommandMutation<TaskMutationOutcome, TaskComma
     },
     affectedKeys: (attempt) => taskKeys(attempt.input.taskId),
     onAccepted: (outcome, _attempt, queryClient) => {
+      acceptTaskRecord(queryClient, outcome.task, outcome.revision)
       acceptLedgerRevision(queryClient, outcome.revision)
     },
   })
@@ -705,6 +597,7 @@ export function useCreateTask(): CommandMutation<TaskMutationOutcome, CreateTask
     },
     affectedKeys: () => derivedTaskKeys(),
     onAccepted: (outcome, _variables, queryClient) => {
+      acceptTaskRecord(queryClient, outcome.task, outcome.revision)
       acceptLedgerRevision(queryClient, outcome.revision)
     },
   })

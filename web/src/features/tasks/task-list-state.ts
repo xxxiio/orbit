@@ -10,6 +10,11 @@
  * The helpers are pure so the encoding can be tested without a router.
  */
 import type { WorkflowViewComponent } from '@/api/adapters'
+import {
+  columnDescriptorFor,
+  resolveColumns,
+  type ColumnDescriptor,
+} from '@/lib/declarations'
 import { ALL, type TaskSort, type TaskSortKey } from './task-list-model'
 
 export type TaskColumnKey =
@@ -39,6 +44,30 @@ export const TASK_COLUMN_LABELS: Record<TaskColumnKey, string> = {
 
 /** Title is the row's primary action and cannot be hidden. */
 export const LOCKED_TASK_COLUMNS: readonly TaskColumnKey[] = ['title']
+
+/**
+ * The declared spellings of every task table column. A workflow writes these
+ * names; the descriptor list is the one place that decides which column (if
+ * any) a spelling means.
+ */
+const TASK_COLUMN_DESCRIPTORS: readonly ColumnDescriptor[] = (
+  Object.keys(TASK_COLUMN_LABELS) as TaskColumnKey[]
+).map((key) => ({
+  key,
+  label: TASK_COLUMN_LABELS[key],
+  aliases: {
+    title: ['name'],
+    status: ['state'],
+    priority: [],
+    project: ['project_id'],
+    milestone: ['milestone_id'],
+    due: ['due_date', 'deadline'],
+    estimate: ['estimated_minutes'],
+    labels: [],
+    readiness: ['actionable'],
+    dependencies: ['prerequisites'],
+  }[key],
+}))
 
 export const DEFAULT_PROJECT_COLUMNS: readonly TaskColumnKey[] = [
   'title',
@@ -195,11 +224,12 @@ export function columnsFromComponent(
 ): TaskColumnKey[] {
   const declared = component?.columns ?? []
   if (declared.length === 0) return [...fallback]
-  const mapped: TaskColumnKey[] = []
-  for (const name of declared) {
-    const key = mapDeclaredColumn(name)
-    if (key && !mapped.includes(key)) mapped.push(key)
-  }
+  const resolved = resolveColumns(
+    declared,
+    TASK_COLUMN_DESCRIPTORS,
+    (descriptor) => descriptor.key as TaskColumnKey,
+  )
+  const mapped = [...new Set(resolved.columns)]
   // Readiness and dependencies are server projections this build adds to every
   // task table; they are appended after the workflow's declared columns rather
   // than replacing them.
@@ -209,39 +239,8 @@ export function columnsFromComponent(
 }
 
 export function mapDeclaredColumn(name: string): TaskColumnKey | null {
-  switch (name) {
-    case 'title':
-    case 'name':
-      return 'title'
-    case 'status':
-    case 'state':
-      return 'status'
-    case 'priority':
-      return 'priority'
-    case 'project':
-    case 'project_id':
-      return 'project'
-    case 'milestone':
-    case 'milestone_id':
-      return 'milestone'
-    case 'due':
-    case 'due_date':
-    case 'deadline':
-      return 'due'
-    case 'estimate':
-    case 'estimated_minutes':
-      return 'estimate'
-    case 'labels':
-      return 'labels'
-    case 'readiness':
-    case 'actionable':
-      return 'readiness'
-    case 'dependencies':
-    case 'prerequisites':
-      return 'dependencies'
-    default:
-      return null
-  }
+  const descriptor = columnDescriptorFor(TASK_COLUMN_DESCRIPTORS, name)
+  return descriptor ? (descriptor.key as TaskColumnKey) : null
 }
 
 /* ------------------------------------------------------------------ */

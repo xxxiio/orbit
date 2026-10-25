@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { defaultNowMs, useTaskReadiness } from '@/hooks'
-import { Skeleton } from '@/components/ui/skeleton'
+import { SkeletonText } from '@/components/ui/skeleton'
 import type { ViewRendererProps } from '../view-types'
 import {
   actionableFilterRefusal,
@@ -150,9 +150,8 @@ function FullTaskList({
   if (scope.actionable && scope.readiness.isPending && !scope.readiness.data) {
     return (
       <ComponentPanel title={componentTypeName(component)}>
-        <div className="flex flex-col gap-2" aria-busy="true">
-          <Skeleton className="h-3 w-1/2" />
-          <Skeleton className="h-3 w-1/3" />
+        <div aria-busy="true">
+          <SkeletonText lines={2} />
         </div>
       </ComponentPanel>
     )

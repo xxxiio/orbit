@@ -43,6 +43,8 @@ export {
 export { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from './popover'
 export { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from './select'
 export { Skeleton, SkeletonText, type SkeletonProps } from './skeleton'
+export { Section } from './section'
+export { PlainHeader, SortHeader } from './table'
 export { Switch } from './switch'
 export { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs'
 export { Textarea, type TextareaProps } from './textarea'

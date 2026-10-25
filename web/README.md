@@ -68,7 +68,8 @@ src/
     endpoints/    one module per endpoint family
   app/            providers, routing, guard, page shims, shell orchestration
   components/
-    ui/           reusable primitives (Button, Field, Dialog, Select, Badge, …)
+    ui/           reusable primitives (Button, Field, Dialog, Select, Badge,
+                  Section, table headers, …)
     forms/        labelled select, property select, inline title, edit guard
     markdown/     the single Markdown renderer
     theme/        theme provider and preference toggle
@@ -84,11 +85,20 @@ src/
     inbox/        Inbox list and quick capture
     home/         Today
     projects/     project index, workspace, settings, create dialog
-    workflows/    view metadata + component-type registry (views/), milestone
-                  create dialog and the public barrel
+    workflows/    the workflow surface:
+                  view-metadata.ts (compatibility barrel for declarations/)
+                  declarations/  filters, metrics, columns, sorts, views, reserved ids
+                  views/         one renderer per component type (board, table,
+                                 list, detail, metric, timeline, text)
+                    work-item/   board, table, list, detail and their shared pieces
+                  view-registry.tsx, view-types.ts
+                  work-item-model.ts, work-item-fields.tsx
+                  work-item-sheet.tsx, work-item-create-dialog.tsx
+                  upgrade-preview.tsx, milestone-create-dialog.tsx
+                  use-work-item-drawer.ts, index.ts (public barrel)
     planning/     project day plan, schedule window and the approval gate
   hooks/          shared hooks (media query, command feedback, workflow
-                  catalog, …)
+                  catalog, URL-param resource drawers, …)
   lib/            browser-local stores and small helpers (recent projects, humanize)
   styles/         design tokens and global styles
 tests/
@@ -117,8 +127,11 @@ tests/
   `src/app/workspace-*.tsx` and passes plain data down.
 - Cross-cutting modules live outside features: hooks in `src/hooks/`, browser-local stores and
   helpers in `src/lib/`, Markdown in `src/components/markdown/`, form primitives in
-  `src/components/forms/`.
-- `src/api/**` imports only `api/*`, React and TanStack Query.
+  `src/components/forms/`. Declaration resolvers (`lib/declarations.ts`) are pure functions over
+  a field-descriptor list, so a new source adds descriptors rather than a second resolver.
+- `src/api/**` imports only `api/*`, React and TanStack Query. `api/accepted-write.ts` is the one
+  place that writes an accepted response back into the cache, and none of its writes ever lowers
+  a cached revision.
 
 Views declared by a project's workflow are resolved by `features/projects/use-project-workflow`
 and rendered by the registry in `features/workflows`.
@@ -167,9 +180,9 @@ fabricated data.
 
 ## What is intentionally not here yet
 
-- Work-item views: the registry and the `work_items` source family exist, and every task
-  renderer refuses that source by name, but no work-item screen ships in this build yet.
-- Knowledge, attachments, and agent administration screens, including agent administration
-  beyond the read-only Agents placeholder.
-- Work items themselves: the task drawer is task-typed, though its field editors and inline
-  rename are shared form primitives.
+- Knowledge browsing and agent administration screens, including agent administration beyond
+  the read-only Agents placeholder.
+- Attachments in the task drawer or the work-item sheet; the API and query keys exist, the
+  shared list does not.
+- Capability execution: the work-item sheet lists declared actions and says the local Orbit
+  authority owns execution, because this server exposes no execution route.

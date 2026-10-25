@@ -16,10 +16,7 @@ import {
 } from '@/hooks'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { Field } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import { PlusIcon } from '@/components/ui/icons'
-import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/toast'
 import {
   FormErrorBanner,
@@ -27,12 +24,8 @@ import {
   LabeledSelect,
 } from '@/components/forms'
 import { cn } from '@/components/ui/utils'
-import {
-  fieldLabel,
-  kindFor,
-  kindLabel,
-  stateLabel,
-} from './work-item-model'
+import { fieldLabel, kindFor, kindLabel, stateLabel } from './work-item-model'
+import { PropertyEditor, type PropertyDraftValue } from './work-item-fields'
 
 interface FieldDraft {
   text: Record<string, string>
@@ -128,6 +121,14 @@ function validate(
   return { errors, properties }
 }
 
+/** The draft record's value for one field, in the editor's own shape. */
+function draftValue(field: WorkItemField, draft: FieldDraft): PropertyDraftValue {
+  if (field.kind.type === 'text') return draft.text[field.id] ?? ''
+  if (field.kind.type === 'integer') return draft.integer[field.id] ?? ''
+  if (field.kind.type === 'boolean') return draft.boolean[field.id]
+  return draft.choice[field.id] ?? ''
+}
+
 function DraftField({
   field,
   draft,
@@ -141,92 +142,34 @@ function DraftField({
   error: string | undefined
   disabled: boolean
 }) {
-  const label = fieldLabel(field, field.id)
-  if (field.kind.type === 'text') {
-    return (
-      <Field label={label} required={field.required} error={error} hint={field.required ? undefined : 'Optional.'}>
-        <Input
-          value={draft.text[field.id] ?? ''}
-          disabled={disabled}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              text: { ...current.text, [field.id]: event.target.value },
-            }))
-          }
-          placeholder={`Add ${label.toLowerCase()}`}
-        />
-      </Field>
-    )
-  }
-  if (field.kind.type === 'integer') {
-    return (
-      <Field
-        label={label}
-        required={field.required}
-        error={error}
-        hint={field.required ? 'Whole numbers only.' : 'Optional. Whole numbers only.'}
-      >
-        <Input
-          type="number"
-          inputMode="numeric"
-          step={1}
-          value={draft.integer[field.id] ?? ''}
-          disabled={disabled}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              integer: { ...current.integer, [field.id]: event.target.value },
-            }))
-          }
-        />
-      </Field>
-    )
-  }
-  if (field.kind.type === 'boolean') {
-    return (
-      <Field label={label} required={field.required} error={error}>
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={draft.boolean[field.id] === true}
-            disabled={disabled}
-            onCheckedChange={(checked) =>
-              setDraft((current) => ({
-                ...current,
-                boolean: { ...current.boolean, [field.id]: checked },
-              }))
-            }
-            aria-label={label}
-          />
-          <span className="text-sm text-ink-soft">
-            {draft.boolean[field.id] === undefined
-              ? 'Not chosen'
-              : draft.boolean[field.id]
-                ? 'Yes'
-                : 'No'}
-          </span>
-        </div>
-      </Field>
-    )
-  }
+  const write = (next: string | boolean) =>
+    setDraft((current) => {
+      if (field.kind.type === 'boolean') {
+        return {
+          ...current,
+          boolean: { ...current.boolean, [field.id]: next === true },
+        }
+      }
+      const text = typeof next === 'string' ? next : ''
+      if (field.kind.type === 'integer') {
+        return { ...current, integer: { ...current.integer, [field.id]: text } }
+      }
+      if (field.kind.type === 'text') {
+        return { ...current, text: { ...current.text, [field.id]: text } }
+      }
+      return { ...current, choice: { ...current.choice, [field.id]: text } }
+    })
+
   return (
-    <LabeledSelect
-      label={label}
+    <PropertyEditor
+      mode="create"
+      field={field}
+      value={draftValue(field, draft)}
+      onChange={write}
       required={field.required}
       error={error}
-      value={draft.choice[field.id] ?? ''}
-      placeholder="Choose one"
       disabled={disabled}
-      options={field.kind.options.map((option) => ({
-        value: option,
-        label: stateLabel(option),
-      }))}
-      onValueChange={(value) =>
-        setDraft((current) => ({
-          ...current,
-          choice: { ...current.choice, [field.id]: value },
-        }))
-      }
+      showUnchosenState
     />
   )
 }

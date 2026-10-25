@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { ReactNode } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import type { WorkItem, Workflow, WorkflowViewComponent } from '@/api/adapters'
 import {
+  WorkItemBoardView,
   WorkItemDetailView,
   WorkItemListView,
   WorkItemTableView,
@@ -108,6 +109,34 @@ function renderView(children: ReactNode) {
     </QueryClientProvider>,
   )
 }
+
+describe('work-item board keyboard', () => {
+  it('moves focus with h/j/k/l like the task board', () => {
+    renderView(
+      <WorkItemBoardView
+        {...props({
+          component: component({ id: 'board', type: 'kanban' }),
+          workItems: [
+            item({ id: 'wi-a', state: 'proposed', properties: { title: 'First card' } }),
+            item({ id: 'wi-b', state: 'proposed', properties: { title: 'Second card' } }),
+            item({ id: 'wi-c', state: 'investigating', properties: { title: 'Third card' } }),
+          ],
+        })}
+      />,
+    )
+
+    const first = screen.getByRole('button', { name: 'First card' })
+    first.focus()
+    fireEvent.keyDown(first, { key: 'j' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Second card' }))
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'l' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Third card' }))
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'h' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'First card' }))
+  })
+})
 
 describe('work-item list declarations', () => {
   it('shows a declared revision and names columns the compact budget omits', () => {

@@ -13,4 +13,5 @@ export {
   projectStatusLabels,
 } from './project-status'
 export { isTaskCompleted, isTaskOpen } from './project-progress'
+export { formatTimeOfDay } from './datetime'
 export { workflowCopy, workflowText } from './workflow-copy'

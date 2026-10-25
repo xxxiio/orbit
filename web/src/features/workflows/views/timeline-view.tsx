@@ -4,10 +4,10 @@ import { useWorkspaceSnapshot } from '@/hooks'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { CalendarIcon, ClockIcon } from '@/components/ui/icons'
-import { Skeleton } from '@/components/ui/skeleton'
+import { SkeletonText } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
-import { milestoneStatusLabel, isTaskCompleted } from '@/domain'
-import { formatDate, formatMinutes, formatTimeOfDay } from '@/features/tasks'
+import { formatTimeOfDay, milestoneStatusLabel, isTaskCompleted } from '@/domain'
+import { formatDate, formatMinutes } from '@/features/tasks'
 import type { ViewRendererProps } from '../view-types'
 import {
   componentTypeName,
@@ -223,9 +223,8 @@ function ScheduleTimeline({ component }: ViewRendererProps) {
       }
     >
       {snapshot.isPending && !snapshot.data ? (
-        <div className="flex flex-col gap-2" aria-busy="true">
-          <Skeleton className="h-3 w-2/3" />
-          <Skeleton className="h-3 w-1/2" />
+        <div aria-busy="true">
+          <SkeletonText lines={2} />
         </div>
       ) : shownBlocks === 0 ? (
         <EmptyState
