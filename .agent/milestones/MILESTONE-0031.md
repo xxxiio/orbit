@@ -144,7 +144,16 @@ will follow. The official user-facing vocabulary is **Workflow**; internal
 - EC-001: `crates/orbit-server/src/session.rs` + `main.rs` session/CSRF handlers and the loopback HTTP tests in `crates/orbit-server`; live curl smoke (login 201 + cookie, session 200, CSRF-less mutation 403); Playwright `tests/e2e/auth.spec.ts` (wrong token, valid login + reload, sign-out, expiry message) — 20/20 suite green at commit `87b4710`.
 - EC-005: `web/scripts/check-terminology.mjs` scanning 106 files with zero findings; Playwright `terminology.spec.ts` asserting rendered routes and document titles.
 - EC-002/003 partial: Home, Inbox, Projects, project Overview/Tasks and the task drawer are implemented and covered by `projects.spec.ts`, `tasks.spec.ts`, `home.spec.ts`, `conflict.spec.ts`; attachments, criteria completeness and dependencies remain for I2/I4.
-- Implementation records: commits `bf2c4bd` (server foundation) and `87b4710` (web app I1); `.slim/deepwork/m31-web-app/{progress.md,api-contract.md,gate-1.md,structure-scan.md}`.
+- EC-003 partial: Home shows server readiness, blockers, overdue and due-today; Inbox
+triages against the same snapshot. Day/schedule planning is surfaced in the project
+planning tool rather than Home, which I5 dogfooding will judge.
+- EC-004 partial: Basic, Development, Research, Learning and Habits workspaces resolve
+through one component-type registry (nine renderers, four named refusals); work items,
+transitions and upgrade confirmation remain I3.
+- I2 evidence: commits `78ef2d6` (registry/board/milestones/planning/settings) and
+`686eeda` (quoted domain refusals, humanized planning reasons, manifest copy); 34
+Playwright checks and `web/evidence/i2/` from the deterministic fixture.
+- Implementation records: commits `bf2c4bd` (server foundation) and `87b4710` (web app I1); `.slim/deepwork/m31-web-app/{progress.md,api-contract.md,gate-1.md,structure-scan.md,gate-2.md}`.
 
 ## Remaining work
 
