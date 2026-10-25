@@ -116,7 +116,7 @@ function FieldLine({ field, tone }: { field: WorkItemField; tone: 'added' | 'rem
   )
 }
 
-function KindDiff({ diff }: { diff: WorkflowKindUpgrade }) {
+function KindDiff({ diff, contentWarning = false }: { diff: WorkflowKindUpgrade; contentWarning?: boolean }) {
   const name = humanizeIdentifier(diff.kind)
   const changes =
     diff.statesAdded.length +
@@ -146,7 +146,11 @@ function KindDiff({ diff }: { diff: WorkflowKindUpgrade }) {
         {!diff.added && !diff.removed ? <Badge tone="neutral">Changed</Badge> : null}
       </div>
       {changes === 0 ? (
-        <p className="mt-1 text-xs text-ink-muted">No declaration changes in this kind.</p>
+        <p className="mt-1 text-xs text-ink-muted">
+          {contentWarning
+            ? 'The declaration shape of this kind is unchanged; a content change is listed in the warnings above.'
+            : 'No declaration changes in this kind.'}
+        </p>
       ) : (
         <div className="mt-1.5">
           {diff.initialStateBefore !== diff.initialStateAfter ? (
@@ -379,7 +383,15 @@ export function UpgradeDiff({
           This version changes no work-item kind.
         </p>
       ) : (
-        preview.kinds.map((diff) => <KindDiff key={diff.kind} diff={diff} />)
+        preview.kinds.map((diff) => (
+          <KindDiff
+            key={diff.kind}
+            diff={diff}
+            contentWarning={preview.warnings.some((warning) =>
+              warning.subjects.includes(diff.kind),
+            )}
+          />
+        ))
       )}
       <ViewDiff diff={preview.views} viewTitle={viewTitle} />
     </div>

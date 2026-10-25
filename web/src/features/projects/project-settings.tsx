@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Project } from '@/api/adapters'
 import type { ApiError } from '@/api/errors'
 import {
+  classifyError,
   useApplyUpgrade,
   useAvailableWorkflows,
   useUpgradePreview,
@@ -191,8 +192,10 @@ export function ProjectSettings({
 
   const viewTitles = useMemo(() => {
     const map = new Map<string, string>()
-    for (const view of workflow?.views ?? []) map.set(view.id, view.title)
-    for (const view of targetDefinition.data?.views ?? []) map.set(view.id, view.title)
+    const put = (view: { id: string; title: string }) =>
+      map.set(view.id, workflowText(view.title) || humanizeIdentifier(view.id))
+    for (const view of workflow?.views ?? []) put(view)
+    for (const view of targetDefinition.data?.views ?? []) put(view)
     return (id: string) => map.get(id) ?? humanizeIdentifier(id)
   }, [workflow, targetDefinition.data])
 
@@ -580,7 +583,9 @@ export function ProjectSettings({
                 <span className="min-w-0 flex-1">
                   {applyUncertain
                     ? uncertainMessage(apply.error)
-                    : userMessage(apply.error)}
+                    : classifyError(apply.error) === 'conflict'
+                      ? 'The preview changed on the server, so this apply was refused. The comparison has been refreshed; review it and apply again.'
+                      : userMessage(apply.error)}
                 </span>
               </p>
             ) : null}

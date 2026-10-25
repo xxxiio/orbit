@@ -520,6 +520,7 @@ export function ProjectWorkspacePage() {
           workItemsState={workItemsState}
           workflow={workflow.workflow}
           workflowLoading={workflow.loading}
+          workflowRetry={workflow.refetch}
         />
       ) : (
         <Panel>

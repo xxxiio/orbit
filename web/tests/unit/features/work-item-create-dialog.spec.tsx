@@ -28,6 +28,7 @@ const workflow: Workflow = {
       states: ['backlog', 'ready'],
       fields: [
         { id: 'summary', kind: { type: 'text' }, required: true, default: null },
+        { id: 'minutes', kind: { type: 'integer' }, required: false, default: null },
       ],
       transitions: [],
     },
@@ -63,7 +64,8 @@ function renderDialog(onClose = vi.fn()) {
 function bodies(): Array<Record<string, unknown>> {
   return vi
     .mocked(fetch)
-    .mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string))
+    .mock.calls.filter(([, init]) => Boolean((init as RequestInit | undefined)?.body))
+    .map(([, init]) => JSON.parse((init as RequestInit).body as string))
 }
 
 describe('work item create dialog idempotency', () => {
@@ -126,5 +128,91 @@ describe('work item create dialog idempotency', () => {
     await user.type(summary, 'Once')
     expect(screen.getByRole('button', { name: 'Retry the same request' })).toBeEnabled()
     expect(bodies()).toHaveLength(1)
+  })
+
+  it('treats a duplicate refusal after a lost response as the stored item', async () => {
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(new TypeError('network down'))
+      .mockResolvedValueOnce(jsonResponse({ error: 'item id already exists' }, 400))
+      .mockResolvedValueOnce(jsonResponse(created))
+
+    const onClose = renderDialog()
+    const user = userEvent.setup()
+
+    await user.type(screen.getByLabelText(/Summary/), 'Retry me')
+    await user.click(screen.getByRole('button', { name: 'Create work item' }))
+    await screen.findByRole('alert')
+
+    await user.click(screen.getByRole('button', { name: 'Retry the same request' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+
+    // The retry reuses the id; the duplicate INSERT is followed by a read of
+    // that id, and the stored record is reported as accepted instead of refused.
+    const calls = vi.mocked(fetch).mock.calls
+    const createIds = calls
+      .filter(([url]) => String(url) === '/v1/authoritative/blueprints/items')
+      .map(([, init]) => JSON.parse((init as RequestInit).body as string).id)
+    expect(createIds).toHaveLength(2)
+    expect(createIds[1]).toBe(createIds[0])
+    expect(String(calls[2]?.[0])).toBe(
+      `/v1/authoritative/blueprints/items?id=${createIds[0]}`,
+    )
+    expect(screen.queryByText(/The server refused this work item/)).toBeNull()
+  })
+
+  it('keeps the same-id attempt pinned when the duplicate check finds no stored item', async () => {
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(new TypeError('network down'))
+      .mockResolvedValueOnce(jsonResponse({ error: 'item id already exists' }, 400))
+      .mockResolvedValueOnce(jsonResponse({ error: 'work item not found' }, 404))
+
+    renderDialog()
+    const user = userEvent.setup()
+
+    await user.type(screen.getByLabelText(/Summary/), 'Retry me')
+    await user.click(screen.getByRole('button', { name: 'Create work item' }))
+    await screen.findByRole('alert')
+
+    await user.click(screen.getByRole('button', { name: 'Retry the same request' }))
+
+    // The read says the item is not stored, but the earlier attempt is still
+    // the only safe retry: the dialog must not mint a second id.
+    await screen.findByText(/may or may not have been saved/i)
+    const retry = screen.getByRole('button', { name: 'Retry the same request' })
+    expect(retry).toBeEnabled()
+    const createIds = bodies().map((body) => body.id)
+    expect(createIds).toHaveLength(2)
+    expect(createIds[1]).toBe(createIds[0])
+  })
+
+  it('validates a required field and a typed control before sending anything', async () => {
+    renderDialog()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Create work item' }))
+    expect(screen.getByText(/Fill the required fields/)).toBeInTheDocument()
+    expect(screen.getByText('Summary is required.')).toBeInTheDocument()
+    expect(bodies()).toHaveLength(0)
+
+    await user.type(screen.getByLabelText(/Summary/), 'Typed')
+    await user.type(screen.getByLabelText(/Minutes/), '12.5')
+    await user.click(screen.getByRole('button', { name: 'Create work item' }))
+    expect(screen.getByText('Minutes must be a whole number.')).toBeInTheDocument()
+    expect(bodies()).toHaveLength(0)
+  })
+
+  it('lets the person cancel after an unconfirmed create', async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError('network down'))
+    const onClose = renderDialog()
+    const user = userEvent.setup()
+
+    await user.type(screen.getByLabelText(/Summary/), 'Once')
+    await user.click(screen.getByRole('button', { name: 'Create work item' }))
+    await screen.findByRole('alert')
+
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
+    expect(cancel).toBeEnabled()
+    await user.click(cancel)
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

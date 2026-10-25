@@ -156,6 +156,68 @@ test.describe('workflow upgrades', () => {
     await expect(page.getByRole('heading', { name: 'Release board' })).toBeVisible()
   })
 
+  test('a changed fingerprint refuses the apply, says the preview changed and recovers', async ({
+    page,
+    workspace,
+  }) => {
+    const { server } = workspace
+    const projectId = 'p-orbit-development'
+    const base = await readManifest(page, server, 'development', 2)
+    const target: Manifest = structuredClone(base)
+    target.version = 3
+    target.work_items[0].fields.push({
+      id: 'notes',
+      kind: { type: 'text' },
+      required: false,
+      default: null,
+    })
+    await publish(page, server, target)
+
+    await goto(page, server, `/projects/${projectId}/settings`)
+    await expect(page.getByText(/A newer Development version is published/)).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText(/^fingerprint /)).toBeVisible()
+
+    await page.getByRole('button', { name: 'Upgrade workflow…' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('checkbox').check()
+
+    // A ledger write after the preview was reviewed changes its fingerprint;
+    // the apply must be refused rather than confirming a stale comparison.
+    const created = await page.request.post(
+      `${server.base}/v1/authoritative/blueprints/items`,
+      {
+        headers: bearer(server),
+        data: {
+          id: 'wi-fingerprint-drift',
+          project_id: projectId,
+          kind: 'feature',
+          properties: { priority: 'low' },
+        },
+      },
+    )
+    expect(created.status(), await created.text()).toBe(200)
+
+    await dialog.getByRole('button', { name: 'Apply upgrade' }).click()
+    await expect(
+      dialog.getByText(/The preview changed on the server, so this apply was refused/),
+    ).toBeVisible({ timeout: 20_000 })
+    expect(await bindingVersion(page, server, projectId)).toBe(2)
+
+    // The refreshed preview no longer matches what was reviewed; reopening the
+    // confirmation reviews the new fingerprint and the apply then succeeds.
+    await expect(
+      dialog.getByText(/The preview changed while this dialog was open/),
+    ).toBeVisible({ timeout: 20_000 })
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await page.getByRole('button', { name: 'Upgrade workflow…' }).click()
+    const retry = page.getByRole('dialog')
+    await retry.getByRole('checkbox').check()
+    await retry.getByRole('button', { name: 'Apply upgrade' }).click()
+
+    await expect(page.locator('[data-upgrade-receipt]')).toBeVisible({ timeout: 20_000 })
+    expect(await bindingVersion(page, server, projectId)).toBe(3)
+  })
+
   test('a blocked preview disables apply and lists every blocker with its subjects', async ({
     page,
     workspace,

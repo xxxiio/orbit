@@ -31,6 +31,7 @@ export type ViewComponentFamily =
 
 const TASK_LIST_TYPES = new Set(['task_list', 'table'])
 const BOARD_TYPES = new Set(['kanban'])
+const WORK_ITEM_TYPES = new Set(['kanban', 'table', 'task_list', 'list', 'detail'])
 
 /**
  * The data family a component renders. `timeline` is declared twice in the
@@ -40,8 +41,10 @@ const BOARD_TYPES = new Set(['kanban'])
  */
 export function componentFamily(component: WorkflowViewComponent): ViewComponentFamily {
   const source = component.source ?? null
-  const taskSurface = BOARD_TYPES.has(component.type) || TASK_LIST_TYPES.has(component.type)
-  if (taskSurface && source === 'work_items') return 'work_items'
+  // A list or detail panel over work items is a work-item surface too: a view
+  // that puts one first must still get the header create action and read as the
+  // work-item family, not as "other".
+  if (source === 'work_items' && WORK_ITEM_TYPES.has(component.type)) return 'work_items'
   if (BOARD_TYPES.has(component.type)) {
     return source === 'tasks' || source === null ? 'board' : 'other'
   }
@@ -225,6 +228,25 @@ export function workItemMatchesDeclaredFilter(
   return true
 }
 
+/**
+ * A `filter.kind` that names a kind the pinned workflow does not declare is not
+ * an empty result: it is a declaration this build cannot honour. Every
+ * work-item surface refuses it with the same sentence instead of showing an
+ * empty panel (or, worse, a count of rows that do not exist).
+ */
+export function workItemKindFilterRefusal(
+  filter: Record<string, string>,
+  workflow: Workflow | undefined,
+): string | null {
+  const declared = filter.kind?.trim()
+  if (!declared) return null
+  const known = (workflow?.kinds ?? []).some(
+    (kind) => kind.id.toLowerCase() === declared.toLowerCase(),
+  )
+  if (known) return null
+  return `This panel filters work items by the kind “${declared}”, which the pinned workflow does not declare.`
+}
+
 /** A data-source name as copy: `work_items` → "Work items". */
 export function dataSourceName(source: string): string {
   const words = source.replace(/_/g, ' ')
@@ -384,6 +406,8 @@ export function declaredBooleanOption(
 
 export interface DeclaredNumberOption {
   value: number | null
+  /** True when the declared number was clamped to the supported range. */
+  clamped?: boolean
   refusal: string | null
 }
 
@@ -412,7 +436,19 @@ export function declaredNumberOption(
 export function columnWidthOption(component: WorkflowViewComponent): DeclaredNumberOption {
   const declared = declaredNumberOption(component, 'column_width')
   if (declared.value === null) return declared
-  return { value: Math.min(420, Math.max(180, Math.round(declared.value))), refusal: null }
+  const clamped = Math.min(420, Math.max(180, Math.round(declared.value)))
+  return {
+    value: clamped,
+    clamped: clamped !== declared.value,
+    refusal: null,
+  }
+}
+
+/** The note a board shows when the declared width was clamped, or null. */
+export function columnWidthNote(component: WorkflowViewComponent): string | null {
+  const width = columnWidthOption(component)
+  if (width.value === null || !width.clamped) return null
+  return `The workflow's declared column width was clamped to ${width.value} pixels; columns stay between 180 and 420 pixels so every one remains usable.`
 }
 
 export interface ListOptionDeclaration {

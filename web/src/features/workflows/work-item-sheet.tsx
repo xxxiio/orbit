@@ -44,6 +44,7 @@ import {
   type EditorHandle,
 } from '@/components/forms'
 import { humanizeIdentifier } from '@/lib/humanize'
+import { workflowText } from '@/domain'
 import {
   actionsForState,
   fieldLabel,
@@ -101,12 +102,23 @@ function TextProperty({
 }) {
   const committed = typeof value === 'string' ? value : ''
   const [draft, setDraft] = useState(committed)
-  useEffect(() => setDraft(committed), [committed])
-  const dirty = draft !== committed
+  const submitted = useRef<string | null>(null)
+  useEffect(() => {
+    setDraft(committed)
+    submitted.current = committed
+  }, [committed])
+  // Dirty means "not yet sent", not merely "different from the server". The
+  // server's value only changes after it answers, so comparing against it alone
+  // would flush the same draft again while the write is still in flight.
+  const dirty = draft !== committed && draft !== submitted.current
 
-  useDirtyGuard(field.id, () => dirty, () => {
-    if (dirty) onCommit(draft)
-  })
+  const commit = () => {
+    if (!dirty) return
+    submitted.current = draft
+    onCommit(draft)
+  }
+
+  useDirtyGuard(field.id, () => draft !== committed && draft !== submitted.current, commit)
 
   return (
     <PropertyField label={fieldLabel(field, field.id)} pending={pending}>
@@ -114,13 +126,11 @@ function TextProperty({
         value={draft}
         disabled={disabled}
         onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => {
-          if (dirty) onCommit(draft)
-        }}
+        onBlur={commit}
         onKeyDown={(event) => {
           if (event.key !== 'Enter') return
           event.preventDefault()
-          if (dirty) onCommit(draft)
+          commit()
         }}
         placeholder={`Add ${fieldLabel(field, field.id).toLowerCase()}`}
       />
@@ -147,13 +157,27 @@ function IntegerProperty({
   const committed = typeof value === 'number' ? String(value) : ''
   const [draft, setDraft] = useState(committed)
   const [error, setError] = useState<string | null>(null)
-  useEffect(() => setDraft(committed), [committed])
-  const dirty = draft !== committed
+  const [clearingNote, setClearingNote] = useState<string | null>(null)
+  const submitted = useRef<string | null>(null)
+  useEffect(() => {
+    setDraft(committed)
+    submitted.current = committed
+  }, [committed])
+  const dirty = draft !== committed && draft !== submitted.current
 
   const commit = () => {
     const trimmed = draft.trim()
     if (trimmed.length === 0) {
+      // The API has no "clear property" command. Revert rather than leaving a
+      // draft that can never be sent (and would make a close flush forever).
+      setDraft(committed)
+      submitted.current = committed
       setError(null)
+      setClearingNote(
+        committed.length > 0
+          ? 'Clearing a stored number is not supported by this server; the saved value is kept.'
+          : null,
+      )
       onInvalid(null)
       return
     }
@@ -164,17 +188,25 @@ function IntegerProperty({
       return
     }
     setError(null)
+    setClearingNote(null)
     onInvalid(null)
-    if (dirty) onCommit(Number(trimmed))
+    if (dirty) {
+      submitted.current = draft
+      onCommit(Number(trimmed))
+    }
   }
 
-  useDirtyGuard(field.id, () => dirty, commit)
+  useDirtyGuard(field.id, () => draft !== committed && draft !== submitted.current, commit)
 
   return (
     <Field
       label={fieldLabel(field, field.id)}
       error={error ?? undefined}
-      hint={pending ? 'Saving…' : 'Whole numbers only.'}
+      hint={
+        pending
+          ? 'Saving…'
+          : (clearingNote ?? 'Whole numbers only. Clearing a stored number is not supported.')
+      }
     >
       <Input
         type="number"
@@ -182,7 +214,10 @@ function IntegerProperty({
         step={1}
         value={draft}
         disabled={disabled}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => {
+          setDraft(event.target.value)
+          setClearingNote(null)
+        }}
         onBlur={commit}
         onKeyDown={(event) => {
           if (event.key !== 'Enter') return
@@ -385,6 +420,7 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
   const [closeNotice, setCloseNotice] = useState<string | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
   const editorsRef = useRef(new Map<string, EditorHandle>())
+  const flushRequestedRef = useRef(false)
   const register = useCallback((handle: EditorHandle) => {
     editorsRef.current.set(handle.id, handle)
     return () => {
@@ -405,16 +441,28 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
   }, [announcement])
 
   const requestClose = useCallback(() => {
-    const dirty = [...editorsRef.current.values()].filter((editor) => editor.isDirty())
-    if (dirty.length > 0) {
-      setCloseNotice('Your edit is being saved first. Close again when the server answers.')
-      for (const editor of dirty) editor.flush()
-      return
-    }
+    // Never flush while a write is in flight: the draft may already be the one
+    // being written, and a second copy would fence on the same revision.
     if (busy) {
       setCloseNotice('Waiting for the server to answer the last change. Close again when it settles.')
       return
     }
+    const dirty = [...editorsRef.current.values()].filter((editor) => editor.isDirty())
+    if (dirty.length > 0) {
+      if (flushRequestedRef.current) {
+        // A previous close flushed and nothing is pending: the draft has either
+        // been rejected or cannot be sent (an invalid number). Discard it.
+        flushRequestedRef.current = false
+        setCloseNotice(null)
+        onClose()
+        return
+      }
+      flushRequestedRef.current = true
+      setCloseNotice('Your edit is being saved first. Close again when the server answers.')
+      for (const editor of dirty) editor.flush()
+      return
+    }
+    flushRequestedRef.current = false
     setCloseNotice(null)
     onClose()
   }, [busy, onClose])
@@ -423,6 +471,7 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
     setLocalError(null)
     try {
       await properties.mutateAsync({ id: item.id, changes: { [fieldId]: value } })
+      flushRequestedRef.current = false
       const field = kind?.fields.find((candidate) => candidate.id === fieldId)
       setAnnouncement(`${fieldLabel(field, fieldId)} saved.`)
     } catch {
@@ -434,6 +483,7 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
     setLocalError(null)
     try {
       const accepted = await transition.mutateAsync({ id: item.id, to })
+      flushRequestedRef.current = false
       setAnnouncement(`The server moved this item to ${stateLabel(accepted.state)}.`)
     } catch {
       // `transition.error` is shown next to the transition and in the footer.
@@ -644,10 +694,11 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-ink">
-                              {humanizeIdentifier(action.id)}
+                              {humanizeIdentifier(workflowText(action.id))}
                             </p>
                             <p className="mt-0.5 text-xs leading-5 text-ink-muted">
-                              {action.description.trim() || 'The workflow gives this action no description.'}
+                              {workflowText(action.description).trim() ||
+                                'The workflow gives this action no description.'}
                             </p>
                             <p className="mt-1 text-2xs text-ink-faint">
                               Declared on {stateLabel(edge.from)} → {stateLabel(edge.to)}
@@ -758,6 +809,15 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
                 <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
                 <span className="min-w-0">
                   The server refused the change: {userMessage(propertyError ?? transitionError)}
+                  {onRefresh ? (
+                    <button
+                      type="button"
+                      onClick={onRefresh}
+                      className="ml-1 font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                    >
+                      Refresh the item and try again
+                    </button>
+                  ) : null}
                 </span>
               </p>
             ) : null}

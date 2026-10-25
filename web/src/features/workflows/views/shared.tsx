@@ -14,6 +14,8 @@ import { AlertCircleIcon, LayersIcon } from '@/components/ui/icons'
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel'
 import { cn } from '@/components/ui/utils'
 import { userMessage, type ApiError } from '@/hooks'
+import { workflowText } from '@/domain'
+import { humanizeIdentifier } from '@/lib/humanize'
 import type { WorkflowViewComponent } from '@/api/adapters'
 
 export function ComponentPanel({
@@ -131,9 +133,10 @@ export function ProvenanceNote({ children }: { children: ReactNode }) {
  */
 export function DeclaredActionsNote({ component }: { component: WorkflowViewComponent }) {
   if (component.actions.length === 0) return null
+  const names = component.actions.map((action) => humanizeIdentifier(workflowText(action)))
   return (
     <span data-declared-actions={component.actions.join(',')}>
-      The workflow also declares the {component.actions.join(', ')} action
+      The workflow also declares the {names.join(', ')} action
       {component.actions.length === 1 ? '' : 's'}; this panel renders its own controls and does
       not attach an action it cannot complete.
     </span>

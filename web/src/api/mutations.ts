@@ -27,6 +27,7 @@
  *    outcome the server may have applied anyway (lost response, 5xx, knowledge
  *    filesystem publication) is `uncertain`, never silently retried.
  */
+import { useRef } from 'react'
 import { useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query'
 import {
   ApiError,
@@ -96,6 +97,7 @@ import {
 import {
   applyUpgrade,
   createWorkItem,
+  fetchWorkItem,
   transitionWorkItem,
   updateWorkItemProperties,
 } from './endpoints/workflows'
@@ -137,6 +139,13 @@ interface ApiMutationOptions<TData, TVariables> {
   affectedKeys?: (variables: TVariables) => readonly QueryKey[]
   /** The server can apply the write and still return an error (imports, knowledge). */
   uncertainOnError?: boolean
+  /**
+   * Invalidate `affectedKeys` on a definitive refusal too. Ledger writes that
+   * fence on a revision the client may already have outgrown (work items answer
+   * a stale fence with 400, not 409) must refresh on every rejected write, not
+   * only on a conflict.
+   */
+  invalidateOnRejection?: boolean
   onAccepted?: (data: TData, variables: TVariables, queryClient: QueryClient) => void
 }
 
@@ -158,6 +167,7 @@ export function useApiMutation<TData, TVariables>({
   mutationFn,
   affectedKeys,
   uncertainOnError = false,
+  invalidateOnRejection = false,
   onAccepted,
 }: ApiMutationOptions<TData, TVariables>): CommandMutation<TData, TVariables> {
   const queryClient = useQueryClient()
@@ -187,9 +197,11 @@ export function useApiMutation<TData, TVariables>({
         handleUnauthorized(queryClient)
         return
       }
-      if (kind === 'conflict') {
+      if (kind === 'conflict' || invalidateOnRejection) {
         // The server's message explains the conflict; refetch so the next
-        // attempt is fenced against the version that actually won.
+        // attempt is fenced against the version that actually won. A stale
+        // work-item revision is reported as 400, so those writes opt into the
+        // same refresh on any definitive refusal.
         invalidate(affectedKeys?.(variables))
       }
     },
@@ -243,6 +255,10 @@ export function acceptRevision(
 export function acceptLedgerRevision(queryClient: QueryClient, revision: number): void {
   acceptRevision(queryClient, queryKeys.snapshot(), revision)
   acceptRevision(queryClient, queryKeys.milestones(), revision)
+  // An accepted ledger write can change the item set (and therefore the
+  // upgrade fingerprint) any open preview was computed from. Refreshing it here
+  // keeps Apply from ever confirming a comparison the person was not shown.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.upgradePreviewAll() })
 }
 
 /**
@@ -909,18 +925,72 @@ export interface CreateWorkItemVariables {
   properties?: Record<string, unknown>
 }
 
+/**
+ * One in-flight command per work item. Two commands sent from the same stale
+ * render would otherwise read the same revision and the second would fence on a
+ * revision the first is about to replace. Waiting for the previous write also
+ * lets the second read the revision the accepted response wrote back.
+ *
+ * The chain is module-level because a sheet's transition and property writes are
+ * separate hook instances that still address the same item.
+ */
+const workItemWriteChains = new Map<string, Promise<void>>()
+
+function serializeWorkItemWrite<T>(id: string, write: () => Promise<T>): Promise<T> {
+  const previous = workItemWriteChains.get(id) ?? Promise.resolve()
+  const result = previous.then(write, write)
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  workItemWriteChains.set(id, tail)
+  void tail.then(() => {
+    if (workItemWriteChains.get(id) === tail) workItemWriteChains.delete(id)
+  })
+  return result
+}
+
 export function useCreateWorkItem(): CommandMutation<WorkItem, CreateWorkItemVariables> {
+  const uncertainCreates = useRef(new Set<string>())
   return useApiMutation<WorkItem, CreateWorkItemVariables>({
     // The item may exist even when the response never arrived.
     uncertainOnError: true,
-    mutationFn: ({ id, projectId, kind, properties }) => {
+    mutationFn: async ({ id, projectId, kind, properties }) => {
       const body: CreateWorkItemBody = {
         id,
         project_id: projectId,
         kind,
         ...(properties ? { properties } : {}),
       }
-      return createWorkItem(body).then(toWorkItem)
+      try {
+        const item = await createWorkItem(body).then(toWorkItem)
+        uncertainCreates.current.delete(id)
+        return item
+      } catch (error) {
+        if (isAmbiguousError(error)) {
+          // Keep the attempt pinned: a changed payload must not mint a new id
+          // while this one may already be stored.
+          uncertainCreates.current.add(id)
+          throw error
+        }
+        if (uncertainCreates.current.has(id)) {
+          // The retry repeats the id, so a stored first attempt answers with a
+          // duplicate-insert refusal. Ask the server which fact is true.
+          const existing = await fetchWorkItem(id).catch(() => null)
+          if (existing) {
+            uncertainCreates.current.delete(id)
+            return toWorkItem(existing)
+          }
+          // The server refused the insert and does not hold the id. The earlier
+          // attempt is still the only safe retry, so keep it uncertain instead
+          // of letting the dialog mint a second id.
+          throw new ApiError(
+            0,
+            'Orbit could not confirm whether the earlier create was saved. Retry the same request before changing it.',
+          )
+        }
+        throw error
+      }
     },
     affectedKeys: (variables) => [
       queryKeys.workItems(variables.projectId),
@@ -941,14 +1011,20 @@ export function useCreateWorkItem(): CommandMutation<WorkItem, CreateWorkItemVar
 export function useWorkItemTransition(): CommandMutation<WorkItem, { id: string; to: string }> {
   return useApiMutation<WorkItem, { id: string; to: string }>({
     uncertainOnError: true,
-    mutationFn: ({ id, to }, queryClient) => {
-      const body: WorkItemTransitionBody = {
-        id,
-        to,
-        expected_revision: workItemRevision(queryClient, id),
-      }
-      return transitionWorkItem(body).then(toWorkItem)
-    },
+    invalidateOnRejection: true,
+    mutationFn: ({ id, to }, queryClient) =>
+      serializeWorkItemWrite(id, async () => {
+        const body: WorkItemTransitionBody = {
+          id,
+          to,
+          expected_revision: workItemRevision(queryClient, id),
+        }
+        const item = await transitionWorkItem(body).then(toWorkItem)
+        // Write the accepted record back before the next queued command reads
+        // its fence, not after the mutation settles.
+        acceptWorkItemRecord(queryClient, item)
+        return item
+      }),
     affectedKeys: () => [queryKeys.workItemsAll(), queryKeys.upgradePreviewAll()],
     onAccepted: (item, _variables, queryClient) => {
       acceptWorkItemRecord(queryClient, item)
@@ -962,14 +1038,18 @@ export function useUpdateWorkItemProperties(): CommandMutation<
 > {
   return useApiMutation<WorkItem, { id: string; changes: Record<string, unknown> }>({
     uncertainOnError: true,
-    mutationFn: ({ id, changes }, queryClient) => {
-      const body: WorkItemPropertiesBody = {
-        id,
-        expected_revision: workItemRevision(queryClient, id),
-        changes,
-      }
-      return updateWorkItemProperties(body).then(toWorkItem)
-    },
+    invalidateOnRejection: true,
+    mutationFn: ({ id, changes }, queryClient) =>
+      serializeWorkItemWrite(id, async () => {
+        const body: WorkItemPropertiesBody = {
+          id,
+          expected_revision: workItemRevision(queryClient, id),
+          changes,
+        }
+        const item = await updateWorkItemProperties(body).then(toWorkItem)
+        acceptWorkItemRecord(queryClient, item)
+        return item
+      }),
     affectedKeys: () => [queryKeys.workItemsAll(), queryKeys.upgradePreviewAll()],
     onAccepted: (item, _variables, queryClient) => {
       acceptWorkItemRecord(queryClient, item)

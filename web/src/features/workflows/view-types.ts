@@ -55,4 +55,6 @@ export interface ViewRendererProps {
   workflow: Workflow | undefined
   /** True while the pinned workflow is still being read. */
   workflowLoading?: boolean
+  /** Re-reads the pinned workflow; the retry target for a missing manifest. */
+  workflowRetry?: () => void
 }

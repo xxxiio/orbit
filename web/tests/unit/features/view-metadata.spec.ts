@@ -14,6 +14,8 @@ import {
   componentFamily,
   componentSpansFullWidth,
   componentTypeName,
+  columnWidthNote,
+  columnWidthOption,
   declaredWorkspaceViews,
   describeFilter,
   isReservedViewId,
@@ -34,6 +36,7 @@ import {
   viewLayoutClassName,
   workspaceViewTabs,
   workItemMatchesDeclaredFilter,
+  workItemKindFilterRefusal,
   workItemMetricRows,
 } from '@/features/workflows/view-metadata'
 
@@ -115,7 +118,8 @@ describe('workflow view metadata', () => {
     expect(componentFamily(scheduleTimeline)).toBe('schedule')
     expect(componentFamily(component({ id: 'w', type: 'kanban', source: 'work_items' }))).toBe('work_items')
     expect(componentFamily(component({ id: 'wt', type: 'table', source: 'work_items' }))).toBe('work_items')
-    expect(componentFamily(component({ id: 'wl', type: 'list', source: 'work_items' }))).toBe('other')
+    expect(componentFamily(component({ id: 'wl', type: 'list', source: 'work_items' }))).toBe('work_items')
+    expect(componentFamily(component({ id: 'wd', type: 'detail', source: 'work_items' }))).toBe('work_items')
     expect(componentFamily(component({ id: 'k', type: 'knowledge_refs', source: 'knowledge' }))).toBe('other')
   })
 
@@ -129,6 +133,10 @@ describe('workflow view metadata', () => {
     // Work items are a family of their own: I3's create action has a name now.
     expect(
       viewHeaderAction(view('items', [component({ id: 'wi', type: 'kanban', source: 'work_items' })])),
+    ).toEqual({ kind: 'new_work_item', label: 'New work item' })
+    // A view whose first panel is a declared work-item list still gets a create.
+    expect(
+      viewHeaderAction(view('items', [component({ id: 'wi', type: 'list', source: 'work_items' })])),
     ).toEqual({ kind: 'new_work_item', label: 'New work item' })
     // An overview whose first panel is a metric still offers New task because a
     // task list is declared somewhere in the view.
@@ -194,6 +202,19 @@ describe('workflow view metadata', () => {
     expect(componentSpansFullWidth(metric, { type: 'vertical', columns: 1 })).toBe(true)
   })
 
+  it('names a clamped board column width instead of applying it silently', () => {
+    const wide = component({ id: 'b', type: 'kanban', options: { column_width: 900 } })
+    expect(columnWidthOption(wide).value).toBe(420)
+    expect(columnWidthOption(wide).clamped).toBe(true)
+    expect(columnWidthNote(wide)).toMatch(/clamped to 420 pixels/)
+    const narrow = component({ id: 'b2', type: 'kanban', options: { column_width: 100 } })
+    expect(columnWidthOption(narrow).value).toBe(180)
+    expect(columnWidthNote(narrow)).toMatch(/clamped to 180 pixels/)
+    const exact = component({ id: 'b3', type: 'kanban', options: { column_width: 300 } })
+    expect(columnWidthOption(exact).clamped).toBe(false)
+    expect(columnWidthNote(exact)).toBeNull()
+  })
+
   it('projects workflow-authored titles onto the product vocabulary', () => {
     const legacy = ['blue', 'print'].join('')
     expect(componentTypeName(component({ id: 'x', type: 'text', title: `${legacy} notes` }))).toBe(
@@ -253,6 +274,17 @@ describe('declared component filters', () => {
     expect(milestoneMatchesDeclaredFilter(milestone(), { status: 'completed' })).toBe(false)
     expect(workItemMatchesDeclaredFilter(workItem(), { kind: 'lesson', state: 'draft' })).toBe(true)
     expect(workItemMatchesDeclaredFilter(workItem(), { kind: 'assessment' })).toBe(false)
+  })
+
+  it('refuses an undeclared work-item kind consistently across surfaces', () => {
+    expect(workItemKindFilterRefusal({}, workflowWithKinds)).toBeNull()
+    expect(workItemKindFilterRefusal({ kind: 'lesson' }, workflowWithKinds)).toBeNull()
+    expect(workItemKindFilterRefusal({ kind: 'LESSON' }, workflowWithKinds)).toBeNull()
+    const refusal = workItemKindFilterRefusal({ kind: 'missing' }, workflowWithKinds)
+    expect(refusal).toMatch(/“missing”/)
+    expect(refusal).toMatch(/does not declare/)
+    // Without a manifest every named kind is undeclared, never a silent match.
+    expect(workItemKindFilterRefusal({ kind: 'lesson' }, undefined)).toMatch(/does not declare/)
   })
 
   it('names filter keys it cannot evaluate instead of ignoring them', () => {

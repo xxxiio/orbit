@@ -5,6 +5,7 @@ import type { BlueprintWorkItemRecord } from '@/api/contracts'
 import type { WorkItem } from '@/api/adapters'
 import { queryKeys } from '@/api/queries'
 import {
+  acceptLedgerRevision,
   acceptWorkItemRecord,
   useCreateWorkItem,
   useUpdateWorkItemProperties,
@@ -299,5 +300,83 @@ describe('work-item uncertain outcomes', () => {
         .catch(() => null)
     })
     await waitFor(() => expect(properties.result.current.disposition).toBe('uncertain'))
+  })
+
+  it('serializes commands per item so the second fences on the accepted revision', async () => {
+    const client = testQueryClient()
+    seed(client)
+    let releaseFirst: () => void = () => {}
+    const first = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    vi.mocked(fetch)
+      .mockImplementationOnce(async () => {
+        await first
+        return jsonResponse(record({ properties: { priority: 'high' }, revision: 4 }))
+      })
+      .mockResolvedValueOnce(jsonResponse(record({ properties: { priority: 'low' }, revision: 5 })))
+
+    const { result } = renderHook(() => useUpdateWorkItemProperties(), {
+      wrapper: queryWrapper(client),
+    })
+
+    let firstCall: Promise<unknown> = Promise.resolve()
+    let secondCall: Promise<unknown> = Promise.resolve()
+    act(() => {
+      firstCall = result.current
+        .mutateAsync({ id: 'wi-1', changes: { priority: 'high' } })
+        .catch(() => null)
+    })
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1))
+    act(() => {
+      secondCall = result.current
+        .mutateAsync({ id: 'wi-1', changes: { priority: 'low' } })
+        .catch(() => null)
+    })
+    // The second command waits for the first, so only one request is on the wire.
+    await Promise.resolve()
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1)
+    releaseFirst()
+    await act(async () => {
+      await Promise.all([firstCall, secondCall])
+    })
+
+    const bodies = requests()
+    expect(bodies).toHaveLength(2)
+    expect(bodies[0].expected_revision).toBe(3)
+    expect(bodies[1].expected_revision).toBe(4)
+  })
+
+  it('invalidates the work-item read on a stale-revision rejection (400, not 409)', async () => {
+    const client = testQueryClient()
+    seed(client)
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ error: 'stale revision' }, 400))
+
+    const { result } = renderHook(() => useUpdateWorkItemProperties(), {
+      wrapper: queryWrapper(client),
+    })
+
+    await act(async () => {
+      await result.current
+        .mutateAsync({ id: 'wi-1', changes: { priority: 'low' } })
+        .catch(() => null)
+    })
+    await waitFor(() => expect(result.current.disposition).toBe('rejected'))
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.workItemsAll() })
+  })
+})
+
+describe('accepted ledger writes', () => {
+  it('refresh every open upgrade preview', () => {
+    const client = testQueryClient()
+    const previewKey = queryKeys.upgradePreview('p-1', 'development', 3)
+    client.setQueryData(previewKey, { fingerprint: 'a'.repeat(64) })
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+
+    acceptLedgerRevision(client, 9)
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.upgradePreviewAll() })
   })
 })

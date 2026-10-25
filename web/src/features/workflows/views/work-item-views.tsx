@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { GridIcon, ListIcon, RefreshIcon } from '@/components/ui/icons'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
+import { workflowText } from '@/domain'
 import {
   displayFields,
   fieldLabel,
@@ -30,12 +31,14 @@ import {
 import { useWorkItemDrawer } from '../use-work-item-drawer'
 import type { ViewRendererProps } from '../view-types'
 import {
+  columnWidthNote,
   columnWidthOption,
   describeFilter,
   emptyTextOption,
   listOptionDeclaration,
   unsupportedWorkItemFilterKeys,
   viewHeaderAction,
+  workItemKindFilterRefusal,
   workItemMatchesDeclaredFilter,
 } from '../view-metadata'
 import { NewWorkItemButton } from '../work-item-create-dialog'
@@ -52,7 +55,7 @@ import {
 /* ------------------------------------------------------------------ */
 
 function panelTitle(component: WorkflowViewComponent): string {
-  return component.title?.trim() || 'Work items'
+  return workflowText(component.title) || 'Work items'
 }
 
 function unsupportedFilterPanel(props: ViewRendererProps) {
@@ -86,8 +89,13 @@ function readStatePanel(props: ViewRendererProps) {
         reason="The project's pinned workflow could not be read, so its work-item kinds, states and fields are unknown."
         hint="Nothing is guessed: the panel returns when the workflow is readable."
         action={
-          <Button variant="secondary" size="sm" onClick={state?.refetch} disabled={!state}>
-            Retry the read
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={props.workflowRetry ?? state?.refetch}
+            disabled={!props.workflowRetry && !state}
+          >
+            Retry the workflow
           </Button>
         }
       />
@@ -157,6 +165,7 @@ export function WorkItemBoardView(props: ViewRendererProps) {
   const resolution = resolveBoardKind(component, workflow)
   const [chosenKind, setChosenKind] = useState<string | null>(null)
   const widthDeclaration = columnWidthOption(component)
+  const widthNote = columnWidthNote(component)
   const emptyText = emptyTextOption(component)
 
   if (guard) return guard
@@ -164,7 +173,7 @@ export function WorkItemBoardView(props: ViewRendererProps) {
   if (resolution.refusal) {
     return (
       <UnavailablePanel
-        title={component.title?.trim() || 'Work items'}
+        title={workflowText(component.title) || 'Work items'}
         reason={resolution.refusal}
         hint="The board is refused rather than showing a kind the workflow did not declare."
       />
@@ -173,7 +182,7 @@ export function WorkItemBoardView(props: ViewRendererProps) {
   if (component.groupBy && component.groupBy.toLowerCase() !== 'state') {
     return (
       <UnavailablePanel
-        title={component.title?.trim() || 'Work items'}
+        title={workflowText(component.title) || 'Work items'}
         reason={`This board groups work items by “${component.groupBy}”. Work-item boards can only group by the declared state.`}
         hint="The panel is refused rather than showing state columns under a different grouping."
       />
@@ -182,7 +191,7 @@ export function WorkItemBoardView(props: ViewRendererProps) {
   if (widthDeclaration.refusal) {
     return (
       <UnavailablePanel
-        title={component.title?.trim() || 'Work items'}
+        title={workflowText(component.title) || 'Work items'}
         reason={widthDeclaration.refusal}
         hint="A board column width must be a number of pixels."
       />
@@ -192,7 +201,7 @@ export function WorkItemBoardView(props: ViewRendererProps) {
   if (sortDeclaration.refusal) {
     return (
       <UnavailablePanel
-        title={component.title?.trim() || 'Work items'}
+        title={workflowText(component.title) || 'Work items'}
         reason={sortDeclaration.refusal}
         hint="The board is refused rather than keeping the server's order under a declared sort."
       />
@@ -217,7 +226,7 @@ export function WorkItemBoardView(props: ViewRendererProps) {
 
   return (
     <ComponentPanel
-      title={component.title?.trim() || 'Work items'}
+      title={workflowText(component.title) || 'Work items'}
       description={metaLine(
         component,
         activeKind ? `Columns are the declared states of ${kindLabel(activeKind, activeKind.id)}.` : undefined,
@@ -233,6 +242,7 @@ export function WorkItemBoardView(props: ViewRendererProps) {
             {component.limit && matching.length > limited.length
               ? ` Showing the first ${limited.length} of ${matching.length}; the workflow sets this limit.`
               : ''}
+            {widthNote ? ` ${widthNote}` : ''}
           </ProvenanceNote>
           {component.actions.length > 0 ? (
             <ProvenanceNote>
@@ -375,10 +385,20 @@ export function WorkItemTableView(props: ViewRendererProps) {
 
   if (guard) return guard
   if (readGuard) return readGuard
+  const kindRefusal = workItemKindFilterRefusal(filter, workflow)
+  if (kindRefusal) {
+    return (
+      <UnavailablePanel
+        title={workflowText(component.title) || 'Work items'}
+        reason={kindRefusal}
+        hint="The table is refused rather than showing an empty set for a kind the workflow did not declare."
+      />
+    )
+  }
   if (sortDeclaration.refusal) {
     return (
       <UnavailablePanel
-        title={component.title?.trim() || 'Work items'}
+        title={workflowText(component.title) || 'Work items'}
         reason={sortDeclaration.refusal}
         hint="The table is refused rather than keeping the server's order under a declared sort."
       />
@@ -391,7 +411,7 @@ export function WorkItemTableView(props: ViewRendererProps) {
 
   return (
     <ComponentPanel
-      title={component.title?.trim() || 'Work items'}
+      title={workflowText(component.title) || 'Work items'}
       description={metaLine(component)}
       actions={workItemPanelActions(props, pinnedKind)}
       bodyClassName="px-0 py-0"
@@ -509,11 +529,23 @@ function Cell({
   if (column.key === 'revision') {
     return <span className="font-mono text-2xs tabular-nums text-ink-muted">{item.revision}</span>
   }
-  return (
-    <span className="break-words">
-      {fieldValueText(column.field, item.properties[column.field?.id ?? ''])}
-    </span>
-  )
+  // The plan merges a field id across kinds; format with *this row's*
+  // declaration so two kinds that type the same id differently stay honest.
+  const field = rowField(kind, column)
+  return <span className="break-words">{fieldValueText(field, item.properties[field?.id ?? ''])}</span>
+}
+
+/**
+ * The column plan is built across every kind in the view, so a shared field id
+ * carries the first kind's declaration. A row must use its own kind's field
+ * before formatting the stored value.
+ */
+function rowField(
+  kind: WorkItemKind | undefined,
+  column: ReturnType<typeof workItemColumnPlan>['columns'][number],
+) {
+  if (!column.field) return undefined
+  return kind?.fields.find((field) => field.id === column.field?.id) ?? column.field
 }
 
 /* ------------------------------------------------------------------ */
@@ -533,10 +565,20 @@ export function WorkItemListView(props: ViewRendererProps) {
 
   if (guard) return guard
   if (readGuard) return readGuard
+  const kindRefusal = workItemKindFilterRefusal(filter, workflow)
+  if (kindRefusal) {
+    return (
+      <UnavailablePanel
+        title={workflowText(component.title) || 'Work items'}
+        reason={kindRefusal}
+        hint="The list is refused rather than showing an empty set for a kind the workflow did not declare."
+      />
+    )
+  }
   if (options.refusal) {
     return (
       <UnavailablePanel
-        title={component.title?.trim() || 'Work items'}
+        title={workflowText(component.title) || 'Work items'}
         reason={options.refusal}
         hint="The list is refused rather than guessing what the declaration meant."
       />
@@ -545,7 +587,7 @@ export function WorkItemListView(props: ViewRendererProps) {
   if (sortDeclaration.refusal) {
     return (
       <UnavailablePanel
-        title={component.title?.trim() || 'Work items'}
+        title={workflowText(component.title) || 'Work items'}
         reason={sortDeclaration.refusal}
         hint="The list is refused rather than keeping the server's order under a declared sort."
       />
@@ -556,14 +598,18 @@ export function WorkItemListView(props: ViewRendererProps) {
   const sorted = sortWorkItems(matched, sortDeclaration, component.descending)
   const limited = component.limit && component.limit > 0 ? sorted.slice(0, component.limit) : sorted
 
-  const columns = plan.columns.filter(
-    (column) => !(column.key === 'state' && !options.showStatus) && column.key !== 'revision',
+  // A declared column is dropped only when the declaration itself says this
+  // panel cannot show it (a hidden state). The four-column compact budget is
+  // applied after that filter, and anything left over is named below.
+  const renderable = plan.columns.filter(
+    (column) => column.key !== 'state' || options.showStatus,
   )
-  const visible = columns.slice(0, 4)
+  const visible = renderable.slice(0, 4)
+  const omitted = renderable.slice(4)
 
   return (
     <ComponentPanel
-      title={component.title?.trim() || 'Work items'}
+      title={workflowText(component.title) || 'Work items'}
       description={metaLine(component)}
       actions={workItemPanelActions(props, pinnedKind)}
       bodyClassName="px-0 py-0"
@@ -575,6 +621,15 @@ export function WorkItemListView(props: ViewRendererProps) {
               ? ` Showing the first ${limited.length} of ${matched.length}; the workflow sets this limit.`
               : ''}
           </ProvenanceNote>
+          {omitted.length > 0 ? (
+            <p className="text-2xs leading-4 text-warning-ink">
+              This compact list shows four declared columns. Declared column
+              {omitted.length === 1 ? '' : 's'}{' '}
+              {omitted.map((column) => `“${column.label}”`).join(', ')}{' '}
+              {omitted.length === 1 ? 'is' : 'are'} not shown here; open an item to see every
+              stored value.
+            </p>
+          ) : null}
           {plan.unsupported.length > 0 ? (
             <p className="text-2xs leading-4 text-warning-ink">
               Declared column{plan.unsupported.length === 1 ? '' : 's'}{' '}
@@ -607,7 +662,11 @@ export function WorkItemListView(props: ViewRendererProps) {
         <ul className="divide-y divide-line">
           {limited.map((item) => {
             const kind = workflow?.kinds.find((candidate) => candidate.id === item.kind)
-            const priorityField = kind?.fields.find((field) => field.id === 'priority')
+            const priorityField =
+              kind?.fields.find((field) => field.id === 'priority') ??
+              kind?.fields.find(
+                (field) => fieldLabel(field, field.id).toLowerCase() === 'priority',
+              )
             return (
               <li key={item.id} className="px-4 py-2" data-work-item-key={item.id}>
                 <div className="flex flex-wrap items-center gap-2">
@@ -631,8 +690,16 @@ export function WorkItemListView(props: ViewRendererProps) {
                 </div>
                 <dl className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                   {visible
-                    .filter((column) => column.key === 'field' || column.key === 'kind')
+                    .filter((column) => column.key !== 'title' && column.key !== 'state')
                     .filter((column) => column.key !== 'kind' || !pinnedKind)
+                    .filter(
+                      (column) =>
+                        !(
+                          options.showPriority &&
+                          priorityField &&
+                          column.field?.id === priorityField.id
+                        ),
+                    )
                     .map((column) => (
                       <div
                         key={`${column.key}-${column.field?.id ?? column.label}`}
@@ -640,9 +707,16 @@ export function WorkItemListView(props: ViewRendererProps) {
                       >
                         <dt className="text-ink-faint">{column.label}</dt>
                         <dd className="text-ink-soft">
-                          {column.key === 'kind'
-                            ? kindLabel(kind, item.kind)
-                            : fieldValueText(column.field, item.properties[column.field?.id ?? ''])}
+                          {column.key === 'kind' ? (
+                            kindLabel(kind, item.kind)
+                          ) : column.key === 'revision' ? (
+                            <span className="font-mono tabular-nums">{item.revision}</span>
+                          ) : (
+                            fieldValueText(
+                              rowField(kind, column),
+                              item.properties[column.field?.id ?? ''],
+                            )
+                          )}
                         </dd>
                       </div>
                     ))}
@@ -667,17 +741,42 @@ export function WorkItemDetailView(props: ViewRendererProps) {
   const readGuard = readStatePanel(props)
   const filter = component.filter ?? {}
   const emptyText = emptyTextOption(component)
+  const sortDeclaration = workItemSortDeclaration(component, workflow)
 
   if (guard) return guard
   if (readGuard) return readGuard
+  const kindRefusal = workItemKindFilterRefusal(filter, workflow)
+  if (kindRefusal) {
+    return (
+      <UnavailablePanel
+        title={workflowText(component.title) || 'Work item detail'}
+        reason={kindRefusal}
+        hint="The detail panel is refused rather than offering a chooser with no possible item."
+      />
+    )
+  }
+  if (sortDeclaration.refusal) {
+    return (
+      <UnavailablePanel
+        title={workflowText(component.title) || 'Work item detail'}
+        reason={sortDeclaration.refusal}
+        hint="The detail panel is refused rather than choosing an item under a sort it cannot apply."
+      />
+    )
+  }
 
   const matching = workItems.filter((item) => workItemMatchesDeclaredFilter(item, filter))
+  const sorted = sortWorkItems(matching, sortDeclaration, component.descending)
   const selected = itemId ? matching.find((item) => item.id === itemId) : undefined
   const kind = selected ? workflow?.kinds.find((candidate) => candidate.id === selected.kind) : undefined
+  // The chooser is a fallback, so an undeclared limit still needs a budget. Use
+  // the declared limit when there is one, otherwise cap at 12 and say so.
+  const chooserLimit = component.limit && component.limit > 0 ? component.limit : 12
+  const chooserItems = sorted.slice(0, chooserLimit)
 
   return (
     <ComponentPanel
-      title={component.title?.trim() || 'Work item detail'}
+      title={workflowText(component.title) || 'Work item detail'}
       eyebrow="Work item detail"
       description={metaLine(component)}
       actions={
@@ -690,6 +789,23 @@ export function WorkItemDetailView(props: ViewRendererProps) {
         >
           Refresh
         </Button>
+      }
+      footer={
+        <div className="flex flex-col gap-1">
+          <ProvenanceNote>
+            {sortDeclaration.compare
+              ? `The chooser and the selected item follow the declared ${component.sort} sort.`
+              : 'The chooser follows the order the server returned.'}
+            {selected
+              ? ' The open item is shown from the project list the server returned.'
+              : ''}
+          </ProvenanceNote>
+          {component.actions.length > 0 ? (
+            <ProvenanceNote>
+              <DeclaredActionsNote component={component} />
+            </ProvenanceNote>
+          ) : null}
+        </div>
       }
     >
       {matching.length === 0 ? (
@@ -737,11 +853,14 @@ export function WorkItemDetailView(props: ViewRendererProps) {
           <p className="text-xs leading-5 text-ink-muted">
             Choose the work item this panel should show.
           </p>
-          <ul className="flex flex-col divide-y divide-line rounded-md border border-line">
-            {matching.slice(0, 12).map((item) => {
+          <ul
+            className="flex flex-col divide-y divide-line rounded-md border border-line"
+            data-work-item-count={sorted.length}
+          >
+            {chooserItems.map((item) => {
               const candidate = workflow?.kinds.find((entry) => entry.id === item.kind)
               return (
-                <li key={item.id} className="px-3 py-2">
+                <li key={item.id} className="px-3 py-2" data-work-item-key={item.id}>
                   <button
                     type="button"
                     onClick={() => openItem(item.id)}
@@ -756,6 +875,14 @@ export function WorkItemDetailView(props: ViewRendererProps) {
               )
             })}
           </ul>
+          {sorted.length > chooserItems.length ? (
+            <p className="text-2xs leading-4 text-ink-muted">
+              Showing the first {chooserItems.length} of {sorted.length}.{' '}
+              {component.limit && component.limit > 0
+                ? 'The workflow sets this limit.'
+                : 'This panel declares no limit, so the chooser stops at 12; open an item from the board or table to see any other.'}
+            </p>
+          ) : null}
         </div>
       )}
     </ComponentPanel>

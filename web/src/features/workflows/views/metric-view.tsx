@@ -1,6 +1,7 @@
 import { defaultNowMs, useTaskReadiness } from '@/hooks'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ViewRendererProps } from '../view-types'
+import type { WorkflowViewComponent } from '@/api/adapters'
 import {
   actionableFilterRefusal,
   aggregateMetric,
@@ -17,11 +18,12 @@ import {
   unsupportedMilestoneFilterKeys,
   unsupportedTaskFilterKeys,
   unsupportedWorkItemFilterKeys,
+  workItemKindFilterRefusal,
   workItemMatchesDeclaredFilter,
   workItemMetricRows,
   type MetricDeclaration,
 } from '../view-metadata'
-import { ComponentPanel, InlineReadError, ProvenanceNote, UnavailablePanel } from './shared'
+import { ComponentPanel, DeclaredActionsNote, InlineReadError, ProvenanceNote, UnavailablePanel } from './shared'
 
 function nounFor(noun: string, value: number): string {
   return value === 1 ? noun.replace(/s$/, '') : noun
@@ -72,35 +74,31 @@ function MetricNumber({
 }
 
 function MetricFrame({
-  title,
+  component,
   value,
   noun,
   filterNote,
   sourceNote,
   loading = false,
-  actions = [],
   caption = null,
 }: {
-  title: string
+  component: WorkflowViewComponent
   value: number | null
   noun: string
   filterNote: string | null
   sourceNote: string
   loading?: boolean
-  actions?: string[]
   caption?: string | null
 }) {
   return (
     <ComponentPanel
-      title={title}
+      title={componentTypeName(component)}
       bodyClassName="py-5"
       className="justify-between"
       footer={
-        actions.length > 0 ? (
+        component.actions.length > 0 ? (
           <ProvenanceNote>
-            The workflow also declares the {actions.join(', ')} action
-            {actions.length === 1 ? '' : 's'}; this panel renders its own controls and does not
-            attach an action it cannot complete.
+            <DeclaredActionsNote component={component} />
           </ProvenanceNote>
         ) : undefined
       }
@@ -212,13 +210,12 @@ function TaskMetric(props: ViewRendererProps) {
   if (actionable && readiness.isPending) {
     return (
       <MetricFrame
-        title={componentTypeName(component)}
+        component={component}
         value={null}
         noun={metricLabel(declaration, 'tasks')}
         filterNote={describeFilter(filter)}
         sourceNote="Waiting for the server's readiness report."
         loading
-        actions={component.actions}
       />
     )
   }
@@ -234,12 +231,11 @@ function TaskMetric(props: ViewRendererProps) {
 
   return (
     <MetricFrame
-      title={componentTypeName(component)}
+      component={component}
       value={value}
       noun={metricLabel(declaration, 'tasks')}
       filterNote={describeFilter(filter)}
       sourceNote={metricSourceNote(declaration, 'tasks', 'estimated minutes')}
-      actions={component.actions}
       caption={metricCaption(component)}
     />
   )
@@ -265,7 +261,7 @@ function MilestoneMetric({ component, milestones, workflow }: ViewRendererProps)
   )
   return (
     <MetricFrame
-      title={componentTypeName(component)}
+      component={component}
       value={metricDisplayValue(
         declaration,
         aggregateMetric(declaration, matching.map(() => null)),
@@ -273,7 +269,6 @@ function MilestoneMetric({ component, milestones, workflow }: ViewRendererProps)
       noun="milestones"
       filterNote={describeFilter(filter)}
       sourceNote={metricSourceNote(declaration, 'milestones', null)}
-      actions={component.actions}
       caption={metricCaption(component)}
     />
   )
@@ -296,6 +291,17 @@ function WorkItemMetric({ component, workItems, workItemsState, workflow }: View
       <UnavailablePanel
         title={componentTypeName(component)}
         reason={`This panel filters work items by ${unsupported.join(', ')}, which this build cannot evaluate.`}
+      />
+    )
+  }
+
+  const kindRefusal = workItemKindFilterRefusal(filter, workflow)
+  if (kindRefusal) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={kindRefusal}
+        hint="The count is refused rather than reporting zero for a kind the workflow did not declare."
       />
     )
   }
@@ -331,16 +337,17 @@ function WorkItemMetric({ component, workItems, workItemsState, workflow }: View
       : null
 
   return (
-    <MetricFrame
-      title={componentTypeName(component)}
-      value={value}
-      noun={metricLabel(declaration, 'work_items')}
-      filterNote={describeFilter(filter)}
-      sourceNote={metricSourceNote(declaration, 'work_items', fieldLabel)}
-      loading={pending}
-      actions={component.actions}
-      caption={metricCaption(component)}
-    />
+    <div data-work-item-count={matching.length}>
+      <MetricFrame
+        component={component}
+        value={value}
+        noun={metricLabel(declaration, 'work_items')}
+        filterNote={describeFilter(filter)}
+        sourceNote={metricSourceNote(declaration, 'work_items', fieldLabel)}
+        loading={pending}
+        caption={metricCaption(component)}
+      />
+    </div>
   )
 }
 

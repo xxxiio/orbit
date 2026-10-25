@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { WorkItem, Workflow } from '@/api/adapters'
+import { queryKeys } from '@/api/queries'
 import { WorkItemSheet } from '@/features/workflows/work-item-sheet'
-import { testQueryClient } from '../api/test-utils'
+import { jsonResponse, testQueryClient } from '../api/test-utils'
 
 const workflow: Workflow = {
   id: 'guarded',
@@ -25,6 +27,8 @@ const workflow: Workflow = {
           required: true,
           default: 'low',
         },
+        { id: 'note', kind: { type: 'text' }, required: false, default: null },
+        { id: 'minutes', kind: { type: 'integer' }, required: false, default: null },
       ],
       transitions: [
         {
@@ -47,12 +51,26 @@ const workflow: Workflow = {
   views: [],
 }
 
-function renderSheet(item: WorkItem) {
+function renderSheet(item: WorkItem, onRefresh?: () => void) {
+  const onClose = vi.fn()
+  const client = testQueryClient()
+  // Every command fences on the cached item revision.
+  client.setQueryData(queryKeys.workItems(item.projectId), [
+    {
+      id: item.id,
+      project_id: item.projectId,
+      kind: item.kind,
+      state: item.state,
+      properties: item.properties,
+      revision: item.revision,
+    },
+  ])
   render(
-    <QueryClientProvider client={testQueryClient()}>
-      <WorkItemSheet item={item} workflow={workflow} onClose={() => {}} />
+    <QueryClientProvider client={client}>
+      <WorkItemSheet item={item} workflow={workflow} onClose={onClose} onRefresh={onRefresh} />
     </QueryClientProvider>,
   )
+  return { onClose }
 }
 
 const openTicket: WorkItem = {
@@ -60,8 +78,14 @@ const openTicket: WorkItem = {
   projectId: 'p-1',
   kind: 'ticket',
   state: 'open',
-  properties: { priority: 'low' },
+  properties: { priority: 'low', minutes: 30 },
   revision: 3,
+}
+
+function sentBodies(): Array<Record<string, unknown>> {
+  return vi
+    .mocked(fetch)
+    .mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string))
 }
 
 describe('work-item sheet declarations', () => {
@@ -119,5 +143,68 @@ describe('work-item sheet declarations', () => {
     renderSheet(openTicket)
     expect(screen.getByText('Revision 3')).toBeInTheDocument()
     expect(screen.getAllByText('Low').length).toBeGreaterThan(0)
+  })
+})
+
+describe('work-item sheet closes honestly', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('reverts a cleared integer and closes without sending a clear command', async () => {
+    const user = userEvent.setup()
+    const { onClose } = renderSheet(openTicket)
+
+    const minutes = screen.getByLabelText(/Minutes/)
+    await user.clear(minutes)
+    await user.click(screen.getByRole('button', { name: 'Close work item details' }))
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    // The API has no clear-property command, so clearing must not send anything.
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled()
+    expect(screen.getByText(/Clearing a stored number is not supported/)).toBeInTheDocument()
+    expect(minutes).toHaveValue(30)
+  })
+
+  it('sends a typed value once when the sheet is closed in the same interaction', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        id: 'wi-open',
+        project_id: 'p-1',
+        kind: 'ticket',
+        state: 'open',
+        properties: { priority: 'low', note: 'Edited once', minutes: 30 },
+        revision: 4,
+      }),
+    )
+    const user = userEvent.setup()
+    renderSheet(openTicket)
+
+    const note = screen.getByPlaceholderText('Add note')
+    await user.type(note, 'Edited once')
+    expect(note).toHaveValue('Edited once')
+    await user.click(screen.getByRole('button', { name: 'Close work item details' }))
+
+    // Blur submits the draft; close must not flush the same draft a second time.
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1))
+    expect(sentBodies()[0]?.changes).toEqual({ note: 'Edited once' })
+    expect(screen.queryByText(/The server refused the change/)).toBeNull()
+  })
+
+  it('offers a refresh action when the server refuses a stale write', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ error: 'stale revision' }, 400))
+    const onRefresh = vi.fn()
+    const user = userEvent.setup()
+    renderSheet(openTicket, onRefresh)
+
+    await user.click(screen.getByRole('button', { name: 'Move work item to Approved' }))
+
+    await screen.findByText(/The server refused the change/)
+    await user.click(screen.getByRole('button', { name: 'Refresh the item and try again' }))
+    expect(onRefresh).toHaveBeenCalledTimes(1)
   })
 })

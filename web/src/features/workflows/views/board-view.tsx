@@ -37,6 +37,7 @@ import type { ViewRendererProps } from '../view-types'
 import {
   actionableFilterNote,
   actionableFilterRefusal,
+  columnWidthNote,
   columnWidthOption,
   componentTypeName,
   describeFilter,
@@ -92,6 +93,7 @@ function BoardSurface({
   const projects = useProjects()
   const command = useTaskCommand()
   const { pending, error, errorTaskId, errorField, changeStatus } = useTaskCommandState(command)
+  const widthNote = columnWidthNote(component)
 
   const [focus, setFocus] = useState<string | null>(null)
   const [moveFor, setMoveFor] = useState<string | null>(null)
@@ -372,6 +374,7 @@ function BoardSurface({
           {matchedCount > boardTasks.length
             ? ` Showing the first ${boardTasks.length} of ${matchedCount} tasks; the workflow sets this limit.`
             : ''}
+          {widthNote ? ` ${widthNote}` : ''}
           {component.actions.length > 0 ? ' ' : ''}
           <DeclaredActionsNote component={component} />
         </ProvenanceNote>

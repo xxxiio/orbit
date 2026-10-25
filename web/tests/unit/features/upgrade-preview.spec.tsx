@@ -128,6 +128,44 @@ describe('upgrade diff', () => {
     render(<UpgradeDiff preview={preview} viewTitle={viewTitle} />)
     expect(screen.getByText(/Field priority is removed from feature/)).toBeInTheDocument()
   })
+
+  it('does not say a kind is unchanged when only an action content warning names it', () => {
+    const actionOnly: WorkflowUpgradePreview = {
+      ...preview,
+      kinds: [
+        {
+          ...preview.kinds[0],
+          kind: 'feature',
+          statesAdded: [],
+          fieldsAdded: [],
+          fieldsRemoved: [],
+          fieldsChanged: [],
+          transitionsAdded: [],
+          transitionsRemoved: [],
+          transitionsChanged: [],
+          actionsAdded: [],
+          actionsRemoved: [],
+          requiredCapabilitiesAdded: [],
+          requiredCapabilitiesRemoved: [],
+        },
+      ],
+      views: { added: [], removed: [], changed: [] },
+      warnings: [
+        {
+          code: 'action_changed',
+          message: 'action backlog->ready#append_note in feature changes',
+          subjects: ['feature', 'backlog->ready#append_note'],
+        },
+      ],
+    }
+    render(<UpgradeDiff preview={actionOnly} viewTitle={viewTitle} />)
+    expect(document.querySelector('[data-upgrade-notice="action_changed"]')).toBeTruthy()
+    const feature = screen.getByText('Feature').closest('[data-upgrade-kind="feature"]') as HTMLElement
+    expect(within(feature).queryByText('No declaration changes in this kind.')).toBeNull()
+    expect(
+      within(feature).getByText(/a content change is listed in the warnings above/),
+    ).toBeInTheDocument()
+  })
 })
 
 describe('upgrade receipt', () => {

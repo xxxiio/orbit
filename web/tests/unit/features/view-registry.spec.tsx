@@ -84,7 +84,7 @@ describe('workflow view registry', () => {
         props({ id: 'notes', type: 'text', text: 'Read me.', actions: ['open', 'create_task'] }),
       ),
     )
-    expect(screen.getByText(/also declares the open, create_task actions/)).toBeInTheDocument()
+    expect(screen.getByText(/also declares the Open, Create Task actions/)).toBeInTheDocument()
   })
 
   it('refuses a type it has never heard of by name instead of rendering a blank panel', () => {

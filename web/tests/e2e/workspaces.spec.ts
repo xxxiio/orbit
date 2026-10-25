@@ -525,6 +525,29 @@ test.describe('workflow view registry', () => {
               `${component.type} is refused by name`,
             ).toBeVisible()
           }
+
+          // A work-item panel is not just its heading: the seed has Research,
+          // Learning and Habits items, so each such surface must show data.
+          if (component.source === 'work_items') {
+            if (projectId === 'p-development') {
+              // The seed deliberately has no work items here, so the honest
+              // data assertion is the empty state, not a row that cannot exist.
+              await expect(
+                surface.getByText('No work items here yet', { exact: true }),
+                `${projectId}/${view.id}/${component.id} says the read was empty`,
+              ).toBeVisible()
+            } else if (component.type === 'metric') {
+              await expect(
+                surface.locator('[data-work-item-count]'),
+                `${projectId}/${view.id}/${component.id} counts work items`,
+              ).toHaveAttribute('data-work-item-count', /^[1-9]\d*$/)
+            } else {
+              await expect(
+                surface.locator('[data-work-item-key]').first(),
+                `${projectId}/${view.id}/${component.id} lists a work item`,
+              ).toBeVisible()
+            }
+          }
         }
 
         // A type this build cannot render at all is different from a named,
