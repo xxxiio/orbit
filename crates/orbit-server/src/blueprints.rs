@@ -33,9 +33,9 @@ pub(super) struct UpgradeBody {
     version: u32,
     #[serde(default)]
     confirm: bool,
-    /// Optional preview fingerprint. When omitted the authority recomputes it,
-    /// so a caller can never apply a version it has not been shown.
-    #[serde(default)]
+    /// The fingerprint of the preview the caller was shown. Required: the
+    /// server never recomputes or derives it, so an apply can only target a
+    /// version the caller actually reviewed.
     fingerprint: Option<String>,
 }
 #[derive(Deserialize)]
@@ -318,19 +318,40 @@ pub(super) async fn upgrade(
     if !body.confirm {
         return Err(error(StatusCode::BAD_REQUEST, "confirmation required"));
     }
-    let mut store = locked(&state)?;
-    let fingerprint = match body.fingerprint.as_deref().map(str::trim) {
-        Some(fingerprint) if !fingerprint.is_empty() => fingerprint.to_owned(),
-        _ => {
-            store
-                .preview_blueprint_upgrade(&body.project_id, &body.id, body.version)
-                .map_err(repo_error)?
-                .fingerprint
-        }
+    // Consent is the fingerprint the caller approved. Never derive it here:
+    // a missing value is a client bug, not permission to recompute.
+    let Some(fingerprint) = body
+        .fingerprint
+        .as_deref()
+        .map(str::trim)
+        .filter(|fingerprint| !fingerprint.is_empty())
+    else {
+        return Err(error(StatusCode::BAD_REQUEST, "fingerprint required"));
     };
-    Ok(Json(
-        store
-            .apply_blueprint_upgrade(&body.project_id, &body.id, body.version, &fingerprint, true)
-            .map_err(repo_error)?,
-    ))
+    locked(&state)?
+        .apply_blueprint_upgrade(&body.project_id, &body.id, body.version, fingerprint, true)
+        .map_err(upgrade_error)
+        .map(Json)
+}
+
+/// The runtime reports upgrade refusals as a flattened message, so the prefix
+/// is the only stable discriminator for a 409 versus a generic 400.
+fn upgrade_error(err: orbit_application::RepositoryError) -> ApiError {
+    match &err {
+        orbit_application::RepositoryError::Other(message)
+            if message
+                .trim_start()
+                .starts_with("blueprint upgrade fingerprint mismatch") =>
+        {
+            error(StatusCode::CONFLICT, "upgrade fingerprint mismatch")
+        }
+        orbit_application::RepositoryError::Other(message)
+            if message
+                .trim_start()
+                .starts_with("blueprint upgrade blocked") =>
+        {
+            error(StatusCode::CONFLICT, "workflow upgrade blocked")
+        }
+        _ => repo_error(err),
+    }
 }

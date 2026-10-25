@@ -3,7 +3,6 @@ export { OrbitMark, Wordmark } from './brand'
 export { Button, buttonClasses, type ButtonProps, type ButtonSize, type ButtonVariant } from './button'
 export { Checkbox } from './checkbox'
 export { CommandPalette, type Command, type CommandPaletteProps } from './command-palette'
-export { DataTable, type DataTableColumn, type DataTableProps } from './data-table'
 export {
   Dialog,
   DialogClose,

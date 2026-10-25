@@ -127,7 +127,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<E2E
 
   try {
     await waitForHealth(base, options.healthTimeoutMs ?? 30_000, child, () => server.logTail(80))
-    await enrollDevice(server)
+    await enrollDeviceWithAdminKey(server, { deviceId: server.deviceId, token: server.token })
   } catch (error) {
     await server.stop()
     throw error
@@ -219,18 +219,42 @@ async function waitForHealth(
   )
 }
 
-async function enrollDevice(server: E2EServer): Promise<void> {
+/** Credentials for one enrolled browser device. */
+export interface DeviceCredentials {
+  deviceId: string
+  /** The server requires at least 32 characters. */
+  token: string
+}
+
+/** Enroll an additional browser device through the admin API. */
+export async function enrollDeviceWithAdminKey(
+  server: E2EServer,
+  device: DeviceCredentials,
+): Promise<void> {
   const response = await fetch(`${server.base}/v1/devices`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${server.adminKey}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ device_id: server.deviceId, token: server.token }),
+    body: JSON.stringify({ device_id: device.deviceId, token: device.token }),
   })
   if (response.status !== 201) {
     throw new Error(
       `device enrollment failed: POST /v1/devices → ${response.status} ${await response.text()}\n${await server.logTail()}`,
+    )
+  }
+}
+
+/** Revoke a device with the admin key; live browser sessions die with it. */
+export async function revokeDevice(server: E2EServer, deviceId: string): Promise<void> {
+  const response = await fetch(`${server.base}/v1/devices/${encodeURIComponent(deviceId)}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${server.adminKey}` },
+  })
+  if (response.status !== 204) {
+    throw new Error(
+      `device revoke failed: DELETE /v1/devices/${deviceId} → ${response.status} ${await response.text()}`,
     )
   }
 }

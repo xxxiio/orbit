@@ -25,5 +25,14 @@
     },
     "types": ["node", "vite/client", "vitest/globals"]
   },
-  "include": ["src", "vite.config.ts", "vitest.config.ts", "playwright.config.ts", "tailwind.config.ts"]
+  "include": [
+    "src",
+    "tests/unit/app",
+    "tests/unit/features",
+    "tests/setup.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts",
+    "tailwind.config.ts"
+  ]
 }

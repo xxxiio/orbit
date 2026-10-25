@@ -82,6 +82,7 @@ Orbit task.
 
 - [Connected mode onboarding](getting-started/connected-mode.md) — authority, enrollment, replicas and offline queues.
 - [Self-hosting](guides/self-hosting.md) — optional server deployment and TLS boundaries.
+- [The Orbit web app](web-app.md) — build it, sign in with an enrolled device, then use Home, Inbox, projects and tasks; includes the current limits.
 - [Server API](server-api.md) — the current authority endpoints, not the retired relay.
 
 ## MCP and extensions

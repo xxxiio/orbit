@@ -5,7 +5,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { CommandPalette, type Command } from '@/components/ui/command-palette'
 import { Drawer } from '@/components/ui/drawer'
 import { MenuIcon, SearchIcon } from '@/components/ui/icons'
-import { Sidebar, commandShortcutLabel } from '@/components/layout/sidebar'
+import { Sidebar, commandShortcutLabel, type SidebarSession } from '@/components/layout/sidebar'
 import type { ProjectNavItem } from '@/components/navigation/nav'
 
 export interface AppShellProps {
@@ -16,9 +16,17 @@ export interface AppShellProps {
   onNewProject?: () => void
   /** Opens the same New task dialog the pages use. */
   onNewTask?: () => void
+  /** Session facts rendered in the sidebar footer. */
+  session?: SidebarSession
 }
 
-export function AppShell({ projects = [], commands = [], onNewProject, onNewTask }: AppShellProps) {
+export function AppShell({
+  projects = [],
+  commands = [],
+  onNewProject,
+  onNewTask,
+  session,
+}: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const location = useLocation()
@@ -119,6 +127,7 @@ export function AppShell({ projects = [], commands = [], onNewProject, onNewTask
             projects={projects}
             onNewProject={onNewProject}
             onOpenCommandPalette={() => setCommandOpen(true)}
+            session={session}
           />
         </div>
 
@@ -168,6 +177,7 @@ export function AppShell({ projects = [], commands = [], onNewProject, onNewTask
           projects={projects}
           onNewProject={onNewProject}
           onNavigate={() => setDrawerOpen(false)}
+          session={session}
           onOpenCommandPalette={() => {
             setDrawerOpen(false)
             setCommandOpen(true)

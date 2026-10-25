@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useDocumentTitle } from '@/app/use-document-title'
+import { useDocumentTitle } from '@/hooks'
 import { OrbitMark, Wordmark } from '@/components/ui/brand'
 import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/field'
@@ -16,7 +16,7 @@ import {
   KeyIcon,
 } from '@/components/ui/icons'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ThemeToggle } from '@/components/layout/theme-toggle'
+import { ThemeToggle } from '@/components/theme/theme-toggle'
 import { cn } from '@/components/ui/utils'
 import { describeLoginError, type LoginErrorView } from './login-error'
 import { useSignIn } from './use-auth'

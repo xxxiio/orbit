@@ -84,6 +84,39 @@ export function classifyError(error: unknown): ApiErrorKind {
   return 'server'
 }
 
+/**
+ * True when a failed write may still have been applied: the request never got a
+ * definitive answer (no connection, or a 5xx with no committed receipt). Every
+ * other kind is a refusal the server answered, so nothing was written.
+ *
+ * This is the single definition the mutation disposition and every feedback
+ * surface use; `useApiMutation`'s `uncertainOnError` builds on it.
+ */
+export function isAmbiguousError(error: unknown): boolean {
+  const kind = classifyError(error)
+  return kind === 'offline' || kind === 'server'
+}
+
+/**
+ * Copy for an ambiguous write. It deliberately does not say "not changed":
+ * the honest statement is that the outcome is unknown and the next step is to
+ * look at the current state before retrying.
+ */
+export function uncertainMessage(error?: unknown): string {
+  // Only a server-side failure has a message worth quoting; a transport
+  // failure's message is the client's own "could not reach" sentence.
+  const detail =
+    error !== undefined && classifyError(error) === 'server' ? serverMessageOf(error) : null
+  return detail
+    ? `Orbit did not get a confirmation from the server (${detail}), so this change may or may not have been saved. Refresh before trying again.`
+    : 'Orbit did not get a confirmation from the server, so this change may or may not have been saved. Refresh before trying again.'
+}
+
+/** Feedback copy for a failed write: honest about refusals and about unknowns. */
+export function failureMessage(error: unknown): string {
+  return isAmbiguousError(error) ? uncertainMessage(error) : userMessage(error)
+}
+
 function payloadRecord(error: unknown): Record<string, unknown> | null {
   if (!isApiError(error)) return null
   const { payload } = error

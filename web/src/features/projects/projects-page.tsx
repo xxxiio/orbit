@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Project, Task } from '@/api/adapters'
 import { useProjects, useTaskCounts, useWorkspaceSnapshot, userMessage } from '@/hooks'
-import { useDocumentTitle } from '@/app/use-document-title'
+import { useDocumentTitle } from '@/hooks'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -13,10 +13,11 @@ import { PageHeader } from '@/components/ui/page-header'
 import { Panel } from '@/components/ui/panel'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
-import { useWorkspaceActions } from '@/components/layout/workspace-actions'
-import { useRecentProjectIds } from './recent-projects'
+import { useWorkspaceActions } from '@/lib/workspace-actions'
+import { useRecentProjectIds } from '@/lib/recent-projects'
+import { projectStatusLabel } from './project-status'
+import { isTaskCompleted, isTaskOpen } from './project-progress'
 import { useProjectWorkflow } from './use-project-workflow'
-import { isTerminalStatus } from '@/features/tasks/task-meta'
 
 type Layout = 'grid' | 'list'
 
@@ -34,10 +35,11 @@ function statsFor(tasks: Task[]): ProjectStats {
   let blocked = 0
   let inProgress = 0
   for (const task of tasks) {
-    if (isTerminalStatus(task.status)) {
+    if (isTaskCompleted(task.status)) {
       done += 1
       continue
     }
+    if (!isTaskOpen(task.status)) continue
     open += 1
     if (task.status === 'blocked') blocked += 1
     if (task.status === 'in_progress' || task.status === 'review') inProgress += 1
@@ -76,7 +78,7 @@ function ProgressBar({ stats }: { stats: ProjectStats }) {
 function WorkflowBadge({ projectId }: { projectId: string }) {
   const { label, loading, error } = useProjectWorkflow(projectId)
   if (loading) return <Skeleton className="h-4 w-20" />
-  if (error && !label) return <span className="text-2xs text-ink-faint">Workflow unknown</span>
+  if (error && !label) return <span className="text-2xs text-ink-faint">Workflow unavailable</span>
   if (!label) return <span className="text-2xs text-ink-faint">No workflow pinned</span>
   return <Badge tone="accent">{label}</Badge>
 }
@@ -102,7 +104,7 @@ function ProjectCard({ project, stats }: { project: Project; stats: ProjectStats
           </div>
         </div>
         <Badge tone={project.status === 'active' ? 'success' : 'neutral'} dot>
-          {project.status === 'on_hold' ? 'On hold' : project.status.replace('_', ' ')}
+          {projectStatusLabel(project.status)}
         </Badge>
       </div>
 
@@ -148,7 +150,7 @@ function ProjectRow({ project, stats }: { project: Project; stats: ProjectStats 
       <td className="px-4 py-3 text-xs tabular-nums text-ink-soft">{stats.total}</td>
       <td className="px-4 py-3">
         <Badge tone={project.status === 'active' ? 'success' : 'neutral'}>
-          {project.status === 'on_hold' ? 'On hold' : project.status.replace('_', ' ')}
+          {projectStatusLabel(project.status)}
         </Badge>
       </td>
     </tr>

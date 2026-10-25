@@ -1,0 +1,157 @@
+---
+template: milestone-plan
+template_version: 2.0.0
+template_digest: "737b1e57a6469c8843d3ed28294d21fe5a61750b2222084a7eaac19644fa392f"
+project_owned: true
+record_contract: milestone-plan
+record_schema_version: 1
+id: MILESTONE-0031
+status: active
+---
+
+# Milestone: Self-hosted web application as Orbit's reference product experience
+
+## Intended outcome
+
+A polished self-hosted browser application, served by the existing
+`orbit-server` and backed by the same authoritative domain, lets a person sign
+in, manage projects and tasks, plan work, apply and upgrade workflows, browse
+knowledge, handle attachments and inspect agent jobs — and is then used to run
+Orbit's own development cycle, producing the evidence-based specification for
+the next TUI redesign.
+
+## Why this milestone matters
+
+M22–M30 built real domain and application capability, all reached through the
+CLI and TUI. Two problems follow. First, the only browser surface
+(`crates/orbit-server/static/console.html`) is an administrative/reporting page,
+so the connected server has no product interface. Second, the workflow model
+(M25) is not discoverable anywhere a person can see it: views, work items,
+transitions, upgrades and capability actions exist but are hidden behind
+terminal conventions.
+
+The web app is therefore both the internal dogfooding environment and the
+reference experience that a future TUI redesign and a separate Flutter client
+will follow. The official user-facing vocabulary is **Workflow**; internal
+`blueprint` identifiers stay for compatibility.
+
+## Scope
+
+- React + TypeScript (strict) + Vite + React Router + TanStack Query + Radix
+  primitives + Tailwind, in `web/`, with a typed API layer that owns the
+  wire contracts and translates internal names.
+- Browser authentication: device credential exchanged once for an HttpOnly,
+  `SameSite=Strict` cookie session with sliding/absolute expiry, server-side
+  revocation, CSRF defence and a login throttle. No admin rights in the UI.
+- Same-origin deployment behind `orbit-server` static serving with SPA
+  fallback; `/console` preserved; Vite dev server proxy for local work.
+- Daily core: Home, Inbox (quick capture + triage), Projects, project
+  workspace driven by the assigned workflow's declared views, task drawer.
+- Project workspaces: board, timeline, milestones, dependencies, readiness,
+  planning preview/approval/apply, project settings and workflow binding.
+- Workflow experience: available workflows, apply/change, pinned version,
+  work-item create/edit/transition, upgrade preview and confirmed upgrade,
+  capability/action discoverability with honest availability.
+- Knowledge (Markdown), attachments (upload/list/preview/download/remove),
+  agent job/handoff/review inspection.
+- Real-browser acceptance (Playwright) against an isolated authoritative
+  server, a deterministic multi-project/100+ task fixture, a dogfooding cycle
+  on an Orbit Development project, and a TUI redesign specification derived
+  from that usage.
+- User documentation that matches the shipped product.
+
+## Non-goals
+
+- Reopening M22–M30 or recreating the M25 registry, work-item engine,
+  transitions, capability authorization or versioning.
+- A TUI redesign in this milestone (blocking data-loss/regression fixes only).
+- Renaming Rust crates, types, database columns or
+  `/v1/authoritative/blueprints/*` routes.
+- Offline browser editing, a second business-logic layer in the browser, or
+  authoritative scheduling/readiness logic in TypeScript.
+- Hosted cloud dependency, third-party identity provider, unrestricted CORS,
+  or exposing operator/admin privileges through the product UI.
+- M27 public release verification and Flutter client implementation.
+- Arbitrary executable workflow plugins or JavaScript-based extensions.
+
+## Deliverables
+
+- `web/` application (app shell, api layer, features, styles, tests) and
+  committed browser evidence under `web/evidence/`.
+- `crates/orbit-server/src/{session.rs,web.rs}` plus session, CSRF and static
+  serving wiring; two thin workflow upgrade routes and per-project work-item
+  listing.
+- Playwright harness with an isolated real server per worker and a reusable
+  seed fixture.
+- `docs/web-app.md` and updated documentation index; terminology enforcement
+  script in `web/scripts/check-terminology.mjs`.
+- A dogfooding issue log and the derived TUI redesign specification.
+
+## Dependencies
+
+- MILESTONE-0024 authoritative host, command receipts and revision fencing.
+- MILESTONE-0025 workflow registry, work items, transitions, capabilities and
+  versioning (implementation complete; reused as-is).
+- MILESTONE-0028/0029/0030 project-centric TUI, interaction quality and the
+  two-region workspace (must stay functional and stable).
+- M27 release verification remains externally constrained and is not a
+  dependency of implementation work here.
+
+## Risks
+
+- A browser client can drift into a second business-logic layer; every rule
+  must stay server-authoritative and the client may only present results.
+- Session/cookie auth is security-sensitive: no bearer token in web storage,
+  no token in URLs, CSRF-resistant mutations, revocation that actually
+  invalidates live sessions, and no admin surface in the product UI.
+- Optimistic UI can show false acceptance; mutations must display pending,
+  accepted, rejected and uncertain states honestly.
+- Terminology regression (`Blueprint` leaking back into the interface) must be
+  caught automatically rather than by review.
+- Dogfooding can stall if the app is only demoed; the milestone requires a
+  real planning-to-completion cycle with persisted evidence.
+- Local-only CLI/TUI workflows must keep working; the server must never become
+  mandatory for local usage.
+
+## Ordered implementation sequence
+
+1. I1 — foundation: server session auth/CSRF/static serving, app shell, login,
+   Home, Inbox, Projects, task create/edit/status/drawer, initial Playwright.
+2. I2 — project workspaces and planning: board, timeline, milestones,
+   dependencies, readiness, day/schedule planning, project settings, filters.
+3. I3 — workflow-driven experience: view registry, work-item editing and
+   transitions, workflow apply/change, upgrade preview/apply, actions.
+4. I4 — knowledge, attachments and agents.
+5. I5 — real dogfooding on an Orbit Development project, defect fixes.
+6. I6 — product refinement, accessibility/responsive/performance work,
+   documentation, TUI redesign specification.
+
+## Exit criteria
+
+- [x] EC-001: A person signs in from a browser with an operator-issued device credential, receives an HttpOnly cookie session, survives refresh, is bounced to login with an explanation on expiry, and cannot use the product UI to obtain administrator privileges.
+- [ ] EC-002: Projects and tasks are fully manageable through the browser (create, edit, priority, labels, Markdown description, acceptance criteria, dependencies, attachments, status changes with server rejection surfaced) with persisted state after refresh and no CLI or direct-database fallback.
+- [ ] EC-003: Home and Inbox are functional daily surfaces whose readiness, blockers, due/overdue and planning data all come from Rust services.
+- [ ] EC-004: Basic, Development, Research, Learning and Habits workflows produce appropriate functional project workspaces through one view registry, with work-item creation, editing, valid transitions, invalid-transition explanations, workflow application/change and upgrade preview plus confirmed upgrade.
+- [ ] EC-005: No user-visible "Blueprint" text exists anywhere in the product, enforced by an automated check; internal identifiers remain unchanged.
+- [ ] EC-006: Knowledge documents, attachments and agent jobs/handoffs can be handled from the browser within existing authorization, size and integrity limits.
+- [ ] EC-007: Playwright acceptance runs against a real isolated `orbit-server` and covers authentication, project/task lifecycle, inbox triage, workflow selection/views/transitions, planning, knowledge, attachments, agent inspection, conflict rejection, session expiry, refresh and restart.
+- [ ] EC-008: An Orbit Development project has been actively managed through the web app for at least one planning-to-completion cycle, with a dogfooding issue log, fixes in the correct layer and regression tests.
+- [ ] EC-009: User documentation matches the shipped product, uses Workflow terminology, and every documented command was executed.
+- [ ] EC-010: A TUI redesign specification classifies each proven web interaction pattern as must-match, adapt, not-appropriate or shared-domain/API change, derived from real usage rather than assumptions.
+
+## Evidence
+
+- EC-001: `crates/orbit-server/src/session.rs` + `main.rs` session/CSRF handlers and the loopback HTTP tests in `crates/orbit-server`; live curl smoke (login 201 + cookie, session 200, CSRF-less mutation 403); Playwright `tests/e2e/auth.spec.ts` (wrong token, valid login + reload, sign-out, expiry message) — 20/20 suite green at commit `87b4710`.
+- EC-005: `web/scripts/check-terminology.mjs` scanning 106 files with zero findings; Playwright `terminology.spec.ts` asserting rendered routes and document titles.
+- EC-002/003 partial: Home, Inbox, Projects, project Overview/Tasks and the task drawer are implemented and covered by `projects.spec.ts`, `tasks.spec.ts`, `home.spec.ts`, `conflict.spec.ts`; attachments, criteria completeness and dependencies remain for I2/I4.
+- Implementation records: commits `bf2c4bd` (server foundation) and `87b4710` (web app I1); `.slim/deepwork/m31-web-app/{progress.md,api-contract.md,gate-1.md,structure-scan.md}`.
+
+## Remaining work
+
+- EC-002–EC-004, EC-006–EC-010 remain open; I2 begins with project workspaces,
+  board, dependencies, milestones and planning.
+
+## Next milestone
+
+MILESTONE-0031 iterations I2–I6, then the TUI redesign informed by EC-010 and
+the externally constrained M27 release verification.

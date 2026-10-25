@@ -12,11 +12,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    setupFiles: ['./src/app/test-setup.ts'],
-    // Vitest owns the unit lane only. The Playwright specs in `tests/e2e` run
-    // from the project-root `playwright.config.ts` and would fail here at
-    // import time (`fileURLToPath(new URL(...))` under jsdom).
-    include: ['src/**/*.test.{ts,tsx}', 'tests/unit/**/*.spec.{ts,tsx}'],
+    setupFiles: ['./tests/setup.ts'],
+    // Vitest owns the unit lane only, under one root. The Playwright specs in
+    // `tests/e2e` run from the project-root `playwright.config.ts` and would
+    // fail here at import time under jsdom.
+    include: ['tests/unit/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['tests/e2e/**', 'node_modules/**', 'dist/**'],
     css: false,
     restoreMocks: true,

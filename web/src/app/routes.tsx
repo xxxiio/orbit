@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute } from './protected-route'
-import { WorkspaceLayout } from '@/components/layout/workspace-layout'
+import { WorkspaceLayout } from './workspace-layout'
 import { LoginPage } from '@/features/auth/login-page'
 import { HomePage } from './pages/home-page'
 import { InboxPage } from './pages/inbox-page'

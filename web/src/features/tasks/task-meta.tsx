@@ -126,6 +126,10 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short',
 })
 
+const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+
+const weekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long' })
+
 export function startOfDay(ms: number): number {
   const date = new Date(ms)
   date.setHours(0, 0, 0, 0)
@@ -148,6 +152,14 @@ export function formatDay(ms: number): string {
 
 export function formatDateTime(ms: number): string {
   return dateTimeFormatter.format(new Date(ms))
+}
+
+export function formatDate(ms: number): string {
+  return dateFormatter.format(new Date(ms))
+}
+
+export function formatWeekday(ms: number): string {
+  return weekdayFormatter.format(new Date(ms))
 }
 
 function hasMeaningfulTime(ms: number): boolean {

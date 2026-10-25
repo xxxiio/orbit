@@ -99,9 +99,10 @@ export function fetchUpgradePreview(
 
 /**
  * Explicit re-pin. `confirm` must be `true` (the server answers 400
- * "confirmation required" otherwise). The fingerprint is optional: omitting it
- * makes the server recompute the preview, so an apply can never target a
- * version the caller was not shown.
+ * "confirmation required" otherwise) and `fingerprint` must name the preview
+ * the caller was actually shown (400 when missing, 409 when it no longer
+ * matches). The client never derives the fingerprint from the target version:
+ * an apply can only target a version the person was shown.
  */
 export function applyUpgrade(body: ApplyUpgradeBody): Promise<BlueprintUpgradeApplied> {
   return api.post<BlueprintUpgradeApplied>(`${BASE}/upgrade`, body)

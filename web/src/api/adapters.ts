@@ -22,6 +22,7 @@ import type {
   KindUpgradeDiff,
   MetricRecord,
   MilestoneRecord,
+  MilestoneResult,
   NextAction,
   ProjectRecord,
   RoutineRecord,
@@ -77,6 +78,21 @@ export function toMilestone(record: MilestoneRecord): Milestone {
     projectId: record.project_id,
     name: record.name,
     status: record.status,
+  }
+}
+
+export interface MilestoneMutationOutcome {
+  revision: number
+  duplicate: boolean
+  /** `null` for `delete`, because the server removes the record. */
+  milestone: Milestone | null
+}
+
+export function toMilestoneResult(result: MilestoneResult): MilestoneMutationOutcome {
+  return {
+    revision: result.revision,
+    duplicate: result.duplicate,
+    milestone: result.milestone ? toMilestone(result.milestone) : null,
   }
 }
 
@@ -999,3 +1015,10 @@ export function toAttachment(view: AttachmentView): Attachment {
     isImage: view.is_image,
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Planning domain (split for size; same import path)                  */
+/* ------------------------------------------------------------------ */
+
+export * from './adapters/planning'
+

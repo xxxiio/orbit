@@ -6,30 +6,46 @@
  * 1. **Nothing is shown as saved before the server answered.** There is no
  *    optimistic update and no rollback theatre: a mutation has a per-instance
  *    `isPending`, and `disposition` only becomes `accepted` after a response.
- * 2. **Revisions are read at mutation time.** `expected_revision` comes from the
- *    query cache inside `mutationFn`, so a snapshot refresh between render and
- *    click cannot produce a stale fence. The client never decides what a legal
- *    transition is; it sends the command and renders the server's answer.
- * 3. **Failures are honest.** A rejected command is `rejected`; a write whose
+ * 2. **Revisions are read at mutation time, and accepted ones are written back.**
+ *    `expected_revision` comes from the query cache inside `mutationFn`, so a
+ *    snapshot refresh between render and click cannot produce a stale fence.
+ *    After an accepted write the response's revision becomes the cache's new
+ *    floor (`Math.max`), so a second command in the same interaction fences on
+ *    the revision the server just reported instead of the pre-write one. The
+ *    client never decides what a legal transition is; it sends the command and
+ *    renders the server's answer.
+ * 3. **Idempotency keys are allocated by the caller.** `command_id` (and the
+ *    entity id for creates) travel in the mutation variables, minted when the
+ *    person acts, so pressing the same button again after an unconfirmed
+ *    failure replays the same receipt instead of creating a second entity.
+ * 4. **Failures are honest.** A rejected command is `rejected`; a write whose
  *    outcome the server may have applied anyway (lost response, 5xx, knowledge
  *    filesystem publication) is `uncertain`, never silently retried.
  */
 import { useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query'
-import { ApiError, ClientStateError, classifyError, errorInfo } from './errors'
+import {
+  ApiError,
+  ClientStateError,
+  classifyError,
+  errorInfo,
+  isAmbiguousError,
+} from './errors'
 import { handleUnauthorized } from './session-store'
 import { queryKeys } from './queries'
 import {
+  toApprovedScheduleReceipt,
   toAttachment,
+  toMilestoneResult,
   toProject,
   toTask,
   toWorkItem,
-  toWorkflowBinding,
   toWorkflowUpgradeApplied,
+  type ApprovedScheduleOutcome,
   type Attachment,
+  type MilestoneMutationOutcome,
   type Project,
   type Task,
   type WorkItem,
-  type WorkflowBinding,
   type WorkflowUpgradeApplied,
 } from './adapters'
 import type {
@@ -38,14 +54,17 @@ import type {
   AttachmentImportResult,
   AttachmentOwnerKind,
   AuthoritySnapshotResponse,
-  BindWorkflowBody,
   BlueprintUpgradePreview,
   BlueprintWorkItemRecord,
   CreateWorkItemBody,
   MarkdownCommand,
   MarkdownReceipt,
+  MilestoneSnapshot,
+  MilestoneStatus,
+  PlanReview,
   ProjectCommand,
   ProjectResult,
+  ScheduleApprovalRequest,
   TaskAction,
   TaskCommand,
   TaskPriority,
@@ -54,17 +73,31 @@ import type {
   WorkItemPropertiesBody,
   WorkItemTransitionBody,
 } from './contracts'
+import { newCommandId } from './ids'
 import { sendTaskCommand } from './endpoints/tasks'
 import { sendProjectCommand } from './endpoints/projects'
 import {
+  changeMilestoneStatus,
+  createMilestone,
+  deleteMilestone,
+  moveMilestoneProject,
+  renameMilestone,
+} from './endpoints/milestones'
+import {
+  applyApprovedPlan,
+  reviewPlan,
+  type ReviewedSchedulePlan,
+} from './endpoints/planning'
+import {
   applyUpgrade,
-  bindWorkflow,
   createWorkItem,
   transitionWorkItem,
   updateWorkItemProperties,
 } from './endpoints/workflows'
 import { importAttachment } from './endpoints/attachments'
 import { sendMarkdownCommand } from './endpoints/knowledge'
+
+export { newCommandId } from './ids'
 
 /* ------------------------------------------------------------------ */
 /* Disposition                                                         */
@@ -103,8 +136,6 @@ interface ApiMutationOptions<TData, TVariables> {
 }
 
 /** Errors whose meaning is "we do not know whether the write landed". */
-const AMBIGUOUS_KINDS = new Set(['offline', 'server', 'rateLimited', 'conflict'])
-
 function dispositionOf(
   error: ApiError | null,
   isPending: boolean,
@@ -114,7 +145,7 @@ function dispositionOf(
   if (isPending) return 'pending'
   if (isSuccess) return 'accepted'
   if (!error) return 'idle'
-  if (uncertainOnError && AMBIGUOUS_KINDS.has(classifyError(error))) return 'uncertain'
+  if (uncertainOnError && isAmbiguousError(error)) return 'uncertain'
   return 'rejected'
 }
 
@@ -176,13 +207,24 @@ export function useApiMutation<TData, TVariables>({
 /* Identifiers + revisions                                             */
 /* ------------------------------------------------------------------ */
 
-/** Idempotency key: 1–128 characters. `crypto.randomUUID()` is 36. */
-export function newCommandId(): string {
-  const cryptoApi = globalThis.crypto
-  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
-    return cryptoApi.randomUUID()
-  }
-  return `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+/**
+ * Write the revision an accepted response carries back into the snapshot it
+ * fences on, never lowering what is already cached: a duplicate receipt carries
+ * the revision the *original* command had, which can be older than the tip this
+ * browser already knows about.
+ *
+ * Without this, two commands in one interaction (a bulk loop, status then
+ * priority in the drawer) would both fence on the pre-write revision and the
+ * server would correctly reject the second as stale.
+ */
+export function acceptRevision(
+  queryClient: QueryClient,
+  queryKey: QueryKey,
+  revision: number,
+): void {
+  queryClient.setQueryData<{ revision: number }>(queryKey, (previous) =>
+    previous ? { ...previous, revision: Math.max(previous.revision, revision) } : previous,
+  )
 }
 
 /**
@@ -194,6 +236,18 @@ export function snapshotRevision(queryClient: QueryClient): number {
   const snapshot = queryClient.getQueryData<AuthoritySnapshotResponse>(queryKeys.snapshot())
   if (!snapshot) {
     throw new ClientStateError('The workspace is still loading. Try again in a moment.')
+  }
+  return snapshot.revision
+}
+
+/**
+ * Milestones have their own snapshot revision (they are not fenced by the task
+ * snapshot). Read it at mutation time so a refreshed milestone list always wins.
+ */
+export function milestoneRevision(queryClient: QueryClient): number {
+  const snapshot = queryClient.getQueryData<MilestoneSnapshot>(queryKeys.milestones())
+  if (!snapshot) {
+    throw new ClientStateError('The milestone list is still loading. Try again in a moment.')
   }
   return snapshot.revision
 }
@@ -217,6 +271,12 @@ function derivedTaskKeys(): readonly QueryKey[] {
     queryKeys.taskReadinessAll(),
     queryKeys.nextActionsAll(),
     queryKeys.dayPlanAll(),
+    queryKeys.taskGraphAll(),
+    queryKeys.projectDependenciesAll(),
+    queryKeys.workBriefAll(),
+    queryKeys.schedulePlanAll(),
+    queryKeys.portfolioCapacityAll(),
+    queryKeys.workloadAll(),
   ]
 }
 
@@ -382,11 +442,26 @@ function taskKeys(taskId: string): readonly QueryKey[] {
 }
 
 /**
+ * A task command plus the idempotency key its caller minted. The key is part of
+ * the variables (not generated inside `mutationFn`) so a retry of the same
+ * intent replays the server's receipt instead of writing twice.
+ */
+export interface TaskCommandAttempt {
+  commandId: string
+  input: TaskCommandInput
+}
+
+/** Attach a fresh idempotency key to one command intent. */
+export function taskCommandAttempt(input: TaskCommandInput): TaskCommandAttempt {
+  return { commandId: newCommandId(), input }
+}
+
+/**
  * The whole task command family as one mutation instance. `isPending` is shared
  * (only one command can be in flight at a time); use `pendingCommand` to show a
  * spinner on the row that is actually being written.
  */
-export function useTaskCommand(): CommandMutation<TaskMutationOutcome, TaskCommandInput> & {
+export function useTaskCommand(): CommandMutation<TaskMutationOutcome, TaskCommandAttempt> & {
   pendingCommand: TaskCommandInput['type'] | null
   renameTask: (input: { taskId: string; title: string }) => void
   changeStatus: (input: { taskId: string; status: TaskStatus }) => void
@@ -417,44 +492,51 @@ export function useTaskCommand(): CommandMutation<TaskMutationOutcome, TaskComma
   reorderCriterion: (input: { taskId: string; criterionId: string; position: number }) => void
   removeCriterion: (input: { taskId: string; criterionId: string }) => void
 } {
-  const mutation = useApiMutation<TaskMutationOutcome, TaskCommandInput>({
-    mutationFn: (input, queryClient) => {
+  const mutation = useApiMutation<TaskMutationOutcome, TaskCommandAttempt>({
+    // A lost response does not prove the command was not applied.
+    uncertainOnError: true,
+    mutationFn: (attempt, queryClient) => {
       const command: TaskCommand = {
-        command_id: newCommandId(),
+        command_id: attempt.commandId,
         expected_revision: snapshotRevision(queryClient),
-        action: toWireTaskAction(input),
+        action: toWireTaskAction(attempt.input),
       }
       return sendTaskCommand(command).then(toTaskOutcome)
     },
-    affectedKeys: (input) => taskKeys(input.taskId),
+    affectedKeys: (attempt) => taskKeys(attempt.input.taskId),
+    onAccepted: (outcome, _attempt, queryClient) => {
+      acceptRevision(queryClient, queryKeys.snapshot(), outcome.revision)
+    },
   })
+
+  const send = (input: TaskCommandInput) => mutation.mutate(taskCommandAttempt(input))
 
   return {
     ...mutation,
-    pendingCommand: mutation.isPending ? (mutation.variables?.type ?? null) : null,
-    renameTask: (input) => mutation.mutate({ type: 'rename', ...input }),
-    changeStatus: (input) => mutation.mutate({ type: 'change_status', ...input }),
-    assignProject: (input) => mutation.mutate({ type: 'assign_project', ...input }),
-    assignMilestone: (input) => mutation.mutate({ type: 'assign_milestone', ...input }),
-    setPlanning: (input) => mutation.mutate({ type: 'set_planning', ...input }),
-    addPrerequisite: (input) => mutation.mutate({ type: 'add_prerequisite', ...input }),
-    removePrerequisite: (input) => mutation.mutate({ type: 'remove_prerequisite', ...input }),
-    setDetails: (input) => mutation.mutate({ type: 'set_details', ...input }),
-    acceptanceCriteria: (input) => mutation.mutate({ type: 'acceptance_criteria', ...input }),
+    pendingCommand: mutation.isPending ? (mutation.variables?.input.type ?? null) : null,
+    renameTask: (input) => send({ type: 'rename', ...input }),
+    changeStatus: (input) => send({ type: 'change_status', ...input }),
+    assignProject: (input) => send({ type: 'assign_project', ...input }),
+    assignMilestone: (input) => send({ type: 'assign_milestone', ...input }),
+    setPlanning: (input) => send({ type: 'set_planning', ...input }),
+    addPrerequisite: (input) => send({ type: 'add_prerequisite', ...input }),
+    removePrerequisite: (input) => send({ type: 'remove_prerequisite', ...input }),
+    setDetails: (input) => send({ type: 'set_details', ...input }),
+    acceptanceCriteria: (input) => send({ type: 'acceptance_criteria', ...input }),
     addCriterion: (input) =>
-      mutation.mutate({
+      send({
         type: 'acceptance_criteria',
         taskId: input.taskId,
         change: { operation: 'add', criterionId: input.criterionId, text: input.text },
       }),
     setCriterionText: (input) =>
-      mutation.mutate({
+      send({
         type: 'acceptance_criteria',
         taskId: input.taskId,
         change: { operation: 'set_text', criterionId: input.criterionId, text: input.text },
       }),
     setCriterionCompleted: (input) =>
-      mutation.mutate({
+      send({
         type: 'acceptance_criteria',
         taskId: input.taskId,
         change: {
@@ -464,13 +546,13 @@ export function useTaskCommand(): CommandMutation<TaskMutationOutcome, TaskComma
         },
       }),
     reorderCriterion: (input) =>
-      mutation.mutate({
+      send({
         type: 'acceptance_criteria',
         taskId: input.taskId,
         change: { operation: 'reorder', criterionId: input.criterionId, position: input.position },
       }),
     removeCriterion: (input) =>
-      mutation.mutate({
+      send({
         type: 'acceptance_criteria',
         taskId: input.taskId,
         change: { operation: 'remove', criterionId: input.criterionId },
@@ -478,20 +560,30 @@ export function useTaskCommand(): CommandMutation<TaskMutationOutcome, TaskComma
   }
 }
 
-/** The task id is allocated here because the server requires one in the command. */
-export function useCreateTask(): CommandMutation<
-  TaskMutationOutcome,
-  { title: string; projectId?: string }
-> {
-  return useApiMutation<TaskMutationOutcome, { title: string; projectId?: string }>({
-    mutationFn: ({ title, projectId }, queryClient) => {
+/**
+ * Everything the server needs to create one task, including both ids. The
+ * dialog or capture field allocates them once per attempt, so pressing "Create"
+ * again after an unconfirmed failure replays the same command instead of
+ * producing a second task.
+ */
+export interface CreateTaskVariables {
+  commandId: string
+  taskId: string
+  title: string
+  projectId?: string
+}
+
+export function useCreateTask(): CommandMutation<TaskMutationOutcome, CreateTaskVariables> {
+  return useApiMutation<TaskMutationOutcome, CreateTaskVariables>({
+    uncertainOnError: true,
+    mutationFn: ({ commandId, taskId, title, projectId }, queryClient) => {
       if (title.trim().length === 0) throw new ClientStateError('A task needs a title.')
       const command: TaskCommand = {
-        command_id: newCommandId(),
+        command_id: commandId,
         expected_revision: snapshotRevision(queryClient),
         action: {
           type: 'create',
-          task_id: newCommandId(),
+          task_id: taskId,
           title,
           ...(projectId ? { project_id: projectId } : {}),
         },
@@ -499,6 +591,9 @@ export function useCreateTask(): CommandMutation<
       return sendTaskCommand(command).then(toTaskOutcome)
     },
     affectedKeys: () => derivedTaskKeys(),
+    onAccepted: (outcome, _variables, queryClient) => {
+      acceptRevision(queryClient, queryKeys.snapshot(), outcome.revision)
+    },
   })
 }
 
@@ -519,17 +614,22 @@ function toProjectOutcome(result: ProjectResult): ProjectMutationOutcome {
 /**
  * Creation is the only project write that exists. `workflowId` is only read on
  * the first accepted create, where it pins the binding in the same transaction.
+ * Both ids come from the dialog's attempt, so a retry replays the receipt.
  */
-export function useCreateProject(): CommandMutation<
-  ProjectMutationOutcome,
-  { name: string; workflowId?: string }
-> {
-  return useApiMutation<ProjectMutationOutcome, { name: string; workflowId?: string }>({
-    mutationFn: ({ name, workflowId }, queryClient) => {
+export interface CreateProjectVariables {
+  commandId: string
+  projectId: string
+  name: string
+  workflowId?: string
+}
+
+export function useCreateProject(): CommandMutation<ProjectMutationOutcome, CreateProjectVariables> {
+  return useApiMutation<ProjectMutationOutcome, CreateProjectVariables>({
+    uncertainOnError: true,
+    mutationFn: ({ commandId, projectId, name, workflowId }, queryClient) => {
       if (name.trim().length === 0) throw new ClientStateError('A project needs a name.')
-      const projectId = newCommandId()
       const command: ProjectCommand = {
-        command_id: newCommandId(),
+        command_id: commandId,
         expected_revision: snapshotRevision(queryClient),
         project_id: projectId,
         name,
@@ -538,30 +638,120 @@ export function useCreateProject(): CommandMutation<
       return sendProjectCommand(command).then(toProjectOutcome)
     },
     affectedKeys: () => [queryKeys.snapshot()],
+    onAccepted: (outcome, _variables, queryClient) => {
+      acceptRevision(queryClient, queryKeys.snapshot(), outcome.revision)
+    },
   })
+}
+
+/* ------------------------------------------------------------------ */
+/* Milestones                                                          */
+/* ------------------------------------------------------------------ */
+
+export type MilestoneCommandInput =
+  | { type: 'create'; projectId: string; name: string; milestoneId: string }
+  | { type: 'rename'; milestoneId: string; name: string }
+  | { type: 'change_status'; milestoneId: string; status: MilestoneStatus }
+  | { type: 'move_project'; milestoneId: string; projectId: string }
+  | { type: 'delete'; milestoneId: string }
+
+/** A milestone command plus the idempotency key its caller minted. */
+export interface MilestoneCommandAttempt {
+  commandId: string
+  input: MilestoneCommandInput
+}
+
+/**
+ * The whole milestone command family as one mutation instance, matching
+ * `useTaskCommand`. `expected_revision` is read from the milestones snapshot
+ * inside `mutationFn`, the accepted revision is written back, and `command_id`
+ * (plus `milestoneId` for creates) is allocated by the caller so a retry
+ * replays the receipt. Status edges are server-enforced; this hook only sends
+ * the requested status.
+ */
+export function useMilestoneCommand(): CommandMutation<
+  MilestoneMutationOutcome,
+  MilestoneCommandAttempt
+> & {
+  pendingCommand: MilestoneCommandInput['type'] | null
+  createMilestone: (input: { projectId: string; name: string; milestoneId?: string }) => void
+  renameMilestone: (input: { milestoneId: string; name: string }) => void
+  changeMilestoneStatus: (input: { milestoneId: string; status: MilestoneStatus }) => void
+  moveMilestoneProject: (input: { milestoneId: string; projectId: string }) => void
+  deleteMilestone: (input: { milestoneId: string }) => void
+} {
+  const mutation = useApiMutation<MilestoneMutationOutcome, MilestoneCommandAttempt>({
+    uncertainOnError: true,
+    mutationFn: (attempt, queryClient) => {
+      const expectedRevision = milestoneRevision(queryClient)
+      const { commandId, input } = attempt
+      switch (input.type) {
+        case 'create':
+          return createMilestone(
+            {
+              milestoneId: input.milestoneId,
+              projectId: input.projectId,
+              name: input.name,
+            },
+            expectedRevision,
+            commandId,
+          ).then(toMilestoneResult)
+        case 'rename':
+          return renameMilestone(
+            { milestoneId: input.milestoneId, name: input.name },
+            expectedRevision,
+            commandId,
+          ).then(toMilestoneResult)
+        case 'change_status':
+          return changeMilestoneStatus(
+            { milestoneId: input.milestoneId, status: input.status },
+            expectedRevision,
+            commandId,
+          ).then(toMilestoneResult)
+        case 'move_project':
+          return moveMilestoneProject(
+            { milestoneId: input.milestoneId, projectId: input.projectId },
+            expectedRevision,
+            commandId,
+          ).then(toMilestoneResult)
+        case 'delete':
+          return deleteMilestone(
+            { milestoneId: input.milestoneId },
+            expectedRevision,
+            commandId,
+          ).then(toMilestoneResult)
+      }
+    },
+    affectedKeys: () => [queryKeys.milestones(), queryKeys.snapshot()],
+    onAccepted: (outcome, _attempt, queryClient) => {
+      acceptRevision(queryClient, queryKeys.milestones(), outcome.revision)
+      acceptRevision(queryClient, queryKeys.snapshot(), outcome.revision)
+    },
+  })
+
+  const send = (input: MilestoneCommandInput) =>
+    mutation.mutate({ commandId: newCommandId(), input })
+
+  return {
+    ...mutation,
+    pendingCommand: mutation.isPending ? (mutation.variables?.input.type ?? null) : null,
+    createMilestone: (input) =>
+      send({
+        type: 'create',
+        projectId: input.projectId,
+        name: input.name,
+        milestoneId: input.milestoneId ?? newCommandId(),
+      }),
+    renameMilestone: (input) => send({ type: 'rename', ...input }),
+    changeMilestoneStatus: (input) => send({ type: 'change_status', ...input }),
+    moveMilestoneProject: (input) => send({ type: 'move_project', ...input }),
+    deleteMilestone: (input) => send({ type: 'delete', ...input }),
+  }
 }
 
 /* ------------------------------------------------------------------ */
 /* Workflows                                                           */
 /* ------------------------------------------------------------------ */
-
-/** Re-pin a project to a workflow version (the "apply" step). */
-export function useApplyWorkflow(): CommandMutation<
-  WorkflowBinding,
-  { projectId: string; workflowId: string; version: number }
-> {
-  return useApiMutation<WorkflowBinding, { projectId: string; workflowId: string; version: number }>({
-    mutationFn: ({ projectId, workflowId, version }) => {
-      const body: BindWorkflowBody = { project_id: projectId, id: workflowId, version }
-      return bindWorkflow(body).then(toWorkflowBinding)
-    },
-    affectedKeys: (variables) => [
-      queryKeys.workflowBinding(variables.projectId),
-      queryKeys.workItems(variables.projectId),
-      queryKeys.upgradePreviewAll(),
-    ],
-  })
-}
 
 /**
  * Confirm an upgrade. The fingerprint is read from the freshest cached preview
@@ -576,6 +766,8 @@ export function useApplyUpgrade(): CommandMutation<
     WorkflowUpgradeApplied,
     { projectId: string; workflowId: string; version: number }
   >({
+    // The version may have been applied even if the response was lost.
+    uncertainOnError: true,
     mutationFn: ({ projectId, workflowId, version }, queryClient) => {
       const preview = queryClient.getQueryData<BlueprintUpgradePreview>(
         queryKeys.upgradePreview(projectId, workflowId, version),
@@ -609,6 +801,8 @@ export function useCreateWorkItem(): CommandMutation<
     WorkItem,
     { projectId: string; kind: string; properties?: Record<string, unknown> }
   >({
+    // The item may exist even when the response never arrived.
+    uncertainOnError: true,
     mutationFn: ({ projectId, kind, properties }) => {
       const body: CreateWorkItemBody = {
         id: newCommandId(),
@@ -628,6 +822,7 @@ export function useCreateWorkItem(): CommandMutation<
 /** Transition legality, guards and capabilities are decided by the server. */
 export function useWorkItemTransition(): CommandMutation<WorkItem, { id: string; to: string }> {
   return useApiMutation<WorkItem, { id: string; to: string }>({
+    uncertainOnError: true,
     mutationFn: ({ id, to }, queryClient) => {
       const body: WorkItemTransitionBody = {
         id,
@@ -645,6 +840,7 @@ export function useUpdateWorkItemProperties(): CommandMutation<
   { id: string; changes: Record<string, unknown> }
 > {
   return useApiMutation<WorkItem, { id: string; changes: Record<string, unknown> }>({
+    uncertainOnError: true,
     mutationFn: ({ id, changes }, queryClient) => {
       const body: WorkItemPropertiesBody = {
         id,
@@ -718,6 +914,9 @@ export function useImportAttachment(): CommandMutation<
         ? [queryKeys.taskActivity(variables.ownerId)]
         : []),
     ],
+    onAccepted: (outcome, _variables, queryClient) => {
+      acceptRevision(queryClient, queryKeys.snapshot(), outcome.revision)
+    },
   })
 }
 
@@ -739,5 +938,94 @@ export function useMarkdownCommand(): CommandMutation<
     mutationFn: ({ command }) =>
       sendMarkdownCommand({ command_id: newCommandId(), command }),
     affectedKeys: () => [queryKeys.knowledgeAll()],
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Explicit plan review + approval                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The review is a read-only `POST` (it needs the same CSRF/session path), so it
+ * deliberately does not use the mutation disposition model: there is no
+ * `accepted`, because nothing was written. `review` is the server's `PlanReview`
+ * verbatim, including `fingerprint`, `command_id` and
+ * `requires_explicit_approval`; `reviewedPlan` keeps that review paired with the
+ * exact command it reviewed so it can be applied without being rebuilt.
+ */
+export interface PlanReviewResult {
+  reviewedPlan: ReviewedSchedulePlan | null
+  review: PlanReview | null
+  fingerprint: string | null
+  requiresExplicitApproval: boolean | null
+  isPending: boolean
+  error: ApiError | null
+  reviewPlan: (request: ScheduleApprovalRequest) => void
+  reviewPlanAsync: (request: ScheduleApprovalRequest) => Promise<ReviewedSchedulePlan>
+  reset: () => void
+}
+
+export function usePlanReview(): PlanReviewResult {
+  const queryClient = useQueryClient()
+  const mutation = useMutation<ReviewedSchedulePlan, ApiError, ScheduleApprovalRequest>({
+    mutationFn: async (request) => {
+      try {
+        const review = await reviewPlan(request)
+        return { plan: request, review }
+      } catch (error) {
+        if (error instanceof ApiError) throw error
+        throw new ApiError(0, 'Could not reach the Orbit server.', error)
+      }
+    },
+    onError: (error) => {
+      if (classifyError(error) === 'unauthorized') {
+        handleUnauthorized(queryClient)
+      }
+    },
+  })
+
+  return {
+    reviewedPlan: mutation.data ?? null,
+    review: mutation.data?.review ?? null,
+    fingerprint: mutation.data?.review.fingerprint ?? null,
+    requiresExplicitApproval: mutation.data?.review.requires_explicit_approval ?? null,
+    isPending: mutation.isPending,
+    error: mutation.error ?? null,
+    reviewPlan: (request) => mutation.mutate(request),
+    reviewPlanAsync: mutation.mutateAsync,
+    reset: mutation.reset,
+  }
+}
+
+/**
+ * Apply exactly the reviewed command. The variables carry the `PlanReview`, so
+ * there is no way to apply a plan that was not reviewed in this session; the
+ * endpoint refuses locally (typed error) when the review is missing, has no
+ * fingerprint, or is not marked `requires_explicit_approval`. The command id is
+ * echoed from the review and never regenerated, and a replayed receipt surfaces
+ * `replayed: true`.
+ */
+export function useApplyApprovedPlan(): CommandMutation<
+  ApprovedScheduleOutcome,
+  ReviewedSchedulePlan | null
+> {
+  return useApiMutation<ApprovedScheduleOutcome, ReviewedSchedulePlan | null>({
+    // The write may have landed even if the response was lost.
+    uncertainOnError: true,
+    mutationFn: (reviewed) => applyApprovedPlan(reviewed).then(toApprovedScheduleReceipt),
+    affectedKeys: () => [
+      queryKeys.snapshot(),
+      queryKeys.taskReadinessAll(),
+      queryKeys.nextActionsAll(),
+      queryKeys.taskGraphAll(),
+      queryKeys.dayPlanAll(),
+      queryKeys.schedulePlanAll(),
+      queryKeys.workBriefAll(),
+      queryKeys.portfolioCapacityAll(),
+      queryKeys.workloadAll(),
+    ],
+    onAccepted: (outcome, _reviewed, queryClient) => {
+      acceptRevision(queryClient, queryKeys.snapshot(), outcome.acceptedRevision)
+    },
   })
 }

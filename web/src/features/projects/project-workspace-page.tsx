@@ -7,7 +7,8 @@ import {
   useWorkspaceSnapshot,
   userMessage,
 } from '@/hooks'
-import { useDocumentTitle } from '@/app/use-document-title'
+import { humanizeIdentifier } from '@/lib/humanize'
+import { useDocumentTitle } from '@/hooks'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -30,11 +31,12 @@ import {
 import { Panel } from '@/components/ui/panel'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
-import { useWorkspaceActions } from '@/components/layout/workspace-actions'
-import { isTerminalStatus } from '@/features/tasks/task-meta'
+import { useWorkspaceActions } from '@/lib/workspace-actions'
+import { isTerminalStatus } from '@/features/tasks'
 import { ProjectOverview } from './project-overview'
+import { projectStatusLabel } from './project-status'
 import { ProjectTasks } from './project-tasks'
-import { recordProjectOpen } from './recent-projects'
+import { recordProjectOpen } from '@/lib/recent-projects'
 import { useProjectWorkflow } from './use-project-workflow'
 
 const FALLBACK_VIEWS = [
@@ -211,12 +213,14 @@ export function ProjectWorkspacePage() {
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <h1 className="font-display text-3xl font-medium tracking-tight text-ink">{project.name}</h1>
               <Badge tone={project.status === 'active' ? 'success' : 'neutral'} dot>
-                {project.status === 'on_hold' ? 'On hold' : project.status.replace('_', ' ')}
+                {projectStatusLabel(project.status)}
               </Badge>
               {workflow.label ? (
                 <Badge tone="accent">{workflow.label}</Badge>
               ) : workflow.loading ? (
                 <Skeleton className="h-4 w-20" />
+              ) : workflow.binding ? (
+                <Badge tone="neutral">Workflow unavailable</Badge>
               ) : (
                 <Badge tone="neutral">No workflow pinned</Badge>
               )}
@@ -297,7 +301,7 @@ export function ProjectWorkspacePage() {
         />
       ) : (
         <UnavailableView
-          name={currentView?.title ?? currentId}
+          name={currentView?.title ?? humanizeIdentifier(currentId)}
           description={currentView?.description}
           projectId={project.id}
         />

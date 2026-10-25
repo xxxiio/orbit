@@ -12,9 +12,23 @@ import { useCallback, useEffect } from 'react'
 import { useQuery, useQueryClient, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
 import { handleUnauthorized } from './session-store'
 import { sessionQueryKey } from './session'
-import { ApiError, classifyError } from './errors'
+import { ApiError, ClientStateError, classifyError } from './errors'
 import { fetchNextActions, fetchTaskDependencies, fetchTaskReadiness } from './endpoints/dependencies'
-import { fetchDayPlan, fetchWorkload, type DayPlanParams, type WorkloadParams } from './endpoints/planning'
+import {
+  fetchDayPlan,
+  fetchPortfolioCapacity,
+  fetchProjectDependencies,
+  fetchSchedulePlan,
+  fetchTaskGraph,
+  fetchWorkBrief,
+  fetchWorkload,
+  type DayPlanParams,
+  type PortfolioCapacityParams,
+  type ProjectDependenciesParams,
+  type SchedulePlanParams,
+  type WorkBriefParams,
+  type WorkloadParams,
+} from './endpoints/planning'
 import { fetchMilestones } from './endpoints/milestones'
 import { fetchSnapshot } from './endpoints/snapshot'
 import { fetchAcceptanceCriteria, fetchTaskActivity, fetchTaskDetail } from './endpoints/tasks'
@@ -32,8 +46,13 @@ import {
   toDependency,
   toMilestone,
   toNextActions,
+  toPortfolioCapacity,
+  toProjectDependencies,
+  toSchedulePlan,
   toTaskDetail,
+  toTaskGraph,
   toTaskReadiness,
+  toWorkBrief,
   toWorkItem,
   toWorkflow,
   toWorkflowBinding,
@@ -46,8 +65,13 @@ import {
   type Dependency,
   type Milestone,
   type NextActionsView,
+  type PortfolioCapacityView,
+  type ProjectDependencyView,
+  type SchedulePlanView,
   type Task,
+  type TaskGraphView,
   type TaskReadinessView,
+  type WorkBriefView,
   type WorkItem,
   type Workflow,
   type WorkflowBinding,
@@ -73,9 +97,20 @@ export const queryKeys = {
   taskReadinessAll: () => ['task-readiness'] as const,
   nextActions: (nowMs: number, limit: number) => ['next-actions', nowMs, limit] as const,
   nextActionsAll: () => ['next-actions'] as const,
+  taskGraph: (nowMs: number) => ['task-graph', nowMs] as const,
+  taskGraphAll: () => ['task-graph'] as const,
+  projectDependencies: (params: ProjectDependenciesParams) => ['project-dependencies', params] as const,
+  projectDependenciesAll: () => ['project-dependencies'] as const,
+  workBrief: (params: WorkBriefParams) => ['work-brief', params] as const,
+  workBriefAll: () => ['work-brief'] as const,
   dayPlan: (params: DayPlanParams) => ['day-plan', params] as const,
   dayPlanAll: () => ['day-plan'] as const,
+  schedulePlan: (params: SchedulePlanParams) => ['schedule-plan', params] as const,
+  schedulePlanAll: () => ['schedule-plan'] as const,
+  portfolioCapacity: (params: PortfolioCapacityParams) => ['portfolio-capacity', params] as const,
+  portfolioCapacityAll: () => ['portfolio-capacity'] as const,
   workload: (params: WorkloadParams) => ['workload', params] as const,
+  workloadAll: () => ['workload'] as const,
   workflows: () => ['workflows'] as const,
   workflow: (id: string, version: number) => ['workflow', id, version] as const,
   workflowBinding: (projectId: string) => ['workflow-binding', projectId] as const,
@@ -95,6 +130,9 @@ export const queryKeys = {
 
 /** 4xx means "understood and refused": never retry it blindly. */
 export function retryUnlessClientError(failureCount: number, error: ApiError): boolean {
+  // A `ClientStateError` means the request was never made (missing parameters,
+  // missing review). Retrying cannot fix it.
+  if (error instanceof ClientStateError) return false
   if (error instanceof ApiError && error.status >= 400 && error.status < 500) return false
   return failureCount < 1
 }
@@ -247,13 +285,47 @@ export function useNextActions(
 }
 
 /* ------------------------------------------------------------------ */
-/* Day plan + workload                                                 */
+/* Dependency graph + project dependencies                             */
 /* ------------------------------------------------------------------ */
 
+/** Server-built graph: ordering, depth and "unblocks" counts are not recomputed. */
+export function useTaskGraph(nowMs: number, enabled = true): UseQueryResult<TaskGraphView, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.taskGraph(nowMs),
+    queryFn: ({ signal }) => fetchTaskGraph(nowMs, signal),
+    enabled: enabled && Number.isFinite(nowMs),
+    select: toTaskGraph,
+  })
+}
+
+export function useProjectDependencies(
+  params: ProjectDependenciesParams,
+  enabled = true,
+): UseQueryResult<ProjectDependencyView, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.projectDependencies(params),
+    queryFn: ({ signal }) => fetchProjectDependencies(params, signal),
+    enabled: enabled && Number.isFinite(params.nowMs),
+    select: toProjectDependencies,
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Day plan, work brief, workload, capacity                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A day plan only exists once capacity is authored. `available_minutes` is
+ * never defaulted: with 0 (or a missing reference time) the query stays idle and
+ * nothing is sent.
+ */
 export function useDayPlan(
   params: DayPlanParams | null,
   enabled = true,
 ): UseQueryResult<DayPlanView, ApiError> {
+  const ready =
+    Boolean(params) && Number.isFinite(params?.nowMs) && (params?.availableMinutes ?? 0) > 0
+
   return useApiQuery({
     queryKey: queryKeys.dayPlan(params ?? { nowMs: 0, availableMinutes: 0 }),
     queryFn: ({ signal }) => {
@@ -263,8 +335,44 @@ export function useDayPlan(
       }
       return fetchDayPlan(params, signal)
     },
-    enabled: enabled && Boolean(params),
+    enabled: enabled && ready,
     select: toDayPlan,
+  })
+}
+
+export function useWorkBrief(
+  params: WorkBriefParams,
+  enabled = true,
+): UseQueryResult<WorkBriefView, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.workBrief(params),
+    queryFn: ({ signal }) => fetchWorkBrief(params, signal),
+    enabled: enabled && Number.isFinite(params.nowMs) && Number.isFinite(params.endsAtMs),
+    select: toWorkBrief,
+  })
+}
+
+/**
+ * A schedule plan needs an explicit, complete window (both ends). A partial
+ * window stays idle: the client never fills in "now + 1 day".
+ */
+export function useSchedulePlan(
+  params: SchedulePlanParams | null,
+  enabled = true,
+): UseQueryResult<SchedulePlanView, ApiError> {
+  const ready =
+    Boolean(params) && Number.isFinite(params?.startsAtMs) && Number.isFinite(params?.endsAtMs)
+
+  return useApiQuery({
+    queryKey: queryKeys.schedulePlan(params ?? { startsAtMs: 0, endsAtMs: 0 }),
+    queryFn: ({ signal }) => {
+      if (!params) {
+        return Promise.reject(new ApiError(400, 'A schedule plan needs a full planning window.'))
+      }
+      return fetchSchedulePlan(params, signal)
+    },
+    enabled: enabled && ready,
+    select: toSchedulePlan,
   })
 }
 
@@ -280,8 +388,29 @@ export function useWorkload(
       }
       return fetchWorkload(params, signal)
     },
-    enabled: enabled && Boolean(params),
+    enabled: enabled && Boolean(params) && Number.isFinite(params?.nowMs),
     select: toWorkload,
+  })
+}
+
+/** Like the day plan: a capacity proposal needs authored minutes. */
+export function usePortfolioCapacity(
+  params: PortfolioCapacityParams | null,
+  enabled = true,
+): UseQueryResult<PortfolioCapacityView, ApiError> {
+  const ready =
+    Boolean(params) && Number.isFinite(params?.nowMs) && (params?.availableMinutes ?? 0) > 0
+
+  return useApiQuery({
+    queryKey: queryKeys.portfolioCapacity(params ?? { nowMs: 0, availableMinutes: 0 }),
+    queryFn: ({ signal }) => {
+      if (!params) {
+        return Promise.reject(new ApiError(400, 'A capacity plan needs the available minutes.'))
+      }
+      return fetchPortfolioCapacity(params, signal)
+    },
+    enabled: enabled && ready,
+    select: toPortfolioCapacity,
   })
 }
 

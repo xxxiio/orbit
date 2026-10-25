@@ -17,16 +17,13 @@ import {
   TaskProjectControl,
   TaskStatusControl,
 } from './task-controls'
-import { useMediaQuery } from './use-media-query'
+import { useMediaQuery } from '@/hooks'
+import type { SortDirection, TaskSort, TaskSortKey } from './task-list-model'
+import type { TaskCommandField } from './use-task-command-state'
 
-export type TaskSortKey = 'title' | 'status' | 'priority' | 'due' | 'project' | 'milestone'
-export type SortDirection = 'asc' | 'desc'
-export interface TaskSort {
-  key: TaskSortKey
-  direction: SortDirection
-}
+export type { SortDirection, TaskSort, TaskSortKey }
 
-export type TaskPendingField = 'status' | 'project' | 'priority'
+export type TaskPendingField = TaskCommandField
 
 export interface TaskTableProps {
   tasks: Task[]

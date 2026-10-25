@@ -6,7 +6,7 @@ import '@fontsource-variable/jetbrains-mono'
 import './styles/tokens.css'
 import './styles/globals.css'
 import { App } from './app/App'
-import { applyInitialTheme } from './app/theme'
+import { applyInitialTheme } from '@/components/theme/theme'
 
 applyInitialTheme()
 

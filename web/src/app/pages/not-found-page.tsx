@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
-import { useDocumentTitle } from '@/app/use-document-title'
+import { useDocumentTitle } from '@/hooks'
 import { OrbitMark, Wordmark } from '@/components/ui/brand'
 import { buttonClasses } from '@/components/ui/button'
-import { ThemeToggle } from '@/components/layout/theme-toggle'
+import { ThemeToggle } from '@/components/theme/theme-toggle'
 import { ArrowLeftIcon } from '@/components/ui/icons'
 
 export function NotFoundPage() {

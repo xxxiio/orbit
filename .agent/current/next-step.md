@@ -5,98 +5,111 @@ template_digest: "b88835ce70ef09490ad55db0e910dc05ff721384d6ccad8d45eafedd7654aa
 project_owned: true
 record_contract: next-step
 record_schema_version: 1
-id: NEXT-0012
-status: completed
-milestone_id: MILESTONE-0030
-advances_exit_criteria: [EC-001, EC-002, EC-003, EC-004, EC-005, EC-006, EC-007, EC-008]
+id: NEXT-0013
+status: active
+milestone_id: MILESTONE-0031
+advances_exit_criteria: [EC-002, EC-003, EC-004]
 ---
 
 # Next Deterministic Step
 
 ## Objective
 
-Fix the navigation rail so the selected sidebar entry drives the workspace, then
-finish the remaining instruction scope: connected MCP blueprint outbox parity
-(M25 EC-004), previewable blueprint upgrades (EC-005) and habit recurrence
-ownership by an opt-in capability package (EC-006).
+Render the workflow-declared project views and the planning surface through the
+already-implemented I2 API layer: board and timeline from the pinned workflow,
+milestone management, dependency and readiness inspection, authored-capacity day
+planning, schedule plan review followed by fingerprint-fenced apply, project
+settings, and shareable list filters — each proven in real-browser acceptance.
 
 ## Why this is next
 
-The rail defect blocked everyday navigation, and the three open M25 criteria were
-the only remaining blueprint work that could be completed and verified locally;
-M27 is externally blocked.
+I1 delivered the authenticated shell and daily core, and I2's API surface
+(milestone commands, graph/dependencies/work-brief/day-plan/schedule-plan/
+workload/portfolio reads, plan review plus apply) is implemented and unit
+covered. The remaining I2 work is presentation and interaction on top of that
+authority; doing it before I3 keeps the workflow view registry from being built
+against a half-populated workspace.
 
 ## Preconditions
 
-- M30 I1 capability composition, receipts and TUI shell.
-- Existing replica outbox (`queue_blueprint_transport`, `flush`) and blueprint
-  command receipts.
-- Existing habit occurrence storage and bundled habits workflow.
+- MILESTONE-0031 I1 committed (`bf2c4bd`, `87b4710`) with a green Playwright
+  suite against a real server.
+- I2 API layer: `web/src/api/endpoints/{milestones,planning}.ts` and the
+  milestone/planning hooks, with `expected_revision` read at mutate time and
+  plan apply replaying the reviewed fingerprint and command id.
+- Structure remediation so `features/**` no longer duplicates list controllers
+  and `components/**` no longer imports features.
 
 ## Inputs
 
-- `crates/orbit-tui/src/{input,app}`, `crates/orbit-mcp/src`, `crates/orbit-client/src`,
-  `crates/orbit-storage/src/blueprints*`, `crates/orbit-runtime/src`,
-  `crates/orbit-cli/src/blueprint_commands.rs`, `crates/orbit-domain/src/habit_tracking.rs`.
-- `tests/acceptance/{tui,mcp,local_cli_workflows.py}` and `docs/**`.
+- `web/src/api/**`, `web/src/hooks/**`, `web/src/features/**`, `web/src/app/**`.
+- `.slim/deepwork/m31-web-app/api-contract.md` §6–§8 for exact query shapes.
+- `web/tests/e2e/**` harness, fixture and specs; `web/evidence/i1/**`.
 
 ## Ordered actions
 
-1. Fix `Enter` precedence and rail focus; add regression and PTY coverage.
-2. Route connected MCP blueprint writes through the outbox with honest
-   dispositions, receipts, offline replay and lost-ack recovery.
-3. Add preview/apply blueprint upgrades with typed diffs, warnings, blockers and
-   fingerprint fencing.
-4. Extract habit recurrence into `orbit-habit-capability`, register the
-   capability and gate streak/evidence reads on installation.
-5. Update docs, records and evidence; re-run workspace/PTY/MCP/CLI acceptance.
+1. Board view from the pinned workflow's `kanban`/task views with server-validated
+   moves, keyboard traversal and honest rejection feedback.
+2. Milestones and timeline: status lifecycle, task counts, no invented dates.
+3. Dependency and readiness inspection quoting the server's `reason` verbatim,
+   plus graph depth and unblock counts.
+4. Planning: authored capacity input, day plan dispositions, schedule window,
+   plan review, explicit approval, apply receipt that survives reload.
+5. Project settings: pinned workflow and available views, workflow change with
+   confirmation, honest note about unsupported rename, destructive actions only
+   where the API supports them.
+6. Task-list upgrades: column choice, URL-backed filter/sort state, bulk actions,
+   local windowing beyond 200 rows.
+7. Extend Playwright with I2 specs; keep every assertion strict.
+8. Update docs and records; capture evidence.
 
 ## Expected outputs
 
-- A rail that drives the workspace on every screen.
-- Outbox-backed connected blueprint writes with immutable receipts.
-- Explicit, previewable, fenced blueprint upgrades.
-- Habit recurrence owned by an opt-in trusted capability package.
-- Passing focused and workspace acceptance, docs and records.
+- Five workflow types producing appropriate functional workspaces through one
+  view dispatch seam, with unavailable views named explicitly.
+- Planning that is server-authored end to end, with no client scheduling math.
+- Real-browser acceptance for board, milestones, dependencies, planning, settings
+  and filters.
+- Documentation matching the shipped I2 behaviour.
 
 ## Acceptance criteria
 
-- [x] NS-001: `Enter` activates the focused rail row on every screen; top-level
-  destinations keep rail focus; project activation moves into the workspace.
-- [x] NS-002: Connected blueprint writes queue first and report
-  accepted/pending/conflict with offline and lost-ack replay.
-- [x] NS-003: Upgrades preview typed diffs with warnings/blockers and a
-  fingerprint; apply requires `--confirm` plus the exact fingerprint and never
-  happens automatically.
-- [x] NS-004: Habit recurrence lives in the opt-in capability package and reports
-  an explicit unavailable status when not installed/granted.
-- [x] NS-005: Workspace, clippy, fmt, PTY, MCP, local CLI, docs and contracts
-  suites pass and the records reflect only verified behaviour.
+- [ ] NS-001: A board move is accepted or rejected by the server, and a rejected
+  move never relocates the card while showing the server's reason.
+- [ ] NS-002: Milestones can be created, renamed and transitioned, with invalid
+  edges surfaced as server rejections.
+- [ ] NS-003: Readiness and blockers display server `reason` values, and adding
+  or removing a prerequisite changes them without a reload.
+- [ ] NS-004: Day planning requires an authored capacity and shows server
+  dispositions; schedule plan review cannot be skipped before apply, and the
+  applied plan survives a reload.
+- [ ] NS-005: Project settings show the pinned workflow and version; changing the
+  workflow updates the available views; unsupported edits are stated, not faked.
+- [ ] NS-006: Filter/sort/selection state is URL-shareable and survives a reload.
+- [ ] NS-007: `tsc`, unit tests, terminology check, build and the full Playwright
+  suite pass; documentation and records reflect only verified behaviour.
 
 ## Validation
 
 ```sh
-cargo fmt --all -- --check
-cargo test --workspace --offline
-cargo clippy -p orbit-domain -p orbit-application -p orbit-storage -p orbit-runtime \
-  -p orbit-sync -p orbit-blueprint -p orbit-client -p orbit-ui -p orbit-tui \
-  -p orbit-mcp -p orbit-cli -p orbit-server -p orbit-progress \
-  -p orbit-habit-capability --all-targets -- -D warnings
-python3 -m pytest -q tests/acceptance/tui tests/acceptance/mcp tests/contracts tests/documentation
-python3 tests/acceptance/local_cli_workflows.py --binary target/debug/orbit
-python3 -m pytest -q tests/acceptance/test_m30_capability_workflow.py
-getdone-validate-project
+cargo test -p orbit-server --offline
+cargo test -p orbit-runtime --offline
+cd web && node node_modules/typescript/bin/tsc --noEmit
+cd web && node node_modules/vitest/vitest.mjs run
+cd web && node scripts/check-terminology.mjs
+cd web && node node_modules/vite/bin/vite.js build
+cd web && node node_modules/@playwright/test/cli.js test
 ```
 
 ## Stop conditions
 
-- A blocking authority, data-loss or unauthorized-execution defect remains.
-- A criterion cannot be evidenced end to end.
-
-None applied at completion.
+- A planning or board interaction would require client-side scheduling or
+  transition rules to work.
+- A server response cannot be shown honestly (rejection must be visible).
+- A criterion cannot be evidenced in a real browser.
 
 ## Out of scope
 
-- Connected capability execution and MCP capability tools.
-- M27 public release verification.
-- Per-device project ACLs and server attachment GC.
+- I3 workflow registry implementation, work items and upgrades (next iteration).
+- Knowledge, attachments and agent surfaces.
+- TUI changes.

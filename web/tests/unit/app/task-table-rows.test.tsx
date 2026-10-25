@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Task } from '@/api/adapters'
 import { TaskTable } from '@/features/tasks/task-table'
-import { useRowKeys } from '@/features/tasks/use-command-feedback'
+import { useRowKeys } from '@/hooks'
 
 const tasks: Task[] = ['Alpha task', 'Beta task', 'Gamma task'].map((title, index) => ({
   id: `task-${index + 1}`,

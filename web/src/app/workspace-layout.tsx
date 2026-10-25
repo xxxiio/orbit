@@ -5,9 +5,12 @@ import type { Command } from '@/components/ui/command-palette'
 import { FolderIcon, HomeIcon, InboxIcon, PlusIcon } from '@/components/ui/icons'
 import type { ProjectNavItem } from '@/components/navigation/nav'
 import { AppShell } from './app-shell'
-import { WorkspaceActionsProvider, useWorkspaceActions } from './workspace-actions'
-import { TaskDetailDrawer } from '@/features/tasks/task-drawer'
-import { useRecentProjectIds } from '@/features/projects/recent-projects'
+import type { SidebarSession } from '@/components/layout/sidebar'
+import { useSession, useSignOutAction } from '@/features/auth/use-auth'
+import { WorkspaceActionsProvider } from './workspace-actions'
+import { useWorkspaceActions } from '@/lib/workspace-actions'
+import { TaskDetailDrawer } from '@/features/tasks'
+import { useRecentProjectIds } from '@/lib/recent-projects'
 
 /**
  * Binds the shell to live workspace data. Everything registered here is
@@ -19,6 +22,19 @@ function WorkspaceShell() {
   const recentIds = useRecentProjectIds()
   const navigate = useNavigate()
   const { openNewTask, openNewProject } = useWorkspaceActions()
+  const auth = useSession()
+  const { signOut, pending: signingOut } = useSignOutAction()
+
+  const session = useMemo<SidebarSession>(
+    () => ({
+      deviceId: auth.session?.device_id,
+      pending: auth.isLoading,
+      error: Boolean(auth.error),
+      signingOut,
+      onSignOut: signOut,
+    }),
+    [auth.session?.device_id, auth.isLoading, auth.error, signOut, signingOut],
+  )
 
   const orderedProjects = useMemo(() => {
     const rank = new Map(recentIds.map((id, index) => [id, index]))
@@ -100,6 +116,7 @@ function WorkspaceShell() {
       commands={commands}
       onNewProject={openNewProject}
       onNewTask={() => openNewTask()}
+      session={session}
     />
   )
 }

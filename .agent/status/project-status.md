@@ -37,14 +37,38 @@ documented follow-ups.
 
 ## Current milestone
 
-MILESTONE-0030 — TUI Workspace Simplification and Executable Blueprint
-Capabilities, complete (I1–I4). MILESTONE-0025 is complete: EC-001..EC-007 are
-satisfied, including connected MCP outbox/receipt parity, previewable
-fingerprint-fenced upgrades and habit recurrence ownership by the opt-in
-`orbit-habit-capability` package. M27 remains blocked externally.
+MILESTONE-0031 — Self-hosted web application as Orbit's reference product
+experience, active (I1 complete, I2 in progress). A React/TypeScript application
+served by `orbit-server` now provides browser session authentication, Home,
+Inbox, project management, a workflow-driven project workspace and a task
+inspector against the authoritative domain; 20 real-browser acceptance checks
+run against an isolated server per worker. MILESTONE-0030 is complete (I1–I4),
+and MILESTONE-0025 EC-001..EC-007 remain satisfied. M27 remains blocked
+externally.
 
 ## Recently completed
 
+- M31 I1 web foundation: `orbit-server` now serves the React application at `/`
+  with a traversal-safe SPA fallback (JSON 404s for API paths) and exchanges an
+  operator-issued device credential once for an HttpOnly `SameSite=Strict`
+  cookie session (hashed at rest, sliding 12h / absolute 7d, login throttle,
+  revocation-aware, CSRF header required for cookie mutations). Bearer clients
+  keep their existing path. 38 server and 543 runtime tests pass.
+- M31 I1 daily core: Home (server-derived readiness, overdue, due today,
+  blocked, recently opened), Inbox with quick capture and triage, Projects with
+  creation and automatic Basic workflow binding, a project workspace whose view
+  tabs come from the pinned workflow, and a task drawer with status, priority,
+  labels, Markdown description, acceptance criteria, dependencies and activity,
+  deep-linkable via `?task=`.
+- M31 I1 authority discipline: `expected_revision` is read from the query cache
+  at mutate time, mutations are never optimistic, and rejected transitions,
+  stale revisions and session expiry surface the server answer rather than a
+  silent success. Workflow upgrades are reachable over HTTP with a
+  recomputed fingerprint when the caller omits one.
+- M31 I1 acceptance: seven Playwright specs (20 checks) run against a real
+  `orbit-server` with an isolated database per worker and a deterministic
+  6-project/122-task fixture; documentation and a terminology guard
+  (`check-terminology.mjs`, 127 files) ship with the app.
 - Navigation rail fix: `Enter` activates the focused rail row on every screen
   (the Projects screen previously hijacked it), Home/Inbox/Agents/Projects keep
   the rail focused, and opening a project hands the keyboard to the workspace;
@@ -85,8 +109,12 @@ fingerprint-fenced upgrades and habit recurrence ownership by the opt-in
 
 ## In progress
 
-- None. NEXT-0011 (deliver M30 I1) is completed. NEXT-0012 (M30 I2, M25 EC-004)
-  is the next authorized step and has not started.
+- MILESTONE-0031 I2: board/timeline rendering from workflow-declared views,
+  milestones, dependencies and readiness, day/schedule planning with explicit
+  approval and apply, project settings, and list filters. The I2 API surface
+  (milestone commands, graph/dependencies/work-brief/day-plan/schedule-plan/
+  workload/portfolio reads, plan review plus fingerprint-fenced apply) is
+  implemented and unit-covered; its views are the next authorized step.
 
 ## Blocked
 
@@ -159,14 +187,18 @@ fingerprint-fenced upgrades and habit recurrence ownership by the opt-in
 
 ## Remaining milestones
 
-1. MILESTONE-0027 — blocked on authorized external release verification.
-2. Product follow-ups after M25/M30: connected capability execution, MCP
+1. MILESTONE-0031 — iterations I2–I6 (project workspaces and planning,
+   workflow-driven views, knowledge/attachments/agents, real dogfooding,
+   refinement plus the TUI redesign specification).
+2. MILESTONE-0027 — blocked on authorized external release verification.
+3. Product follow-ups after M25/M30/M31: connected capability execution, MCP
    capability tools, per-device project ACLs, server attachment GC, live Herdr
    acceptance.
 
 ## Next deterministic step
 
-NEXT-0012 — M30 I2: route connected Blueprint MCP writes through the canonical
-durable outbox and authoritative receipts (M25 EC-004), including offline
-queuing, replay, conflict handling and lost-ack recovery, and remove the
-direct-write bypasses.
+NEXT-0013 — M31 I2: render the workflow-declared project views (board,
+timeline, milestones) and the planning surface (authored capacity, day plan,
+schedule plan, explicit review then fingerprint-fenced apply) through the
+already-implemented I2 API layer, with project settings and list filters, and
+prove each in real-browser acceptance.

@@ -3,6 +3,10 @@
 //! The server is API-first: when no build is present the API and the operator
 //! console keep working, and only the browser entry point explains how to build
 //! it. Files are resolved against one canonical dist root captured at startup.
+//!
+//! Source maps (`.map`) are not served in production unless
+//! `ORBIT_WEB_SERVE_MAPS=1` is set at startup; by default they return the same
+//! JSON 404 as any other missing asset.
 use super::*;
 use axum::{body::Body, response::Response};
 use std::path::PathBuf;
@@ -19,19 +23,26 @@ const STATIC_CACHE: &str = "public, max-age=300";
 #[derive(Debug, Clone)]
 pub(super) struct WebDist {
     root: Option<PathBuf>,
+    /// Only an explicit `ORBIT_WEB_SERVE_MAPS=1` exposes build source maps.
+    serve_maps: bool,
 }
 impl WebDist {
     pub(super) fn from_env() -> Self {
         let configured = std::env::var("ORBIT_WEB_DIST")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("web/dist"));
-        Self::new(configured)
+        let serve_maps = std::env::var("ORBIT_WEB_SERVE_MAPS").as_deref() == Ok("1");
+        Self::with_maps(configured, serve_maps)
     }
+    #[cfg(test)]
     pub(super) fn new(root: PathBuf) -> Self {
+        Self::with_maps(root, false)
+    }
+    pub(super) fn with_maps(root: PathBuf, serve_maps: bool) -> Self {
         let root = std::fs::canonicalize(&root)
             .ok()
             .filter(|path| path.is_dir());
-        Self { root }
+        Self { root, serve_maps }
     }
 }
 
@@ -50,7 +61,12 @@ async fn serve(dist: &WebDist, raw_path: &str) -> Response {
     // API paths must never receive the app shell: a JSON 404 is truthful and
     // keeps client error handling generic.
     if is_api_path(path) {
-        return error(StatusCode::NOT_FOUND, "not found").into_response();
+        return not_found();
+    }
+    // Source maps are build diagnostics. Production refuses to hand them out
+    // unless the operator opted in.
+    if !dist.serve_maps && is_source_map(path) {
+        return not_found();
     }
     if let (Some(root), Some(relative)) = (dist.root.as_deref(), relative_path(path)) {
         let candidate = root.join(&relative);
@@ -63,11 +79,34 @@ async fn serve(dist: &WebDist, raw_path: &str) -> Response {
             return file_response(path, bytes);
         }
     }
+    // A missing hashed asset is a broken deploy, not a client route: never
+    // answer a script request with HTML.
+    if path.starts_with("assets/") {
+        return not_found();
+    }
     index_response(dist).await
 }
 
+fn not_found() -> Response {
+    error(StatusCode::NOT_FOUND, "not found").into_response()
+}
+
 fn is_api_path(path: &str) -> bool {
-    path == "mcp" || path.starts_with("v1/")
+    path == "v1" || path.starts_with("v1/") || path == "mcp" || path.starts_with("mcp/")
+}
+
+fn is_source_map(path: &str) -> bool {
+    path.rsplit('/')
+        .next()
+        .and_then(|name| name.rsplit_once('.').map(|(_, extension)| extension))
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("map"))
+}
+
+fn is_html(path: &str) -> bool {
+    path.rsplit('/')
+        .next()
+        .and_then(|name| name.rsplit_once('.').map(|(_, extension)| extension))
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("html"))
 }
 
 /// Reject anything that could escape the dist root before touching the disk.
@@ -95,17 +134,22 @@ async fn index_response(dist: &WebDist) -> Response {
         return not_built();
     };
     match tokio::fs::read(root.join("index.html")).await {
-        Ok(bytes) => Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-            .header(header::CACHE_CONTROL, "no-store")
-            .header(header::CONTENT_SECURITY_POLICY, APP_CSP)
-            .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-            .header(header::REFERRER_POLICY, "same-origin")
-            .body(Body::from(bytes))
-            .unwrap_or_else(|_| not_built()),
+        Ok(bytes) => html_response(bytes),
         Err(_) => not_built(),
     }
+}
+/// Every HTML document, including an explicitly requested `/index.html`, carries
+/// the same no-store and security headers as the SPA shell.
+fn html_response(bytes: Vec<u8>) -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(header::CONTENT_SECURITY_POLICY, APP_CSP)
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::REFERRER_POLICY, "same-origin")
+        .body(Body::from(bytes))
+        .unwrap_or_else(|_| not_built())
 }
 fn not_built() -> Response {
     Response::builder()
@@ -117,6 +161,9 @@ fn not_built() -> Response {
         .expect("static response is valid")
 }
 fn file_response(path: &str, bytes: Vec<u8>) -> Response {
+    if is_html(path) {
+        return html_response(bytes);
+    }
     let cache = if path.starts_with("assets/") {
         IMMUTABLE_CACHE
     } else {
@@ -177,6 +224,7 @@ mod tests {
                 std::fs::write(root.join("index.html"), index).unwrap();
             }
             std::fs::write(root.join("assets/app.js"), "console.log(1)").unwrap();
+            std::fs::write(root.join("assets/app.js.map"), r#"{"version":3}"#).unwrap();
             Self { root }
         }
         fn dist(&self) -> WebDist {
@@ -236,9 +284,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn explicit_index_html_is_no_store_with_the_app_csp() {
+        let temp = TempDist::new(Some("<!doctype html><title>Orbit</title>"));
+        let response = serve(&temp.dist(), "index.html").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        assert_eq!(response.headers()[header::CONTENT_SECURITY_POLICY], APP_CSP);
+        assert_eq!(
+            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+            "nosniff"
+        );
+        assert_eq!(response.headers()[header::REFERRER_POLICY], "same-origin");
+    }
+
+    #[tokio::test]
+    async fn missing_assets_are_json_not_found_not_the_shell() {
+        let temp = TempDist::new(Some("<html>shell</html>"));
+        let response = serve(&temp.dist(), "assets/missing.js").await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+        assert_eq!(body_of(response).await, r#"{"error":"not found"}"#);
+    }
+
+    #[tokio::test]
+    async fn source_maps_are_hidden_by_default() {
+        let temp = TempDist::new(Some("<html>shell</html>"));
+        let response = serve(&temp.dist(), "assets/app.js.map").await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+        assert_eq!(body_of(response).await, r#"{"error":"not found"}"#);
+    }
+
+    #[tokio::test]
+    async fn source_maps_can_be_enabled_explicitly() {
+        let temp = TempDist::new(Some("<html>shell</html>"));
+        let dist = WebDist::with_maps(temp.root.clone(), true);
+        let response = serve(&dist, "assets/app.js.map").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+        assert_eq!(body_of(response).await, r#"{"version":3}"#);
+    }
+
+    #[tokio::test]
     async fn api_paths_never_receive_the_app_shell() {
         let temp = TempDist::new(Some("<html>shell</html>"));
-        for path in ["v1/nope", "mcp"] {
+        for path in ["v1", "v1/nope", "mcp", "mcp/tools", "mcp/resources/x"] {
             let response = serve(&temp.dist(), path).await;
             assert_eq!(response.status(), StatusCode::NOT_FOUND);
             assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");

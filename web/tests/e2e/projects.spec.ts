@@ -95,4 +95,68 @@ test.describe('projects', () => {
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
   })
+
+  test('a task created inside a new project keeps its edits and status after a reload', async ({
+    page,
+    workspace,
+  }) => {
+    // The literal acceptance order: create the project first, then create work
+    // inside it from the project workspace, edit that work, and reload.
+    const { server } = workspace
+    const projectName = 'Acceptance Walkthrough'
+    const taskTitle = 'Draft the walkthrough notes'
+    const editedTitle = 'Draft the walkthrough notes (edited)'
+
+    const createDialog = await openNewProjectDialog(page, server)
+    await createDialog.getByLabel(/project name/i).fill(projectName)
+    await createDialog.getByRole('button', { name: /create project/i }).click()
+
+    await expect(page).toHaveURL(/\/projects\/[^/?#]+/)
+    await expect(page.getByRole('heading', { name: projectName, level: 1 })).toBeVisible()
+
+    // Create the task from *this* project's workspace, not from the Inbox.
+    await page.getByRole('main').getByRole('button', { name: 'New task', exact: true }).click()
+    const taskDialog = page.getByRole('dialog')
+    await expect(taskDialog).toBeVisible()
+    await expect(taskDialog.getByLabel('Title')).toBeVisible()
+    // The dialog inherits the project the person is looking at.
+    await expect(taskDialog.getByLabel('Project for the new task')).toContainText(projectName)
+
+    await taskDialog.getByLabel('Title').fill(taskTitle)
+    await taskDialog.getByRole('button', { name: 'Create task' }).click()
+    await expect(taskDialog).toBeHidden()
+
+    // Open the project's Tasks view and the new task's drawer.
+    await page.getByRole('link', { name: /^Tasks/ }).click()
+    await expect(page.getByRole('heading', { name: projectName, level: 1 })).toBeVisible()
+    await page.getByRole('button', { name: taskTitle, exact: true }).first().click()
+    const drawer = page.getByRole('dialog')
+    await expect(drawer).toBeVisible()
+
+    await drawer.getByRole('button', { name: 'Edit task title' }).click()
+    const titleInput = drawer.getByLabel('Task title')
+    await titleInput.fill(editedTitle)
+    await titleInput.press('Enter')
+    await expect(drawer.getByRole('button', { name: 'Edit task title' })).toContainText(editedTitle)
+
+    await chooseStatus(page, drawer, /^Planned$/i)
+    await expect(drawer.getByLabel('Task status')).toContainText(/planned/i)
+
+    // `?task=` is URL state, so the reload reopens the same drawer from the
+    // authoritative store rather than from memory.
+    await page.reload()
+    const reopened = page.getByRole('dialog')
+    await expect(reopened).toBeVisible()
+    await expect(reopened.getByRole('button', { name: 'Edit task title' })).toContainText(editedTitle)
+    await expect(reopened.getByLabel('Task status')).toContainText(/planned/i)
+
+    // And the task stays inside the project it was created in: the drawer header
+    // names the project it belongs to, read back from the snapshot.
+    await expect(reopened.getByText(projectName, { exact: true }).first()).toBeVisible()
+  })
 })
+
+async function chooseStatus(page: Page, drawer: Locator, option: RegExp): Promise<void> {
+  await drawer.getByLabel('Task status').click()
+  await page.getByRole('option', { name: option }).click()
+}

@@ -28,6 +28,8 @@
  *    `Array.isArray` in a single helper.
  */
 
+import type { TaskDependencyEdge } from './contracts/planning'
+
 /* ------------------------------------------------------------------ */
 /* Scalar unions (validated by the authority, never by this layer)      */
 /* ------------------------------------------------------------------ */
@@ -62,39 +64,6 @@ export type StrategyMode =
   | 'custom'
 
 export type CriterionStatus = 'pending' | 'satisfied' | 'waived'
-
-export type ReadinessReason =
-  | 'ready'
-  | 'unfinished_prerequisites'
-  | 'scheduled_for_later'
-  | 'past_deadline'
-  | 'inbox'
-  | 'planned'
-  | 'waiting'
-  | 'blocked'
-  | 'deferred'
-  | 'in_progress'
-  | 'review'
-  | 'done'
-  | 'cancelled'
-  | 'unknown_status'
-
-export type PlanningDisposition =
-  | 'selected'
-  | 'outside_project'
-  | 'not_actionable'
-  | 'insufficient_capacity'
-  | 'missing_estimate'
-  | 'task_limit'
-
-export type AttentionReason =
-  | 'overdue'
-  | 'due_soon'
-  | 'missing_estimate'
-  | 'unfinished_prerequisites'
-  | 'future_start'
-  | 'waiting_workflow'
-  | 'unblocks_others'
 
 export type ActivityKind =
   | 'created'
@@ -361,63 +330,6 @@ export interface MilestoneCommand {
 }
 
 /* ------------------------------------------------------------------ */
-/* Dependencies, readiness, next actions                               */
-/* ------------------------------------------------------------------ */
-
-export interface TaskDependencyEdge {
-  task_id: string
-  prerequisite_id: string
-}
-
-export interface TaskDependenciesResponse {
-  revision: number
-  edges: TaskDependencyEdge[]
-}
-
-export interface TaskReadiness {
-  task_id: string
-  title: string
-  status: string
-  actionable: boolean
-  reason: ReadinessReason
-  blocking_task_ids: string[]
-  prerequisite_ids: string[]
-  earliest_start_at_ms: number | null
-  deadline_at_ms: number | null
-  estimated_minutes: number | null
-  project_id: string | null
-}
-
-export interface TaskReadinessSnapshot {
-  revision: number
-  edges: TaskDependencyEdge[]
-  tasks: TaskReadiness[]
-  actionable_count: number
-  blocked_count: number
-}
-
-export interface NextAction {
-  task_id: string
-  title: string
-  project_id: string | null
-  rank: number
-  deadline_at_ms: number | null
-  estimated_minutes: number | null
-  unblocks_task_ids: string[]
-  unblocks_count: number
-  overdue: boolean
-  explanation: string[]
-}
-
-export interface NextActionsReport {
-  revision: number
-  evaluated_at_ms: number
-  actionable_total: number
-  blocked_total: number
-  actions: NextAction[]
-}
-
-/* ------------------------------------------------------------------ */
 /* Schedule                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -435,80 +347,6 @@ export interface ScheduleRecord {
 export interface ScheduleSnapshot {
   revision: number
   blocks: ScheduleRecord[]
-}
-
-/* ------------------------------------------------------------------ */
-/* Day plan, workload                                                  */
-/* ------------------------------------------------------------------ */
-
-export interface PlannedTask {
-  task_id: string
-  title: string
-  project_id: string | null
-  disposition: PlanningDisposition
-  estimated_minutes: number | null
-  allocated_minutes: number
-  start_offset_minutes: number | null
-  blocking_task_ids: string[]
-  explanation: string[]
-  rank: number | null
-}
-
-export interface ProjectDaySummary {
-  project_id: string | null
-  selected: number
-  actionable: number
-  blocked: number
-  allocated_minutes: number
-}
-
-export interface DayPlan {
-  revision: number
-  now_ms: number
-  available_minutes: number
-  allocated_minutes: number
-  remaining_minutes: number
-  selected_count: number
-  actionable_count: number
-  blocked_count: number
-  tasks: PlannedTask[]
-  projects: ProjectDaySummary[]
-  warnings: string[]
-}
-
-export interface TaskAttention {
-  task_id: string
-  title: string
-  project_id: string | null
-  reasons: AttentionReason[]
-  details: string[]
-  blocking_ids: string[]
-  downstream_count: number
-  estimated_minutes: number | null
-  deadline_at_ms: number | null
-}
-
-export interface ProjectWorkload {
-  project_id: string | null
-  total: number
-  completed: number
-  actionable: number
-  blocked_by_prerequisites: number
-  waiting_or_deferred: number
-  overdue: number
-  missing_estimates: number
-  known_remaining_minutes: number
-  attention: TaskAttention[]
-}
-
-export interface WorkloadInsights {
-  revision: number
-  evaluated_at_ms: number
-  horizon_end_ms: number
-  total_tasks: number
-  unfinished_tasks: number
-  total_known_remaining_minutes: number
-  projects: ProjectWorkload[]
 }
 
 /* ------------------------------------------------------------------ */
@@ -862,8 +700,12 @@ export interface ApplyUpgradeBody {
   id: string
   version: number
   confirm: true
-  /** Optional; when omitted the server recomputes the preview fingerprint. */
-  fingerprint?: string
+  /**
+   * The fingerprint of the preview the person was actually shown. Required by
+   * the server (400 without it, 409 on mismatch); the client never derives it
+   * from the target version, because that would consent to an unseen preview.
+   */
+  fingerprint: string
 }
 
 /* ------------------------------------------------------------------ */
@@ -1148,3 +990,10 @@ export interface WebSessionRequest {
   device_id: string
   token: string
 }
+
+/* ------------------------------------------------------------------ */
+/* Planning domain (split for size; same import path)                  */
+/* ------------------------------------------------------------------ */
+
+export * from './contracts/planning'
+

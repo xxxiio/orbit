@@ -9,7 +9,8 @@ and reusable UI primitives. Feature screens are added lane by lane.
 - React 18 + TypeScript (strict) + Vite 5
 - React Router 6 + TanStack Query 5
 - Radix UI primitives, styled with Tailwind CSS 3.4 and CSS-variable design tokens
-- Vitest + Testing Library for unit tests; Playwright is configured for the next lane
+- Vitest + Testing Library for unit tests; Playwright for the acceptance suite against a real
+  `orbit-server`
 
 ## Getting started
 
@@ -53,28 +54,53 @@ exchanges device credentials for an HttpOnly cookie; the client only sets
 | `npm run build`           | Type-check and emit `dist/`                                     |
 | `npm run preview`         | Serve the built app at `http://127.0.0.1:4173`                  |
 | `npm run typecheck`       | `tsc --noEmit`                                                  |
-| `npm run test:unit`       | Vitest unit tests (jsdom)                                       |
-| `npm run test:e2e`        | Playwright (config only; add specs under `e2e/`)                |
+| `npm run test:unit`       | Vitest unit tests under `tests/unit` (jsdom)                    |
+| `npm run test:e2e`        | Build, then run the Playwright suite under `tests/e2e`           |
 | `npm run check:terminology` | Guard user-facing copy                                         |
 
 ## Structure
 
 ```text
 src/
-  api/            single fetch wrapper + web session calls
-  app/            providers, routing, guard, theme, pages
+  api/            fetch wrapper, wire contracts, adapters, queries/mutations, endpoints/
+  app/            providers, routing, guard, page shims, shell orchestration
   components/
-    ui/           reusable primitives (Button, Field, DataTable, Dialog, …)
-    layout/       app shell, sidebar, theme toggle
+    ui/           reusable primitives (Button, Field, Dialog, Select, Badge, …)
+    forms/        labelled select, property select, field/form error primitives
+    markdown/     the single Markdown renderer
+    theme/        theme provider and preference toggle
+    layout/       presentational sidebar (data comes from the app shell)
     navigation/   navigation configuration and project item shape
     feedback/     session gate, global error boundary
   features/
     auth/         sign-in screen and error copy
+    tasks/        shared task kernel: table, controls, list model, drawer
+    inbox/        Inbox list and quick capture
+    home/         Today
+    projects/     project index, workspace, overview, task list, status labels
+  hooks/          shared hooks (media query, command feedback, document title, …)
+  lib/            browser-local stores and small helpers (recent projects, humanize)
   styles/         design tokens and global styles
+tests/
+  unit/           Vitest + Testing Library (jsdom)
+  e2e/            Playwright acceptance suite (real orbit-server)
 ```
 
-`src/features/workflows/` is reserved for the workflows lane. Do not introduce a parallel
-feature directory under the legacy name.
+### Shared modules and boundaries
+
+- `src/features/tasks/index.ts` is the **public surface of the task kernel**. Inbox, Projects,
+  Home and the app shell import task UI from `@/features/tasks` only; sections under
+  `task-drawer/` are composition detail.
+- Nothing under `src/components/**` imports `src/app/**` or `src/features/**`. Layout
+  orchestration that needs workspace data (dialogs, drawer, navigation commands) lives in
+  `src/app/workspace-*.tsx` and passes plain data down.
+- Cross-cutting modules live outside features: hooks in `src/hooks/`, browser-local stores and
+  helpers in `src/lib/`, Markdown in `src/components/markdown/`, form primitives in
+  `src/components/forms/`.
+- `src/api/**` imports only `api/*`, React and TanStack Query.
+
+Views declared by a project's workflow are resolved by `features/projects/use-project-workflow`;
+there is no separate `features/workflows/` module yet.
 
 ## Design system
 
@@ -120,8 +146,8 @@ fabricated data.
 
 ## What is intentionally not here yet
 
-- Project data in the sidebar (`projects` is `[]`) and the **New project** action (disabled
-  with an explanation).
-- Feature screens for Inbox, Projects, Agents, tasks, workflows, planning, knowledge,
-  attachments, and agent administration.
-- Playwright specs; only configuration is present.
+- Work-item views: a workflow may declare views beyond Overview and Tasks; those render an
+  honest "this view is not available yet" state until a view registry exists.
+- Planning, knowledge, attachments, and agent administration screens, and agent
+  administration beyond the read-only Agents placeholder.
+- Work items themselves: the task drawer is task-typed, though its field editors are shared.

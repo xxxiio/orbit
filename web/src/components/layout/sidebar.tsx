@@ -13,8 +13,7 @@ import {
   SearchIcon,
 } from '@/components/ui/icons'
 import { globalNav, type ProjectNavItem } from '@/components/navigation/nav'
-import { ThemeToggle } from '@/components/layout/theme-toggle'
-import { useSession, useSignOutAction } from '@/features/auth/use-auth'
+import { ThemeToggle } from '@/components/theme/theme-toggle'
 
 export const commandShortcutLabel =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'
@@ -54,6 +53,18 @@ function ProjectGroup({
   )
 }
 
+/**
+ * Session facts the sidebar renders. Supplied by the app shell so this
+ * presentational module never reaches into a feature module for data.
+ */
+export interface SidebarSession {
+  deviceId?: string
+  pending: boolean
+  error: boolean
+  signingOut: boolean
+  onSignOut: () => void
+}
+
 export interface SidebarProps {
   /** Empty until a later lane wires project data. */
   projects?: ProjectNavItem[]
@@ -61,6 +72,7 @@ export interface SidebarProps {
   /** Providing this enables New project; without it the action stays disabled. */
   onNewProject?: () => void
   onNavigate?: () => void
+  session?: SidebarSession
   className?: string
 }
 
@@ -69,10 +81,12 @@ export function Sidebar({
   onOpenCommandPalette,
   onNewProject,
   onNavigate,
+  session,
   className,
 }: SidebarProps) {
-  const { session, isLoading: sessionPending, error: sessionError } = useSession()
-  const { signOut, pending: signingOut } = useSignOutAction()
+  const sessionPending = session?.pending ?? false
+  const sessionError = session?.error ?? false
+  const signingOut = session?.signingOut ?? false
 
   const pinned = projects.filter((project) => project.pinned)
   const recent = projects.filter((project) => !project.pinned && project.recent).slice(0, 3)
@@ -223,7 +237,7 @@ export function Sidebar({
             aria-hidden="true"
             className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-line bg-surface-sunken text-[0.625rem] font-semibold uppercase text-ink-soft"
           >
-            {session ? session.device_id.slice(0, 2) : '··'}
+            {session?.deviceId ? session.deviceId.slice(0, 2) : '··'}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-medium leading-4 text-ink">This device</p>
@@ -234,9 +248,9 @@ export function Sidebar({
             ) : (
               <p
                 className="truncate font-mono text-[0.625rem] leading-4 text-ink-muted"
-                title={session?.device_id}
+                title={session?.deviceId}
               >
-                {session?.device_id}
+                {session?.deviceId}
               </p>
             )}
           </div>
@@ -244,8 +258,8 @@ export function Sidebar({
             <IconButton
               label="Sign out"
               icon={signingOut ? <LoaderIcon size={16} className="animate-spin" /> : <LogOutIcon size={16} />}
-              onClick={signOut}
-              disabled={signingOut}
+              onClick={() => session?.onSignOut()}
+              disabled={!session || signingOut}
               size="sm"
             />
           </Tooltip>

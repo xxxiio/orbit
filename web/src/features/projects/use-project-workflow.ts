@@ -17,11 +17,11 @@ export function useProjectWorkflow(projectId: string | undefined): ProjectWorkfl
   const binding = useProjectBinding(projectId)
   const definition = useWorkflowDefinition(binding.data?.workflowId, binding.data?.version)
 
+  // The label is always a name and version. An unresolved definition reports
+  // `null` so the UI can say "Workflow unavailable" instead of showing an id.
   const label = definition.data
     ? `${definition.data.name} v${definition.data.version}`
-    : binding.data
-      ? `${binding.data.workflowId} v${binding.data.version}`
-      : null
+    : null
 
   return {
     binding: binding.data ?? null,

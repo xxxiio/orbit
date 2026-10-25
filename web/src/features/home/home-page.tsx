@@ -12,7 +12,7 @@ import {
   useWorkspaceSnapshot,
   userMessage,
 } from '@/hooks'
-import { useDocumentTitle } from '@/app/use-document-title'
+import { useDocumentTitle } from '@/hooks'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ErrorState } from '@/components/ui/error-state'
@@ -31,20 +31,24 @@ import {
 import { Panel } from '@/components/ui/panel'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
-import { useWorkspaceActions } from '@/components/layout/workspace-actions'
-import { useTaskDrawer } from '@/features/tasks/use-task-drawer'
-import { useCommandFeedback } from '@/features/tasks/use-command-feedback'
-import { TaskControlError, TaskProjectControl, TaskStatusControl } from '@/features/tasks/task-controls'
+import { useWorkspaceActions } from '@/lib/workspace-actions'
 import {
   formatLongDay,
   formatMoment,
+  formatWeekday,
   freshnessLabel,
   isDueToday,
   isOverdue,
   readinessReasonLabel,
   sortByDeadline,
-} from '@/features/tasks/task-meta'
-import { useRecentProjectIds } from '@/features/projects/recent-projects'
+  TaskControlError,
+  TaskProjectControl,
+  TaskStatusControl,
+  useTaskCommandState,
+  useTaskDrawer,
+} from '@/features/tasks'
+import { useRecentProjectIds } from '@/lib/recent-projects'
+import { isTaskCompleted, isTaskOpen } from '@/features/projects/project-progress'
 
 interface SectionTask {
   task: Task
@@ -300,7 +304,6 @@ export function HomePage() {
   const counts = useTaskCounts()
   const readiness = useTaskReadiness(defaultNowMs())
   const command = useTaskCommand()
-  const { run } = useCommandFeedback()
   const recentIds = useRecentProjectIds()
 
   const [now, setNow] = useState(() => Date.now())
@@ -375,45 +378,14 @@ export function HomePage() {
       const entry = stats.get(task.projectId)
       if (!entry) continue
       entry.total += 1
-      if (task.status === 'done') entry.done += 1
-      else if (task.status !== 'cancelled') entry.open += 1
+      if (isTaskCompleted(task.status)) entry.done += 1
+      else if (isTaskOpen(task.status)) entry.open += 1
     }
     return stats
   }, [projects, tasks])
 
-  const pending =
-    command.isPending && command.variables
-      ? {
-          taskId: command.variables.taskId,
-          field:
-            command.variables.type === 'change_status'
-              ? ('status' as const)
-              : command.variables.type === 'assign_project'
-                ? ('project' as const)
-                : ('priority' as const),
-        }
-      : null
-  const error: ApiError | null = command.disposition === 'rejected' ? command.error : null
-  const errorTaskId = error ? command.variables?.taskId ?? null : null
-  const errorField =
-    error && command.variables
-      ? command.variables.type === 'change_status'
-        ? ('status' as const)
-        : command.variables.type === 'assign_project'
-          ? ('project' as const)
-          : ('priority' as const)
-      : null
-
-  const changeStatus = (task: Task, status: TaskStatus) => {
-    void run('Status not changed', () =>
-      command.mutateAsync({ type: 'change_status', taskId: task.id, status }),
-    )
-  }
-  const changeProject = (task: Task, projectId: string | null) => {
-    void run('Project not changed', () =>
-      command.mutateAsync({ type: 'assign_project', taskId: task.id, projectId }),
-    )
-  }
+  const { changeStatus, changeProject, pending, error, errorTaskId, errorField } =
+    useTaskCommandState(command)
 
   /**
    * Expansion keys are stable section ids (`overdue`, `dueToday`, `ready`,
@@ -484,7 +456,7 @@ export function HomePage() {
       <header className="flex flex-col gap-5 border-b border-line pb-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <p className="section-label" title="Local time">
-            {new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(new Date(now))}
+            {formatWeekday(now)}
           </p>
           <h1 className="mt-1 font-display text-3xl font-medium tracking-tight text-ink md:text-4xl">
             {formatLongDay(now)}
@@ -702,8 +674,8 @@ export function HomePage() {
 
             <p className="px-1 text-2xs leading-4 text-ink-faint">
               <ClockIcon size={11} className="mr-1 inline align-[-1px]" />
-              Readiness, blockers and deadlines are read from the server. Nothing here is calculated
-              in the browser beyond today&apos;s date.
+              Readiness, blockers and deadlines come from the server; section grouping and counts
+              here are display-only.
             </p>
           </aside>
         </div>

@@ -2,18 +2,12 @@ import { api } from '../client'
 import type {
   AcceptanceCriterionResponse,
   ActivityResponse,
-  DomainTasksResponse,
   TaskCommand,
   TaskDetailResponse,
   TaskResult,
 } from '../contracts'
 
 const BASE = '/authoritative'
-
-/** Complete task set, ordered by id. The handler takes no query parameters. */
-export function fetchTasks(signal?: AbortSignal): Promise<DomainTasksResponse> {
-  return api.get<DomainTasksResponse>(`${BASE}/tasks`, { signal })
-}
 
 export function fetchTaskDetail(id: string, signal?: AbortSignal): Promise<TaskDetailResponse> {
   return api.get<TaskDetailResponse>(`${BASE}/tasks/${encodeURIComponent(id)}`, { signal })

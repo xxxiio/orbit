@@ -6,14 +6,13 @@ import { defineConfig, devices } from '@playwright/test'
 /**
  * Config for the real-browser acceptance suite (`web/tests/e2e`).
  *
- * The suite does NOT talk to `vite preview`: `orbit-server` has no CORS layer, so
- * the app and the API must share an origin. Each test starts its own
- * `orbit-server` with a throwaway database and navigates to the app build that
- * server hosts (`ORBIT_WEB_DIST=web/dist`), which is exactly how the product is
- * deployed. Build first (`npm run build`) — that is what `npm run test:e2e` does.
- *
- * The `webServer` entry below is kept for the scaffold lane's preview checks; the
- * acceptance specs never use `baseURL`.
+ * The suite does NOT talk to `vite preview` and has no `baseURL`: `orbit-server`
+ * has no CORS layer, so the app and the API must share an origin. Each test
+ * starts its own `orbit-server` with a throwaway database and navigates to the
+ * app build that server hosts (`ORBIT_WEB_DIST=web/dist`), which is exactly how
+ * the product is deployed. Build first (`npm run build`) — that is what
+ * `npm run test:e2e` does. The harness in `tests/e2e/harness/server.ts` is the
+ * only server launcher; there is no second, port-bound preview process.
  */
 
 /**
@@ -61,9 +60,7 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   expect: { timeout: 10_000 },
   use: {
-    // Absolute URLs come from the per-test harness server; this is only the
-    // preview fallback kept for the scaffold lane.
-    baseURL: 'http://127.0.0.1:4173',
+    // URLs are absolute: every spec navigates to its own harness server.
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'off',
@@ -83,12 +80,4 @@ export default defineConfig({
       use: { ...devices['Pixel 7'] },
     },
   ],
-  webServer: {
-    // Scaffold lane entry: keep preview available, but launch it through Linux
-    // node (`npm` on PATH resolves to the Windows interop build here).
-    command: 'node node_modules/vite/bin/vite.js preview --port 4173 --strictPort',
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: !CI,
-    timeout: 60_000,
-  },
 })

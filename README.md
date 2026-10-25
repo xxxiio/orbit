@@ -88,6 +88,13 @@ job completion never silently completes a task.
 See the [terminal workspace guide](docs/guides/tui-workspace.md) and
 [blueprint view authoring](docs/guides/blueprint-views.md).
 
+## Web app
+
+`orbit-server` can serve a browser client at `http://127.0.0.1:8787/`. It signs in
+with a device credential enrolled by the server operator and covers Home, Inbox,
+projects and tasks; boards, planning and knowledge screens are not implemented
+yet. See the [web app guide](docs/web-app.md).
+
 ## Documentation
 
 The [documentation index](docs/README.md) is organized by task: installation,

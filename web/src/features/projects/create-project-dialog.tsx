@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
+  newCommandId,
   queryKeys,
+  uncertainMessage,
   useAvailableWorkflows,
   useCreateProject,
   useWorkflowDefinition,
@@ -16,17 +18,11 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { AlertCircleIcon, CheckIcon } from '@/components/ui/icons'
+import { FormErrorBanner } from '@/components/forms'
+import { humanizeIdentifier } from '@/lib/humanize'
 import { cn } from '@/components/ui/utils'
 
 const DEFAULT_WORKFLOW = ''
-
-function formatWorkflowName(id: string): string {
-  return id
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
 
 function WorkflowOption({
   id,
@@ -50,7 +46,7 @@ function WorkflowOption({
     )
   }
 
-  const name = definition.data?.name ?? formatWorkflowName(id)
+  const name = definition.data?.name ?? humanizeIdentifier(id)
   const description = definition.data?.description
     ? definition.data.description
     : definition.error
@@ -91,6 +87,18 @@ export interface CreateProjectDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
+/**
+ * One create attempt, minted at submit and reused while the payload is the same.
+ * A retry after an unconfirmed failure therefore replays the receipt instead of
+ * creating a second project; editing the fields mints a new attempt because the
+ * server refuses to replay a command id with a different payload.
+ */
+interface CreateProjectAttempt {
+  key: string
+  commandId: string
+  projectId: string
+}
+
 export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogProps) {
   const workflows = useAvailableWorkflows()
   const createProject = useCreateProject()
@@ -102,20 +110,30 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
   const [workflowId, setWorkflowId] = useState(DEFAULT_WORKFLOW)
   const [fieldError, setFieldError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
+  const attemptRef = useRef<CreateProjectAttempt | null>(null)
 
   useEffect(() => {
     if (!open) return
     setName('')
     setWorkflowId(DEFAULT_WORKFLOW)
     setFieldError(null)
+    attemptRef.current = null
     createProject.reset()
     // Reset only on open; the mutation object is a fresh handle each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const error: ApiError | null = createProject.disposition === 'rejected' ? createProject.error : null
+  const uncertain = createProject.disposition === 'uncertain'
   const submitting = createProject.isPending
   const additionalWorkflows = (workflows.data ?? []).filter((workflow) => workflow.id !== 'basic')
+
+  function attemptFor(key: string): CreateProjectAttempt {
+    if (attemptRef.current?.key !== key) {
+      attemptRef.current = { key, commandId: newCommandId(), projectId: newCommandId() }
+    }
+    return attemptRef.current
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -128,14 +146,20 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
     }
     setFieldError(null)
 
+    const selectedWorkflow = workflowId === DEFAULT_WORKFLOW ? undefined : workflowId
+    const attempt = attemptFor(`${trimmed}\u0000${selectedWorkflow ?? ''}`)
+
     const outcome = await createProject
       .mutateAsync({
+        commandId: attempt.commandId,
+        projectId: attempt.projectId,
         name: trimmed,
-        ...(workflowId === DEFAULT_WORKFLOW ? {} : { workflowId }),
+        ...(selectedWorkflow ? { workflowId: selectedWorkflow } : {}),
       })
       .catch(() => null)
 
     if (!outcome) return
+    attemptRef.current = null
     await queryClient.refetchQueries({ queryKey: queryKeys.snapshot() })
     toast({ tone: 'success', title: 'Project created', description: outcome.project.name })
     onOpenChange(false)
@@ -235,17 +259,13 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
             )}
           </fieldset>
 
-          {error ? (
-            <div
-              role="alert"
-              className="flex items-start gap-2 rounded-md border border-danger/35 bg-danger-soft px-3 py-2.5 text-danger-ink"
-            >
-              <AlertCircleIcon size={15} className="mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold leading-5">The project was not created</p>
-                <p className="mt-0.5 text-xs leading-5">{userMessage(error)}</p>
-              </div>
-            </div>
+          {error ? <FormErrorBanner title="The project was not created" description={userMessage(error)} /> : null}
+          {uncertain ? (
+            <FormErrorBanner
+              className="border-warning/40 bg-warning-soft text-warning-ink"
+              title="The project may already exist"
+              description={uncertainMessage(createProject.error ?? undefined)}
+            />
           ) : null}
 
           <div className="flex items-center justify-end gap-2">

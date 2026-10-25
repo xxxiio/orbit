@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { useTheme, type ThemePreference } from '@/app/theme'
+import { useTheme, type ThemePreference } from './theme'
 import { cn } from '@/components/ui/utils'
 import { MonitorIcon, MoonIcon, SunIcon, type IconProps } from '@/components/ui/icons'
 import { Tooltip } from '@/components/ui/tooltip'

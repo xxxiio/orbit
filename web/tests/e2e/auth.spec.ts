@@ -12,7 +12,7 @@ import {
   signIn,
   signInViaApi,
 } from './harness/session'
-import { startServer } from './harness/server'
+import { enrollDeviceWithAdminKey, revokeDevice, startServer } from './harness/server'
 
 const WRONG_TOKEN = 'not-the-token-issued-for-this-device-0001'
 
@@ -105,5 +105,36 @@ test.describe('authentication', () => {
     } finally {
       await shortLived.stop()
     }
+  })
+
+  test('revoking the device ends a live browser session', async ({ page, server }) => {
+    // A dedicated device, so this spec never has to restore the harness device
+    // (and could be retried without enrolling anything twice).
+    const device = {
+      deviceId: 'e2e-revoked-browser',
+      token: 'revoked-browser-device-token-0123456789',
+    }
+    await enrollDeviceWithAdminKey(server, device)
+
+    // Sign in through the form: this spec is about a browser whose session was
+    // already issued and is in use, not about a cookie the test set up.
+    await signIn(page, server, device)
+    await expect(page).not.toHaveURL(/\/login/)
+    expect((await page.request.get(`${server.base}/v1/web/session`)).status()).toBe(200)
+
+    await revokeDevice(server, device.deviceId)
+
+    // The next authenticated load is refused, and the app explains why.
+    await page.reload()
+    await expect(page).toHaveURL(/\/login/)
+    await expect(
+      page.getByText(/session (has )?(expired|ended)|your session expired|signed out/i).first(),
+      'a revoked session must be explained, not silently bounced',
+    ).toBeVisible()
+
+    // …and the session really is gone at the HTTP level, cookie included.
+    const probe = await page.request.get(`${server.base}/v1/web/session`)
+    expect(probe.status(), 'GET /v1/web/session after revoke').toBe(401)
+    expect(await hasSessionCookie(page.context(), server)).toBe(false)
   })
 })

@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import type { Milestone, Project, Task } from '@/api/adapters'
 import type { TaskStatus } from '@/api/contracts'
-import type { ApiError } from '@/api/errors'
 import {
   defaultNowMs,
   useMilestones,
@@ -22,17 +21,20 @@ import {
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
-import { useTaskDrawer } from '@/features/tasks/use-task-drawer'
-import { useCommandFeedback } from '@/features/tasks/use-command-feedback'
-import { TaskControlError, TaskStatusControl } from '@/features/tasks/task-controls'
 import {
-  isTerminalStatus,
+  formatDate,
   priorityLabels,
   priorityTones,
   statusLabel,
   statusTones,
   TASK_STATUSES,
-} from '@/features/tasks/task-meta'
+  TaskControlError,
+  TaskStatusControl,
+  useTaskCommandState,
+  useTaskDrawer,
+} from '@/features/tasks'
+import { milestoneStatusLabel } from './project-status'
+import { isTaskCompleted, isTaskOpen } from './project-progress'
 import type { ProjectWorkflowState } from './use-project-workflow'
 
 function statusCounts(tasks: Task[]): Array<{ status: TaskStatus; count: number }> {
@@ -55,7 +57,6 @@ export function ProjectOverview({
 }) {
   const { openTask } = useTaskDrawer()
   const command = useTaskCommand()
-  const { run } = useCommandFeedback()
   const milestones = useMilestones(project.id)
   const nextActions = useNextActions(defaultNowMs(), 40)
 
@@ -66,13 +67,12 @@ export function ProjectOverview({
 
   const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks])
   const breakdown = useMemo(() => statusCounts(tasks), [tasks])
-  const open = tasks.filter((task) => !isTerminalStatus(task.status)).length
-  const done = tasks.filter((task) => task.status === 'done').length
+  const open = tasks.filter((task) => isTaskOpen(task.status)).length
+  const done = tasks.filter((task) => isTaskCompleted(task.status)).length
   const completion = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0
 
-  const error: ApiError | null = command.disposition === 'rejected' ? command.error : null
-  const pendingTaskId =
-    command.isPending && command.variables?.type === 'change_status' ? command.variables.taskId : null
+  const { changeStatus, pending, error, errorTaskId } = useTaskCommandState(command)
+  const pendingTaskId = pending?.field === 'status' ? pending.taskId : null
 
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -122,7 +122,8 @@ export function ProjectOverview({
                   ))}
                 </ul>
                 <p className="text-2xs text-ink-faint">
-                  Counts are read from the workspace snapshot; the browser does not recalculate them.
+                  Grouping and counts are display-only; readiness, blockers and deadlines come from
+                  the server.
                 </p>
               </div>
             )}
@@ -163,8 +164,7 @@ export function ProjectOverview({
             <ul aria-label="Next actions">
               {projectActions.map((action) => {
                 const task = taskById.get(action.taskId)
-                const rowError =
-                  error && command.variables?.taskId === action.taskId ? error : null
+                const rowError = errorTaskId === action.taskId ? error : null
                 return (
                   <li
                     key={action.taskId}
@@ -193,9 +193,7 @@ export function ProjectOverview({
                             )}
                           >
                             <CalendarIcon size={11} />
-                            {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(
-                              new Date(action.deadlineAtMs),
-                            )}
+                            {formatDate(action.deadlineAtMs)}
                           </span>
                         ) : null}
                         {task?.priority ? (
@@ -211,11 +209,7 @@ export function ProjectOverview({
                         task={task}
                         pending={pendingTaskId === task.id}
                         invalid={Boolean(rowError)}
-                        onChange={(status) =>
-                          void run('Status not changed', () =>
-                            command.mutateAsync({ type: 'change_status', taskId: task.id, status }),
-                          )
-                        }
+                        onChange={(status) => changeStatus(task, status)}
                       />
                     ) : null}
                   </li>
@@ -232,7 +226,13 @@ export function ProjectOverview({
             title="Workflow"
             description="Pinned to this project"
             actions={
-              workflow.label ? <Badge tone="accent">{workflow.label}</Badge> : <Skeleton className="h-4 w-20" />
+              workflow.label ? (
+                <Badge tone="accent">{workflow.label}</Badge>
+              ) : workflow.error ? (
+                <Badge tone="neutral">Workflow unavailable</Badge>
+              ) : (
+                <Skeleton className="h-4 w-20" />
+              )
             }
           />
           <PanelBody className="flex flex-col gap-3">
@@ -344,7 +344,7 @@ function MilestoneRow({ milestone }: { milestone: Milestone }) {
         <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
       )}
       <span className="min-w-0 flex-1 truncate text-sm text-ink-soft">{milestone.name}</span>
-      <Badge tone={tone}>{milestone.status.replace('_', ' ')}</Badge>
+      <Badge tone={tone}>{milestoneStatusLabel(milestone.status)}</Badge>
     </li>
   )
 }

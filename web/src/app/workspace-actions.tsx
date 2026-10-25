@@ -1,20 +1,7 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { CreateProjectDialog } from '@/features/projects/create-project-dialog'
-import { CreateTaskDialog } from '@/features/tasks/create-task-dialog'
-
-interface WorkspaceActionsValue {
-  /** Open the single New task dialog, optionally pinned to a project. */
-  openNewTask: (projectId?: string) => void
-  openNewProject: () => void
-}
-
-const WorkspaceActionsContext = createContext<WorkspaceActionsValue | null>(null)
-
-export function useWorkspaceActions(): WorkspaceActionsValue {
-  const value = useContext(WorkspaceActionsContext)
-  if (!value) throw new Error('useWorkspaceActions must be used inside WorkspaceActionsProvider')
-  return value
-}
+import { CreateTaskDialog } from '@/features/tasks'
+import { WorkspaceActionsContext, type WorkspaceActionsValue } from '@/lib/workspace-actions'
 
 /**
  * One owner for the workspace-level creation dialogs, so the sidebar, the

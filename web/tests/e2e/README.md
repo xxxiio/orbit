@@ -56,6 +56,11 @@ both properties. Anything else writing to the database first fails loudly
 ("advanced the authority revision to N, expected M") rather than silently
 diverging.
 
+The `workspace` fixture seeds against `fixtureNowMs()` — today at 09:00 local —
+and pins the browser clock to that same instant. "Overdue" and "due today" are
+then judged at the moment the deadlines were authored, so a suite that runs at
+22:00 asserts the same sections a suite that runs at 10:00 does.
+
 ## Environment prerequisites on this machine
 
 * `npm` on `PATH` is the Windows build (WSL interop) and fails; call the CLI
@@ -74,19 +79,20 @@ diverging.
   `~/.cache/orbit-e2e/pwlibs` fallback) and prepends it for the workers, so a
   plain `playwright test` works too when either path exists.
 
-## Defects this suite currently catches (as of the M31 I1 build)
+## What this suite asserts (as of the M31 I1 build)
 
-These fail on purpose; fix the product, not the assertion.
+There is no "known defect" list any more: every spec below is expected to pass
+against the shipped build, and a failure is a product regression.
 
-1. `home.spec.ts` → *an empty workspace says so*: a fresh database makes Home
-   throw (`Slot failed to slot onto its children`) and the root error boundary
-   shows "UNEXPECTED ERROR / This screen stopped working". Repro: enroll a device
-   on an empty DB, sign in.
-2. `home.spec.ts` → *"Show all" reveals the rest*: the toggle writes
-   `expanded.blocked` while the renderer reads `expanded['Blocked tasks']`, so the
-   label flips to "Show less" and the list stays capped at five rows.
-3. `auth.spec.ts` → *an expired session … says why*: the redirect to `/login` is
-   silent; the login page never explains that the session ended.
+| spec | owned properties |
+|---|---|
+| `auth.spec.ts` | a wrong token is refused inline with no cookie; valid credentials leave `/login` and survive a reload with an HttpOnly cookie; sign-out clears the server session and lands on `/login`; an expired session is explained on `/login`; revoking the device with the admin key kills a live browser session (`reload → /login`, `/v1/web/session` 401, cookie gone). `mobile-chromium` runs this file at a phone viewport. |
+| `home.spec.ts` | an empty workspace renders an empty state rather than an error; stat counts come from the snapshot; section "Show all" actually reveals the rest; status controls write through the server. |
+| `projects.spec.ts` | creating a project is an authoritative write that appears in the shell, the index and after reload; two projects may share a name; empty names are refused without a request; a task created *inside* a new project, edited and status-changed, keeps its values after reload. |
+| `tasks.spec.ts` | capture → rename → description → priority → labels → status survives a reload (drawer deep-links via `?task=`); an illegal transition shows the server's refusal and keeps the stored status; a bulk status change applies to every selected task and both persist after reload. |
+| `conflict.spec.ts` | a stale-revision command is refused with the server's explanation, the UI keeps the stored value, and a refresh makes the next attempt succeed. |
+| `fixture.spec.ts` | the fixture is replayable: a second seed over the same database duplicates no rows and does not advance the authority revision. |
+| `terminology.spec.ts` | user-facing copy never shows the legacy internal feature name. |
 
 ## Rules the specs follow
 
@@ -94,3 +100,7 @@ These fail on purpose; fix the product, not the assertion.
   `expect.poll`, and bounded deadlines.
 * No weakened assertions to get green. A missing screen is reported as pending
   work, not as a pass.
+* Selectors are user-facing (`getByRole`, `getByLabel`) except where the shared
+  table and the stacked mobile list both exist in the DOM; those are scoped with
+  `page.locator('table')` rather than a hidden-element workaround.
+

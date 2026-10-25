@@ -1,21 +1,47 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { useCreateTask, userMessage, type ApiError } from '@/hooks'
+import { newCommandId, uncertainMessage, useCreateTask, userMessage, type ApiError } from '@/hooks'
 import { Button } from '@/components/ui/button'
 import { AlertCircleIcon, LoaderIcon, PlusIcon } from '@/components/ui/icons'
 import { cn } from '@/components/ui/utils'
 
 /**
+ * One capture attempt: both ids are minted at submit (never inside
+ * `mutationFn`) and reused while the same text is retried, so pressing Enter
+ * again after an unconfirmed failure replays the receipt instead of creating a
+ * second task. Editing the text mints a new attempt.
+ */
+interface CaptureAttempt {
+  title: string
+  commandId: string
+  taskId: string
+}
+
+/**
  * Single-line capture. The text is cleared only after the server accepts the
- * task; a rejection keeps it in place with the server's message underneath.
+ * task; a rejection keeps it in place with the server's message underneath, and
+ * an unconfirmed write keeps it in place with an explicit "refresh first" note.
  */
 export function QuickCapture({ onCaptured }: { onCaptured?: (taskId: string) => void }) {
   const createTask = useCreateTask()
   const [title, setTitle] = useState('')
   const [announcement, setAnnouncement] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const attemptRef = useRef<CaptureAttempt | null>(null)
 
   const error: ApiError | null = createTask.disposition === 'rejected' ? createTask.error : null
+  const uncertain = createTask.disposition === 'uncertain'
   const submitting = createTask.isPending
+
+  function attemptFor(submitted: string): CaptureAttempt {
+    if (attemptRef.current?.title !== submitted) {
+      attemptRef.current = {
+        title: submitted,
+        commandId: newCommandId(),
+        taskId: newCommandId(),
+      }
+    }
+    return attemptRef.current
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -27,8 +53,16 @@ export function QuickCapture({ onCaptured }: { onCaptured?: (taskId: string) => 
     }
 
     const submitted = trimmed
-    const outcome = await createTask.mutateAsync({ title: submitted }).catch(() => null)
+    const attempt = attemptFor(submitted)
+    const outcome = await createTask
+      .mutateAsync({
+        commandId: attempt.commandId,
+        taskId: attempt.taskId,
+        title: submitted,
+      })
+      .catch(() => null)
     if (!outcome) return
+    attemptRef.current = null
     setTitle((current) => (current === submitted ? '' : current))
     setAnnouncement(`Captured “${outcome.task.title}” in the Inbox.`)
     onCaptured?.(outcome.task.id)
@@ -75,6 +109,16 @@ export function QuickCapture({ onCaptured }: { onCaptured?: (taskId: string) => 
           <span className="min-w-0">
             The task was not captured, and your text is still here. {userMessage(error)}
           </span>
+        </div>
+      ) : null}
+
+      {uncertain ? (
+        <div
+          role="alert"
+          className="flex items-start gap-2 border-t border-warning/40 bg-warning-soft px-4 py-2 text-xs leading-5 text-warning-ink"
+        >
+          <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
+          <span className="min-w-0">{uncertainMessage(createTask.error ?? undefined)}</span>
         </div>
       ) : null}
 

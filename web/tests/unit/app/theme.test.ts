@@ -4,7 +4,7 @@ import {
   readThemePreference,
   resolveTheme,
   THEME_STORAGE_KEY,
-} from '@/app/theme'
+} from '@/components/theme/theme'
 
 afterEach(() => {
   document.documentElement.removeAttribute('data-theme')

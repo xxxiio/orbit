@@ -1,16 +1,36 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { queryKeys, useCreateTask, useProjects, userMessage, type ApiError } from '@/hooks'
+import {
+  newCommandId,
+  queryKeys,
+  uncertainMessage,
+  useCreateTask,
+  useProjects,
+  userMessage,
+  type ApiError,
+} from '@/hooks'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { AlertCircleIcon } from '@/components/ui/icons'
 import { useToast } from '@/components/ui/toast'
-import { cn } from '@/components/ui/utils'
+import { FormErrorBanner, LabeledSelect } from '@/components/forms'
 
 const NONE = '__none__'
+
+/**
+ * One create attempt: the command id and the task id are minted when the person
+ * submits (never inside `mutationFn`), and reused while the submitted payload
+ * stays the same. Pressing Create again after an unconfirmed failure therefore
+ * replays the server's receipt instead of creating a second task. Editing the
+ * fields mints a new attempt, because the server refuses to replay a command id
+ * whose payload changed.
+ */
+interface CreateTaskAttempt {
+  key: string
+  commandId: string
+  taskId: string
+}
 
 export interface CreateTaskDialogProps {
   open: boolean
@@ -29,12 +49,14 @@ export function CreateTaskDialog({ open, onOpenChange, defaultProjectId }: Creat
   const [projectId, setProjectId] = useState<string>(defaultProjectId ?? NONE)
   const [fieldError, setFieldError] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
+  const attemptRef = useRef<CreateTaskAttempt | null>(null)
 
   useEffect(() => {
     if (!open) return
     setTitle('')
     setProjectId(defaultProjectId ?? NONE)
     setFieldError(null)
+    attemptRef.current = null
     createTask.reset()
     // Only reset when the dialog opens; `createTask` is a mutation object whose
     // identity changes every render.
@@ -42,7 +64,15 @@ export function CreateTaskDialog({ open, onOpenChange, defaultProjectId }: Creat
   }, [open, defaultProjectId])
 
   const error: ApiError | null = createTask.disposition === 'rejected' ? createTask.error : null
+  const uncertain = createTask.disposition === 'uncertain'
   const submitting = createTask.isPending
+
+  function attemptFor(key: string): CreateTaskAttempt {
+    if (attemptRef.current?.key !== key) {
+      attemptRef.current = { key, commandId: newCommandId(), taskId: newCommandId() }
+    }
+    return attemptRef.current
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -55,14 +85,20 @@ export function CreateTaskDialog({ open, onOpenChange, defaultProjectId }: Creat
     }
     setFieldError(null)
 
+    const selectedProject = projectId === NONE ? undefined : projectId
+    const attempt = attemptFor(`${trimmed}\u0000${selectedProject ?? ''}`)
+
     const outcome = await createTask
       .mutateAsync({
+        commandId: attempt.commandId,
+        taskId: attempt.taskId,
         title: trimmed,
-        ...(projectId === NONE ? {} : { projectId }),
+        ...(selectedProject ? { projectId: selectedProject } : {}),
       })
       .catch(() => null)
 
     if (!outcome) return
+    attemptRef.current = null
     await queryClient.refetchQueries({ queryKey: queryKeys.snapshot() })
     toast({ tone: 'success', title: 'Task created', description: outcome.task.title })
     onOpenChange(false)
@@ -96,35 +132,26 @@ export function CreateTaskDialog({ open, onOpenChange, defaultProjectId }: Creat
             />
           </Field>
 
-          <Field label="Project" hint="Leave it unassigned to send the task to the Inbox.">
-            <Select value={projectId} onValueChange={setProjectId} disabled={submitting}>
-              <SelectTrigger aria-label="Project for the new task">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>No project (Inbox)</SelectItem>
-                {projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          <LabeledSelect
+            label="Project"
+            hint="Leave it unassigned to send the task to the Inbox."
+            ariaLabel="Project for the new task"
+            value={projectId}
+            onValueChange={setProjectId}
+            disabled={submitting}
+            options={[
+              { value: NONE, label: 'No project (Inbox)' },
+              ...projects.map((project) => ({ value: project.id, label: project.name })),
+            ]}
+          />
 
-          {error ? (
-            <div
-              role="alert"
-              className={cn(
-                'flex items-start gap-2 rounded-md border border-danger/35 bg-danger-soft px-3 py-2.5 text-danger-ink',
-              )}
-            >
-              <AlertCircleIcon size={15} className="mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold leading-5">The task was not created</p>
-                <p className="mt-0.5 text-xs leading-5">{userMessage(error)}</p>
-              </div>
-            </div>
+          {error ? <FormErrorBanner title="The task was not created" description={userMessage(error)} /> : null}
+          {uncertain ? (
+            <FormErrorBanner
+              className="border-warning/40 bg-warning-soft text-warning-ink"
+              title="The task may already exist"
+              description={uncertainMessage(createTask.error ?? undefined)}
+            />
           ) : null}
 
           <div className="mt-1 flex items-center justify-between gap-3">

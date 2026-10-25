@@ -5,7 +5,7 @@ import { ApiError } from '@/api/client'
 import { AppErrorBoundary } from '@/components/feedback/error-boundary'
 import { ToastProvider } from '@/components/ui/toast'
 import { AppRoutes } from './routes'
-import { ThemeProvider } from './theme'
+import { ThemeProvider } from '@/components/theme/theme'
 
 const queryClient = new QueryClient({
   defaultOptions: {

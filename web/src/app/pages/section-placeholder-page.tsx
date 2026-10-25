@@ -1,4 +1,4 @@
-import { useDocumentTitle } from '@/app/use-document-title'
+import { useDocumentTitle } from '@/hooks'
 import { EmptyState } from '@/components/ui/empty-state'
 import { AgentsIcon } from '@/components/ui/icons'
 import { PageHeader } from '@/components/ui/page-header'
@@ -9,9 +9,9 @@ const SECTION_COPY = {
     eyebrow: 'Workspace',
     title: 'Agents',
     description: 'The agents available to this workspace.',
-    emptyTitle: 'No agents connected yet',
+    emptyTitle: 'Agent monitoring is not implemented in this build',
     emptyDescription:
-      'Agents registered with this server will appear here. Server and device administration stays outside this app.',
+      'Agent jobs exist on the server, but this web app does not render their status yet. Server and device administration stays outside this app.',
     Icon: AgentsIcon,
   },
 } as const

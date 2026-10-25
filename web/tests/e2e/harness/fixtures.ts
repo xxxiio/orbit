@@ -5,7 +5,9 @@
  *   deleted after the test. Tests that only exercise auth or routing get an
  *   empty server for free.
  * - `workspace`: the same server, seeded through the public API. Opt in with
- *   `test('…', async ({ workspace }) => …)`.
+ *   `test('…', async ({ workspace }) => …)`. The browser clock is pinned to the
+ *   fixture's clock (`fixtureNowMs`) so "overdue" and "due today" are judged at
+ *   the same instant the deadlines were seeded against, whenever the suite runs.
  *
  * Failure evidence is attached to the HTML report here (screenshot on any
  * failure), while the config writes files into `outputDir` and records traces on
@@ -13,7 +15,7 @@
  */
 import { test as base, expect } from '@playwright/test'
 
-import { seedWorkspace, type WorkspaceFixture } from './seed'
+import { fixtureNowMs, seedWorkspace, type WorkspaceFixture } from './seed'
 import { startServer, type E2EServer } from './server'
 
 export interface Workspace {
@@ -31,8 +33,11 @@ export const test = base.extend<{ server: E2EServer; workspace: Workspace }>({
     }
   },
 
-  workspace: async ({ server }, use) => {
-    const fixture = await seedWorkspace(server)
+  workspace: async ({ server, page }, use) => {
+    const nowMs = fixtureNowMs()
+    const fixture = await seedWorkspace(server, { nowMs })
+    // Fake only `Date`; timers keep running so React Query and Radix behave.
+    await page.clock.setFixedTime(new Date(nowMs))
     expect(fixture.counts.total, 'fixture must be big enough for list views').toBeGreaterThan(100)
     await use({ server, fixture })
   },

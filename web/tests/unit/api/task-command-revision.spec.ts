@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { queryKeys } from '@/api/queries'
 import { useTaskCommand } from '@/api/mutations'
-import type { TaskCommand } from '@/api/contracts'
+import type { AuthoritySnapshotResponse, TaskCommand } from '@/api/contracts'
 import { jsonResponse, queryWrapper, snapshotAt, taskRecord, testQueryClient } from './test-utils'
 
 /**
@@ -58,8 +58,7 @@ describe('useTaskCommand revision fence', () => {
     expect(command.action).toEqual({ type: 'change_status', task_id: 't-1', status: 'done' })
   })
 
-  it('reports per-command pending state so only the edited row shows a spinner', async () => {
-    const client = testQueryClient()
+  it('reports per-command pending state so only the edited row shows a spinner', async () => {    const client = testQueryClient()
     client.setQueryData(queryKeys.snapshot(), snapshotAt(1))
 
     let release: (value: Response) => void = () => {}
@@ -86,5 +85,86 @@ describe('useTaskCommand revision fence', () => {
 
     await waitFor(() => expect(result.current.disposition).toBe('accepted'))
     expect(result.current.pendingCommand).toBeNull()
+  })
+
+  it('advances the fence from the accepted response, so the second command is not stale', async () => {
+    const client = testQueryClient()
+    client.setQueryData(queryKeys.snapshot(), snapshotAt(5, { tasks: [taskRecord()] }))
+
+    const fetchMock = vi.mocked(fetch)
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ revision: 8, duplicate: false, task: taskRecord({ status: 'planned' }) }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ revision: 9, duplicate: false, task: taskRecord({ status: 'ready' }) }),
+      )
+
+    const { result } = renderHook(() => useTaskCommand(), { wrapper: queryWrapper(client) })
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        commandId: 'cmd-1',
+        input: { type: 'change_status', taskId: 't-1', status: 'planned' },
+      })
+    })
+
+    // The first acceptance is written back before `mutateAsync` resolves.
+    expect(
+      client.getQueryData<AuthoritySnapshotResponse>(queryKeys.snapshot())?.revision,
+    ).toBe(8)
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        commandId: 'cmd-2',
+        input: { type: 'change_status', taskId: 't-1', status: 'ready' },
+      })
+    })
+
+    const bodies = fetchMock.mock.calls.map(
+      ([, init]) => JSON.parse(init.body as string) as TaskCommand,
+    )
+    expect(bodies).toHaveLength(2)
+    expect(bodies[0].expected_revision).toBe(5)
+    expect(bodies[1].expected_revision).toBe(8)
+    expect(bodies[1].expected_revision).toBeGreaterThan(bodies[0].expected_revision)
+    expect(bodies[0].command_id).toBe('cmd-1')
+    expect(bodies[1].command_id).toBe('cmd-2')
+    expect(
+      client.getQueryData<AuthoritySnapshotResponse>(queryKeys.snapshot())?.revision,
+    ).toBe(9)
+  })
+
+  it('never lowers the cached revision when a duplicate receipt is older', async () => {
+    const client = testQueryClient()
+    client.setQueryData(queryKeys.snapshot(), snapshotAt(5, { tasks: [taskRecord()] }))
+
+    const fetchMock = vi.mocked(fetch)
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ revision: 8, duplicate: false, task: taskRecord({ title: 'First' }) }),
+      )
+      // A replayed receipt carries the revision of the *original* command.
+      .mockResolvedValueOnce(
+        jsonResponse({ revision: 3, duplicate: true, task: taskRecord({ title: 'First' }) }),
+      )
+
+    const { result } = renderHook(() => useTaskCommand(), { wrapper: queryWrapper(client) })
+
+    const attempt = (commandId: string) => ({
+      commandId,
+      input: { type: 'rename' as const, taskId: 't-1', title: 'First' },
+    })
+
+    await act(async () => {
+      await result.current.mutateAsync(attempt('cmd-1'))
+    })
+    await act(async () => {
+      await result.current.mutateAsync(attempt('cmd-1'))
+    })
+
+    expect(
+      client.getQueryData<AuthoritySnapshotResponse>(queryKeys.snapshot())?.revision,
+    ).toBe(8)
   })
 })

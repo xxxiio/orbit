@@ -123,4 +123,52 @@ test.describe('tasks', () => {
     await page.reload()
     await expect(page.getByRole('dialog').getByLabel('Task status')).toContainText(/inbox/i)
   })
+
+  test('bulk status change applies to every selected task and survives a reload', async ({
+    page,
+    workspace,
+  }) => {
+    const { server } = workspace
+    const titles = ['Bulk target alpha', 'Bulk target beta']
+
+    await goto(page, server, '/inbox')
+    await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
+    const capture = page.getByLabel('Capture a task for the Inbox')
+    for (const title of titles) {
+      await capture.fill(title)
+      await capture.press('Enter')
+      await expect(page.getByText(title, { exact: true }).first()).toBeVisible()
+      await expect(capture).toHaveValue('')
+    }
+
+    // The desktop table and the stacked list are both in the DOM; only the table
+    // is laid out at this viewport.
+    const table = page.locator('table')
+    for (const title of titles) {
+      await table.getByRole('checkbox', { name: `Select ${title}` }).check()
+    }
+
+    const bulk = page.getByRole('region', { name: 'Bulk actions' })
+    await expect(bulk).toBeVisible()
+    await expect(bulk).toContainText('2 selected')
+
+    // One status change covers both rows: the second command must fence on the
+    // revision the first acceptance returned.
+    await choose(page, bulk.getByLabel('Bulk action'), /^Set status$/i)
+    await choose(page, bulk.getByLabel('Bulk value'), /^Planned$/i)
+    await bulk.getByRole('button', { name: 'Apply' }).click()
+
+    // No partial-failure message, and both rows render the stored status.
+    await expect(bulk).toBeHidden()
+    for (const title of titles) {
+      await expect(table.getByLabel(`Status for ${title}`)).toContainText(/planned/i)
+    }
+
+    // Reload proves both commands reached the authoritative store.
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
+    for (const title of titles) {
+      await expect(page.locator('table').getByLabel(`Status for ${title}`)).toContainText(/planned/i)
+    }
+  })
 })

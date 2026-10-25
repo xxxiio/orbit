@@ -1,16 +1,28 @@
 import { useCallback, useEffect } from 'react'
 import { useToast } from '@/components/ui/toast'
-import { userMessage } from '@/hooks'
+import { isAmbiguousError, uncertainMessage, userMessage } from '@/api/errors'
 
 /**
  * Command failures are always surfaced, never swallowed. The caller keeps the
  * server's value on screen because no command is applied optimistically.
+ *
+ * A refusal says what failed. An unconfirmed write must not claim that: the
+ * outcome is unknown, so it gets its own message and a refresh hint.
  */
 export function useCommandFeedback() {
   const { toast } = useToast()
 
   const notifyFailure = useCallback(
     (title: string, error: unknown) => {
+      if (isAmbiguousError(error)) {
+        // Neutral, not danger: the write may have succeeded.
+        toast({
+          tone: 'default',
+          title: 'Outcome not confirmed',
+          description: uncertainMessage(error),
+        })
+        return
+      }
       toast({ tone: 'danger', title, description: userMessage(error) })
     },
     [toast],

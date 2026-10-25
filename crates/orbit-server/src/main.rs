@@ -2557,9 +2557,17 @@ fn session_cookie(headers: &HeaderMap) -> Option<String> {
     }
     None
 }
-fn session_cookie_header(token: &str, secure: bool) -> String {
+fn session_cookie_header(token: &str, secure: bool, max_age_seconds: i64) -> String {
     let secure = if secure { "; Secure" } else { "" };
-    format!("orbit_session={token}; Path=/; HttpOnly; SameSite=Strict{secure}")
+    format!(
+        "orbit_session={token}; Path=/; Max-Age={}; HttpOnly; SameSite=Strict{secure}",
+        max_age_seconds.max(0)
+    )
+}
+/// Cookie `Max-Age` is whole seconds of remaining server lifetime. A session
+/// that is already at its deadline clamps to zero rather than going negative.
+fn remaining_seconds(expires_at_ms: i64, now_ms: i64) -> i64 {
+    expires_at_ms.saturating_sub(now_ms) / 1000
 }
 
 fn session_error(failure: SessionError) -> ApiError {
@@ -2626,7 +2634,10 @@ async fn create_web_session(
     State(state): State<AppState>,
     Json(request): Json<WebLogin>,
 ) -> Result<Response, WebFailure> {
-    if request.device_id.trim().is_empty() || request.device_id.len() > 128 {
+    // Throttle buckets and the credential check must agree on the device id,
+    // otherwise padding the claimed id sidesteps the failure series.
+    let device_id = request.device_id.trim();
+    if device_id.is_empty() || device_id.len() > 128 {
         return Err(web_error(
             StatusCode::UNAUTHORIZED,
             "invalid device credentials",
@@ -2635,7 +2646,7 @@ async fn create_web_session(
     let now = now_ms().map_err(web_api_error)?;
     {
         let throttle = state.login_attempts.lock().map_err(|_| web_lock_error())?;
-        if throttle.blocked(&request.device_id, now) {
+        if throttle.blocked(device_id, now) {
             return Err(web_error(
                 StatusCode::TOO_MANY_REQUESTS,
                 "too many attempts",
@@ -2646,14 +2657,14 @@ async fn create_web_session(
         .store
         .lock()
         .map_err(|_| web_error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?
-        .authorize_device(&request.device_id, &request.token)
+        .authorize_device(device_id, &request.token)
         .map_err(|err| web_api_error(map_error(err)))?;
     if !authorized {
         state
             .login_attempts
             .lock()
             .map_err(|_| web_lock_error())?
-            .record_failure(&request.device_id, now);
+            .record_failure(device_id, now);
         return Err(web_error(
             StatusCode::UNAUTHORIZED,
             "invalid device credentials",
@@ -2663,23 +2674,26 @@ async fn create_web_session(
         .login_attempts
         .lock()
         .map_err(|_| web_lock_error())?
-        .reset(&request.device_id);
+        .reset(device_id);
     let (token, expires_at_ms) = {
         let mut sessions = state.sessions.lock().map_err(|_| web_lock_error())?;
         let ttl = sessions.ttl_ms();
         let absolute_ttl = sessions.absolute_ttl_ms();
         let created = sessions
-            .create(&request.device_id, now, ttl, absolute_ttl)
+            .create(device_id, now, ttl, absolute_ttl)
             .map_err(|err| web_api_error(session_error(err)))?;
         (created.token, created.expires_at_ms)
     };
-    let cookie =
-        axum::http::HeaderValue::from_str(&session_cookie_header(&token, state.cookie_secure))
-            .map_err(|_| web_error(StatusCode::INTERNAL_SERVER_ERROR, "session error"))?;
+    let cookie = axum::http::HeaderValue::from_str(&session_cookie_header(
+        &token,
+        state.cookie_secure,
+        remaining_seconds(expires_at_ms, now),
+    ))
+    .map_err(|_| web_error(StatusCode::INTERNAL_SERVER_ERROR, "session error"))?;
     let mut response = (
         StatusCode::CREATED,
         Json(WebSessionResponse {
-            device_id: request.device_id,
+            device_id: device_id.to_owned(),
             expires_at_ms,
         }),
     )
@@ -2730,6 +2744,15 @@ async fn get_web_session(
         expires_at_ms,
     })
     .into_response();
+    // Sliding renewal is reflected client-side: the browser keeps the cookie
+    // for the new server deadline instead of the deadline it was first issued.
+    let cookie = axum::http::HeaderValue::from_str(&session_cookie_header(
+        &token,
+        state.cookie_secure,
+        remaining_seconds(expires_at_ms, now),
+    ))
+    .map_err(|_| web_error(StatusCode::INTERNAL_SERVER_ERROR, "session error"))?;
+    response.headers_mut().insert(header::SET_COOKIE, cookie);
     response.headers_mut().insert(
         header::CACHE_CONTROL,
         axum::http::HeaderValue::from_static("no-store"),
@@ -3648,6 +3671,7 @@ fn routes(state: AppState) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::path::PathBuf;
@@ -3774,6 +3798,13 @@ mod tests {
             })
             .expect("login must set an orbit_session cookie")
     }
+    fn cookie_max_age(cookie: &str) -> Option<i64> {
+        cookie
+            .split(';')
+            .map(str::trim)
+            .find_map(|attribute| attribute.strip_prefix("Max-Age="))
+            .and_then(|value| value.parse().ok())
+    }
 
     fn post(address: &str, path: &str, headers: &str, body: &str) -> (u16, String) {
         send(
@@ -3806,14 +3837,26 @@ mod tests {
         assert!(cookie.contains("HttpOnly"));
         assert!(cookie.contains("SameSite=Strict"));
         assert!(!cookie.contains("Secure"));
+        assert!(cookie_max_age(&cookie).is_some_and(|seconds| seconds > 0));
         assert!(body_of(&raw).contains("\"device_id\":\"device-1\""));
 
         let token = session_token(&raw);
         let cookie_header = format!("Cookie: orbit_session={token}\r\n");
         let (status, _) = get(&address, "/v1/authoritative/projects", &cookie_header);
         assert_eq!(status, 200);
-        let (status, _) = get(&address, "/v1/web/session", &cookie_header);
+        // Time passes, then a read renews the window. The reissued Max-Age is
+        // the new lifetime, not the original one minus the elapsed time.
+        tokio::time::sleep(Duration::from_millis(1_100)).await;
+        let (status, raw) = get(&address, "/v1/web/session", &cookie_header);
         assert_eq!(status, 200);
+        let reissued = header_value(&raw, "set-cookie").expect("GET must reissue the cookie");
+        assert!(reissued.starts_with(&format!("orbit_session={token}")));
+        let renewed = cookie_max_age(&reissued).expect("reissued cookie carries Max-Age");
+        assert!(renewed > 0);
+        assert!(
+            renewed >= cookie_max_age(&cookie).unwrap(),
+            "a sliding session reports its renewed lifetime, not the decremented one"
+        );
 
         // A cookie-authenticated mutation needs the CSRF header.
         let (status, raw) = post(
@@ -3914,6 +3957,190 @@ mod tests {
         let (status, raw) = post(&address, "/v1/web/session", "", unknown);
         assert_eq!(status, 401);
         assert!(body_of(&raw).contains("invalid device credentials"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn padded_device_ids_share_the_login_throttle_bucket() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let padded = r#"{"device_id":"device-1 ","token":"wrong-token-0123456789abcdef"}"#;
+        for _ in 0..5 {
+            let (status, _) = post(&address, "/v1/web/session", "", padded);
+            assert_eq!(status, 401);
+        }
+        // The plain id is the same identity after trimming, so the failure
+        // series blocks it instead of starting a fresh bucket.
+        let correct = format!(r#"{{"device_id":"device-1","token":"{DEVICE_TOKEN}"}}"#);
+        let (status, raw) = post(&address, "/v1/web/session", "", &correct);
+        assert_eq!(status, 429);
+        assert!(body_of(&raw).contains("too many attempts"));
+    }
+
+    const FEATURE_KIND: &str = r#"{"id":"feature","name":"Feature","initial_state":"backlog",
+        "states":["backlog","ready","done"],"fields":[{"id":"notes","kind":{"type":"text"}}],
+        "transitions":[{"from":"backlog","to":"ready"},{"from":"ready","to":"done"}]}"#;
+    const CHORE_KIND: &str = r#"{"id":"chore","name":"Chore","initial_state":"todo",
+        "states":["todo","done"],"transitions":[{"from":"todo","to":"done"}]}"#;
+    const UPGRADE_BLUEPRINT: &str = "upgrade-demo";
+
+    fn manifest(version: u32, kinds: &[&str]) -> orbit_blueprint::Blueprint {
+        serde_json::from_str(&format!(
+            r#"{{"id":"{UPGRADE_BLUEPRINT}","version":{version},"name":"Upgrade demo","work_items":[{}]}}"#,
+            kinds.join(",")
+        ))
+        .expect("valid manifest")
+    }
+
+    /// A project pinned to version 1 with version 2 published. `with_live_item`
+    /// creates a work item that version 2 removes, which is a blocker.
+    fn upgrade_state(dist: &TempDist, with_live_item: bool) -> AppState {
+        let state = test_state(dist);
+        {
+            let mut host = state.store.lock().unwrap();
+            host.publish_project_blueprint(&manifest(1, &[FEATURE_KIND]), &BTreeSet::new())
+                .unwrap();
+            // Creating the project with an explicit workflow pins version 1 in
+            // the same transaction; a second bind is not allowed.
+            host.project_command(
+                "device-1",
+                domain_commands::ProjectCommand {
+                    command_id: "project-1-create".into(),
+                    expected_revision: 0,
+                    project_id: "project-1".into(),
+                    name: "Project 1".into(),
+                    workflow_id: Some(UPGRADE_BLUEPRINT.into()),
+                },
+            )
+            .unwrap();
+            let target = if with_live_item {
+                host.create_project_work_item("item-1", "project-1", "feature", BTreeMap::new())
+                    .unwrap();
+                vec![CHORE_KIND]
+            } else {
+                vec![FEATURE_KIND, CHORE_KIND]
+            };
+            host.publish_project_blueprint(&manifest(2, &target), &BTreeSet::new())
+                .unwrap();
+        }
+        state
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_apply_requires_a_fingerprint() {
+        let dist = TempDist::built();
+        let state = upgrade_state(&dist, false);
+        let address = spawn(routes(state)).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        // Confirmed but no fingerprint: the server never derives one.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/blueprints/upgrade",
+            &bearer,
+            r#"{"project_id":"project-1","id":"upgrade-demo","version":2,"confirm":true}"#,
+        );
+        assert_eq!(status, 400);
+        assert!(body_of(&raw).contains("fingerprint required"));
+        // An empty fingerprint is equally unacceptable.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/blueprints/upgrade",
+            &bearer,
+            r#"{"project_id":"project-1","id":"upgrade-demo","version":2,"confirm":true,"fingerprint":"  "}"#,
+        );
+        assert_eq!(status, 400);
+        assert!(body_of(&raw).contains("fingerprint required"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_apply_rejects_a_stale_fingerprint() {
+        let dist = TempDist::built();
+        let state = upgrade_state(&dist, false);
+        let address = spawn(routes(state)).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/blueprints/upgrade",
+            &bearer,
+            r#"{"project_id":"project-1","id":"upgrade-demo","version":2,"confirm":true,"fingerprint":"not-the-preview"}"#,
+        );
+        assert_eq!(status, 409);
+        assert!(body_of(&raw).contains("upgrade fingerprint mismatch"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_apply_reports_blockers_distinctly() {
+        let dist = TempDist::built();
+        let state = upgrade_state(&dist, true);
+        let address = spawn(routes(state)).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        let preview_path = "/v1/authoritative/blueprints/upgrade-preview?project_id=project-1&id=upgrade-demo&version=2";
+        let (status, raw) = get(&address, preview_path, &bearer);
+        assert_eq!(status, 200);
+        let preview: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert!(!preview["blockers"].as_array().unwrap().is_empty());
+        let fingerprint = preview["fingerprint"].as_str().unwrap();
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/blueprints/upgrade",
+            &bearer,
+            &format!(
+                r#"{{"project_id":"project-1","id":"upgrade-demo","version":2,"confirm":true,"fingerprint":"{fingerprint}"}}"#
+            ),
+        );
+        assert_eq!(status, 409);
+        assert!(body_of(&raw).contains("workflow upgrade blocked"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_apply_accepts_the_previewed_fingerprint() {
+        let dist = TempDist::built();
+        let state = upgrade_state(&dist, false);
+        let address = spawn(routes(state)).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        let preview_path = "/v1/authoritative/blueprints/upgrade-preview?project_id=project-1&id=upgrade-demo&version=2";
+        let (status, raw) = get(&address, preview_path, &bearer);
+        assert_eq!(status, 200);
+        let preview: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert!(preview["blockers"].as_array().unwrap().is_empty());
+        let fingerprint = preview["fingerprint"].as_str().unwrap();
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/blueprints/upgrade",
+            &bearer,
+            &format!(
+                r#"{{"project_id":"project-1","id":"upgrade-demo","version":2,"confirm":true,"fingerprint":"{fingerprint}"}}"#
+            ),
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert!(body_of(&raw).contains("\"already_applied\":false"));
+        // The accepted binding is the version whose preview was approved.
+        let (status, raw) = get(
+            &address,
+            "/v1/authoritative/blueprints/binding?project_id=project-1",
+            &bearer,
+        );
+        assert_eq!(status, 200);
+        assert!(body_of(&raw).contains("\"version\":2"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_preview_requires_a_live_device() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let unknown = format!(
+            "Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-unknown\r\n"
+        );
+        let (status, raw) = get(
+            &address,
+            "/v1/authoritative/blueprints/upgrade-preview?project_id=project-1&id=upgrade-demo&version=2",
+            &unknown,
+        );
+        assert_eq!(status, 401);
+        assert!(body_of(&raw).contains("unauthorized"));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -12,14 +12,18 @@ import type { E2EServer } from './server'
 
 export const SESSION_COOKIE = 'orbit_session'
 
-/** Fill the login form with the harness device credentials and submit it. */
-export async function signIn(page: Page, server: E2EServer): Promise<void> {
+/** Fill the login form with the given credentials (default: the harness device). */
+export async function signIn(
+  page: Page,
+  server: E2EServer,
+  credentials: { deviceId: string; token: string } = server,
+): Promise<void> {
   const current = page.url()
   const onLoginPage = current.startsWith(server.base) && new URL(current).pathname.startsWith('/login')
   if (!onLoginPage) await page.goto(`${server.base}/login`)
   await expect(page.getByRole('heading', { name: 'Sign in to Orbit' })).toBeVisible()
-  await page.getByLabel('Device ID').fill(server.deviceId)
-  await page.getByLabel('Device token').fill(server.token)
+  await page.getByLabel('Device ID').fill(credentials.deviceId)
+  await page.getByLabel('Device token').fill(credentials.token)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 })
 }
