@@ -5,12 +5,13 @@ Browser captures of the M31 I4 build, produced from the deterministic fixture in
 `orbit-server`). No mocked responses and no preview server.
 
 Captured on 2026-10-26 from commit
-`87119af` (M31 I4: knowledge, attachments and agent jobs). The `web/dist` used
-for the capture came from the same commit, and the server binary was the
-existing `target/debug/orbit-server` built 2026-10-25 22:18 local; I4 changed no
-Rust source, so that binary matches the committed server. Re-run the commands
-below after any change to the build; a capture is only comparable to the commit
-and binary named here.
+`e486114` (M31 I4: show the selected note first on a phone) on top of the I4
+feature commit `87119af` (M31 I4: knowledge, attachments and agent jobs). The
+`web/dist` used for the capture came from the same source, and the server binary
+was the existing `target/debug/orbit-server` built 2026-10-25 22:18 local; I4
+changed no Rust source, so that binary matches the committed server. Re-run the
+commands below after any change to the build; a capture is only comparable to
+the commit and binary named here.
 
 Reproduce:
 
