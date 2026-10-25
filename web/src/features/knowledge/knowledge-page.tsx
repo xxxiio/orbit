@@ -262,7 +262,12 @@ export function KnowledgePage() {
       />
 
       <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[19rem_minmax(0,1fr)]">
-        <Panel className="min-w-0 overflow-hidden lg:sticky lg:top-4">
+        <Panel
+          className={cn(
+            'min-w-0 overflow-hidden lg:sticky lg:top-4',
+            currentPath ? 'order-2 lg:order-1' : 'order-1',
+          )}
+        >
           <PanelHeader
             title="Vault"
             description={tree.data ? `${countNotes(tree.data)} notes` : 'Reading folders…'}
@@ -337,7 +342,7 @@ export function KnowledgePage() {
           </PanelBody>
         </Panel>
 
-        <div className="min-w-0">
+        <div className={cn('min-w-0', currentPath && 'order-1 lg:order-2')}>
           {currentPath ? (
             <NoteView key={currentPath} path={currentPath} onRefreshTree={refreshTree} />
           ) : (
