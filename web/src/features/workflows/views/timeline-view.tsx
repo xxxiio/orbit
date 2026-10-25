@@ -11,6 +11,7 @@ import { formatDate, formatMinutes, formatTimeOfDay } from '@/features/tasks'
 import type { ViewRendererProps } from '../view-types'
 import {
   componentTypeName,
+  emptyTextOption,
   milestoneMatchesDeclaredFilter,
   unsupportedMilestoneFilterKeys,
 } from '../view-metadata'
@@ -35,6 +36,7 @@ const STATUS_DOT: Record<string, string> = {
  * sequence and the tasks attached to each milestone.
  */
 function MilestoneTimeline({ component, tasks, milestones }: ViewRendererProps) {
+  const emptyText = emptyTextOption(component)
   const title = componentTypeName(component)
   const filter = component.filter ?? {}
   const unsupported = unsupportedMilestoneFilterKeys(filter)
@@ -91,7 +93,7 @@ function MilestoneTimeline({ component, tasks, milestones }: ViewRendererProps) 
           compact
           headingLevel="p"
           icon={<CalendarIcon size={18} />}
-          title="No milestones in this project"
+          title={emptyText ?? 'No milestones in this project'}
           description="Create one from the Milestones view; it will appear here with its status and task count."
         />
       ) : (
@@ -166,6 +168,7 @@ export function scheduleTimelineGroups(
 const SCHEDULE_SORT_FIELDS = new Set(['starts_at', 'startsat', 'start', 'start_time', 'time'])
 
 function ScheduleTimeline({ component }: ViewRendererProps) {
+  const emptyText = emptyTextOption(component)
   const title = componentTypeName(component)
   const snapshot = useWorkspaceSnapshot()
   const filter = component.filter ?? {}
@@ -229,7 +232,7 @@ function ScheduleTimeline({ component }: ViewRendererProps) {
           compact
           headingLevel="p"
           icon={<ClockIcon size={18} />}
-          title="No schedule blocks yet"
+          title={emptyText ?? 'No schedule blocks yet'}
           description="Approve a schedule plan from the Planning view; approved blocks appear here."
         />
       ) : (

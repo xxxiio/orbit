@@ -72,7 +72,7 @@ export interface SeedProject {
   workflow: string
 }
 
-/** Six projects: the five bundled workflows plus the dogfooding project. */
+/** Seven projects: the five bundled workflows, the dogfooding project, and a guarded demo. */
 export const SEED_PROJECTS: readonly SeedProject[] = [
   { id: 'p-orbit-development', name: 'Orbit Development', workflow: 'development' },
   { id: 'p-basic', name: 'Basic', workflow: 'basic' },
@@ -80,6 +80,7 @@ export const SEED_PROJECTS: readonly SeedProject[] = [
   { id: 'p-research', name: 'Research', workflow: 'research' },
   { id: 'p-learning', name: 'Learning', workflow: 'learning' },
   { id: 'p-habits', name: 'Habits', workflow: 'habits' },
+  { id: 'p-guarded', name: 'Guarded release', workflow: 'guarded' },
 ]
 
 export const PROJECT_IDS = {
@@ -89,6 +90,7 @@ export const PROJECT_IDS = {
   research: 'p-research',
   learning: 'p-learning',
   habits: 'p-habits',
+  guarded: 'p-guarded',
 } as const
 
 interface ProjectPlan {
@@ -301,6 +303,194 @@ const MILESTONES: readonly SeedMilestonePlan[] = [
   { id: 'm-basic-cleanup', projectId: PROJECT_IDS.basic, name: 'Housekeeping' },
 ]
 
+/**
+ * A small, explicitly published workflow used by the work-item acceptance test.
+ * It declares a guarded transition, so the browser can exercise a *server*
+ * refusal from a declared move (the three bundled workflows only declare
+ * unguarded moves). Published before the projects so `p-guarded` can bind it.
+ */
+const GUARDED_WORKFLOW = {
+  id: 'guarded',
+  version: 1,
+  name: 'Guarded release',
+  description: 'Tickets whose approval requires a high priority.',
+  required_capabilities: [],
+  work_items: [
+    {
+      id: 'ticket',
+      name: 'Ticket',
+      initial_state: 'open',
+      states: ['open', 'approved', 'rejected'],
+      fields: [
+        {
+          id: 'priority',
+          kind: { type: 'choice', options: ['low', 'high'] },
+          required: true,
+          default: 'low',
+        },
+        { id: 'note', kind: { type: 'text' }, required: false, default: null },
+      ],
+      transitions: [
+        {
+          from: 'open',
+          to: 'approved',
+          guards: [
+            { type: 'property_equals', field: 'priority', value: 'high' },
+          ],
+        },
+        {
+          from: 'open',
+          to: 'rejected',
+          guards: [{ type: 'property_present', field: 'note' }],
+        },
+      ],
+    },
+  ],
+  views: [
+    {
+      id: 'overview',
+      title: 'Overview',
+      description: 'Tickets and their guarded moves.',
+      layout: { type: 'vertical' },
+      components: [
+        {
+          id: 'board',
+          type: 'kanban',
+          source: 'work_items',
+          group_by: 'state',
+          limit: 100,
+          title: 'Tickets',
+        },
+        {
+          id: 'items',
+          type: 'table',
+          source: 'work_items',
+          columns: ['title', 'kind', 'state'],
+          limit: 100,
+          title: 'Ticket table',
+        },
+      ],
+    },
+  ],
+}
+
+export interface SeedWorkItem {
+  id: string
+  projectId: string
+  kind: string
+  state: string
+  properties: Record<string, unknown>
+}
+
+interface SeedWorkItemPlan extends SeedWorkItem {
+  /** States to move through after creation, in order. */
+  transitions: string[]
+}
+
+/**
+ * Work items for the projects whose surfaces are exercised by I3. The
+ * `p-development` project deliberately has none: the I2 settings test re-pins
+ * it to Basic, and live items of a removed kind are a server-side blocker.
+ */
+export const WORK_ITEM_PLANS: readonly SeedWorkItemPlan[] = [
+  {
+    id: 'wi-orbit-feature-backlog',
+    projectId: PROJECT_IDS.orbit,
+    kind: 'feature',
+    state: 'backlog',
+    properties: { priority: 'medium' },
+    transitions: [],
+  },
+  {
+    id: 'wi-orbit-feature-ready',
+    projectId: PROJECT_IDS.orbit,
+    kind: 'feature',
+    state: 'ready',
+    properties: { priority: 'high' },
+    transitions: ['ready'],
+  },
+  {
+    id: 'wi-orbit-feature-review',
+    projectId: PROJECT_IDS.orbit,
+    kind: 'feature',
+    state: 'review',
+    properties: { priority: 'low' },
+    transitions: ['ready', 'implementing', 'review'],
+  },
+  {
+    id: 'wi-research-hypothesis-proposed',
+    projectId: PROJECT_IDS.research,
+    kind: 'hypothesis',
+    state: 'proposed',
+    properties: { question: 'Does the upgrade preview fence stale clients?', confidence: 'medium' },
+    transitions: [],
+  },
+  {
+    id: 'wi-research-hypothesis-investigating',
+    projectId: PROJECT_IDS.research,
+    kind: 'hypothesis',
+    state: 'investigating',
+    properties: { question: 'Which readiness signals predict blocked work?', confidence: 'low' },
+    transitions: ['investigating'],
+  },
+  {
+    id: 'wi-research-experiment-designed',
+    projectId: PROJECT_IDS.research,
+    kind: 'experiment',
+    state: 'designed',
+    properties: { method: 'Replay the same command from two sessions.', reproducible: true },
+    transitions: [],
+  },
+  {
+    id: 'wi-learning-lesson-planned',
+    projectId: PROJECT_IDS.learning,
+    kind: 'lesson',
+    state: 'planned',
+    properties: { topic: 'Typed workflow declarations', minutes: 45, difficulty: 'beginner' },
+    transitions: [],
+  },
+  {
+    id: 'wi-learning-lesson-studying',
+    projectId: PROJECT_IDS.learning,
+    kind: 'lesson',
+    state: 'studying',
+    properties: { topic: 'Revision fences', minutes: 30, difficulty: 'intermediate' },
+    transitions: ['studying'],
+  },
+  {
+    id: 'wi-learning-assessment-planned',
+    projectId: PROJECT_IDS.learning,
+    kind: 'assessment',
+    state: 'planned',
+    properties: { subject: 'Workflow upgrades', passed: false },
+    transitions: [],
+  },
+  {
+    id: 'wi-habits-practice-planned',
+    projectId: PROJECT_IDS.habits,
+    kind: 'practice',
+    state: 'planned',
+    properties: { activity: 'Morning walk', weekly_target: 3, check_in_required: true },
+    transitions: [],
+  },
+  {
+    id: 'wi-habits-practice-active',
+    projectId: PROJECT_IDS.habits,
+    kind: 'practice',
+    state: 'active',
+    properties: { activity: 'Evening reading', weekly_target: 5, check_in_required: false },
+    transitions: ['active'],
+  },
+  {
+    id: 'wi-habits-check-in-due',
+    projectId: PROJECT_IDS.habits,
+    kind: 'check_in',
+    state: 'due',
+    properties: { notes: 'Record the morning walk', performed: false },
+    transitions: [],
+  },
+]
+
 export interface SeedTask {
   id: string
   title: string
@@ -332,6 +522,7 @@ export interface WorkspaceFixture {
   nowMs: number
   projects: SeedProject[]
   tasks: SeedTask[]
+  workItems: SeedWorkItem[]
   milestones: SeedMilestonePlan[]
   notes: SeedNote[]
   agentJobs: SeedAgentJob[]
@@ -358,6 +549,7 @@ export interface WorkspaceFixture {
   }
   counts: {
     total: number
+    workItems: number
     byStatus: Record<TaskStatus, number>
     byProject: Record<string, number>
     overdue: number
@@ -453,7 +645,13 @@ export async function seedWorkspace(
     }
   }
 
-  // 1. Projects (creation is the only project write; it also pins a workflow).
+  // 1. A published workflow used by the work-item acceptance test, then the
+  //    projects (creation is the only project write; it also pins a workflow).
+  await transport
+    .post('/v1/authoritative/blueprints', { definition: GUARDED_WORKFLOW })
+    .catch((error) => {
+      throw withLabel(error, 'guarded workflow', '/v1/authoritative/blueprints')
+    })
   for (const project of SEED_PROJECTS) {
     await command(
       '/v1/authoritative/project-commands',
@@ -465,6 +663,70 @@ export async function seedWorkspace(
       },
       `project ${project.id}`,
     )
+  }
+
+  // 1b. Work items for the surfaces I3 renders. These are outside the domain
+  //     ledger (they carry their own `u64` revision), so they do not advance
+  //     the command sequence below. A replay skips any item that already
+  //     exists instead of re-creating it.
+  const existingItems = new Map<string, Set<string>>()
+  const workItems: SeedWorkItem[] = []
+  for (const plan of WORK_ITEM_PLANS) {
+    let known = existingItems.get(plan.projectId)
+    if (!known) {
+      const listed = await transport
+        .get<Array<{ id: string }>>(
+          `/v1/authoritative/blueprints/items?project_id=${encodeURIComponent(plan.projectId)}`,
+        )
+        .catch((error) => {
+          throw withLabel(error, `work items ${plan.projectId}`, '/v1/authoritative/blueprints/items')
+        })
+      known = new Set(listed.map((item) => item.id))
+      existingItems.set(plan.projectId, known)
+    }
+    if (!known.has(plan.id)) {
+      const created = await transport
+        .post<{ id: string; state: string; revision: number }>(
+          '/v1/authoritative/blueprints/items',
+          {
+            id: plan.id,
+            project_id: plan.projectId,
+            kind: plan.kind,
+            properties: plan.properties,
+          },
+        )
+        .catch((error) => {
+          throw withLabel(error, `work item ${plan.id}`, '/v1/authoritative/blueprints/items')
+        })
+      let revision = created.revision
+      let state = created.state
+      for (const to of plan.transitions) {
+        const moved = await transport
+          .post<{ state: string; revision: number }>('/v1/authoritative/blueprints/transition', {
+            id: plan.id,
+            to,
+            expected_revision: revision,
+          })
+          .catch((error) => {
+            throw withLabel(error, `work item ${plan.id} -> ${to}`, '/v1/authoritative/blueprints/transition')
+          })
+        revision = moved.revision
+        state = moved.state
+      }
+      if (state !== plan.state) {
+        throw new Error(
+          `seed fixture: work item ${plan.id} ended in ${state}, expected ${plan.state}`,
+        )
+      }
+      known.add(plan.id)
+    }
+    workItems.push({
+      id: plan.id,
+      projectId: plan.projectId,
+      kind: plan.kind,
+      state: plan.state,
+      properties: plan.properties,
+    })
   }
 
   // 2. Milestones.
@@ -916,6 +1178,7 @@ export async function seedWorkspace(
     nowMs,
     projects: [...SEED_PROJECTS],
     tasks,
+    workItems,
     milestones: [...MILESTONES],
     notes,
     agentJobs,
@@ -935,6 +1198,7 @@ export async function seedWorkspace(
     },
     counts: {
       total: tasks.length,
+      workItems: workItems.length,
       byStatus,
       byProject,
       overdue: tasks.filter((task) => task.overdue).length,

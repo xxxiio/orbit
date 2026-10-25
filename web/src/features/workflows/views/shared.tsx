@@ -124,17 +124,18 @@ export function ProvenanceNote({ children }: { children: ReactNode }) {
 }
 
 /**
- * A declared `actions` list is an I3 carry-forward: this build offers the writes
- * its panels own (open, move, rename) and never claims the manifest's list is
- * wired. Say so where the declaration exists instead of dropping it silently.
+ * A declared `actions` list is view chrome, not a capability grant. This build
+ * renders each panel's own controls (open, create, move, rename) and never adds
+ * a button for an action it cannot complete. Say which actions were declared
+ * where the declaration exists instead of dropping it silently.
  */
 export function DeclaredActionsNote({ component }: { component: WorkflowViewComponent }) {
   if (component.actions.length === 0) return null
   return (
     <span data-declared-actions={component.actions.join(',')}>
       The workflow also declares the {component.actions.join(', ')} action
-      {component.actions.length === 1 ? '' : 's'}; wiring declared actions is carried forward to I3
-      and this panel does not claim to honour them.
+      {component.actions.length === 1 ? '' : 's'}; this panel renders its own controls and does
+      not attach an action it cannot complete.
     </span>
   )
 }

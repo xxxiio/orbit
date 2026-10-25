@@ -1,4 +1,4 @@
-import { defaultNowMs, useTaskReadiness, useWorkItems } from '@/hooks'
+import { defaultNowMs, useTaskReadiness } from '@/hooks'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ViewRendererProps } from '../view-types'
 import {
@@ -7,7 +7,9 @@ import {
   componentTypeName,
   dataSourceName,
   describeFilter,
+  metricCaption,
   metricDeclaration,
+  metricDisplayValue,
   milestoneMatchesDeclaredFilter,
   numericFieldsForSource,
   taskMatchesDeclaredFilter,
@@ -77,6 +79,7 @@ function MetricFrame({
   sourceNote,
   loading = false,
   actions = [],
+  caption = null,
 }: {
   title: string
   value: number | null
@@ -85,6 +88,7 @@ function MetricFrame({
   sourceNote: string
   loading?: boolean
   actions?: string[]
+  caption?: string | null
 }) {
   return (
     <ComponentPanel
@@ -95,13 +99,16 @@ function MetricFrame({
         actions.length > 0 ? (
           <ProvenanceNote>
             The workflow also declares the {actions.join(', ')} action
-            {actions.length === 1 ? '' : 's'}; wiring declared actions is carried forward to I3
-            and this panel does not claim to honour them.
+            {actions.length === 1 ? '' : 's'}; this panel renders its own controls and does not
+            attach an action it cannot complete.
           </ProvenanceNote>
         ) : undefined
       }
     >
       <MetricNumber value={value} noun={noun} loading={loading} />
+      {caption ? (
+        <p className="mt-2 text-xs leading-5 text-ink-soft">{caption}</p>
+      ) : null}
       <div className="mt-3 flex flex-col gap-1">
         {filterNote ? <p className="text-2xs text-ink-muted">{filterNote}</p> : null}
         <ProvenanceNote>{sourceNote}</ProvenanceNote>
@@ -150,7 +157,11 @@ function metricSourceNote(
         : declaration.aggregate === 'min'
           ? 'Minimum'
           : 'Maximum'
-  return `${verb} ${declaration.aggregate === 'average' ? 'from' : 'of'} ${fieldLabel ?? 'the declared field'} across the matching ${source === 'work_items' ? 'work items' : source}.`
+  const conversion =
+    declaration.factor !== 1 && declaration.unit
+      ? ` Converted from minutes to ${declaration.unit}.`
+      : ''
+  return `${verb} ${declaration.aggregate === 'average' ? 'from' : 'of'} ${fieldLabel ?? 'the declared field'} across the matching ${source === 'work_items' ? 'work items' : source}.${conversion}`
 }
 
 /** Tasks: every number is computed from rows the snapshot returned, never guessed. */
@@ -216,7 +227,10 @@ function TaskMetric(props: ViewRendererProps) {
   const matching = tasks.filter((task) =>
     taskMatchesDeclaredFilter(task, filter, actionable ? readinessByTask.get(task.id) : undefined),
   )
-  const value = aggregateMetric(declaration, taskMetricRows(matching, declaration.field))
+  const value = metricDisplayValue(
+    declaration,
+    aggregateMetric(declaration, taskMetricRows(matching, declaration.field)),
+  )
 
   return (
     <MetricFrame
@@ -226,6 +240,7 @@ function TaskMetric(props: ViewRendererProps) {
       filterNote={describeFilter(filter)}
       sourceNote={metricSourceNote(declaration, 'tasks', 'estimated minutes')}
       actions={component.actions}
+      caption={metricCaption(component)}
     />
   )
 }
@@ -251,27 +266,28 @@ function MilestoneMetric({ component, milestones, workflow }: ViewRendererProps)
   return (
     <MetricFrame
       title={componentTypeName(component)}
-      value={aggregateMetric(declaration, matching.map(() => null))}
+      value={metricDisplayValue(
+        declaration,
+        aggregateMetric(declaration, matching.map(() => null)),
+      )}
       noun="milestones"
       filterNote={describeFilter(filter)}
       sourceNote={metricSourceNote(declaration, 'milestones', null)}
       actions={component.actions}
+      caption={metricCaption(component)}
     />
   )
 }
 
 /**
- * Work items are a separate server projection (`/blueprints/items`). The count
- * is of rows the server returned for this project, filtered by the declared
- * `kind`/`state`, nothing else.
+ * Work items are a separate server projection (`/blueprints/items`), read once
+ * by the workspace page. The count is of rows the page received for this
+ * project, filtered by the declared `kind`/`state`, nothing else.
  */
-function WorkItemMetric({ component, project, workflow }: ViewRendererProps) {
+function WorkItemMetric({ component, workItems, workItemsState, workflow }: ViewRendererProps) {
   const filter = component.filter ?? {}
   const unsupported = unsupportedWorkItemFilterKeys(filter)
   const declaration = metricDeclaration(component, workflow)
-  const items = useWorkItems(
-    unsupported.length > 0 || declaration.refusal ? undefined : project.id,
-  )
 
   if (declaration.refusal) return declarationRefusal(component, declaration)
 
@@ -284,25 +300,29 @@ function WorkItemMetric({ component, project, workflow }: ViewRendererProps) {
     )
   }
 
-  if (items.error) {
+  if (workItemsState?.error) {
     return (
       <ComponentPanel title={componentTypeName(component)}>
         <InlineReadError
           label="Work items"
-          error={items.error}
-          onRetry={() => void items.refetch()}
-          retrying={items.isFetching}
+          error={workItemsState.error}
+          onRetry={workItemsState.refetch}
+          retrying={workItemsState.retrying}
         />
       </ComponentPanel>
     )
   }
 
-  const matching = items.isPending
+  const pending = workItemsState?.isPending ?? false
+  const matching = pending
     ? []
-    : (items.data ?? []).filter((item) => workItemMatchesDeclaredFilter(item, filter))
-  const value = items.isPending
+    : workItems.filter((item) => workItemMatchesDeclaredFilter(item, filter))
+  const value = pending
     ? null
-    : aggregateMetric(declaration, workItemMetricRows(matching, declaration.field))
+    : metricDisplayValue(
+        declaration,
+        aggregateMetric(declaration, workItemMetricRows(matching, declaration.field)),
+      )
 
   const fieldLabel =
     declaration.field &&
@@ -317,8 +337,9 @@ function WorkItemMetric({ component, project, workflow }: ViewRendererProps) {
       noun={metricLabel(declaration, 'work_items')}
       filterNote={describeFilter(filter)}
       sourceNote={metricSourceNote(declaration, 'work_items', fieldLabel)}
-      loading={items.isPending}
+      loading={pending}
       actions={component.actions}
+      caption={metricCaption(component)}
     />
   )
 }

@@ -42,5 +42,8 @@ export {
   type ViewComponentFamily,
   type ViewHeaderAction,
 } from './view-metadata'
-export type { ViewRendererProps } from './view-types'
+export type { ViewRendererProps, WorkItemsReadState } from './view-types'
 export { MilestoneCreateDialog, NewMilestoneButton } from './milestone-create-dialog'
+export { NewWorkItemButton, NewWorkItemDialog } from './work-item-create-dialog'
+export { WorkItemSheet, type WorkItemSheetProps } from './work-item-sheet'
+export { pinnedKindForView } from './work-item-model'

@@ -65,6 +65,8 @@ export function ProjectTaskList({
   milestones,
   defaultColumns = DEFAULT_PROJECT_COLUMNS,
   defaultSort = DEFAULT_TASK_SORT,
+  rowLimit,
+  emptyText,
 }: {
   project: Project
   tasks: Task[]
@@ -73,6 +75,10 @@ export function ProjectTaskList({
   defaultColumns?: readonly TaskColumnKey[]
   /** The workflow's declared sort, used until the URL chooses another one. */
   defaultSort?: TaskSort
+  /** The workflow's declared `limit`: the most rows this surface may show. */
+  rowLimit?: number
+  /** The workflow's declared empty copy, when it published any. */
+  emptyText?: string
 }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const state = readTaskListUrl(searchParams, defaultColumns, defaultSort)
@@ -103,9 +109,14 @@ export function ProjectTaskList({
     [tasks, state.search, state.status, state.priority, state.sort.key, state.sort.direction],
   )
 
-  const windowed = useMemo(() => windowTasks(filtered, state.page), [filtered, state.page])
+  // The workflow's declared `limit` caps the set after the person's own filters
+  // and sort, so a table can never present more rows than the declaration says.
+  const capped = useMemo(() => {
+    if (!rowLimit || rowLimit <= 0) return filtered
+    return filtered.slice(0, rowLimit)
+  }, [filtered, rowLimit])
+  const windowed = useMemo(() => windowTasks(capped, state.page), [capped, state.page])
   const visible = windowed.rows
-
   const taskIds = useMemo(() => new Set(tasks.map((task) => task.id)), [tasks])
   const selected = useMemo(
     () => new Set(state.selected.filter((id) => taskIds.has(id))),
@@ -132,8 +143,8 @@ export function ProjectTaskList({
     useTaskCommandState(command)
 
   const selectedTasks = useMemo(
-    () => filtered.filter((task) => selected.has(task.id)),
-    [filtered, selected],
+    () => capped.filter((task) => selected.has(task.id)),
+    [capped, selected],
   )
 
   const bulk = useTaskBulkCommand({
@@ -159,7 +170,7 @@ export function ProjectTaskList({
   }
 
   const filtersActive = state.search.trim().length > 0 || state.status !== ALL || state.priority !== ALL
-  const openCount = filtered.filter((task) => !isTerminalStatus(task.status)).length
+  const openCount = capped.filter((task) => !isTerminalStatus(task.status)).length
   const readError =
     (needsReadiness ? readiness.error : null) ?? (needsGraph ? graph.error : null) ?? null
   const retryReads = () => {
@@ -181,8 +192,13 @@ export function ProjectTaskList({
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-xs text-ink-muted">
-          <span className="tabular-nums">{filtered.length}</span> task
-          {filtered.length === 1 ? '' : 's'} · <span className="tabular-nums">{openCount}</span> open
+          <span className="tabular-nums">{capped.length}</span> task
+          {capped.length === 1 ? '' : 's'} · <span className="tabular-nums">{openCount}</span> open
+          {rowLimit && filtered.length > capped.length ? (
+            <span className="ml-1 text-ink-faint">
+              (the workflow shows at most {rowLimit})
+            </span>
+          ) : null}
           {filtersActive ? <ClearFiltersButton onClick={clearFilters} /> : null}
         </p>
         <p className="hidden items-center gap-1.5 text-2xs text-ink-muted md:flex">
@@ -221,7 +237,7 @@ export function ProjectTaskList({
           onToggle={toggleColumn}
           onReset={() => commit({ columns: [...defaultColumns] })}
         />
-        <WindowSummary total={filtered.length} window={windowed} />
+        <WindowSummary total={capped.length} window={windowed} />
       </div>
 
       {readError ? (
@@ -296,7 +312,7 @@ export function ProjectTaskList({
           tasks.length === 0 ? (
             <EmptyState
               icon={<LayersIcon size={20} />}
-              title="No tasks in this project yet"
+              title={emptyText ?? 'No tasks in this project yet'}
               description="Add the first task here, or assign an Inbox task to this project. This view stays empty until the server has a task."
               action={
                 <Button
@@ -326,11 +342,19 @@ export function ProjectTaskList({
         }
       />
 
+      {rowLimit && filtered.length > capped.length ? (
+        <p className="text-2xs leading-4 text-ink-muted">
+          The workflow limits this surface to {rowLimit} row{rowLimit === 1 ? '' : 's'};{' '}
+          {filtered.length - capped.length} more match and are not shown. Narrow the filters to see
+          them.
+        </p>
+      ) : null}
+
       {windowed.windowed ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-2xs tabular-nums text-ink-muted">
-            Showing {(windowed.page - 1) * 50 + 1}–{Math.min(windowed.page * 50, filtered.length)} of{' '}
-            {filtered.length} matching tasks. Only one page is rendered, so large projects stay
+            Showing {(windowed.page - 1) * 50 + 1}–{Math.min(windowed.page * 50, capped.length)} of{' '}
+            {capped.length} matching tasks. Only one page is rendered, so large projects stay
             responsive.
           </p>
           <div className="flex items-center gap-1">

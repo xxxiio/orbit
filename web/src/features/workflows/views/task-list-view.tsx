@@ -7,6 +7,8 @@ import {
   componentTypeName,
   dataSourceName,
   describeFilter,
+  emptyTextOption,
+  listOptionDeclaration,
   taskMatchesDeclaredFilter,
   taskSortDeclaration,
   unsupportedTaskFilterKeys,
@@ -25,6 +27,7 @@ import {
   UnavailablePanel,
 } from './shared'
 import { TaskSummaryList } from './list-view'
+import { WorkItemTableView } from './work-item-views'
 
 /**
  * The snapshot tasks narrowed by the component's declared filter. Readiness is
@@ -115,6 +118,22 @@ function FullTaskList({
     )
   }
 
+  const options = listOptionDeclaration(component)
+  if (options.refusal) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={options.refusal}
+        hint="The list is refused rather than guessing what the declaration meant."
+      />
+    )
+  }
+  const declaredColumns = columnsFromComponent(component)
+  const defaultColumns =
+    options.showDependencies === false
+      ? declaredColumns.filter((column) => column !== 'dependencies')
+      : declaredColumns
+
   if (scope.actionable && scope.readiness.error) {
     return (
       <ComponentPanel title={componentTypeName(component)}>
@@ -160,8 +179,10 @@ function FullTaskList({
         project={props.project}
         tasks={scope.tasks}
         milestones={props.milestones}
-        defaultColumns={columnsFromComponent(component)}
+        defaultColumns={defaultColumns}
         defaultSort={sortDeclaration.sort ?? DEFAULT_TASK_SORT}
+        rowLimit={component.limit ?? undefined}
+        emptyText={emptyTextOption(component) ?? undefined}
       />
     </ComponentPanel>
   )
@@ -215,6 +236,10 @@ export function TaskListView(props: ViewRendererProps) {
 export function TableView(props: ViewRendererProps) {
   const component = props.component
   const source = component.source ?? 'tasks'
+
+  if (source === 'work_items') {
+    return <WorkItemTableView {...props} />
+  }
 
   if (source !== 'tasks') {
     return (

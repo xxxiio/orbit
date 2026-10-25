@@ -26,7 +26,7 @@ test.describe('seed fixture', () => {
     expect(snapshot.status).toBe(200)
     const authoritative = (await snapshot.json()) as { revision: number; tasks: unknown[] }
 
-    expect(first.projects).toHaveLength(6)
+    expect(first.projects).toHaveLength(7)
     expect(first.counts.total).toBeGreaterThan(100)
     expect(authoritative.tasks).toHaveLength(first.counts.total)
     expect(authoritative.revision).toBe(first.revision)
@@ -39,12 +39,16 @@ test.describe('seed fixture', () => {
     expect(first.counts.blocked).toBeGreaterThan(0)
     expect(first.notes.length).toBeGreaterThan(0)
     expect(first.agentJobs.length).toBeGreaterThan(0)
+    expect(first.counts.workItems).toBeGreaterThan(0)
+    expect(first.workItems.map((item) => item.id)).toContain('wi-orbit-feature-ready')
 
     // Second run: identical ids, identical counts, no new revisions.
     const second = await seedWorkspace(server, { nowMs })
     expect(second.revision).toBe(first.revision)
     expect(second.tasks.map((task) => task.id)).toEqual(first.tasks.map((task) => task.id))
     expect(second.counts.total).toBe(first.counts.total)
+    expect(second.counts.workItems).toBe(first.counts.workItems)
+    expect(second.workItems.map((item) => item.id)).toEqual(first.workItems.map((item) => item.id))
     const afterReplay = await fetch(`${server.base}/v1/authoritative/tasks`, {
       headers: {
         authorization: `Bearer ${server.token}`,

@@ -18,6 +18,7 @@ import type { ViewRendererProps } from './view-types'
 import {
   componentSpansFullWidth,
   componentTypeName,
+  declaredWindowOption,
   hasOwnKey,
   viewLayoutClassName,
 } from './view-metadata'
@@ -32,20 +33,26 @@ import { TimelineView } from './views/timeline-view'
 import { UnavailablePanel } from './views/shared'
 
 function HabitTrackerView(props: ViewRendererProps) {
+  const days = declaredWindowOption(props.component, 'days')
   return (
     <UnavailablePanel
       title={componentTypeName(props.component)}
-      reason="Habit tracking is not available in the browser yet."
+      reason={`Habit tracking is not available in the browser yet.${
+        days ? ` This panel declares a ${days}-day window, which this build cannot draw.` : ''
+      }`}
       hint="The server stores habits and occurrences; recording them is still a console and API feature."
     />
   )
 }
 
 function MetricHistoryView(props: ViewRendererProps) {
+  const window = declaredWindowOption(props.component, 'window')
   return (
     <UnavailablePanel
       title={componentTypeName(props.component)}
-      reason="Metric history is not charted in the browser yet."
+      reason={`Metric history is not charted in the browser yet.${
+        window ? ` This panel declares a ${window}-observation window, which this build cannot chart.` : ''
+      }`}
       hint="Metric targets and observations are readable over the API; this screen does not draw them."
     />
   )

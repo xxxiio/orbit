@@ -37,8 +37,10 @@ import type { ViewRendererProps } from '../view-types'
 import {
   actionableFilterNote,
   actionableFilterRefusal,
+  columnWidthOption,
   componentTypeName,
   describeFilter,
+  emptyTextOption,
   sortByDeclaration,
   taskMatchesDeclaredFilter,
   taskSortDeclaration,
@@ -50,6 +52,7 @@ import {
   ProvenanceNote,
   UnavailablePanel,
 } from './shared'
+import { WorkItemBoardView } from './work-item-views'
 
 interface BoardColumn {
   status: TaskStatus
@@ -75,11 +78,15 @@ function BoardSurface({
   project,
   component,
   readinessFilter,
+  columnWidth,
+  emptyText,
 }: {
   tasks: Task[]
   project: ViewRendererProps['project']
   component: ViewRendererProps['component']
   readinessFilter?: Map<string, boolean>
+  columnWidth: number
+  emptyText: string | null
 }) {
   const { openTask } = useTaskDrawer()
   const projects = useProjects()
@@ -216,7 +223,7 @@ function BoardSurface({
           compact
           headingLevel="p"
           icon={<GridIcon size={18} />}
-          title="No tasks match this board"
+          title={emptyText ?? 'No tasks match this board'}
           description={
             Object.keys(filter).length > 0
               ? `The workflow filters this board by ${describeFilter(filter)}. No task in this project matches right now.`
@@ -236,7 +243,8 @@ function BoardSurface({
                 aria-label={`${statusLabel(column.status)} column, ${column.tasks.length} task${
                   column.tasks.length === 1 ? '' : 's'
                 }`}
-                className="flex w-[15.5rem] shrink-0 flex-col rounded-lg border border-line bg-surface-sunken/35"
+                className="flex shrink-0 flex-col rounded-lg border border-line bg-surface-sunken/35"
+                style={{ width: columnWidth }}
               >
                 <header className="flex items-center gap-2 border-b border-line px-2.5 py-2">
                   <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', statusDots[column.status])} />
@@ -391,9 +399,13 @@ function BoardSurface({
 function ActionableBoard({
   props,
   tasks,
+  columnWidth,
+  emptyText,
 }: {
   props: ViewRendererProps
   tasks: Task[]
+  columnWidth: number
+  emptyText: string | null
 }) {
   const readiness = useTaskReadiness(defaultNowMs())
   const byTask = useMemo(
@@ -430,6 +442,8 @@ function ActionableBoard({
         project={props.project}
         component={props.component}
         readinessFilter={byTask}
+        columnWidth={columnWidth}
+        emptyText={emptyText}
       />
     </ComponentPanel>
   )
@@ -444,6 +458,10 @@ export function BoardView(props: ViewRendererProps) {
   const { component, tasks } = props
   const source = component.source ?? 'tasks'
   const filter = component.filter ?? {}
+
+  if (source === 'work_items') {
+    return <WorkItemBoardView {...props} />
+  }
 
   if (source !== 'tasks') {
     return (
@@ -486,6 +504,19 @@ export function BoardView(props: ViewRendererProps) {
     )
   }
 
+  const widthDeclaration = columnWidthOption(component)
+  if (widthDeclaration.refusal) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={widthDeclaration.refusal}
+        hint="A board column width must be a number of pixels."
+      />
+    )
+  }
+  const columnWidth = widthDeclaration.value ?? 248
+  const emptyText = emptyTextOption(component)
+
   const sortDeclaration = taskSortDeclaration(component)
   if (sortDeclaration.refusal) {
     return (
@@ -498,12 +529,18 @@ export function BoardView(props: ViewRendererProps) {
   }
 
   if (filter.actionable !== undefined) {
-    return <ActionableBoard props={props} tasks={tasks} />
+    return <ActionableBoard props={props} tasks={tasks} columnWidth={columnWidth} emptyText={emptyText} />
   }
 
   return (
     <ComponentPanel title={componentTypeName(component)} bodyClassName="px-3 py-3 sm:px-4">
-      <BoardSurface tasks={tasks} project={props.project} component={component} />
+      <BoardSurface
+        tasks={tasks}
+        project={props.project}
+        component={component}
+        columnWidth={columnWidth}
+        emptyText={emptyText}
+      />
     </ComponentPanel>
   )
 }

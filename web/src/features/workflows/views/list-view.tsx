@@ -1,17 +1,19 @@
 import { useMemo } from 'react'
-import { defaultNowMs, useTaskReadiness } from '@/hooks'
+import { defaultNowMs, useTaskGraph, useTaskReadiness, userMessage } from '@/hooks'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ListIcon } from '@/components/ui/icons'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
-import { formatMoment, readinessReasonLabel, statusLabel, statusTones, useTaskDrawer } from '@/features/tasks'
+import { formatMoment, formatMinutes, priorityLabels, readinessReasonLabel, statusLabel, statusTones, useTaskDrawer } from '@/features/tasks'
 import type { ViewRendererProps } from '../view-types'
 import {
   actionableFilterRefusal,
   componentTypeName,
   dataSourceName,
   describeFilter,
+  emptyTextOption,
+  listOptionDeclaration,
   sortByDeclaration,
   taskMatchesDeclaredFilter,
   taskSortDeclaration,
@@ -24,6 +26,7 @@ import {
   ProvenanceNote,
   UnavailablePanel,
 } from './shared'
+import { WorkItemListView } from './work-item-views'
 
 function TaskSummaryList({
   props,
@@ -35,6 +38,9 @@ function TaskSummaryList({
   const { component, tasks } = props
   const { openTask } = useTaskDrawer()
   const readiness = useTaskReadiness(defaultNowMs(), withReadiness)
+  const declaredOptions = listOptionDeclaration(component)
+  const needsGraph = declaredOptions.showDependencies === true
+  const graph = useTaskGraph(defaultNowMs(), needsGraph)
   const filter = component.filter ?? {}
   const sortDeclaration = taskSortDeclaration(component)
 
@@ -42,7 +48,10 @@ function TaskSummaryList({
     () => new Map((readiness.data?.tasks ?? []).map((entry) => [entry.taskId, entry])),
     [readiness.data],
   )
-
+  const graphByTask = useMemo(
+    () => new Map((graph.data?.nodes ?? []).map((node) => [node.taskId, node])),
+    [graph.data],
+  )
   if (sortDeclaration.refusal) {
     return (
       <UnavailablePanel
@@ -52,6 +61,45 @@ function TaskSummaryList({
       />
     )
   }
+
+  const options = listOptionDeclaration(component)
+  if (options.refusal) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={options.refusal}
+        hint="The list is refused rather than guessing what the declaration meant."
+      />
+    )
+  }
+
+  const declaredColumns = new Set((component.columns ?? []).map((name) => name.trim().toLowerCase()))
+  const hasColumns = declaredColumns.size > 0
+  const showStatus =
+    options.showStatus && (!hasColumns || declaredColumns.has('status') || declaredColumns.has('state'))
+  const showPriority = options.showPriority || declaredColumns.has('priority')
+  const showDue =
+    !hasColumns ||
+    declaredColumns.has('due') ||
+    declaredColumns.has('due_date') ||
+    declaredColumns.has('deadline') ||
+    declaredColumns.has('deadline_at')
+  const showEstimate = declaredColumns.has('estimate') || declaredColumns.has('estimated_minutes')
+  const knownListColumns = new Set([
+    'title',
+    'name',
+    'status',
+    'state',
+    'priority',
+    'due',
+    'due_date',
+    'deadline',
+    'deadline_at',
+    'estimate',
+    'estimated_minutes',
+  ])
+  const unsupportedColumns = [...declaredColumns].filter((name) => !knownListColumns.has(name))
+  const emptyText = emptyTextOption(component)
 
   const actionableRefusal = actionableFilterRefusal(filter)
   if (actionableRefusal) {
@@ -102,6 +150,25 @@ function TaskSummaryList({
               : 'Tasks from this project, in the order the server returned them.'}{' '}
             Readiness, if filtered, comes from the server&apos;s report.
           </ProvenanceNote>
+          {needsGraph && graph.error ? (
+            <p role="alert" className="text-2xs leading-4 text-warning-ink">
+              Dependencies could not be read: {userMessage(graph.error)}.{' '}
+              <button
+                type="button"
+                onClick={() => void graph.refetch()}
+                className="font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              >
+                Retry
+              </button>
+            </p>
+          ) : null}
+          {unsupportedColumns.length > 0 ? (
+            <p className="text-2xs leading-4 text-warning-ink">
+              The workflow asks this list to show {unsupportedColumns.map((name) => `“${name}”`).join(', ')},
+              which a compact list cannot show. {unsupportedColumns.length === 1 ? 'It is' : 'They are'} named
+              here rather than dropped silently.
+            </p>
+          ) : null}
           {component.actions.length > 0 ? (
             <ProvenanceNote>
               <DeclaredActionsNote component={component} />
@@ -120,7 +187,7 @@ function TaskSummaryList({
           compact
           headingLevel="p"
           icon={<ListIcon size={18} />}
-          title="Nothing to list"
+          title={emptyText ?? 'Nothing to list'}
           description={
             Object.keys(filter).length > 0
               ? `No task matches ${describeFilter(filter)} right now.`
@@ -146,10 +213,33 @@ function TaskSummaryList({
                 {withReadiness && entry ? (
                   <span className="text-2xs text-ink-faint">{readinessReasonLabel(entry.reason)}</span>
                 ) : null}
-                <span className="whitespace-nowrap text-2xs text-ink-muted">
-                  {task.deadlineAtMs !== null ? formatMoment(task.deadlineAtMs) : 'No due date'}
-                </span>
-                <Badge tone={statusTones[task.status]}>{statusLabel(task.status)}</Badge>
+                {needsGraph ? (
+                  <span className="whitespace-nowrap text-2xs text-ink-faint">
+                    {graphByTask.get(task.id)
+                      ? `${graphByTask.get(task.id)!.directPrerequisites.length} prerequisite${
+                          graphByTask.get(task.id)!.directPrerequisites.length === 1 ? '' : 's'
+                        }`
+                      : graph.error
+                        ? 'Dependencies unavailable'
+                        : 'Dependencies…'}
+                  </span>
+                ) : null}
+                {showPriority && task.priority ? (
+                  <span className="whitespace-nowrap text-2xs text-ink-muted">
+                    {priorityLabels[task.priority]}
+                  </span>
+                ) : null}
+                {showEstimate ? (
+                  <span className="whitespace-nowrap text-2xs text-ink-muted">
+                    {task.estimatedMinutes === null ? 'No estimate' : formatMinutes(task.estimatedMinutes)}
+                  </span>
+                ) : null}
+                {showDue ? (
+                  <span className="whitespace-nowrap text-2xs text-ink-muted">
+                    {task.deadlineAtMs !== null ? formatMoment(task.deadlineAtMs) : 'No due date'}
+                  </span>
+                ) : null}
+                {showStatus ? <Badge tone={statusTones[task.status]}>{statusLabel(task.status)}</Badge> : null}
               </li>
             )
           })}
@@ -164,9 +254,12 @@ function TaskSummaryList({
   )
 }
 
-/** A compact list. Only the task source is rendered; other sources say why. */
+/** A compact list. The task and work-item sources are rendered; others say why. */
 export function ListView(props: ViewRendererProps) {
   const source = props.component.source ?? 'tasks'
+  if (source === 'work_items') {
+    return <WorkItemListView {...props} />
+  }
   if (source !== 'tasks') {
     return (
       <UnavailablePanel

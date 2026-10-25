@@ -6,12 +6,13 @@ import {
   useProjectTasks,
   useProjects,
   useTaskReadiness,
+  useWorkItems,
   useWorkspaceSnapshot,
   userMessage,
 } from '@/hooks'
 import { humanizeIdentifier } from '@/lib/humanize'
 import { useDocumentTitle } from '@/hooks'
-import type { WorkItem, WorkflowView, WorkflowViewComponent } from '@/api/adapters'
+import type { WorkflowView, WorkflowViewComponent } from '@/api/adapters'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -45,25 +46,22 @@ import { recordProjectOpen } from '@/lib/recent-projects'
 import { useProjectWorkflow } from './use-project-workflow'
 import {
   NewMilestoneButton,
+  NewWorkItemButton,
   ViewSurface,
+  WorkItemSheet,
   declaredWorkspaceViews,
+  pinnedKindForView,
   reservedDeclaredViews,
   viewBadge,
   viewBadgeCount,
   viewHeaderAction,
   workspaceViewTabs,
 } from '@/features/workflows'
+import { useWorkItemDrawer } from '@/features/workflows/use-work-item-drawer'
 
 /** The two workspace tools that are not workflow views. Reserved ids. */
 const PLANNING_ID = 'planning'
 const SETTINGS_ID = 'settings'
-
-/**
- * Work items have no workspace-snapshot projection yet (I3 adds the read).
- * The renderer contract carries the source now so a work-item renderer plugs in
- * instead of adding a fourth parallel copy of the view pipeline.
- */
-const NO_WORK_ITEMS: WorkItem[] = []
 
 function fallbackComponent(
   component: Pick<WorkflowViewComponent, 'id' | 'type'> & Partial<WorkflowViewComponent>,
@@ -198,7 +196,9 @@ export function ProjectWorkspacePage() {
   const snapshot = useWorkspaceSnapshot()
   const project = useProject(projectId)
   const tasks = useProjectTasks(projectId)
+  const workItems = useWorkItems(projectId)
   const workflow = useProjectWorkflow(projectId)
+  const itemDrawer = useWorkItemDrawer()
   const { openNewTask } = useWorkspaceActions()
 
   useDocumentTitle(project ? project.name : 'Project')
@@ -236,6 +236,16 @@ export function ProjectWorkspacePage() {
   )
 
   const primaryAction = declaredView ? viewHeaderAction(declaredView) : null
+  const pinnedKind = pinnedKindForView(declaredView)
+  const workItemsState = {
+    isPending: workItems.isPending,
+    error: workItems.error ?? null,
+    retrying: workItems.isFetching,
+    refetch: () => void workItems.refetch(),
+  }
+  const openWorkItem = itemDrawer.itemId
+    ? (workItems.data ?? []).find((item) => item.id === itemDrawer.itemId) ?? null
+    : null
   const navRef = useRef<HTMLElement | null>(null)
 
   // The tab strip scrolls sideways on a phone. Keep the current tab in view so
@@ -350,6 +360,15 @@ export function ProjectWorkspacePage() {
               </Button>
             ) : primaryAction?.kind === 'new_milestone' ? (
               <NewMilestoneButton projectId={project.id} projectName={project.name} />
+            ) : primaryAction?.kind === 'new_work_item' ? (
+              <NewWorkItemButton
+                projectId={project.id}
+                workflow={workflow.workflow}
+                pinnedKind={pinnedKind}
+                variant="primary"
+                size="sm"
+                label="New work item"
+              />
             ) : null}
             {tool !== SETTINGS_ID ? (
               <Button asChild variant="quiet" size="sm" aria-label="Project settings">
@@ -497,8 +516,10 @@ export function ProjectWorkspacePage() {
           project={project}
           tasks={tasks}
           milestones={projectMilestones}
-          workItems={NO_WORK_ITEMS}
+          workItems={workItems.data ?? []}
+          workItemsState={workItemsState}
           workflow={workflow.workflow}
+          workflowLoading={workflow.loading}
         />
       ) : (
         <Panel>
@@ -527,6 +548,15 @@ export function ProjectWorkspacePage() {
           />
         </Panel>
       )}
+
+      {itemDrawer.itemId ? (
+        <WorkItemSheet
+          item={openWorkItem}
+          workflow={workflow.workflow}
+          onClose={itemDrawer.closeItem}
+          onRefresh={workItemsState.refetch}
+        />
+      ) : null}
     </div>
   )
 }

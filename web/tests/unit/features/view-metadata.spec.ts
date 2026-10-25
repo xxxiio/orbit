@@ -18,6 +18,7 @@ import {
   describeFilter,
   isReservedViewId,
   metricDeclaration,
+  metricDisplayValue,
   milestoneMatchesDeclaredFilter,
   numericFieldsForSource,
   parseActionable,
@@ -465,6 +466,52 @@ describe('declared metric aggregates', () => {
       workflowWithKinds,
     )
     expect(count.unit).toBeNull()
+  })
+
+  it('converts a known unit or refuses a mismatch instead of relabelling the number', () => {
+    const hours = metricDeclaration(
+      component({
+        id: 'm',
+        type: 'metric',
+        source: 'tasks',
+        aggregate: 'sum',
+        field: 'estimated_minutes',
+        options: { unit: 'hours' },
+      }),
+      workflowWithKinds,
+    )
+    expect(hours.refusal).toBeNull()
+    expect(hours.unit).toBe('hours')
+    expect(hours.factor).toBeCloseTo(1 / 60)
+    expect(metricDisplayValue(hours, 120)).toBe(2)
+
+    const seconds = metricDeclaration(
+      component({
+        id: 'm',
+        type: 'metric',
+        source: 'tasks',
+        aggregate: 'sum',
+        field: 'estimated_minutes',
+        options: { unit: 'seconds' },
+      }),
+      workflowWithKinds,
+    )
+    expect(seconds.unit).toBe('seconds')
+    expect(metricDisplayValue(seconds, 2)).toBe(120)
+
+    const unknown = metricDeclaration(
+      component({
+        id: 'm',
+        type: 'metric',
+        source: 'tasks',
+        aggregate: 'sum',
+        field: 'estimated_minutes',
+        options: { unit: 'furlongs' },
+      }),
+      workflowWithKinds,
+    )
+    expect(unknown.refusal).toMatch(/furlongs/)
+    expect(unknown.refusal).toMatch(/minutes, hours or seconds/)
   })
 })
 

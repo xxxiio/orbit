@@ -15,6 +15,7 @@ import {
   ProvenanceNote,
   UnavailablePanel,
 } from './shared'
+import { WorkItemDetailView } from './work-item-views'
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -30,10 +31,15 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
  * panel lists what the server stores, states that rename is not supported, and
  * links to the screens that can actually change something.
  */
-export function DetailView({ component, project, tasks, milestones, workflow }: ViewRendererProps) {
+export function DetailView(props: ViewRendererProps) {
+  const { component, project, tasks, milestones, workflow } = props
   const title = componentTypeName(component)
   const source = component.source ?? 'project'
   const projects = useProjects()
+
+  if (source === 'work_items') {
+    return <WorkItemDetailView {...props} />
+  }
 
   if (source !== 'project') {
     return (

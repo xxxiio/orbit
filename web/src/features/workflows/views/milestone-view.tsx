@@ -18,6 +18,7 @@ import type { MilestoneCommandInput } from '@/hooks'
 import type { ViewRendererProps } from '../view-types'
 import {
   componentTypeName,
+  emptyTextOption,
   milestoneMatchesDeclaredFilter,
   unsupportedMilestoneFilterKeys,
   viewHeaderAction,
@@ -184,6 +185,7 @@ function MilestoneRow({
  */
 export function MilestoneProgressView({ component, view, project, tasks, milestones }: ViewRendererProps) {
   const title = componentTypeName(component)
+  const emptyText = emptyTextOption(component)
   // The workspace header already offers New milestone when this view's primary
   // surface is milestones; a second button in the panel would be a duplicate.
   const headerOffersCreate = viewHeaderAction(view)?.kind === 'new_milestone'
@@ -301,7 +303,7 @@ export function MilestoneProgressView({ component, view, project, tasks, milesto
           compact
           headingLevel="p"
           icon={<LayersIcon size={18} />}
-          title="No milestones yet"
+          title={emptyText ?? 'No milestones yet'}
           description="A milestone is a checkpoint inside this project. Create one, then assign tasks to it from the task drawer."
           action={
             headerOffersCreate ? undefined : (

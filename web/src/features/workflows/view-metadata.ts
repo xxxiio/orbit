@@ -271,6 +271,13 @@ export interface MetricDeclaration {
   field: string | null
   /** The unit the value is shown in; `null` for a plain count. */
   unit: string | null
+  /**
+   * Multiplier from the stored field's unit to `unit`. 1 when no conversion is
+   * needed. A declared display unit is never treated as a free label on a field
+   * whose base unit this build knows (minutes): a mismatch is converted or the
+   * panel is refused.
+   */
+  factor: number
   /** Non-null means the declaration cannot be honoured; render a refusal. */
   refusal: string | null
 }
@@ -323,17 +330,124 @@ export function numericFieldsForSource(
   return new Set()
 }
 
-/*
- * Recorded gap — declarations the manifest validator accepts but this build
- * does not honour yet (deliberately visible, not silently supported):
- * - the `options` bag: `empty_text`, `caption` and `show_status` are validated,
- *   but panels keep their own empty copy;
- * - `columns` on a `list` component: only `table`/`task_list` map declared
- *   columns (`columnsFromComponent`), and the list renderer ignores them;
- * - `limit` on a `table` or a full task list: those surfaces own paging and do
- *   not slice to the declared limit (see `badgeLimitApplies`).
- * TODO(I3): honour each of these, or refuse it by name.
+/* ------------------------------------------------------------------ */
+/* Declared options                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The manifest validator bounds the *keys* of `options`, not the values, so a
+ * panel reads each declared value here and refuses a spelling it cannot honour
+ * instead of silently treating it as absent.
  */
+export function declaredTextOption(
+  component: WorkflowViewComponent,
+  key: string,
+): string | null {
+  const raw = component.options?.[key]
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+/** `empty_text` is copy, never markup: the workflow cannot inject a component. */
+export function emptyTextOption(component: WorkflowViewComponent): string | null {
+  return declaredTextOption(component, 'empty_text')
+}
+
+export function metricCaption(component: WorkflowViewComponent): string | null {
+  return declaredTextOption(component, 'caption')
+}
+
+export interface DeclaredBooleanOption {
+  /** `undefined` when the option was not declared at all. */
+  value: boolean | undefined
+  refusal: string | null
+}
+
+export function declaredBooleanOption(
+  component: WorkflowViewComponent,
+  key: string,
+): DeclaredBooleanOption {
+  const raw = component.options?.[key]
+  if (raw === undefined || raw === null) return { value: undefined, refusal: null }
+  if (typeof raw === 'boolean') return { value: raw, refusal: null }
+  if (typeof raw === 'string') {
+    const normalized = raw.trim().toLowerCase()
+    if (normalized === 'true') return { value: true, refusal: null }
+    if (normalized === 'false') return { value: false, refusal: null }
+  }
+  return {
+    value: undefined,
+    refusal: `This panel sets ${key} to ${JSON.stringify(raw)}; only true or false are supported.`,
+  }
+}
+
+export interface DeclaredNumberOption {
+  value: number | null
+  refusal: string | null
+}
+
+export function declaredNumberOption(
+  component: WorkflowViewComponent,
+  key: string,
+): DeclaredNumberOption {
+  const raw = component.options?.[key]
+  if (raw === undefined || raw === null) return { value: null, refusal: null }
+  const parsed =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string' && raw.trim().length > 0
+        ? Number(raw)
+        : Number.NaN
+  if (!Number.isFinite(parsed)) {
+    return {
+      value: null,
+      refusal: `This panel sets ${key} to ${JSON.stringify(raw)}, which is not a number.`,
+    }
+  }
+  return { value: parsed, refusal: null }
+}
+
+/** A board column may declare a pixel width; 180–420 keeps every column usable. */
+export function columnWidthOption(component: WorkflowViewComponent): DeclaredNumberOption {
+  const declared = declaredNumberOption(component, 'column_width')
+  if (declared.value === null) return declared
+  return { value: Math.min(420, Math.max(180, Math.round(declared.value))), refusal: null }
+}
+
+export interface ListOptionDeclaration {
+  showStatus: boolean
+  showPriority: boolean
+  /** `undefined` means the panel did not declare it. */
+  showDependencies: boolean | undefined
+  refusal: string | null
+}
+
+/** `list`/`task_list` visibility options, with one named refusal on a bad value. */
+export function listOptionDeclaration(component: WorkflowViewComponent): ListOptionDeclaration {
+  const status = declaredBooleanOption(component, 'show_status')
+  const priority = declaredBooleanOption(component, 'show_priority')
+  const dependencies = declaredBooleanOption(component, 'show_dependencies')
+  return {
+    showStatus: status.value ?? true,
+    showPriority: priority.value ?? false,
+    showDependencies: dependencies.value,
+    refusal: status.refusal ?? priority.refusal ?? dependencies.refusal,
+  }
+}
+
+/** A declared window value named in a refusal, e.g. `days`/`window`. */
+export function declaredWindowOption(
+  component: WorkflowViewComponent,
+  key: 'days' | 'window',
+): string | null {
+  const raw = component.options?.[key]
+  if (raw === undefined || raw === null) return null
+  if (typeof raw === 'number' && Number.isFinite(raw)) return String(raw)
+  if (typeof raw === 'string' && raw.trim().length > 0) return raw.trim()
+  return JSON.stringify(raw)
+}
+
 /**
  * Resolve a metric's declared aggregate and field. A declaration this build
  * cannot evaluate gets a named reason instead of a count under a "sum" title.
@@ -349,6 +463,7 @@ export function metricDeclaration(
       aggregate: 'count',
       field: null,
       unit: null,
+      factor: 1,
       refusal: `This panel asks for the “${component.aggregate}” aggregate, which this build cannot compute.`,
     }
   }
@@ -361,6 +476,7 @@ export function metricDeclaration(
       aggregate: raw,
       field: null,
       unit: null,
+      factor: 1,
       refusal: `${dataSourceName(source)} has no numeric field this build can aggregate; only a count is supported.`,
     }
   }
@@ -371,6 +487,7 @@ export function metricDeclaration(
       aggregate: raw,
       field: null,
       unit: null,
+      factor: 1,
       refusal: `This panel aggregates the “${field}” field, which is not a numeric field on ${label}.`,
     }
   }
@@ -380,6 +497,7 @@ export function metricDeclaration(
       aggregate: raw,
       field: null,
       unit: null,
+      factor: 1,
       refusal: `A ${raw} aggregate needs the numeric field to aggregate, and this panel does not declare one.`,
     }
   }
@@ -393,15 +511,57 @@ export function metricDeclaration(
       aggregate: raw,
       field,
       unit: null,
+      factor: 1,
       refusal: `This panel aggregates the “${field}” field, which has no declared unit; add options.unit so the number is not shown as minutes.`,
+    }
+  }
+
+  // A field whose name states its unit (minutes) can be *converted* to another
+  // unit, but a declared unit must not be used as a bare label: "180 hours" for
+  // 180 minutes is a lie. Known conversions are applied; anything else refuses.
+  if (raw !== 'count' && field !== null && isMinutesField(field)) {
+    const conversion = minutesConversion(unit)
+    return {
+      aggregate: raw,
+      field,
+      unit: conversion.unit,
+      factor: conversion.factor,
+      refusal: conversion.refusal,
     }
   }
 
   return {
     aggregate: raw,
     field,
-    unit: raw === 'count' ? null : (unit ?? 'minutes'),
+    unit: raw === 'count' ? null : unit,
+    factor: 1,
     refusal: null,
+  }
+}
+
+interface UnitConversion {
+  unit: string
+  factor: number
+  refusal: string | null
+}
+
+/** Minutes → the declared display unit. Unknown units are refused by name. */
+function minutesConversion(unit: string | null): UnitConversion {
+  if (unit === null) return { unit: 'minutes', factor: 1, refusal: null }
+  const normalized = unit.trim().toLowerCase()
+  if (['minute', 'minutes', 'min', 'mins'].includes(normalized)) {
+    return { unit: 'minutes', factor: 1, refusal: null }
+  }
+  if (['hour', 'hours', 'h', 'hr', 'hrs'].includes(normalized)) {
+    return { unit: 'hours', factor: 1 / 60, refusal: null }
+  }
+  if (['second', 'seconds', 's', 'sec', 'secs'].includes(normalized)) {
+    return { unit: 'seconds', factor: 60, refusal: null }
+  }
+  return {
+    unit: unit,
+    factor: 1,
+    refusal: `This panel displays a minutes field in “${unit}”; this build converts minutes to minutes, hours or seconds only.`,
   }
 }
 
@@ -435,6 +595,16 @@ export function aggregateMetric(
   if (declaration.aggregate === 'average') return sum / values.length
   if (declaration.aggregate === 'min') return Math.min(...values)
   return Math.max(...values)
+}
+
+/** Convert an aggregated raw value into the declaration's display unit. */
+export function metricDisplayValue(
+  declaration: MetricDeclaration,
+  value: number | null,
+): number | null {
+  if (value === null) return null
+  if (declaration.aggregate === 'count') return value
+  return value * declaration.factor
 }
 
 /** Task rows reduced to the declared numeric field (null when unestimated). */
@@ -551,10 +721,8 @@ export interface ViewBadgeCountInput {
 
 function badgeLimitApplies(component: WorkflowViewComponent): boolean {
   if (component.limit === null || component.limit === undefined || component.limit <= 0) return false
-  // A full task list/table carries its own toolbar and ignores `limit`; a
-  // summary list, a board and every milestone surface slice to it.
-  if (component.type === 'table') return false
-  if (component.type === 'task_list') return component.limit !== null && component.limit !== undefined
+  // Every data surface that renders a `limit` shows the same capped set a
+  // badge must count (a table now slices too; see TableView/ProjectTaskList).
   return true
 }
 
