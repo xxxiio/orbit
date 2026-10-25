@@ -334,8 +334,9 @@ supports much of it:
 - Board, timeline and calendar views; creating, editing or reordering milestones.
 - Planning screens: day plan, workload, schedule planning, scenarios and approvals.
 - Notes and knowledge browsing or editing, and attachment upload, download or removal.
-- Agent jobs and an Agents workspace. The sidebar's **Agents** entry says
-  **No agents connected yet**; job monitoring is not implemented.
+- Agent jobs and an Agents workspace. The sidebar's **Agents** entry states that
+  agent monitoring is not implemented in this build; job monitoring is not
+  available in the browser.
 - Workflow authoring, publishing, binding and upgrade screens. Upgrades exist over HTTP only.
 - Device enrollment, revocation, automation and proposal review in the product UI.
 - Offline use, background sync, or a browser-side command queue.
