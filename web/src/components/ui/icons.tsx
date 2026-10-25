@@ -346,3 +346,12 @@ export function LayersIcon(props: IconProps) {
     </Icon>
   )
 }
+
+export function SettingsIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 15.25a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5Z" />
+      <path d="M19.4 13.5a7.7 7.7 0 0 0 0-3l1.6-1.2-1.8-3.1-1.9.7a7.6 7.6 0 0 0-2.6-1.5L14.4 3h-3.6l-.3 2.4a7.6 7.6 0 0 0-2.6 1.5l-1.9-.7L4.2 9.3 5.8 10.5a7.7 7.7 0 0 0 0 3L4.2 14.7l1.8 3.1 1.9-.7a7.6 7.6 0 0 0 2.6 1.5l.3 2.4h3.6l.3-2.4a7.6 7.6 0 0 0 2.6-1.5l1.9.7 1.8-3.1z" />
+    </Icon>
+  )
+}

@@ -74,10 +74,12 @@ src/
     feedback/     session gate, global error boundary
   features/
     auth/         sign-in screen and error copy
-    tasks/        shared task kernel: table, controls, list model, drawer
+    tasks/        shared task kernel: table, controls, list model, URL state, drawer
     inbox/        Inbox list and quick capture
     home/         Today
-    projects/     project index, workspace, overview, task list, status labels
+    projects/     project index, workspace, task list, milestones, settings
+    workflows/    view registry: component-type renderers, layout and view metadata
+    planning/     project day plan, schedule window and the approval gate
   hooks/          shared hooks (media query, command feedback, document title, …)
   lib/            browser-local stores and small helpers (recent projects, humanize)
   styles/         design tokens and global styles

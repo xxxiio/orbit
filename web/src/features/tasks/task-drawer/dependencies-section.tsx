@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { CalendarIcon, ClockIcon, LinkIcon } from '@/components/ui/icons'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { userMessage, type ReadinessEntry } from '@/hooks'
+import { userMessage, type ReadinessEntry, type TaskGraphNodeView } from '@/hooks'
 import { formatMoment, readinessReasonLabel } from '../task-meta'
 import { FieldError, SavingNote, Section } from './section'
 
@@ -17,6 +17,10 @@ export function DependenciesSection({
   readinessLoading,
   readinessError,
   onRetryReadiness,
+  graphNode,
+  graphLoading,
+  graphError,
+  onRetryGraph,
   pending,
   disabled = false,
   error,
@@ -30,6 +34,10 @@ export function DependenciesSection({
   readinessLoading: boolean
   readinessError: ApiError | null
   onRetryReadiness: () => void
+  graphNode: TaskGraphNodeView | null
+  graphLoading: boolean
+  graphError: ApiError | null
+  onRetryGraph: () => void
   pending: boolean
   /** Any task command is in flight; do not start another from here either. */
   disabled?: boolean
@@ -40,8 +48,12 @@ export function DependenciesSection({
   const [choice, setChoice] = useState('')
   const titles = useMemo(() => new Map(tasks.map((candidate) => [candidate.id, candidate.title])), [tasks])
 
+  // The graph report is the server's account of the same edges, including what
+  // depends on this task; the drawer shows both instead of deriving reach.
   const prerequisites = edges.filter((edge) => edge.taskId === task.id).map((edge) => edge.prerequisiteId)
-  const dependents = edges.filter((edge) => edge.prerequisiteId === task.id).map((edge) => edge.taskId)
+  const dependents = graphNode
+    ? graphNode.allDependents
+    : edges.filter((edge) => edge.prerequisiteId === task.id).map((edge) => edge.taskId)
 
   const candidates = useMemo(
     () =>
@@ -78,6 +90,9 @@ export function DependenciesSection({
         ) : readiness ? (
           <>
             <p className="mt-1 text-xs leading-5 text-ink-soft">{readinessReasonLabel(readiness.reason)}</p>
+            <p className="mt-0.5 text-2xs text-ink-faint">
+              Server reason: <span className="font-mono text-ink-muted">{readiness.reason}</span>
+            </p>
             {readiness.blockingTaskIds.length > 0 ? (
               <p className="mt-1 text-2xs leading-4 text-ink-muted">
                 Blocked by{' '}
@@ -102,6 +117,39 @@ export function DependenciesSection({
         ) : (
           <p className="mt-1 text-xs text-ink-muted">Readiness was not reported for this task.</p>
         )}
+        {graphLoading ? (
+          <Skeleton className="mt-2 h-3 w-1/2" />
+        ) : graphError ? (
+          <p className="mt-2 flex items-center gap-2 border-t border-line pt-2 text-2xs text-ink-muted">
+            <span className="min-w-0 flex-1">The dependency graph could not be read.</span>
+            <Button variant="quiet" size="sm" className="h-6 px-1 text-2xs" onClick={onRetryGraph}>
+              Retry
+            </Button>
+          </p>
+        ) : graphNode ? (
+          <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line pt-2 text-2xs text-ink-muted">
+            <span>
+              Unblocks <span className="tabular-nums text-ink-soft">{graphNode.allDependents.length}</span>{' '}
+              task{graphNode.allDependents.length === 1 ? '' : 's'}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>
+              Prerequisite depth{' '}
+              <span className="tabular-nums text-ink-soft">{graphNode.prerequisiteDepth}</span>
+            </span>
+            {graphNode.unfinishedPrerequisites.length > 0 ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>
+                  Unfinished{' '}
+                  <span className="tabular-nums text-ink-soft">
+                    {graphNode.unfinishedPrerequisites.length}
+                  </span>
+                </span>
+              </>
+            ) : null}
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-4">

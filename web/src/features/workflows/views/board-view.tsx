@@ -1,0 +1,516 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import type { Task } from '@/api/adapters'
+import type { TaskStatus } from '@/api/contracts'
+import {
+  defaultNowMs,
+  useProjects,
+  useTaskCommand,
+  useTaskReadiness,
+  userMessage,
+} from '@/hooks'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { EmptyState } from '@/components/ui/empty-state'
+import { CalendarIcon, GridIcon, LoaderIcon } from '@/components/ui/icons'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/components/ui/utils'
+import {
+  formatMoment,
+  isOverdue,
+  priorityLabels,
+  priorityTones,
+  statusLabel,
+  statusTones,
+  TASK_STATUSES,
+  TaskControlError,
+  useTaskCommandState,
+  useTaskDrawer,
+} from '@/features/tasks'
+import type { ViewRendererProps } from '../view-types'
+import {
+  componentTypeName,
+  describeFilter,
+  taskMatchesDeclaredFilter,
+  unsupportedTaskFilterKeys,
+} from '../view-metadata'
+import { ComponentPanel, ProvenanceNote, UnavailablePanel } from './shared'
+
+interface BoardColumn {
+  status: TaskStatus
+  tasks: Task[]
+}
+
+/**
+ * Columns in the canonical status order. Empty terminal columns are dropped
+ * (nothing lives there in a healthy project) but nothing else is hidden: a
+ * count of zero is information, an invisible status is not.
+ */
+function buildColumns(tasks: Task[]): BoardColumn[] {
+  return TASK_STATUSES.map((status) => ({
+    status,
+    tasks: tasks.filter((task) => task.status === status),
+  })).filter(
+    (column) => column.tasks.length > 0 || (column.status !== 'done' && column.status !== 'cancelled'),
+  )
+}
+
+function CardMeta({ task, projectName }: { task: Task; projectName: string }) {
+  return (
+    <>
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        <span className="text-2xs font-medium text-ink-muted">{projectName}</span>
+        {task.priority ? (
+          <Badge tone={priorityTones[task.priority]}>{priorityLabels[task.priority]}</Badge>
+        ) : null}
+        {task.labels.slice(0, 2).map((label) => (
+          <Badge key={label} tone="neutral" className="lowercase">
+            {label}
+          </Badge>
+        ))}
+        {task.labels.length > 2 ? (
+          <span className="text-2xs text-ink-faint">+{task.labels.length - 2}</span>
+        ) : null}
+      </div>
+      {task.deadlineAtMs !== null ? (
+        <p
+          className={cn(
+            'mt-1 flex items-center gap-1 text-2xs',
+            isOverdue(task, Date.now()) ? 'font-medium text-danger-ink' : 'text-ink-muted',
+          )}
+        >
+          <CalendarIcon size={11} className="shrink-0 opacity-70" />
+          {formatMoment(task.deadlineAtMs)}
+        </p>
+      ) : (
+        <p className="mt-1 text-2xs text-ink-faint">No due date</p>
+      )}
+    </>
+  )
+}
+
+function BoardSurface({
+  tasks,
+  project,
+  component,
+  readinessFilter,
+}: {
+  tasks: Task[]
+  project: ViewRendererProps['project']
+  component: ViewRendererProps['component']
+  readinessFilter?: Map<string, boolean>
+}) {
+  const { openTask } = useTaskDrawer()
+  const projects = useProjects()
+  const command = useTaskCommand()
+  const { pending, error, errorTaskId, errorField, changeStatus } = useTaskCommandState(command)
+
+  const [focus, setFocus] = useState<string | null>(null)
+  const [moveFor, setMoveFor] = useState<string | null>(null)
+  // After an accepted move the card mounts in a new column; focus follows it so
+  // the keyboard cursor is not lost when the DOM node is replaced.
+  const refocusAfterMove = useRef<string | null>(null)
+  const [announcement, setAnnouncement] = useState<string | null>(null)
+  const cardRefs = useRef(new Map<string, HTMLButtonElement>())
+
+  const filter = component.filter ?? {}
+
+  const { boardTasks, matchedCount } = useMemo(() => {
+    const matched = tasks.filter((task) =>
+      readinessFilter
+        ? taskMatchesDeclaredFilter(task, filter, {
+            taskId: task.id,
+            title: task.title,
+            status: task.status,
+            actionable: readinessFilter.get(task.id) === true,
+            reason: '',
+            blockingTaskIds: [],
+            prerequisiteIds: [],
+            earliestStartAtMs: task.earliestStartAtMs,
+            deadlineAtMs: task.deadlineAtMs,
+            estimatedMinutes: task.estimatedMinutes,
+            projectId: task.projectId,
+          })
+        : taskMatchesDeclaredFilter(task, filter),
+    )
+    const limited =
+      component.limit && component.limit > 0 ? matched.slice(0, component.limit) : matched
+    return { boardTasks: limited, matchedCount: matched.length }
+  }, [tasks, filter, readinessFilter, component.limit])
+
+  const columns = useMemo(() => buildColumns(boardTasks), [boardTasks])
+  const flatOrder = useMemo(() => columns.flatMap((column) => column.tasks), [columns])
+
+  const projectNames = useMemo(
+    () => new Map(projects.map((entry) => [entry.id, entry.name])),
+    [projects],
+  )
+  const projectName = projectNames.get(project.id) ?? project.name
+
+  const setCardRef = useCallback((taskId: string, element: HTMLButtonElement | null) => {
+    if (element) cardRefs.current.set(taskId, element)
+    else cardRefs.current.delete(taskId)
+  }, [])
+
+  // Roving focus: moving the logical cursor moves real focus, so the next
+  // keypress (including Enter) reaches the same card.
+  useEffect(() => {
+    if (!focus) return
+    cardRefs.current.get(focus)?.focus({ preventScroll: false })
+  }, [focus])
+
+  useEffect(() => {
+    if (!refocusAfterMove.current) return
+    const element = cardRefs.current.get(refocusAfterMove.current)
+    if (!element) return
+    element.focus({ preventScroll: true })
+    refocusAfterMove.current = null
+  }, [boardTasks])
+
+  useEffect(() => {
+    if (command.disposition === 'accepted') {
+      setAnnouncement('The server accepted the status change.')
+    } else if (command.disposition === 'rejected' && command.error) {
+      // A rejected move does not move any card, so there is nothing to follow.
+      refocusAfterMove.current = null
+      setAnnouncement(`The server refused the move: ${userMessage(command.error)}`)
+    }
+  }, [command.disposition, command.error])
+
+  const focusCard = (taskId: string | undefined) => {
+    if (taskId) setFocus(taskId)
+  }
+
+  const moveFocus = (task: Task, key: 'h' | 'j' | 'k' | 'l') => {
+    const columnIndex = columns.findIndex((column) => column.tasks.some((entry) => entry.id === task.id))
+    if (columnIndex < 0) return
+    const column = columns[columnIndex]
+    const rowIndex = column.tasks.findIndex((entry) => entry.id === task.id)
+
+    if (key === 'j' || key === 'k') {
+      const nextIndex = rowIndex + (key === 'j' ? 1 : -1)
+      focusCard(column.tasks[nextIndex]?.id)
+      return
+    }
+
+    const direction = key === 'l' ? 1 : -1
+    for (let index = columnIndex + direction; index >= 0 && index < columns.length; index += direction) {
+      const candidate = columns[index]
+      if (candidate.tasks.length === 0) continue
+      const row = Math.min(rowIndex, candidate.tasks.length - 1)
+      focusCard(candidate.tasks[row]?.id)
+      return
+    }
+  }
+
+  const onCardKeyDown = (event: KeyboardEvent<HTMLButtonElement>, task: Task) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return
+    const key = event.key.toLowerCase()
+    if (key === 'm') {
+      event.preventDefault()
+      event.stopPropagation()
+      setMoveFor(task.id)
+      return
+    }
+    if (key !== 'h' && key !== 'j' && key !== 'k' && key !== 'l') return
+    event.preventDefault()
+    event.stopPropagation()
+    moveFocus(task, key)
+  }
+
+  const firstCardId = flatOrder[0]?.id ?? null
+  const tabStop = focus ?? firstCardId
+
+  return (
+    <>
+      {readinessFilter === undefined ? null : (
+        <p className="mb-3 text-2xs text-ink-muted">
+          Filtered to tasks the server marks actionable. Columns still show the server&apos;s status.
+        </p>
+      )}
+
+      {boardTasks.length === 0 ? (
+        <EmptyState
+          compact
+          headingLevel="p"
+          icon={<GridIcon size={18} />}
+          title="No tasks match this board"
+          description={
+            Object.keys(filter).length > 0
+              ? `The workflow filters this board by ${describeFilter(filter)}. No task in this project matches right now.`
+              : 'Add a task to this project; it appears in its status column as soon as the server stores it.'
+          }
+        />
+      ) : (
+        <div className="scrollbar-slim -mx-1 overflow-x-auto px-1 pb-2">
+          <div
+            role="group"
+            aria-label="Task board"
+            className="flex min-w-full items-start gap-3"
+          >
+            {columns.map((column) => (
+              <section
+                key={column.status}
+                aria-label={`${statusLabel(column.status)} column, ${column.tasks.length} task${
+                  column.tasks.length === 1 ? '' : 's'
+                }`}
+                className="flex w-[15.5rem] shrink-0 flex-col rounded-lg border border-line bg-surface-sunken/35"
+              >
+                <header className="flex items-center gap-2 border-b border-line px-2.5 py-2">
+                  <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', dotFor(column.status))} />
+                  <h3 className="text-xs font-semibold text-ink">{statusLabel(column.status)}</h3>
+                  <span className="ml-auto rounded-full bg-surface px-1.5 py-0.5 text-2xs tabular-nums text-ink-muted">
+                    {column.tasks.length}
+                  </span>
+                </header>
+
+                <ul className="flex flex-1 flex-col gap-1.5 p-1.5">
+                  {column.tasks.length === 0 ? (
+                    <li className="px-1 py-3 text-2xs text-ink-faint">Nothing here</li>
+                  ) : (
+                    column.tasks.map((task) => {
+                      const isPending = pending?.taskId === task.id
+                      const rowError = errorTaskId === task.id ? error : null
+                      return (
+                        <li key={task.id}>
+                          <article
+                            data-board-card={task.id}
+                            className={cn(
+                              'rounded-md border border-line bg-surface px-2.5 py-2 shadow-[0_1px_0_hsl(var(--ink)/0.03)] transition-colors',
+                              'hover:border-line-strong',
+                              rowError && 'border-danger/40',
+                            )}
+                          >
+                            <div className="flex items-start gap-1">
+                              <button
+                                ref={(element) => setCardRef(task.id, element)}
+                                type="button"
+                                data-board-action=""
+                                tabIndex={tabStop === task.id ? 0 : -1}
+                                onFocus={() => setFocus(task.id)}
+                                onClick={() => openTask(task.id)}
+                                onKeyDown={(event) => onCardKeyDown(event, task)}
+                                className={cn(
+                                  'min-w-0 flex-1 rounded-sm text-left text-sm font-medium leading-5 text-ink',
+                                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
+                                  task.status === 'done' || task.status === 'cancelled'
+                                    ? 'text-ink-muted'
+                                    : 'text-ink',
+                                )}
+                              >
+                                {task.title}
+                              </button>
+                              {isPending ? (
+                                <LoaderIcon size={13} className="mt-1 shrink-0 animate-spin text-accent" />
+                              ) : null}
+                            </div>
+
+                            <CardMeta task={task} projectName={projectName} />
+
+                            <div className="mt-1.5 flex items-center justify-between gap-2">
+                              <DropdownMenu
+                                open={moveFor === task.id}
+                                onOpenChange={(open) => setMoveFor(open ? task.id : null)}
+                              >
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="quiet"
+                                    size="sm"
+                                    className="h-6 px-1 text-2xs"
+                                    disabled={command.isPending}
+                                    aria-label={`Move ${task.title} to another status`}
+                                  >
+                                    Move to…
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
+                                  <DropdownMenuLabel>Move to…</DropdownMenuLabel>
+                                  <p className="px-2.5 pb-1 text-2xs leading-4 text-ink-faint">
+                                    The server checks every move. Its answer is shown here.
+                                  </p>
+                                  <DropdownMenuSeparator />
+                                  {TASK_STATUSES.filter((status) => status !== task.status).map(
+                                    (status) => (
+                                      <DropdownMenuItem
+                                        key={status}
+                                        onSelect={() => {
+                                          setMoveFor(null)
+                                          refocusAfterMove.current = task.id
+                                          changeStatus(task, status)
+                                        }}
+                                      >
+                                        <span
+                                          aria-hidden="true"
+                                          className={cn('h-1.5 w-1.5 rounded-full', dotFor(status))}
+                                        />
+                                        {statusLabel(status)}
+                                      </DropdownMenuItem>
+                                    ),
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              <Badge tone={statusTones[task.status]}>{statusLabel(task.status)}</Badge>
+                            </div>
+
+                            {rowError ? (
+                              <TaskControlError
+                                error={rowError}
+                                field={errorField}
+                                taskStatus={task.status}
+                              />
+                            ) : null}
+                          </article>
+                        </li>
+                      )
+                    })
+                  )}
+                </ul>
+              </section>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+        <ProvenanceNote>
+          Columns follow the server&apos;s task statuses in their canonical order. Counts and card
+          positions are read back from accepted state, never moved locally.
+          {matchedCount > boardTasks.length
+            ? ` Showing the first ${boardTasks.length} of ${matchedCount} tasks; the workflow sets this limit.`
+            : ''}
+        </ProvenanceNote>
+        <p className="hidden items-center gap-1 text-2xs text-ink-muted md:flex">
+          <kbd className="command-key">h</kbd>
+          <kbd className="command-key">j</kbd>
+          <kbd className="command-key">k</kbd>
+          <kbd className="command-key">l</kbd>
+          <span>move</span>
+          <kbd className="command-key">m</kbd>
+          <span>move status</span>
+          <kbd className="command-key">↵</kbd>
+          <span>open</span>
+        </p>
+      </div>
+
+      <p role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
+    </>
+  )
+}
+
+function dotFor(status: TaskStatus): string {
+  switch (status) {
+    case 'done':
+      return 'bg-success'
+    case 'cancelled':
+      return 'bg-ink-faint'
+    case 'blocked':
+      return 'bg-danger'
+    case 'waiting':
+    case 'review':
+      return 'bg-warning'
+    case 'in_progress':
+      return 'bg-accent'
+    case 'ready':
+      return 'bg-accent/60'
+    default:
+      return 'bg-line-strong'
+  }
+}
+
+/** A board that needs the server's readiness report for an `actionable` filter. */
+function ActionableBoard({
+  props,
+  tasks,
+}: {
+  props: ViewRendererProps
+  tasks: Task[]
+}) {
+  const readiness = useTaskReadiness(defaultNowMs())
+  const byTask = useMemo(
+    () => new Map((readiness.data?.tasks ?? []).map((entry) => [entry.taskId, entry.actionable])),
+    [readiness.data],
+  )
+
+  if (readiness.error) {
+    return (
+      <ComponentPanel title={componentTypeName(props.component)}>
+        <p className="text-xs text-danger-ink">{userMessage(readiness.error)}</p>
+        <Button variant="secondary" size="sm" className="mt-2" onClick={() => void readiness.refetch()}>
+          Retry readiness
+        </Button>
+      </ComponentPanel>
+    )
+  }
+
+  if (readiness.isPending && !readiness.data) {
+    return (
+      <ComponentPanel title={componentTypeName(props.component)}>
+        <div className="flex flex-col gap-2" aria-busy="true">
+          <Skeleton className="h-3 w-1/2" />
+          <Skeleton className="h-3 w-1/3" />
+        </div>
+      </ComponentPanel>
+    )
+  }
+
+  return (
+    <ComponentPanel title={componentTypeName(props.component)} bodyClassName="px-3 py-3 sm:px-4">
+      <BoardSurface
+        tasks={tasks}
+        project={props.project}
+        component={props.component}
+        readinessFilter={byTask}
+      />
+    </ComponentPanel>
+  )
+}
+
+/**
+ * The Kanban surface for a project's tasks. Validity, ordering and the stored
+ * status all belong to the server: this component only lists every status,
+ * sends the chosen one, and renders the answer.
+ */
+export function BoardView(props: ViewRendererProps) {
+  const { component, tasks } = props
+  const source = component.source ?? 'tasks'
+  const filter = component.filter ?? {}
+
+  if (source !== 'tasks') {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={`This board is declared over “${source}”. The browser renders task boards; this one would need a ${source} board that does not exist yet.`}
+        hint="Nothing is simulated: the panel is hidden instead of showing an empty board that looks real."
+      />
+    )
+  }
+
+  const unsupported = unsupportedTaskFilterKeys(filter)
+  if (unsupported.length > 0) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={`This board filters tasks by ${unsupported.join(', ')}, which this build cannot evaluate.`}
+      />
+    )
+  }
+
+  if (filter.actionable !== undefined) {
+    return <ActionableBoard props={props} tasks={tasks} />
+  }
+
+  return (
+    <ComponentPanel title={componentTypeName(component)} bodyClassName="px-3 py-3 sm:px-4">
+      <BoardSurface tasks={tasks} project={props.project} component={component} />
+    </ComponentPanel>
+  )
+}

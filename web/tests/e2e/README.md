@@ -1,4 +1,4 @@
-# Browser acceptance suite (M31 I1)
+# Browser acceptance suite (M31 I1 + I2)
 
 These specs drive the **built** web app in real Chromium against a **real**
 `target/debug/orbit-server` with a throwaway SQLite database. Nothing is mocked;
@@ -31,6 +31,31 @@ configuration cannot leak into the test database.
 
 `ORBIT_KEEP_E2E_STATE=1` keeps the temp directory (log + database) after a run.
 `ORBIT_E2E_EVIDENCE=1` writes traces/screenshots to `web/evidence/e2e/<run-id>/`.
+
+Committed I2 captures are produced from the seeded fixture, not a preview server:
+
+```bash
+ORBIT_I2_EVIDENCE=1 node node_modules/@playwright/test/cli.js test \
+  tests/e2e/evidence-i2.spec.ts --project=chromium
+```
+
+The capture spec skips itself in a normal run (it would otherwise rewrite committed
+evidence on every pass).
+
+## Specs
+
+| File | Covers |
+| --- | --- |
+| `auth.spec.ts` | sign-in, expiry, revocation, sign-out |
+| `home.spec.ts` | server-derived Home sections and empty state |
+| `projects.spec.ts` | project creation, duplicate names, validation, task creation |
+| `tasks.spec.ts` | capture, drawer edits, rejected transition, bulk status |
+| `conflict.spec.ts` | stale revision refusal and recovery |
+| `workspaces.spec.ts` | board moves (accepted/rejected), milestone lifecycle + invalid edge, dependency add/remove + readiness, workflow change, task-list URL state |
+| `planning.spec.ts` | day plan requires authored capacity, review → approval → apply survives reload, session renewal on visibility |
+| `evidence-i2.spec.ts` | opt-in evidence capture into `web/evidence/i2/` |
+| `terminology.spec.ts` | no legacy feature name in rendered primary routes |
+| `fixture.spec.ts` | the fixture is deterministic and replayable |
 
 ## Layout
 

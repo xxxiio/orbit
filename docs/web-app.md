@@ -3,9 +3,10 @@
 The Orbit web app is an optional browser client for a self-hosted `orbit-server`. It reads and
 writes the same authoritative state as the CLI and the terminal workspace, over the server's
 HTTP API, and adds no second data model and no local database. This page documents the build
-shipped in M31 iteration I1: the app shell, sign-in, Home, Inbox, Projects, a project
-workspace with Overview and Tasks views, and the task drawer. Anything listed as missing below
-really is missing in this build.
+shipped in M31 iteration I2: the app shell, sign-in, Home, Inbox, Projects, workflow-driven
+project workspaces (task list, board, milestones, timeline), planning with an explicit approval
+gate, project settings, and the task drawer. Anything listed as missing below really is missing
+in this build.
 
 **Contents:** [What it is](#what-it-is-and-what-it-is-not) · [Build and run](#build-and-run) ·
 [Sign in](#sign-in) · [Everyday use](#everyday-use) · [Keyboard](#keyboard) ·
@@ -128,7 +129,9 @@ lifetime. The defaults are 12 hours (`ORBIT_WEB_SESSION_TTL_SECONDS`) and 7 days
 (`ORBIT_WEB_SESSION_ABSOLUTE_SECONDS`). Both are read as whole seconds at startup; zero,
 negative or unparseable values fall back to the defaults, and a shorter absolute limit wins.
 When a session expires, the next request signs the browser out and the sign-in form explains
-why. Requests never fall back to anonymous access.
+why. An open tab does not wait to discover that: the app re-reads the session every ten minutes
+and whenever a hidden tab becomes visible again, so the server can slide the lifetime of a
+workspace left open all day. Requests never fall back to anonymous access.
 
 Revoke a device when a laptop is lost or a token may have leaked:
 
@@ -214,23 +217,118 @@ dialog says so. Creating a project navigates to it.
 
 ### A project's views
 
-A project page shows its name, status, pinned workflow, task counts and ID, then a row of view
-tabs declared by that workflow. Basic declares **Overview**, **Tasks**, **Board** and
-**Timeline**; Board and Timeline are not rendered in this build and show the unavailable-view
-message below. The Tasks tab carries the task count.
+A project page shows its name, status, pinned workflow, task and milestone counts and the
+project ID, then the views its workflow declares and two project tools: **Planning** and
+**Settings**. Basic declares Overview, Tasks, Board and Timeline; Development declares Overview,
+Board, Milestones and Agent jobs; Research, Learning and Habits declare their own mixes.
 
-- **Overview** — completion percentage and status breakdown, **Next actions** ranked by the
-  server (rank, tasks unblocked, deadline, priority), a **Workflow** panel with the pinned ID
-  and version, and a **Milestones** panel.
-- **Tasks** — search, status and priority filters, sorting, bulk actions and a table with inline
-  status, project and priority controls. `j`/`k` move, `x` selects, `Enter` opens.
-- A workflow definition that cannot be read falls back to Overview and Tasks with a warning. A
-  declared view this build does not render (a board, for example) still gets a tab, but the
-  page says **This view is not available yet** and links to Tasks. The work is intact; only
-  the renderer is missing.
+The renderer is chosen from the *component types a view declares*, not from the workflow id, so
+Basic, Development, Research, Learning and Habits share one code path. A declared panel this
+build does not render keeps its tab and shows a named panel that says what is missing and why;
+it is never a blank surface. Tabs that stand for a list carry its count badge. The header's
+primary action comes from the view too: **New task** on task surfaces, **New milestone** on
+milestone surfaces, and nothing on a read-only panel.
 
-Milestones in Overview are read-only server data; the drawer can attach a task to an existing
-milestone, but there is no creation or editing UI.
+- **Overview** — the workflow's own mix of metric tiles, project detail and a task or milestone
+  summary. Metric counts are counts of rows the server returned; a metric filtered by readiness
+  reads the server's readiness report instead of guessing.
+- **Tasks** — the full project task list (see below).
+- **Board** — task columns in canonical status order (see below).
+- **Timeline** — milestone status and task counts, plus saved calendar blocks. Milestone records
+  carry no dates in this API yet, so the milestone panel says that instead of drawing a fake
+  axis; schedule blocks do have real start and end times and are listed chronologically.
+- **Milestones** — create, rename and change the lifecycle of milestones (see below).
+- **Planning** — a project's day plan and schedule approval (see below).
+- **Settings** — the pinned workflow and the project's identity (see below).
+- **Agent jobs**, **habit tracker**, **metric history** and **knowledge references** are declared
+  by some bundled workflows but not rendered in this build; each panel says so by name.
+- A workflow definition that cannot be read falls back to Overview and Tasks with a warning.
+
+`Planning` and `Settings` are project tools, not global tabs: they live under the project and
+keep the same header and project switcher.
+
+### A project's task list
+
+The Tasks view is the shared task table with project-level state:
+
+- **URL-backed view state.** Search (`q`), status, priority, sort (`sort`/`dir`), page (`page`),
+  visible columns (`cols`) and the selection (`sel`) are in the URL, so the view can be linked,
+  shared and reloaded. The open task's `?task=` stays in the same URL.
+- **Column picker.** Title, status, priority, project, milestone, due, estimate, labels,
+  readiness and dependencies. Title cannot be hidden; the workflow's declared table columns seed
+  the initial set, and read-only **Readiness** and **Dependencies** columns are added from
+  `/task-readiness` and `/task-graph`. They show the server's reason and counts; the title cell
+  does not turn them into new rules.
+- **Bulk commands and selection.** Select rows with the checkbox, `x`, or select-all for the
+  current page. Bulk status, project and priority send one command per task with the revision
+  fence and idempotency key the rest of the app uses; a partial failure names the tasks and the
+  server's message.
+- **Windowing.** Up to 200 matching rows are rendered at once; beyond that the list renders one
+  50-row page at a time, with the page in the URL, so a large project stays responsive.
+- **Sorting and filtering.** Every column header offers its server-backed field; the toolbar
+  offers search, status, priority and a sort select. Filtering and sorting are presentation over
+  the snapshot, and never recompute readiness.
+
+### Board
+
+The Board is a task Kanban for the project.
+
+- Columns follow the server's canonical task-status order and show their counts. Empty terminal
+  columns are hidden; other empty columns stay visible with `0` so the workflow's shape is
+  honest.
+- Cards show the title, project, priority, labels and due date (or **No due date**).
+- `h`/`j`/`k`/`l` move focus between cards and columns, `Enter` opens the drawer, and `m` opens
+  **Move to…** for the focused card. The menu lists every status except the current one.
+- The server decides whether a move is legal. A rejected move shows the server's message on the
+  card, announces it, and leaves the card in its column; an accepted move appears only because
+  the accepted snapshot placed it there.
+- Drag-and-drop is deliberately not implemented. Keyboard parity was the requirement for
+  offering a pointer gesture, and a drag across ten horizontally scrolling columns could not be
+  made reliable; the keyboard and the move menu are the complete interaction.
+
+### Milestones
+
+The Milestones view lists the project's milestones with their status, the tasks assigned to
+each and a done percentage. **New milestone** appears in the page header when the view's main
+surface is milestones, and in the panel on overviews that embed milestone progress.
+Rename edits in place; the status selector offers every lifecycle status and the server accepts
+or refuses each edge. A refusal is shown against the milestone and the stored status stays.
+**Delete** asks once and explains that the server refuses while tasks are attached. Milestone
+records have no start or end date in this API, so the view shows status and task progress and
+never invents dates.
+
+### Planning
+
+Planning is a project tool; it never books time on page load.
+
+- **Day plan.** Type the minutes you actually have and press **Build day plan**. No request is
+  sent while the capacity is empty, and nothing is guessed from the clock. The server's plan
+  shows allocated, remaining and selected counts plus every task it evaluated with the server's
+  disposition and explanation. Selected and actionable rows are listed; tasks the server could
+  not plan are one disclosure away, with the server's reasons.
+- **Schedule a window.** The preview covers exactly the date, start time and end time in the
+  pickers. The panel lists free windows, the server's proposed blocks with their ranking and
+  explanations, and the tasks it could not place with the server's reason.
+- **Review → approval → apply.** **Review this plan** is read-only and returns the server's
+  fingerprint and command id for the exact proposed command. **Apply approved plan** exists only
+  after a review and requires ticking the approval box. Applying echoes the reviewed fingerprint
+  and command id unchanged and shows the receipt: accepted revision, replayed flag and the
+  schedule-block ids. A new window or a changed revision discards the review and asks for another.
+  Approved blocks appear in the Timeline's saved schedule after a reload.
+
+### Project settings
+
+**Settings** states what the API can and cannot do:
+
+- **Identity** — name, status and ID. Renaming a project is not supported by the API, and the
+  panel says so instead of offering a dead control. Archive and delete are likewise absent.
+- **Workflow** — the pinned workflow and version, the views it declares, and the newest
+  published version of each workflow. Changing it previews the comparison (views added, removed
+  or changed, plus the server's warnings and blockers) and shows the preview fingerprint. A confirmation dialog states that the
+  project's tabs will change, and the server refuses the change when a blocker is present.
+  Applying re-pins the project; the tabs update from the new workflow without a reload.
+- Workflow authoring and publishing remain console features. This screen only pins a version
+  the server has already published.
 
 ### The task drawer
 
@@ -245,9 +343,10 @@ Open a task from any title, row or next-action link. The drawer is URL state:
 - **Description** — **Write** and **Preview** tabs; Markdown is rendered in Preview. Saves when
   you leave the field, or on `Ctrl`/`Cmd`+`Enter`.
 - **Acceptance criteria** — add a criterion, check it off, reorder it, or remove it.
-- **Dependencies** — the server's readiness sentence, blocking tasks, earliest start and
-  deadline, the editable **Prerequisites** list, and a read-only **Dependents** list. A
-  prerequisite the server would reject (a cycle, for example) is refused and explained.
+- **Dependencies** — the server's readiness sentence and the raw readiness reason, blocking
+  tasks, earliest start and deadline, **Unblocks N tasks**, prerequisite depth, the editable
+  **Prerequisites** list and the graph's dependents. A prerequisite the server would reject (a
+  cycle, for example) is refused and explained.
 - **Activity** — the server's own record for this task.
 
 The footer says **Changes save when you leave a field**. While a command is in flight it shows
@@ -268,11 +367,13 @@ shows a change before the server has accepted it.
 ### Refresh and persistence
 
 Data is read on page load and navigation, and again after every accepted change (the accepted
-write invalidates the reads it affects). There is no polling and no live push, and the browser
-does not refetch when the window regains focus: changes from another device appear after a
-reload or after pressing the refresh button on Home. The drawer's open state lives in the URL;
-theme and recent projects live in `localStorage`; everything else shown is server state. A
-failed refresh keeps the last accepted data visible and marks it instead of replacing it with
+write invalidates the reads it affects). There is no polling and no live push for workspace
+data, and workspace reads do not refetch when the window regains focus: changes from another
+device appear after a reload or after pressing the refresh button on Home. The session read is
+the one low-frequency exception (every ten minutes and when a hidden tab becomes visible), so an
+open tab keeps its cookie alive. The drawer's open state and the task-list view state live in
+the URL; theme and recent projects live in `localStorage`; everything else shown is server state.
+A failed refresh keeps the last accepted data visible and marks it instead of replacing it with
 an empty list.
 
 ## Keyboard
@@ -284,6 +385,8 @@ an empty list.
 | `Ctrl`+`K`, `Cmd`+`K` | Toggle the command palette. |
 | `g` then `h` / `i` / `p` | Go to Home / Inbox / Projects. |
 | `j` / `k`, `x` | Move between rows; `x` selects the focused row (Inbox and project lists). |
+| `h` / `j` / `k` / `l` | On a board, move focus between cards and columns. |
+| `m` | On a focused board card, open **Move to…**. |
 | `Enter`, `Space` | Activate the focused row or button; in the palette, `Enter` runs the highlighted command. |
 | `↑` / `↓`, `Home` / `End` | Move inside a table (or the palette, with `↑`/`↓`). |
 | `Esc` | Close the palette or the task drawer. |
@@ -315,7 +418,8 @@ Projects, and open a named project.
 | Sign-in succeeds, then the app returns to the form; repeated `401` | The session expired, or the device was revoked or its token rotated. | Enroll the device again, or obtain the current token, and sign in. A revoked device cannot be reused. |
 | `429 Too many attempts` | Five consecutive failed sign-ins for the same device ID within five minutes. | Wait five minutes, confirm the device ID and token, then retry. A success resets the counter. |
 | `403 csrf check failed` | A scripted client sent a session cookie on a non-GET request without the CSRF header. | Non-browser clients only: send `x-orbit-csrf: 1` and do not send `Sec-Fetch-Site: cross-site`. Browsers do this automatically; bearer clients are unaffected. |
-| A view tab says `This view is not available yet` | The workflow declares a view this build does not render yet. | Use Overview or Tasks. Nothing is broken or lost. |
+| A panel says `Not available in the browser yet` | The workflow declares a panel (agent jobs, habit tracker, metric history, knowledge references) this build does not render. | Use the task list, board or milestone screen. Nothing is broken or lost. |
+| A board move is refused | The server's lifecycle rules do not allow that status edge. | The message on the card names the refusal; choose another status. |
 | `That change conflicted with a newer version on the server` | Another device wrote first; your revision was stale. | Refresh the page and repeat the change. The refused change was not applied. |
 | `/console` looks nothing like this guide | `/console` is the operator page, not the product UI. | Use `/` for the product; `/console` is for administrator tasks such as direct task creation, automations and proposals. |
 
@@ -331,23 +435,46 @@ concept, while this guide does not.
 This build is an honest subset. Do not expect the following, even though the server API
 supports much of it:
 
-- Board, timeline and calendar views; creating, editing or reordering milestones.
-- Planning screens: day plan, workload, schedule planning, scenarios and approvals.
-- Notes and knowledge browsing or editing, and attachment upload, download or removal.
-- Agent jobs and an Agents workspace. The sidebar's **Agents** entry states that
-  agent monitoring is not implemented in this build; job monitoring is not
-  available in the browser.
-- Workflow authoring, publishing, binding and upgrade screens. Upgrades exist over HTTP only.
-- Device enrollment, revocation, automation and proposal review in the product UI.
+- Drag-and-drop on the board. Moving a task is the keyboard/`m` move menu or the status control.
+- Workload, portfolio-capacity and scenario screens; planning focus, action menus and handoff
+  previews. Their API reads exist but have no screen here.
+- Habit tracking, metric-history charts, knowledge browsing/editing and agent-job monitoring.
+- Work item tables, lists and boards. An overview can count work items, but there is no browser
+  surface for editing a work item record yet.
+- Attachment upload, download or removal.
+- Workflow authoring, publishing and installation. Project settings can pin a published version;
+  everything else is console/HTTP only.
+- Project rename, archive or deletion; moving a milestone to another project.
+- Device enrollment, revocation, automation and proposal review.
+- A global search over tasks, projects and milestones. The command palette navigates and starts
+  the two creation dialogs.
 - Offline use, background sync, or a browser-side command queue.
 
 ## Evidence
 
-Committed captures live under `web/evidence/i1/`: `home-light-1440x900.png` and its dark
-variant `home-dark-1440x900.png`, `inbox-light-1440x900.png`, `projects-light-1440x900.png`,
-`project-overview-light-1440x900.png`, `project-tasks-light-1440x900.png` and
-`task-drawer-light-1440x900.png`. Each also has a `-390x844` narrow-screen variant. They are
-the iteration's committed captures, not illustrations.
+Committed captures live under `web/evidence/i1/` (Home, Inbox, Projects and the I1-era project
+Overview, Tasks and drawer screens) and `web/evidence/i2/` (workflow workspaces, planning and
+settings). The I2 set is:
+
+| File | Screen |
+| --- | --- |
+| `board-light-1440x900.png`, `board-light-390x844.png`, `board-dark-1440x900.png` | Board |
+| `planning-light-1440x900.png`, `planning-light-390x844.png`, `planning-dark-1440x900.png` | Day plan + schedule window |
+| `planning-review-light-1440x900.png`, `planning-review-dark-1440x900.png` | Reviewed plan, explicit approval gate |
+| `planning-receipt-light-1440x900.png` | Applied-plan receipt (fingerprint, command id, revision) |
+| `milestones-light-1440x900.png`, `milestones-light-390x844.png` | Milestones |
+| `settings-light-1440x900.png`, `settings-light-390x844.png` | Project settings |
+| `task-list-light-1440x900.png`, `task-list-light-390x844.png` | Task list with URL state |
+
+Every one is a real browser capture from the deterministic fixture seeded through the public
+API (no mocked responses, no preview server). Reproduce them with:
+
+```sh
+$ cd web
+$ node node_modules/vite/bin/vite.js build
+$ ORBIT_I2_EVIDENCE=1 node node_modules/@playwright/test/cli.js test \
+    tests/e2e/evidence-i2.spec.ts --project=chromium
+```
 
 ## Developer note: internal API paths
 

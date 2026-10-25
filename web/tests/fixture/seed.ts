@@ -516,7 +516,10 @@ export async function seedWorkspace(
   // 3. Tasks: 122 across six projects, every status and priority represented.
   const tasks: SeedTask[] = []
   for (const [projectIndex, plan] of PROJECT_PLANS.entries()) {
-    const projectId = SEED_PROJECTS[projectIndex].id
+    // The plan's own project is the identity; `SEED_PROJECTS` is in a different
+    // order, so deriving the task id prefix from its index produced ids that
+    // named the wrong project (p-basic tasks were called `t-habits-*`).
+    const projectId = plan.id
     const projectMilestones = MILESTONES.filter((milestone) => milestone.projectId === plan.id)
 
     for (const [index, noun] of plan.nouns.entries()) {
@@ -541,7 +544,7 @@ export async function seedWorkspace(
         '/v1/authoritative/task-commands',
         {
           command_id: `seed-task-${id}`,
-          action: { type: 'create', task_id: id, title, project_id: plan.id },
+          action: { type: 'create', task_id: id, title, project_id: projectId },
         },
         `task ${id} create`,
       )
@@ -637,7 +640,7 @@ export async function seedWorkspace(
         id,
         title,
         status,
-        projectId: plan.id,
+        projectId,
         milestoneId: milestone?.id ?? null,
         priority,
         labels: [...labels],

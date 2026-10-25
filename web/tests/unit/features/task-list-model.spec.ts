@@ -60,7 +60,7 @@ describe('task list model', () => {
     expect(inboxSortKey('status')).toBe('priority')
     expect(inboxSortKey('due')).toBe('due')
     expect(projectSortKey('status')).toBe('status')
-    expect(projectSortKey('milestone')).toBe('due')
+    expect(projectSortKey('milestone')).toBe('milestone')
     expect(bulkValueOptions('project', projects).map((option) => option.value)).toEqual(['p-1'])
     expect(bulkValueOptions('project', projects, { includeInbox: true }).map((option) => option.value)).toEqual([
       'none',

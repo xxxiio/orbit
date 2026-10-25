@@ -61,6 +61,8 @@ export const projectSortOptions: SelectOption[] = [
   { value: 'priority', label: 'Priority' },
   { value: 'status', label: 'Status' },
   { value: 'title', label: 'Title' },
+  { value: 'project', label: 'Project' },
+  { value: 'milestone', label: 'Milestone' },
 ]
 
 export const statusFilterOptions: SelectOption[] = [
@@ -89,7 +91,15 @@ export function inboxSortKey(value: string): TaskSortKey {
 
 /** The project list offers every sort its table can show. */
 export function projectSortKey(value: string): TaskSortKey {
-  if (value === 'title' || value === 'status' || value === 'priority') return value
+  if (
+    value === 'title' ||
+    value === 'status' ||
+    value === 'priority' ||
+    value === 'project' ||
+    value === 'milestone'
+  ) {
+    return value
+  }
   return 'due'
 }
 
@@ -98,7 +108,15 @@ export function inboxSortValue(sort: TaskSort): string {
 }
 
 export function projectSortValue(sort: TaskSort): string {
-  if (sort.key === 'title' || sort.key === 'status' || sort.key === 'priority') return sort.key
+  if (
+    sort.key === 'title' ||
+    sort.key === 'status' ||
+    sort.key === 'priority' ||
+    sort.key === 'project' ||
+    sort.key === 'milestone'
+  ) {
+    return sort.key
+  }
   return 'due'
 }
 

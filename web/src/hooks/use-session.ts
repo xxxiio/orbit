@@ -20,6 +20,13 @@ import {
 } from '@/api/session-store'
 import { useApiMutation, type CommandMutation } from '@/api/mutations'
 
+/**
+ * Ten minutes is frequent enough that a tab left open never reaches the 12h TTL
+ * without a read, and cheap enough to be invisible (one GET per tab per ten
+ * minutes). The read also renews the HttpOnly cookie server-side.
+ */
+const SESSION_REFRESH_INTERVAL_MS = 10 * 60_000
+
 export interface UseSessionResult {
   session: WebSession | null
   isLoading: boolean
@@ -38,7 +45,23 @@ export function useSession(): UseSessionResult {
     queryFn: ({ signal }) => fetchSession(signal),
     staleTime: 60_000,
     retry: retryUnlessClientError,
+    // The server slides the 12h TTL on every session read, but a tab left open
+    // never sends one. Re-read at a low frequency (and whenever the tab becomes
+    // visible again) so an open workspace stays signed in instead of expiring
+    // 12 hours after the last page load.
+    refetchInterval: SESSION_REFRESH_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   })
+
+  const refetchSession = query.refetch
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refetchSession()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [refetchSession])
 
   useEffect(() => {
     if (query.isSuccess) markSessionActive()

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { Milestone, Project, Task } from '@/api/adapters'
 import type { TaskPriority, TaskStatus } from '@/api/contracts'
 import type { ApiError } from '@/api/errors'
+import type { ReadinessEntry, TaskGraphNodeView } from '@/api/adapters'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -10,7 +11,15 @@ import {
   CalendarIcon,
 } from '@/components/ui/icons'
 import { cn } from '@/components/ui/utils'
-import { formatMoment, isOverdue, isTerminalStatus, priorityLabels, priorityTones } from './task-meta'
+import {
+  formatMinutes,
+  formatMoment,
+  isOverdue,
+  isTerminalStatus,
+  priorityLabels,
+  priorityTones,
+  readinessReasonLabel,
+} from './task-meta'
 import {
   TaskControlError,
   TaskPriorityControl,
@@ -19,6 +28,7 @@ import {
 } from './task-controls'
 import { useMediaQuery } from '@/hooks'
 import type { SortDirection, TaskSort, TaskSortKey } from './task-list-model'
+import type { TaskColumnKey } from './task-list-state'
 import type { TaskCommandField } from './use-task-command-state'
 
 export type { SortDirection, TaskSort, TaskSortKey }
@@ -47,6 +57,16 @@ export interface TaskTableProps {
   errorField?: TaskPendingField | null
   sort?: TaskSort
   onSortChange?: (sort: TaskSort) => void
+  /**
+   * An explicit, ordered column set. When present it replaces the `show*`
+   * flags, so a project list can offer a column picker without the legacy
+   * responsive hiding rules (the table scrolls horizontally instead).
+   */
+  columns?: readonly TaskColumnKey[]
+  /** Server readiness keyed by task id (only shown when the Readiness column is on). */
+  readiness?: ReadonlyMap<string, ReadinessEntry>
+  /** Server graph keyed by task id (only shown when the Dependencies column is on). */
+  dependencies?: ReadonlyMap<string, TaskGraphNodeView>
   showProject?: boolean
   showPriority?: boolean
   showMilestone?: boolean
@@ -59,13 +79,11 @@ function SortHeader({
   sortKey,
   sort,
   onSortChange,
-  align,
 }: {
   label: string
   sortKey: TaskSortKey
   sort?: TaskSort
   onSortChange?: (sort: TaskSort) => void
-  align?: 'left' | 'right'
 }) {
   const active = sort?.key === sortKey
   return (
@@ -81,7 +99,6 @@ function SortHeader({
       className={cn(
         'group inline-flex items-center gap-1 rounded-sm text-2xs font-semibold uppercase tracking-label',
         active ? 'text-ink' : 'text-ink-faint hover:text-ink-soft',
-        align === 'right' && 'flex-row-reverse',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
       )}
       aria-label={`Sort by ${label}${active ? (sort?.direction === 'asc' ? ', ascending' : ', descending') : ''}`}
@@ -100,6 +117,18 @@ function SortHeader({
   )
 }
 
+function PlainHeader({ label, width }: { label: string; width?: string }) {
+  return (
+    <th
+      scope="col"
+      style={width ? { width } : undefined}
+      className="border-b border-line bg-surface-sunken/95 px-3.5 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint backdrop-blur"
+    >
+      {label}
+    </th>
+  )
+}
+
 function DueChip({ task }: { task: Task }) {
   if (task.deadlineAtMs === null) {
     return <span className="text-xs text-ink-faint">No deadline</span>
@@ -115,6 +144,63 @@ function DueChip({ task }: { task: Task }) {
     >
       <CalendarIcon size={12} className="shrink-0 opacity-70" />
       {formatMoment(task.deadlineAtMs)}
+    </span>
+  )
+}
+
+function EstimateCell({ task }: { task: Task }) {
+  const label = formatMinutes(task.estimatedMinutes)
+  return label ? (
+    <span className="whitespace-nowrap text-xs tabular-nums text-ink-muted">{label}</span>
+  ) : (
+    <span className="text-xs text-ink-faint">Not estimated</span>
+  )
+}
+
+function ReadinessCell({ entry }: { entry: ReadinessEntry | undefined }) {
+  if (!entry) {
+    return <span className="text-xs text-ink-faint">Not reported</span>
+  }
+  // The badge names the reason the server gave; "Blocked" is reserved for
+  // prerequisite or explicit blocking, so a planned task is not mislabelled.
+  const blocked = entry.reason === 'unfinished_prerequisites' || entry.reason === 'blocked'
+  const tone = entry.actionable ? 'success' : blocked ? 'danger' : entry.reason === 'past_deadline' ? 'warning' : 'neutral'
+  const label = entry.actionable
+    ? 'Actionable'
+    : blocked
+      ? 'Blocked'
+      : entry.reason === 'past_deadline'
+        ? 'Past deadline'
+        : 'Not actionable'
+  return (
+    <span className="flex flex-col items-start gap-0.5">
+      <Badge tone={tone} dot>
+        {label}
+      </Badge>
+      <span className="font-mono text-2xs leading-4 text-ink-faint" title={readinessReasonLabel(entry.reason)}>
+        {entry.reason}
+      </span>
+    </span>
+  )
+}
+
+function DependencyCell({ node }: { node: TaskGraphNodeView | undefined }) {
+  if (!node) {
+    return <span className="text-xs text-ink-faint">Not reported</span>
+  }
+  const prerequisites = node.directPrerequisites.length
+  const dependents = node.directDependents.length
+  return (
+    <span className="flex flex-col gap-0.5 text-2xs leading-4 text-ink-muted">
+      <span className="whitespace-nowrap tabular-nums">
+        {prerequisites === 0 ? 'No prerequisites' : `${prerequisites} prerequisite${prerequisites === 1 ? '' : 's'}`}
+      </span>
+      <span className="whitespace-nowrap tabular-nums text-ink-faint">
+        {dependents === 0 ? 'Unblocks none' : `Unblocks ${dependents}`}
+      </span>
+      <span className="whitespace-nowrap tabular-nums text-ink-faint">
+        depth {node.prerequisiteDepth}
+      </span>
     </span>
   )
 }
@@ -173,6 +259,9 @@ export function TaskTable({
   errorField,
   sort,
   onSortChange,
+  columns,
+  readiness,
+  dependencies,
   showProject = true,
   showPriority = true,
   showMilestone = false,
@@ -185,10 +274,166 @@ export function TaskTable({
   const allSelected = selection ? tasks.length > 0 && tasks.every((task) => selection.selected.has(task.id)) : false
   const someSelected = selection ? tasks.some((task) => selection.selected.has(task.id)) : false
 
+  const columnSet = columns ? new Set(columns) : null
+  /**
+   * Legacy callers (Inbox) keep their responsive hiding. An explicit column set
+   * is an authored choice, so every selected column is rendered and the table
+   * scrolls sideways if it must.
+   */
+  const show = {
+    status: columnSet ? columnSet.has('status') : showStatus,
+    project: columnSet ? columnSet.has('project') : showProject,
+    priority: columnSet ? columnSet.has('priority') : showPriority && wide,
+    milestone: columnSet ? columnSet.has('milestone') : showMilestone && wide,
+    labels: columnSet ? columnSet.has('labels') : showLabels && labelsVisible,
+    due: columnSet ? columnSet.has('due') : wide,
+    estimate: columnSet ? columnSet.has('estimate') : false,
+    readiness: columnSet ? columnSet.has('readiness') : false,
+    dependencies: columnSet ? columnSet.has('dependencies') : false,
+  }
+  const inlineMeta = !columnSet
+  const columnCount =
+    (selection ? 1 : 0) +
+    1 +
+    [show.status, show.project, show.priority, show.milestone, show.labels, show.due, show.estimate, show.readiness, show.dependencies].filter(
+      Boolean,
+    ).length
+
   const pendingFor = (task: Task, field: TaskPendingField) =>
     pending?.taskId === task.id && pending.field === field
 
   const rowError = (task: Task) => (errorTaskId === task.id ? error ?? null : null)
+
+  const rowCells = (task: Task) => (
+    <>
+      {show.status ? (
+        <td className="px-3.5 py-2.5 align-top">
+          <TaskStatusControl
+            task={task}
+            pending={pendingFor(task, 'status')}
+            invalid={Boolean(rowError(task))}
+            onChange={(status) => onStatusChange(task, status)}
+          />
+        </td>
+      ) : null}
+      {show.project ? (
+        <td className="px-3.5 py-2.5 align-top">
+          {onProjectChange ? (
+            <TaskProjectControl
+              task={task}
+              projects={projects}
+              pending={pendingFor(task, 'project')}
+              invalid={Boolean(rowError(task))}
+              onChange={(projectId) => onProjectChange(task, projectId)}
+            />
+          ) : (
+            <span className="text-xs text-ink-muted">
+              {projects.find((project) => project.id === task.projectId)?.name ?? 'No project'}
+            </span>
+          )}
+        </td>
+      ) : null}
+      {show.priority ? (
+        <td className="px-3.5 py-2.5 align-top">
+          {onPriorityChange ? (
+            <TaskPriorityControl
+              task={task}
+              pending={pendingFor(task, 'priority')}
+              invalid={Boolean(rowError(task))}
+              onChange={(priority) => onPriorityChange(task, priority)}
+            />
+          ) : (
+            <span className="text-xs text-ink-muted">
+              {task.priority ? priorityLabels[task.priority] : 'No priority'}
+            </span>
+          )}
+        </td>
+      ) : null}
+      {show.milestone ? (
+        <td className="px-3.5 py-2.5 align-top text-xs text-ink-muted">
+          {task.milestoneId ? (
+            milestoneNames.get(task.milestoneId) ?? 'Unknown milestone'
+          ) : (
+            <span className="text-ink-faint">None</span>
+          )}
+        </td>
+      ) : null}
+      {show.labels ? (
+        <td className="px-3.5 py-2.5 align-top">
+          {task.labels.length === 0 ? (
+            <span className="text-xs text-ink-faint">None</span>
+          ) : (
+            <span className="flex flex-wrap gap-1">
+              {task.labels.slice(0, 3).map((label) => (
+                <Badge key={label} tone="neutral" className="lowercase">
+                  {label}
+                </Badge>
+              ))}
+              {task.labels.length > 3 ? (
+                <span className="text-2xs text-ink-muted">+{task.labels.length - 3}</span>
+              ) : null}
+            </span>
+          )}
+        </td>
+      ) : null}
+      {show.due ? (
+        <td className="px-3.5 py-2.5 align-top">
+          <DueChip task={task} />
+        </td>
+      ) : null}
+      {show.estimate ? (
+        <td className="px-3.5 py-2.5 align-top">
+          <EstimateCell task={task} />
+        </td>
+      ) : null}
+      {show.readiness ? (
+        <td className="px-3.5 py-2.5 align-top">
+          <ReadinessCell entry={readiness?.get(task.id)} />
+        </td>
+      ) : null}
+      {show.dependencies ? (
+        <td className="px-3.5 py-2.5 align-top">
+          <DependencyCell node={dependencies?.get(task.id)} />
+        </td>
+      ) : null}
+    </>
+  )
+
+  const stackedLabels = columnSet ? show.labels : showLabels
+  const stackedMilestone = columnSet ? show.milestone : showMilestone
+  const stackedPriority = columnSet ? show.priority : showPriority
+
+  const stackedMeta = (task: Task) => (
+    <>
+      {stackedPriority && task.priority ? (
+        <Badge tone={priorityTones[task.priority]}>{priorityLabels[task.priority]}</Badge>
+      ) : null}
+      {stackedMilestone && task.milestoneId && milestoneNames.get(task.milestoneId) ? (
+        <Badge tone="neutral">{milestoneNames.get(task.milestoneId)}</Badge>
+      ) : null}
+      {stackedLabels
+        ? task.labels.slice(0, 2).map((label) => (
+            <Badge key={label} tone="neutral" className="lowercase">
+              {label}
+            </Badge>
+          ))
+        : null}
+      <DueChip task={task} />
+      {show.estimate && task.estimatedMinutes !== null ? (
+        <span className="text-2xs tabular-nums text-ink-muted">{formatMinutes(task.estimatedMinutes)}</span>
+      ) : null}
+      {show.readiness ? (
+        <span className="font-mono text-2xs text-ink-faint">
+          {readiness?.get(task.id)?.reason ?? 'readiness not reported'}
+        </span>
+      ) : null}
+      {show.dependencies && dependencies?.get(task.id) ? (
+        <span className="text-2xs text-ink-faint">
+          unblocks {dependencies.get(task.id)!.directDependents.length}
+        </span>
+      ) : null}
+    </>
+  )
 
   return (
     <div className="flex flex-col">
@@ -210,45 +455,47 @@ export function TaskTable({
                   />
                 </th>
               ) : null}
-              <th scope="col" className="border-b border-line bg-surface-sunken/95 px-3.5 py-2 backdrop-blur">
+              <th
+                scope="col"
+                className="w-[32%] border-b border-line bg-surface-sunken/95 px-3.5 py-2 backdrop-blur"
+              >
                 <SortHeader label="Task" sortKey="title" sort={sort} onSortChange={onSortChange} />
               </th>
-              {showStatus ? (
+              {show.status ? (
                 <th scope="col" className="w-[7rem] border-b border-line bg-surface-sunken/95 px-3.5 py-2 backdrop-blur">
                   <SortHeader label="Status" sortKey="status" sort={sort} onSortChange={onSortChange} />
                 </th>
               ) : null}
-              {showProject ? (
+              {show.project ? (
                 <th scope="col" className="w-[9rem] border-b border-line bg-surface-sunken/95 px-3.5 py-2 backdrop-blur">
                   <SortHeader label="Project" sortKey="project" sort={sort} onSortChange={onSortChange} />
                 </th>
               ) : null}
-              {showPriority && wide ? (
+              {show.priority ? (
                 <th scope="col" className="w-[6.5rem] border-b border-line bg-surface-sunken/95 px-3.5 py-2 backdrop-blur">
                   <SortHeader label="Priority" sortKey="priority" sort={sort} onSortChange={onSortChange} />
                 </th>
               ) : null}
-              {showMilestone && wide ? (
+              {show.milestone ? (
                 <th scope="col" className="w-[7rem] border-b border-line bg-surface-sunken/95 px-3.5 py-2 backdrop-blur">
                   <SortHeader label="Milestone" sortKey="milestone" sort={sort} onSortChange={onSortChange} />
                 </th>
               ) : null}
-              {showLabels && labelsVisible ? (
-                <th scope="col" className="w-[8rem] border-b border-line bg-surface-sunken/95 px-3.5 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint backdrop-blur">
-                  Labels
-                </th>
-              ) : null}
-              {wide ? (
+              {show.labels ? <PlainHeader label="Labels" width="8rem" /> : null}
+              {show.due ? (
                 <th scope="col" className="w-[9.5rem] border-b border-line bg-surface-sunken/95 px-3.5 py-2 backdrop-blur">
                   <SortHeader label="Due" sortKey="due" sort={sort} onSortChange={onSortChange} />
                 </th>
               ) : null}
+              {show.estimate ? <PlainHeader label="Estimate" width="6.5rem" /> : null}
+              {show.readiness ? <PlainHeader label="Readiness" width="8rem" /> : null}
+              {show.dependencies ? <PlainHeader label="Dependencies" width="9rem" /> : null}
             </tr>
           </thead>
           <tbody>
             {tasks.length === 0 ? (
               <tr>
-                <td colSpan={12} className="border-b border-line p-0">
+                <td colSpan={columnCount} className="border-b border-line p-0">
                   {empty}
                 </td>
               </tr>
@@ -280,44 +527,26 @@ export function TaskTable({
                         />
                       </td>
                     ) : null}
-                    <td className="max-w-0 px-3.5 py-2.5 align-top">
+                    <td className="px-3.5 py-2.5 align-top">
                       <RowTitle task={task} onOpen={onOpen} />
-                      {!wide ? (
-                        <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                          {showMilestone && task.milestoneId && milestoneNames.get(task.milestoneId) ? (
-                            <Badge tone="neutral">{milestoneNames.get(task.milestoneId)}</Badge>
+                      {inlineMeta ? (
+                        <>
+                          {!wide ? (
+                            <span className="mt-1 flex flex-wrap items-center gap-1.5">{stackedMeta(task)}</span>
                           ) : null}
-                          {showLabels
-                            ? task.labels.slice(0, 1).map((label) => (
+                          {wide && !labelsVisible && showLabels && task.labels.length > 0 ? (
+                            <span className="mt-1 flex flex-wrap gap-1">
+                              {task.labels.slice(0, 2).map((label) => (
                                 <Badge key={label} tone="neutral" className="lowercase">
                                   {label}
                                 </Badge>
-                              ))
-                            : null}
-                          {showPriority && onPriorityChange ? (
-                            <TaskPriorityControl
-                              task={task}
-                              pending={pendingFor(task, 'priority')}
-                              invalid={Boolean(rowError(task))}
-                              onChange={(priority) => onPriorityChange(task, priority)}
-                            />
-                          ) : showPriority && task.priority ? (
-                            <Badge tone={priorityTones[task.priority]}>{priorityLabels[task.priority]}</Badge>
+                              ))}
+                              {task.labels.length > 2 ? (
+                                <span className="text-2xs text-ink-muted">+{task.labels.length - 2}</span>
+                              ) : null}
+                            </span>
                           ) : null}
-                          <DueChip task={task} />
-                        </span>
-                      ) : null}
-                      {wide && !labelsVisible && showLabels && task.labels.length > 0 ? (
-                        <span className="mt-1 flex flex-wrap gap-1">
-                          {task.labels.slice(0, 2).map((label) => (
-                            <Badge key={label} tone="neutral" className="lowercase">
-                              {label}
-                            </Badge>
-                          ))}
-                          {task.labels.length > 2 ? (
-                            <span className="text-2xs text-ink-muted">+{task.labels.length - 2}</span>
-                          ) : null}
-                        </span>
+                        </>
                       ) : null}
                       {rowError(task) ? (
                         <TaskControlError
@@ -327,81 +556,7 @@ export function TaskTable({
                         />
                       ) : null}
                     </td>
-                    {showStatus ? (
-                      <td className="px-3.5 py-2.5 align-top">
-                        <TaskStatusControl
-                          task={task}
-                          pending={pendingFor(task, 'status')}
-                          invalid={Boolean(rowError(task))}
-                          onChange={(status) => onStatusChange(task, status)}
-                        />
-                      </td>
-                    ) : null}
-                    {showProject ? (
-                      <td className="px-3.5 py-2.5 align-top">
-                        {onProjectChange ? (
-                          <TaskProjectControl
-                            task={task}
-                            projects={projects}
-                            pending={pendingFor(task, 'project')}
-                            invalid={Boolean(rowError(task))}
-                            onChange={(projectId) => onProjectChange(task, projectId)}
-                          />
-                        ) : (
-                          <span className="text-xs text-ink-muted">
-                            {projects.find((project) => project.id === task.projectId)?.name ?? 'No project'}
-                          </span>
-                        )}
-                      </td>
-                    ) : null}
-                    {showPriority && wide ? (
-                      <td className="px-3.5 py-2.5 align-top">
-                        {onPriorityChange ? (
-                          <TaskPriorityControl
-                            task={task}
-                            pending={pendingFor(task, 'priority')}
-                            invalid={Boolean(rowError(task))}
-                            onChange={(priority) => onPriorityChange(task, priority)}
-                          />
-                        ) : (
-                          <span className="text-xs text-ink-muted">
-                            {task.priority ? priorityLabels[task.priority] : 'No priority'}
-                          </span>
-                        )}
-                      </td>
-                    ) : null}
-                    {showMilestone && wide ? (
-                      <td className="px-3.5 py-2.5 align-top text-xs text-ink-muted">
-                        {task.milestoneId ? (
-                          milestoneNames.get(task.milestoneId) ?? 'Unknown milestone'
-                        ) : (
-                          <span className="text-ink-faint">None</span>
-                        )}
-                      </td>
-                    ) : null}
-                    {showLabels && labelsVisible ? (
-                      <td className="px-3.5 py-2.5 align-top">
-                        {task.labels.length === 0 ? (
-                          <span className="text-xs text-ink-faint">None</span>
-                        ) : (
-                          <span className="flex flex-wrap gap-1">
-                            {task.labels.slice(0, 2).map((label) => (
-                              <Badge key={label} tone="neutral" className="lowercase">
-                                {label}
-                              </Badge>
-                            ))}
-                            {task.labels.length > 2 ? (
-                              <span className="text-2xs text-ink-muted">+{task.labels.length - 2}</span>
-                            ) : null}
-                          </span>
-                        )}
-                      </td>
-                    ) : null}
-                    {wide ? (
-                      <td className="px-3.5 py-2.5 align-top">
-                        <DueChip task={task} />
-                      </td>
-                    ) : null}
+                    {rowCells(task)}
                   </tr>
                 )
               })
@@ -444,24 +599,9 @@ export function TaskTable({
                   ) : null}
                   <div className="min-w-0 flex-1">
                     <RowTitle task={task} onOpen={onOpen} truncate={false} />
-                    <div className="mt-1.5 flex items-center gap-1.5">
-                      {task.priority ? (
-                        <Badge tone={priorityTones[task.priority]}>{priorityLabels[task.priority]}</Badge>
-                      ) : null}
-                      {showMilestone && task.milestoneId && milestoneNames.get(task.milestoneId) ? (
-                        <Badge tone="neutral">{milestoneNames.get(task.milestoneId)}</Badge>
-                      ) : null}
-                      {showLabels
-                        ? task.labels.slice(0, 2).map((label) => (
-                            <Badge key={label} tone="neutral" className="lowercase">
-                              {label}
-                            </Badge>
-                          ))
-                        : null}
-                      <DueChip task={task} />
-                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">{stackedMeta(task)}</div>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      {onStatusChange ? (
+                      {show.status ? (
                         <TaskStatusControl
                           task={task}
                           pending={pendingFor(task, 'status')}
@@ -469,7 +609,7 @@ export function TaskTable({
                           onChange={(status) => onStatusChange(task, status)}
                         />
                       ) : null}
-                      {onProjectChange ? (
+                      {show.project && onProjectChange ? (
                         <TaskProjectControl
                           task={task}
                           projects={projects}
@@ -478,7 +618,7 @@ export function TaskTable({
                           onChange={(projectId) => onProjectChange(task, projectId)}
                         />
                       ) : null}
-                      {onPriorityChange ? (
+                      {show.priority && onPriorityChange ? (
                         <TaskPriorityControl
                           task={task}
                           pending={pendingFor(task, 'priority')}

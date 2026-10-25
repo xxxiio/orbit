@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { TaskPriority, TaskStatus } from '@/api/contracts'
 import type { ApiError } from '@/api/errors'
 import {
@@ -11,6 +12,7 @@ import {
   useProjects,
   useTaskCommand,
   useTaskDetail,
+  useTaskGraph,
   useTaskReadiness,
   useWorkspaceSnapshot,
   userMessage,
@@ -23,6 +25,7 @@ import { ErrorState } from '@/components/ui/error-state'
 import { AlertCircleIcon, CheckCircleIcon, LoaderIcon } from '@/components/ui/icons'
 import { priorityLabels, priorityTones, statusLabel, statusTones } from '../task-meta'
 import { useTaskDrawer } from '../use-task-drawer'
+import { writeAcceptedTask } from '../task-cache'
 import { ActivitySection } from './activity-section'
 import { CriteriaSection } from './criteria-section'
 import { DependenciesSection } from './dependencies-section'
@@ -49,7 +52,9 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   const snapshot = useWorkspaceSnapshot()
   const milestones = useMilestones(detail.task?.projectId ?? undefined)
   const readiness = useTaskReadiness(defaultNowMs())
+  const graph = useTaskGraph(defaultNowMs())
   const command: TaskCommand = useTaskCommand()
+  const queryClient = useQueryClient()
   const { run } = useCommandFeedback()
 
   const editorsRef = useRef(new Map<string, EditorHandle>())
@@ -106,11 +111,20 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
     (label: string, input: TaskCommandInput) => {
       lastLabel.current = label
       inFlight.current = true
-      return command.mutateAsync(taskCommandAttempt(input)).finally(() => {
-        inFlight.current = false
-      })
+      return command
+        .mutateAsync(taskCommandAttempt(input))
+        .then((outcome) => {
+          // The drawer builds `set_details` from the record it holds. Write the
+          // accepted record back before the next edit can read the old one, so
+          // two fast edits cannot revert each other.
+          writeAcceptedTask(queryClient, outcome.task)
+          return outcome
+        })
+        .finally(() => {
+          inFlight.current = false
+        })
     },
-    [command],
+    [command, queryClient],
   )
 
   const uncertain = command.disposition === 'uncertain'
@@ -365,6 +379,10 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     readinessLoading={readiness.isPending}
                     readinessError={readiness.error}
                     onRetryReadiness={() => void readiness.refetch()}
+                    graphNode={graph.data?.nodes.find((node) => node.taskId === task.id) ?? null}
+                    graphLoading={graph.isPending}
+                    graphError={graph.error}
+                    onRetryGraph={() => void graph.refetch()}
                     pending={pendingField('dependencies')}
                     disabled={command.isPending}
                     error={
