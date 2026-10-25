@@ -211,7 +211,7 @@ pub fn plan_day(
         if !in_scope {
             explanation.push("Task is outside the requested project".into());
         } else {
-            explanation.push(format!("Task is not actionable: {:?}", ready.reason));
+            explanation.push(format!("Task is not actionable: {}", ready.reason));
             if !ready.blocking_task_ids.is_empty() {
                 explanation.push(format!(
                     "Incomplete prerequisites: {}",
@@ -475,6 +475,52 @@ mod tests {
         assert_eq!(plan.selected_count, 1);
         assert_eq!(plan.tasks[0].task_id, "a");
         assert_eq!(plan.tasks[1].disposition, PlanningDisposition::TaskLimit);
+    }
+    #[test]
+    fn explanations_use_human_readable_reason_wording() {
+        // CamelCase tokens are the fingerprint of a `Debug`-formatted Rust
+        // enum; the web client quotes these strings verbatim.
+        fn has_debug_identifier(text: &str) -> bool {
+            text.split(|c: char| !c.is_ascii_alphanumeric())
+                .any(|token| {
+                    token.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                        && token.chars().skip(1).any(|c| c.is_ascii_uppercase())
+                })
+        }
+        let tasks = [
+            task("build", Some("p"), "ready", Some(20), None),
+            task("design", Some("p"), "ready", Some(15), None),
+            task("active", Some("p"), "in_progress", Some(10), None),
+        ];
+        let plan = plan_day(4, &tasks, &[dep("build", "design")], &req(100)).unwrap();
+        let blocked = plan.tasks.iter().find(|r| r.task_id == "build").unwrap();
+        assert!(
+            blocked
+                .explanation
+                .iter()
+                .any(|line| line == "Task is not actionable: unfinished prerequisites")
+        );
+        let active = plan.tasks.iter().find(|r| r.task_id == "active").unwrap();
+        assert!(
+            active
+                .explanation
+                .iter()
+                .any(|line| line == "Task is not actionable: in progress")
+        );
+        for row in &plan.tasks {
+            for line in &row.explanation {
+                assert!(
+                    !has_debug_identifier(line),
+                    "explanation leaks a Debug identifier: {line}"
+                );
+            }
+        }
+        for warning in &plan.warnings {
+            assert!(
+                !has_debug_identifier(warning),
+                "warning leaks a Debug identifier: {warning}"
+            );
+        }
     }
     #[test]
     fn invalid_inputs_and_corrupted_edges_fail_closed() {

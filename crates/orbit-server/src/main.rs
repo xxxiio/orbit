@@ -70,51 +70,68 @@ struct StatusResponse {
 }
 #[derive(Serialize)]
 struct ErrorResponse {
-    error: &'static str,
+    /// Owned so validation reasons can carry the rejected value. Storage and
+    /// internal failures always use a fixed, opaque message.
+    error: String,
 }
 
 type ApiError = (StatusCode, Json<ErrorResponse>);
-fn error(code: StatusCode, message: &'static str) -> ApiError {
-    (code, Json(ErrorResponse { error: message }))
+fn error(code: StatusCode, message: impl Into<String>) -> ApiError {
+    (
+        code,
+        Json(ErrorResponse {
+            error: message.into(),
+        }),
+    )
 }
 /// Map a typed application rejection to the transport status. Keeping the
 /// original error until the adapter means not-found, conflict, oversize and
-/// validation failures no longer collapse into a generic 400.
-fn application_error_status(error: &ApplicationError) -> (StatusCode, &'static str) {
+/// validation failures no longer collapse into a generic 400. Domain
+/// validation messages are safe to quote: they are human text, never SQL, a
+/// filesystem path, a debug dump or an internal identifier.
+fn application_error_status(error: &ApplicationError) -> (StatusCode, String) {
     use orbit_application::RepositoryError;
     use orbit_domain::DomainError;
     match error {
-        ApplicationError::NotFound { .. } => (StatusCode::NOT_FOUND, "not found"),
-        ApplicationError::AlreadyExists { .. } => (StatusCode::CONFLICT, "already exists"),
+        ApplicationError::NotFound { .. } => (StatusCode::NOT_FOUND, "not found".to_owned()),
+        ApplicationError::AlreadyExists { .. } => {
+            (StatusCode::CONFLICT, "already exists".to_owned())
+        }
         ApplicationError::Repository(RepositoryError::Conflict) => {
-            (StatusCode::CONFLICT, "conflict")
+            (StatusCode::CONFLICT, "conflict".to_owned())
         }
         ApplicationError::AttachmentTooLarge { .. }
         | ApplicationError::Domain(DomainError::AttachmentTooLarge { .. }) => (
             StatusCode::PAYLOAD_TOO_LARGE,
-            "attachment exceeds the server byte limit",
+            "attachment exceeds the server byte limit".to_owned(),
         ),
-        ApplicationError::Domain(_) => (StatusCode::BAD_REQUEST, "invalid input"),
+        ApplicationError::Domain(domain) => (StatusCode::BAD_REQUEST, domain.to_string()),
         ApplicationError::InconsistentReference { .. }
         | ApplicationError::PlanRejected { .. }
         | ApplicationError::HabitPlanRejected { .. }
-        | ApplicationError::Progress(_) => (StatusCode::BAD_REQUEST, "invalid input"),
-        ApplicationError::AttachmentContentUnavailable { .. } => {
-            (StatusCode::CONFLICT, "attachment content is unavailable")
-        }
-        ApplicationError::Repository(RepositoryError::Unavailable) => {
-            (StatusCode::SERVICE_UNAVAILABLE, "storage unavailable")
-        }
+        | ApplicationError::Progress(_) => (StatusCode::BAD_REQUEST, "invalid input".to_owned()),
+        ApplicationError::AttachmentContentUnavailable { .. } => (
+            StatusCode::CONFLICT,
+            "attachment content is unavailable".to_owned(),
+        ),
+        ApplicationError::Repository(RepositoryError::Unavailable) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "storage unavailable".to_owned(),
+        ),
         ApplicationError::Repository(RepositoryError::CorruptData { .. })
         | ApplicationError::Repository(RepositoryError::Other(_))
-        | ApplicationError::AttachmentStore(_) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, "storage error")
-        }
+        | ApplicationError::AttachmentStore(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "storage error".to_owned(),
+        ),
     }
 }
 fn map_error(err: AuthorityError) -> ApiError {
     match err {
-        AuthorityError::Invalid(_) => error(StatusCode::BAD_REQUEST, "invalid request"),
+        // `Invalid` carries the validation refusal written by the command
+        // handler. It is fixed human text (no SQL, path, or debug formatting),
+        // so the browser may quote it verbatim.
+        AuthorityError::Invalid(message) => error(StatusCode::BAD_REQUEST, message),
         AuthorityError::Application(application) => {
             let (status, message) = application_error_status(&application);
             if status == StatusCode::INTERNAL_SERVER_ERROR {
@@ -3937,6 +3954,81 @@ mod tests {
         );
         assert_eq!(status, 400);
         assert!(body_of(&raw).contains("confirmation required"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn validation_reasons_are_quoted_and_stale_revisions_stay_generic() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        let created = post(
+            &address,
+            "/v1/authoritative/task-commands",
+            &bearer,
+            r#"{"command_id":"create-1","expected_revision":0,"action":{"type":"create","task_id":"task-1","title":"Ship it"}}"#,
+        );
+        assert_eq!(created.0, 200, "{}", body_of(&created.1));
+
+        // The browser must be able to quote the actual refusal, not just learn
+        // that "something" was invalid.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/task-commands",
+            &bearer,
+            r#"{"command_id":"status-1","expected_revision":1,"action":{"type":"change_status","task_id":"task-1","status":"done"}}"#,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("invalid task status transition: inbox -> done"),
+            "{}",
+            body_of(&raw)
+        );
+
+        // Staleness keeps its pre-existing generic 409: retrying is the fix,
+        // and the body must not grow server-side detail.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/task-commands",
+            &bearer,
+            r#"{"command_id":"status-2","expected_revision":99,"action":{"type":"change_status","task_id":"task-1","status":"planned"}}"#,
+        );
+        assert_eq!(status, 409, "{}", body_of(&raw));
+        assert_eq!(
+            body_of(&raw),
+            r#"{"error":"stale server revision"}"#,
+            "{}",
+            body_of(&raw)
+        );
+    }
+
+    #[test]
+    fn internal_failures_stay_opaque_while_validation_is_quoted() {
+        use orbit_application::RepositoryError;
+        use orbit_domain::DomainError;
+        let (status, Json(body)) = map_error(AuthorityError::Sql(rusqlite::Error::InvalidQuery));
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body.error, "storage error");
+
+        let unavailable = application_error_status(&ApplicationError::Repository(
+            RepositoryError::Other("SELECT token FROM devices at /var/lib/orbit.db".into()),
+        ));
+        assert_eq!(unavailable.0, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(unavailable.1, "storage error");
+        assert!(!unavailable.1.contains("SELECT"));
+        assert!(!unavailable.1.contains("orbit.db"));
+
+        let validation = application_error_status(&ApplicationError::Domain(
+            DomainError::InvalidTaskStatusTransition {
+                from: "inbox",
+                to: "done",
+            },
+        ));
+        assert_eq!(validation.0, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            validation.1,
+            "invalid task status transition: inbox -> done"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

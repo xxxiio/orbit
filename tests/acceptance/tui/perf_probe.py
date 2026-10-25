@@ -337,7 +337,7 @@ class ProbeRun:
         started = _now_ms()
         session.send(b"]", note="switch blueprint view")
         session.wait_for_screen_text(
-            "Blueprint work", timeout=15.0, description="development Board view"
+            "Work items", timeout=15.0, description="development Board view"
         )
         self.record("switch_blueprint_view", started)
 
@@ -449,7 +449,7 @@ def _markdown(
         "  suffix, Enter; wait for the rename outcome notification.",
         "- **refresh_project** — `r`, then the `g` prefix hint as an input-order barrier.",
         f"- **switch_blueprint_view** — `]` from Overview to Board in `{DEVELOPMENT_PROJECT}`",
-        "  (development workflow); wait for the `Blueprint work` panel.",
+        "  (development workflow); wait for the `Work items` panel.",
         "",
         "## Reproduce",
         "",

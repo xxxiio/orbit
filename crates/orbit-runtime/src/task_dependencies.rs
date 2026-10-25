@@ -34,6 +34,35 @@ pub enum ReadinessReason {
     UnknownStatus,
 }
 
+impl ReadinessReason {
+    /// Stable human wording for explanations. The serde rename only covers the
+    /// wire, and `Debug` would leak CamelCase variant names to users.
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::UnfinishedPrerequisites => "unfinished prerequisites",
+            Self::ScheduledForLater => "scheduled for later",
+            Self::PastDeadline => "past deadline",
+            Self::Inbox => "inbox",
+            Self::Planned => "planned",
+            Self::Waiting => "waiting",
+            Self::Blocked => "blocked",
+            Self::Deferred => "deferred",
+            Self::InProgress => "in progress",
+            Self::Review => "review",
+            Self::Done => "done",
+            Self::Cancelled => "cancelled",
+            Self::UnknownStatus => "unknown status",
+        }
+    }
+}
+
+impl std::fmt::Display for ReadinessReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskReadiness {
     pub task_id: String,

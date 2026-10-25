@@ -124,7 +124,7 @@
     {
       "id": "board",
       "title": "Board",
-      "description": "Authorized task and blueprint workflow transitions.",
+      "description": "Authorized task and workflow transitions.",
       "layout": {
         "type": "vertical"
       },
@@ -143,7 +143,7 @@
           "source": "work_items",
           "group_by": "state",
           "limit": 100,
-          "title": "Blueprint work"
+          "title": "Work items"
         }
       ]
     },

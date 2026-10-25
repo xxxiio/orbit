@@ -188,7 +188,7 @@ pub fn analyze_workload(
             ReadinessReason::Waiting | ReadinessReason::Deferred | ReadinessReason::Blocked
         ) {
             reasons.push(AttentionReason::WaitingWorkflow);
-            details.push(format!("Workflow status {:?} is not ready", status.reason));
+            details.push(format!("Workflow status {} is not ready", status.reason));
         }
         if downstream_count > 0 {
             reasons.push(AttentionReason::UnblocksOthers);
@@ -327,6 +327,26 @@ mod tests {
                 .reasons
                 .contains(&AttentionReason::DueSoon)
         );
+    }
+    #[test]
+    fn waiting_workflow_detail_is_human_readable() {
+        let tasks = [task("a", "p", "waiting", Some(10), None)];
+        let report = analyze_workload(3, &tasks, &[], 100, 40).unwrap();
+        let details = &report.projects[0].attention[0].details;
+        assert!(
+            details
+                .iter()
+                .any(|line| line == "Workflow status waiting is not ready")
+        );
+        for line in details {
+            let camel = line
+                .split(|c: char| !c.is_ascii_alphanumeric())
+                .any(|token| {
+                    token.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                        && token.chars().skip(1).any(|c| c.is_ascii_uppercase())
+                });
+            assert!(!camel, "detail leaks a Debug identifier: {line}");
+        }
     }
     #[test]
     fn duplicate_and_dangling_edges_are_rejected() {

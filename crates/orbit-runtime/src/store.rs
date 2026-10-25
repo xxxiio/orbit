@@ -1313,7 +1313,16 @@ impl AuthorityStore {
                 let to = crate::domain_commands::parse_status(status)
                     .ok_or(AuthorityError::Invalid("invalid status"))?;
                 if !from.can_transition_to(to) {
-                    return Err(AuthorityError::Invalid("invalid task transition"));
+                    // Keep the typed domain refusal so transports can quote the
+                    // actual from/to states instead of a generic message.
+                    return Err(AuthorityError::Application(
+                        orbit_application::ApplicationError::Domain(
+                            orbit_domain::DomainError::InvalidTaskStatusTransition {
+                                from: from.as_str(),
+                                to: to.as_str(),
+                            },
+                        ),
+                    ));
                 }
                 tx.execute(
                     "UPDATE tasks SET status=?1,status_sequence=?2 WHERE id=?3",
