@@ -5,8 +5,9 @@ Browser captures of the M31 I3 build, produced from the deterministic fixture in
 `orbit-server`). No mocked responses and no preview server.
 
 Captured on 2026-10-26 from commit
-`1e475e9a10f0433876b4e7cd85777183b736284e` (M31 I3: work items, transitions,
-upgrades, actions), using `target/debug/orbit-server` built 2026-10-25 22:18
+`88dea90d70397c2f05e266a0f1b18648d9b6f336` (M31 I3: work items, transitions,
+upgrades, actions; the follow-up commit fences the confirmed upgrade
+fingerprint), using `target/debug/orbit-server` built 2026-10-25 22:18
 local. I3 changed no Rust source, so that binary matches the committed server.
 The `web/dist` build used for the capture came from the same commit. Re-run the
 commands below after any change to the build; a capture is only comparable to
