@@ -5,6 +5,7 @@ import {
   useApplyUpgrade,
   useAvailableWorkflows,
   useUpgradePreview,
+  uncertainMessage,
   useWorkflowDefinition,
   userMessage,
   type Workflow,
@@ -149,6 +150,7 @@ export function ProjectSettings({
   const [selected, setSelected] = useState<{ id: string; version: number } | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
+  const [reviewedFingerprint, setReviewedFingerprint] = useState<string | null>(null)
   const [lastApplied, setLastApplied] = useState<WorkflowUpgradeApplied | null>(null)
   const { toast } = useToast()
 
@@ -196,6 +198,16 @@ export function ProjectSettings({
 
   const blockers = preview.data?.blockers ?? []
   const canApply = Boolean(preview.data) && blockers.length === 0 && !targetIsPinned
+  const fingerprintMatches =
+    !reviewedFingerprint || preview.data?.fingerprint === reviewedFingerprint
+  const canConfirm =
+    canApply && fingerprintMatches && (mode !== 'upgrade' || confirmed)
+  const applyUncertain = apply.disposition === 'uncertain'
+  const openConfirm = () => {
+    setReviewedFingerprint(preview.data?.fingerprint ?? null)
+    setConfirmed(false)
+    setConfirmOpen(true)
+  }
 
   const applyChange = async () => {
     if (!target) return
@@ -476,7 +488,7 @@ export function ProjectSettings({
                           variant="secondary"
                           className="self-start"
                           disabled={!canApply}
-                          onClick={() => setConfirmOpen(true)}
+                          onClick={openConfirm}
                           data-upgrade-apply=""
                         >
                           {triggerLabel}
@@ -547,6 +559,13 @@ export function ProjectSettings({
               </details>
             ) : null}
 
+            {!fingerprintMatches ? (
+              <p role="alert" className="rounded-sm border border-warning/40 bg-warning-soft px-2 py-1.5 text-xs leading-5 text-warning-ink">
+                The preview changed while this dialog was open. Close it and review the new
+                comparison before applying.
+              </p>
+            ) : null}
+
             {mode === 'upgrade' && target ? (
               <Checkbox
                 checked={confirmed}
@@ -558,7 +577,11 @@ export function ProjectSettings({
             {apply.error ? (
               <p role="alert" className="flex items-start gap-1.5 text-xs leading-5 text-danger-ink">
                 <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
-                <span className="min-w-0 flex-1">{userMessage(apply.error)}</span>
+                <span className="min-w-0 flex-1">
+                  {applyUncertain
+                    ? uncertainMessage(apply.error)
+                    : userMessage(apply.error)}
+                </span>
               </p>
             ) : null}
 
@@ -574,7 +597,7 @@ export function ProjectSettings({
               <Button
                 size="md"
                 onClick={() => void applyChange()}
-                disabled={!canApply || (mode === 'upgrade' && !confirmed)}
+                disabled={!canConfirm}
                 loading={apply.isPending}
               >
                 {confirmLabel}
