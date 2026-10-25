@@ -3,6 +3,7 @@ import { defaultNowMs, useTaskReadiness } from '@/hooks'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ViewRendererProps } from '../view-types'
 import {
+  actionableFilterRefusal,
   componentTypeName,
   dataSourceName,
   describeFilter,
@@ -51,11 +52,16 @@ function useDeclaredTaskScope(props: ViewRendererProps, filters: Record<string, 
   return { tasks, readiness, actionable }
 }
 
+/**
+ * The declared sort is the list's starting order, not a claim about what is on
+ * screen: the toolbar writes its own sort to the URL, so the copy must not say
+ * the current order is the one the workflow declares.
+ */
 function sortDescription(sort: TaskSort | null): string {
   if (!sort) return 'Every task in this project.'
-  return `Every task in this project, sorted by ${sort.key} ${
+  return `Every task in this project. The workflow starts this list sorted by ${sort.key} ${
     sort.direction === 'asc' ? 'ascending' : 'descending'
-  } as the workflow declares.`
+  }; the sort control can change it.`
 }
 
 /**
@@ -84,6 +90,17 @@ function FullTaskList({
       <UnavailablePanel
         title={componentTypeName(component)}
         reason={`This list filters tasks by ${unsupported.join(', ')}, which this build cannot evaluate.`}
+      />
+    )
+  }
+
+  const actionableRefusal = actionableFilterRefusal(filter)
+  if (actionableRefusal) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={actionableRefusal}
+        hint="The list is refused rather than showing the complement of the filter the workflow declared."
       />
     )
   }

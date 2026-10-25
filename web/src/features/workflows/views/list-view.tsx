@@ -8,6 +8,7 @@ import { cn } from '@/components/ui/utils'
 import { formatMoment, readinessReasonLabel, statusLabel, statusTones, useTaskDrawer } from '@/features/tasks'
 import type { ViewRendererProps } from '../view-types'
 import {
+  actionableFilterRefusal,
   componentTypeName,
   dataSourceName,
   describeFilter,
@@ -48,6 +49,17 @@ function TaskSummaryList({
         title={componentTypeName(component)}
         reason={sortDeclaration.refusal}
         hint="The list is refused rather than keeping the server's order under a declared sort."
+      />
+    )
+  }
+
+  const actionableRefusal = actionableFilterRefusal(filter)
+  if (actionableRefusal) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={actionableRefusal}
+        hint="The list is refused rather than showing the complement of the filter the workflow declared."
       />
     )
   }

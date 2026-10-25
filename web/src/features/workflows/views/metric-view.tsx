@@ -2,6 +2,7 @@ import { defaultNowMs, useTaskReadiness, useWorkItems } from '@/hooks'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ViewRendererProps } from '../view-types'
 import {
+  actionableFilterRefusal,
   aggregateMetric,
   componentTypeName,
   dataSourceName,
@@ -126,7 +127,9 @@ function metricLabel(declaration: MetricDeclaration, source: string): string {
   if (declaration.aggregate === 'count') {
     return source === 'work_items' ? 'work items' : source
   }
-  return 'minutes'
+  // A non-count number is labelled with the unit its declaration proved; a
+  // field without one is refused before it reaches this renderer.
+  return declaration.unit ?? 'value'
 }
 
 function metricSourceNote(
@@ -167,6 +170,17 @@ function TaskMetric(props: ViewRendererProps) {
         title={componentTypeName(component)}
         reason={`This panel filters tasks by ${unsupported.join(', ')}, which this build cannot evaluate.`}
         hint="The panel is hidden rather than showing a number that might be wrong."
+      />
+    )
+  }
+
+  const actionableRefusal = actionableFilterRefusal(filter)
+  if (actionableRefusal) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={actionableRefusal}
+        hint="The count is refused rather than counting the complement of the filter the workflow declared."
       />
     )
   }

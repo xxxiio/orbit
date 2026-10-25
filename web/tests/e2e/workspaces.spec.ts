@@ -363,6 +363,87 @@ test.describe('task list URL state', () => {
   })
 })
 
+test.describe('declared counts and filters', () => {
+  test('a declared count and filter read the real rows, not the project total', async ({
+    page,
+    workspace,
+  }) => {
+    const { server, fixture } = workspace
+    const basic = fixture.tasks.filter((task) => task.projectId === 'p-basic')
+    const expected = {
+      inProgress: basic.filter((task) => task.status === 'in_progress').length,
+      done: basic.filter((task) => task.status === 'done').length,
+    }
+    expect(expected.inProgress, 'the fixture needs an in-progress p-basic task').toBeGreaterThan(0)
+    expect(expected.done, 'the fixture needs a done p-basic task').toBeGreaterThan(0)
+    expect(expected.inProgress).toBeLessThan(basic.length)
+
+    await goto(page, server, '/projects/p-basic/overview')
+
+    // Basic declares `count` metrics filtered by status. A count of the whole
+    // project would overstate both; the declared filter must narrow real rows.
+    const inProgressPanel = page.locator('[data-view-component="in_progress"]')
+    await expect(
+      inProgressPanel.getByRole('heading', { name: 'In progress', exact: true }),
+    ).toBeVisible()
+    await expect(
+      inProgressPanel.getByText(
+        `${expected.inProgress} ${expected.inProgress === 1 ? 'task' : 'tasks'}`,
+        { exact: true },
+      ),
+    ).toBeVisible()
+
+    const completedPanel = page.locator('[data-view-component="completed"]')
+    await expect(
+      completedPanel.getByRole('heading', { name: 'Completed', exact: true }),
+    ).toBeVisible()
+    await expect(
+      completedPanel.getByText(`${expected.done} ${expected.done === 1 ? 'task' : 'tasks'}`, {
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // "Next actions" declares `filter: { actionable: true }` with a limit of 6.
+    // The rows it shows must be exactly the server-actionable slice of the
+    // project, cut to the declared limit — an ignored filter would list six
+    // arbitrary tasks instead.
+    const nextActions = page.locator('[data-view-component="next_actions"]')
+    await expect(
+      nextActions.getByRole('heading', { name: 'Next actions', exact: true }),
+    ).toBeVisible()
+
+    const readinessResponse = await page.request.get(
+      `${server.base}/v1/authoritative/task-readiness?now_ms=${fixture.nowMs}`,
+    )
+    expect(readinessResponse.status()).toBe(200)
+    const readiness = (await readinessResponse.json()) as {
+      tasks: Array<{ task_id: string; actionable: boolean }>
+    }
+    const actionable = new Set(
+      readiness.tasks.filter((entry) => entry.actionable).map((entry) => entry.task_id),
+    )
+    const expectedActionable = basic.filter((task) => actionable.has(task.id))
+    expect(
+      expectedActionable.length,
+      'the fixture must leave some p-basic tasks outside the actionable filter',
+    ).toBeLessThan(basic.length)
+
+    const titles = await nextActions.locator('ul > li button').allTextContents()
+    const expectedRows = Math.min(6, expectedActionable.length)
+    expect(titles, 'the declared filter and limit decide the visible rows').toHaveLength(expectedRows)
+    for (const title of titles) {
+      const task = basic.find((candidate) => candidate.title === title)
+      expect(task, `${title} must be a seeded p-basic task`).toBeTruthy()
+      expect(actionable.has(task!.id), `${title} must be server-actionable`).toBe(true)
+    }
+    if (expectedRows === 0) {
+      await expect(
+        nextActions.getByText('No task matches actionable is true right now.'),
+      ).toBeVisible()
+    }
+  })
+})
+
 interface ManifestComponent {
   id: string
   type: string

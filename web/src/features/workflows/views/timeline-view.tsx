@@ -128,10 +128,16 @@ function MilestoneTimeline({ component, tasks, milestones }: ViewRendererProps) 
   )
 }
 
+function orderBlocks(blocks: ScheduleBlock[], descending: boolean): ScheduleBlock[] {
+  return [...blocks].sort((left, right) =>
+    descending ? right.startsAtMs - left.startsAtMs : left.startsAtMs - right.startsAtMs,
+  )
+}
+
+/** Group already-ordered blocks into consecutive calendar days. */
 function groupByDay(blocks: ScheduleBlock[]): Array<{ day: number; blocks: ScheduleBlock[] }> {
-  const sorted = [...blocks].sort((left, right) => left.startsAtMs - right.startsAtMs)
   const groups: Array<{ day: number; blocks: ScheduleBlock[] }> = []
-  for (const block of sorted) {
+  for (const block of blocks) {
     const date = new Date(block.startsAtMs)
     date.setHours(0, 0, 0, 0)
     const day = date.getTime()
@@ -140,6 +146,20 @@ function groupByDay(blocks: ScheduleBlock[]): Array<{ day: number; blocks: Sched
     else groups.push({ day, blocks: [block] })
   }
   return groups
+}
+
+/**
+ * Order, limit, then group saved blocks. `descending` reverses the whole
+ * sequence (latest day first, latest block first within a day); `limit` slices
+ * the ordered list so "the first N" means the N the declaration named.
+ */
+export function scheduleTimelineGroups(
+  blocks: ScheduleBlock[],
+  { descending = false, limit = null }: { descending?: boolean; limit?: number | null } = {},
+): Array<{ day: number; blocks: ScheduleBlock[] }> {
+  const ordered = orderBlocks(blocks, descending)
+  const limited = limit !== null && limit > 0 ? ordered.slice(0, limit) : ordered
+  return groupByDay(limited)
 }
 
 /** Saved schedule blocks, which do have real start and end times. */
@@ -151,7 +171,18 @@ function ScheduleTimeline({ component }: ViewRendererProps) {
   const filter = component.filter ?? {}
   const filterKeys = Object.keys(filter)
   const sort = component.sort?.trim().toLowerCase() ?? null
-  const groups = useMemo(() => groupByDay(snapshot.data?.schedule ?? []), [snapshot.data?.schedule])
+  // The declared direction and limit are honoured for saved blocks: the panel
+  // orders what the workflow asked for, slices to its limit, then groups by day.
+  const groups = useMemo(
+    () =>
+      scheduleTimelineGroups(snapshot.data?.schedule ?? [], {
+        descending: component.descending,
+        limit: component.limit,
+      }),
+    [snapshot.data?.schedule, component.descending, component.limit],
+  )
+  const shownBlocks = groups.reduce((count, group) => count + group.blocks.length, 0)
+  const totalBlocks = snapshot.data?.schedule?.length ?? 0
 
   if (filterKeys.length > 0) {
     return (
@@ -167,12 +198,10 @@ function ScheduleTimeline({ component }: ViewRendererProps) {
     return (
       <UnavailablePanel
         title={title}
-        reason={`This schedule timeline sorts blocks by “${component.sort}”. Saved blocks are ordered by their start time.`}
+        reason={`This schedule timeline sorts blocks by “${component.sort}”. Saved blocks are ordered by their start time in the declared direction.`}
       />
     )
   }
-
-  const blocks = snapshot.data?.schedule ?? []
 
   return (
     <ComponentPanel
@@ -182,6 +211,9 @@ function ScheduleTimeline({ component }: ViewRendererProps) {
         <ProvenanceNote>
           Every block below is a saved calendar block from the workspace snapshot. Plans that have
           not been reviewed and approved do not appear here.
+          {totalBlocks > shownBlocks
+            ? ` Showing ${shownBlocks} of ${totalBlocks} blocks; the workflow sets this limit.`
+            : ''}
           {component.actions.length > 0 ? ' ' : ''}
           <DeclaredActionsNote component={component} />
         </ProvenanceNote>
@@ -192,7 +224,7 @@ function ScheduleTimeline({ component }: ViewRendererProps) {
           <Skeleton className="h-3 w-2/3" />
           <Skeleton className="h-3 w-1/2" />
         </div>
-      ) : blocks.length === 0 ? (
+      ) : shownBlocks === 0 ? (
         <EmptyState
           compact
           headingLevel="p"

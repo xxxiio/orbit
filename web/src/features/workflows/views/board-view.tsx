@@ -35,6 +35,8 @@ import {
 } from '@/features/tasks'
 import type { ViewRendererProps } from '../view-types'
 import {
+  actionableFilterNote,
+  actionableFilterRefusal,
   componentTypeName,
   describeFilter,
   sortByDeclaration,
@@ -93,6 +95,7 @@ function BoardSurface({
   const cardRefs = useRef(new Map<string, HTMLButtonElement>())
 
   const filter = component.filter ?? {}
+  const actionableNote = actionableFilterNote(filter)
   const sortDeclaration = useMemo(() => taskSortDeclaration(component), [component])
 
   const { boardTasks, matchedCount } = useMemo(() => {
@@ -204,10 +207,8 @@ function BoardSurface({
 
   return (
     <>
-      {readinessFilter === undefined ? null : (
-        <p className="mb-3 text-2xs text-ink-muted">
-          Filtered to tasks the server marks actionable. Columns still show the server&apos;s status.
-        </p>
+      {actionableNote === null ? null : (
+        <p className="mb-3 text-2xs text-ink-muted">{actionableNote}</p>
       )}
 
       {boardTasks.length === 0 ? (
@@ -460,6 +461,17 @@ export function BoardView(props: ViewRendererProps) {
       <UnavailablePanel
         title={componentTypeName(component)}
         reason={`This board filters tasks by ${unsupported.join(', ')}, which this build cannot evaluate.`}
+      />
+    )
+  }
+
+  const actionableRefusal = actionableFilterRefusal(filter)
+  if (actionableRefusal) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={actionableRefusal}
+        hint="The board is refused rather than showing the complement of the filter the workflow declared."
       />
     )
   }

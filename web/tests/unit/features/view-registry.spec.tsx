@@ -78,6 +78,15 @@ describe('workflow view registry', () => {
     expect(screen.getAllByText('Declared prose.')).toHaveLength(2)
   })
 
+  it('surfaces declared actions on a text panel instead of dropping them', () => {
+    render(
+      renderViewComponent(
+        props({ id: 'notes', type: 'text', text: 'Read me.', actions: ['open', 'create_task'] }),
+      ),
+    )
+    expect(screen.getByText(/also declares the open, create_task actions/)).toBeInTheDocument()
+  })
+
   it('refuses a type it has never heard of by name instead of rendering a blank panel', () => {
     render(renderViewComponent(props({ id: 'future', type: 'future_panel', title: 'Future panel' })))
     expect(screen.getByText('Future panel is not supported')).toBeInTheDocument()

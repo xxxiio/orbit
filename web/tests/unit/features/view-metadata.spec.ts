@@ -8,6 +8,8 @@ import type {
   WorkflowViewComponent,
 } from '@/api/adapters'
 import {
+  actionableFilterNote,
+  actionableFilterRefusal,
   aggregateMetric,
   componentFamily,
   componentSpansFullWidth,
@@ -259,6 +261,26 @@ describe('declared component filters', () => {
     )
     expect(describeFilter({})).toBeNull()
   })
+
+  it('refuses an actionable value that is not a boolean', () => {
+    expect(actionableFilterRefusal({})).toBeNull()
+    expect(actionableFilterRefusal({ status: 'ready' })).toBeNull()
+    expect(actionableFilterRefusal({ actionable: 'true' })).toBeNull()
+    expect(actionableFilterRefusal({ actionable: ' FALSE ' })).toBeNull()
+    expect(actionableFilterRefusal({ actionable: 'yes' })).toMatch(/only true or false/)
+    // The old behaviour read anything but "true" as false; the refusal names it.
+    expect(actionableFilterRefusal({ actionable: 'actionable' })).toBe(
+      'This panel filters tasks by actionable = “actionable”; only true or false are supported.',
+    )
+
+    // The board's note follows the value it was given.
+    expect(actionableFilterNote({})).toBeNull()
+    expect(actionableFilterNote({ actionable: 'true' })).toMatch(/^Filtered to tasks the server marks actionable/)
+    expect(actionableFilterNote({ actionable: 'FALSE' })).toMatch(
+      /^Filtered to tasks the server does not mark actionable/,
+    )
+    expect(actionableFilterNote({ actionable: 'maybe' })).toBeNull()
+  })
 })
 
 const workflowWithKinds: Workflow = {
@@ -365,6 +387,52 @@ describe('declared metric aggregates', () => {
       workflowWithKinds,
     )
     expect(text.refusal).toMatch(/not a numeric field/)
+  })
+
+  it('honours a declared unit and refuses an unlabelled non-minutes field', () => {
+    // `score` is numeric but its unit is unknown: showing it as minutes would
+    // be a mislabel, so the declaration is refused until it names a unit.
+    const undeclared = metricDeclaration(
+      component({ id: 'm', type: 'metric', source: 'work_items', aggregate: 'sum', field: 'score' }),
+      workflowWithKinds,
+    )
+    expect(undeclared.refusal).toMatch(/no declared unit/)
+    expect(undeclared.unit).toBeNull()
+
+    const declared = metricDeclaration(
+      component({
+        id: 'm',
+        type: 'metric',
+        source: 'work_items',
+        aggregate: 'sum',
+        field: 'score',
+        options: { unit: ' points ' },
+      }),
+      workflowWithKinds,
+    )
+    expect(declared.refusal).toBeNull()
+    expect(declared.unit).toBe('points')
+
+    // Fields whose name states the unit keep it without an option.
+    const minutes = metricDeclaration(
+      component({
+        id: 'm',
+        type: 'metric',
+        source: 'tasks',
+        aggregate: 'sum',
+        field: 'estimated_minutes',
+      }),
+      workflowWithKinds,
+    )
+    expect(minutes.refusal).toBeNull()
+    expect(minutes.unit).toBe('minutes')
+
+    // A count is a number of rows, not a unit.
+    const count = metricDeclaration(
+      component({ id: 'm', type: 'metric', source: 'tasks' }),
+      workflowWithKinds,
+    )
+    expect(count.unit).toBeNull()
   })
 })
 

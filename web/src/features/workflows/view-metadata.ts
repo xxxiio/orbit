@@ -164,6 +164,31 @@ export function taskMatchesDeclaredFilter(
   return true
 }
 
+/**
+ * `actionable` is a boolean in the manifest. Any other spelling would be read as
+ * false by `taskMatchesDeclaredFilter`, silently selecting the wrong half of the
+ * list, so it is refused by name instead.
+ */
+export function actionableFilterRefusal(filter: Record<string, string>): string | null {
+  const value = filter.actionable
+  if (value === undefined) return null
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'true' || normalized === 'false') return null
+  return `This panel filters tasks by actionable = “${value}”; only true or false are supported.`
+}
+
+/** The board's copy for a valid `actionable` filter, derived from its value. */
+export function actionableFilterNote(filter: Record<string, string>): string | null {
+  const normalized = filter.actionable?.trim().toLowerCase()
+  if (normalized === 'true') {
+    return 'Filtered to tasks the server marks actionable. Columns still show the server’s status.'
+  }
+  if (normalized === 'false') {
+    return 'Filtered to tasks the server does not mark actionable. Columns still show the server’s status.'
+  }
+  return null
+}
+
 export function milestoneMatchesDeclaredFilter(
   milestone: Milestone,
   filter: Record<string, string>,
@@ -231,8 +256,29 @@ const METRIC_AGGREGATES = new Set<string>(['count', 'sum', 'average', 'min', 'ma
 export interface MetricDeclaration {
   aggregate: MetricAggregate
   field: string | null
+  /** The unit the value is shown in; `null` for a plain count. */
+  unit: string | null
   /** Non-null means the declaration cannot be honoured; render a refusal. */
   refusal: string | null
+}
+
+/** Fields whose name already states the unit this build can show. */
+function isMinutesField(field: string): boolean {
+  const normalized = field.toLowerCase()
+  return (
+    normalized === 'estimated_minutes' ||
+    normalized === 'estimatedminutes' ||
+    normalized === 'minutes' ||
+    normalized.endsWith('_minutes')
+  )
+}
+
+/** A declared display unit, when the manifest supplied one. */
+function declaredUnit(component: WorkflowViewComponent): string | null {
+  const raw = component.options?.unit
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  return trimmed.length > 0 ? trimmed : null
 }
 
 function isMetricAggregate(value: string): value is MetricAggregate {
@@ -264,6 +310,17 @@ export function numericFieldsForSource(
   return new Set()
 }
 
+/*
+ * Recorded gap — declarations the manifest validator accepts but this build
+ * does not honour yet (deliberately visible, not silently supported):
+ * - the `options` bag: `empty_text`, `caption` and `show_status` are validated,
+ *   but panels keep their own empty copy;
+ * - `columns` on a `list` component: only `table`/`task_list` map declared
+ *   columns (`columnsFromComponent`), and the list renderer ignores them;
+ * - `limit` on a `table` or a full task list: those surfaces own paging and do
+ *   not slice to the declared limit (see `badgeLimitApplies`).
+ * TODO(I4): honour each of these, or refuse it by name.
+ */
 /**
  * Resolve a metric's declared aggregate and field. A declaration this build
  * cannot evaluate gets a named reason instead of a count under a "sum" title.
@@ -278,6 +335,7 @@ export function metricDeclaration(
     return {
       aggregate: 'count',
       field: null,
+      unit: null,
       refusal: `This panel asks for the “${component.aggregate}” aggregate, which this build cannot compute.`,
     }
   }
@@ -289,6 +347,7 @@ export function metricDeclaration(
     return {
       aggregate: raw,
       field: null,
+      unit: null,
       refusal: `${dataSourceName(source)} has no numeric field this build can aggregate; only a count is supported.`,
     }
   }
@@ -298,6 +357,7 @@ export function metricDeclaration(
     return {
       aggregate: raw,
       field: null,
+      unit: null,
       refusal: `This panel aggregates the “${field}” field, which is not a numeric field on ${label}.`,
     }
   }
@@ -306,11 +366,30 @@ export function metricDeclaration(
     return {
       aggregate: raw,
       field: null,
+      unit: null,
       refusal: `A ${raw} aggregate needs the numeric field to aggregate, and this panel does not declare one.`,
     }
   }
 
-  return { aggregate: raw, field, refusal: null }
+  // A non-count number is only honest with a unit. Estimated/minutes fields
+  // carry theirs in the name; any other integer field must say so in
+  // `options.unit` rather than being shown as minutes.
+  const unit = declaredUnit(component)
+  if (raw !== 'count' && field !== null && !isMinutesField(field) && unit === null) {
+    return {
+      aggregate: raw,
+      field,
+      unit: null,
+      refusal: `This panel aggregates the “${field}” field, which has no declared unit; add options.unit so the number is not shown as minutes.`,
+    }
+  }
+
+  return {
+    aggregate: raw,
+    field,
+    unit: raw === 'count' ? null : (unit ?? 'minutes'),
+    refusal: null,
+  }
 }
 
 function numericProperty(value: unknown): number | null {

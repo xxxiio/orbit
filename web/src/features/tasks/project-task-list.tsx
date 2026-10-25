@@ -89,9 +89,11 @@ export function ProjectTaskList({
 
   const commit = useCallback(
     (patch: Parameters<typeof writeTaskListUrl>[1]) => {
-      setSearchParams((current) => writeTaskListUrl(current, patch), { replace: true })
+      setSearchParams((current) => writeTaskListUrl(current, patch, defaultSort), {
+        replace: true,
+      })
     },
-    [setSearchParams],
+    [defaultSort, setSearchParams],
   )
 
   const filtered = useMemo(

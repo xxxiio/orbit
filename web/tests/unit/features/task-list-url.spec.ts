@@ -9,7 +9,7 @@ import {
   writeTaskListUrl,
   type TaskColumnKey,
 } from '@/features/tasks/task-list-state'
-import { ALL } from '@/features/tasks/task-list-model'
+import { ALL, type TaskSort } from '@/features/tasks/task-list-model'
 
 function params(init: Record<string, string> = {}): URLSearchParams {
   return new URLSearchParams(init)
@@ -85,6 +85,39 @@ describe('task list URL state', () => {
 
     // It does not mutate the caller's parameters.
     expect(current.get('q')).toBe('old')
+  })
+
+  it('keeps a chosen sort when the view declares a different fallback', () => {
+    const declared: TaskSort = { key: 'title', direction: 'asc' }
+
+    // "Due date" in a view that declares `sort: title` must survive as URL
+    // state; clearing it against the global default would silently fall back.
+    const chosen = writeTaskListUrl(params(), { sort: { key: 'due', direction: 'asc' } }, declared)
+    expect(chosen.get('sort')).toBe('due')
+    expect(chosen.get('dir')).toBeNull()
+    expect(readTaskListUrl(chosen, DEFAULT_PROJECT_COLUMNS, declared).sort).toEqual({
+      key: 'due',
+      direction: 'asc',
+    })
+
+    // Choosing the declared order again clears the URL and falls back to it.
+    const reset = writeTaskListUrl(chosen, { sort: declared }, declared)
+    expect(reset.get('sort')).toBeNull()
+    expect(reset.get('dir')).toBeNull()
+    expect(readTaskListUrl(reset, DEFAULT_PROJECT_COLUMNS, declared).sort).toEqual(declared)
+
+    // A declared descending default also clears only when it is the chosen one.
+    const declaredDesc: TaskSort = { key: 'priority', direction: 'desc' }
+    const other = writeTaskListUrl(params(), { sort: { key: 'priority', direction: 'asc' } }, declaredDesc)
+    expect(other.get('sort')).toBe('priority')
+    expect(other.get('dir')).toBeNull()
+    expect(readTaskListUrl(other, DEFAULT_PROJECT_COLUMNS, declaredDesc).sort).toEqual({
+      key: 'priority',
+      direction: 'asc',
+    })
+
+    // Untouched, the URL still reads the view's declared order.
+    expect(readTaskListUrl(params(), DEFAULT_PROJECT_COLUMNS, declaredDesc).sort).toEqual(declaredDesc)
   })
 
   it('round-trips a deep link through write and read', () => {

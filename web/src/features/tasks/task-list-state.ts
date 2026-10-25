@@ -139,10 +139,17 @@ export interface TaskListUrlPatch {
 /**
  * Apply a patch without dropping unrelated parameters (the open task, for one).
  * Neutral values are removed so a clean view has a clean URL.
+ *
+ * `fallbackSort` is the view's declared sort, not the global default: writing
+ * the declared order clears the parameters so the reader falls back to it, and
+ * writing any other order keeps `sort`/`dir` in the URL. Comparing against
+ * `DEFAULT_TASK_SORT` instead would delete a user's choice for a view whose
+ * declaration differs from the global default, making the control a no-op.
  */
 export function writeTaskListUrl(
   current: URLSearchParams,
   patch: TaskListUrlPatch,
+  fallbackSort: TaskSort = DEFAULT_TASK_SORT,
 ): URLSearchParams {
   const next = new URLSearchParams(current)
   const setOrDelete = (key: string, value: string | null) => {
@@ -158,7 +165,7 @@ export function writeTaskListUrl(
   }
   if (patch.sort !== undefined) {
     const isDefault =
-      patch.sort.key === DEFAULT_TASK_SORT.key && patch.sort.direction === DEFAULT_TASK_SORT.direction
+      patch.sort.key === fallbackSort.key && patch.sort.direction === fallbackSort.direction
     setOrDelete('sort', isDefault ? '' : patch.sort.key)
     setOrDelete('dir', isDefault || patch.sort.direction === 'asc' ? '' : patch.sort.direction)
   }
