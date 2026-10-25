@@ -2,11 +2,19 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useProjects } from '@/hooks'
 import { Button } from '@/components/ui/button'
-import { projectStatusLabel } from '@/features/projects/project-status'
-import { isTaskCompleted, isTaskOpen } from '@/features/projects/project-progress'
+import { projectStatusLabel, isTaskCompleted, isTaskOpen } from '@/domain'
 import type { ViewRendererProps } from '../view-types'
-import { componentTypeName } from '../view-metadata'
-import { ComponentPanel, ProvenanceNote, UnavailablePanel } from './shared'
+import {
+  componentTypeName,
+  projectMatchesDeclaredFilter,
+  unsupportedProjectFilterKeys,
+} from '../view-metadata'
+import {
+  ComponentPanel,
+  DeclaredActionsNote,
+  ProvenanceNote,
+  UnavailablePanel,
+} from './shared'
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -34,6 +42,40 @@ export function DetailView({ component, project, tasks, milestones, workflow }: 
         reason={`This panel is declared against “${source}”, which the browser does not render as a detail panel yet.`}
         hint="Open the Task list or Board for the project's work."
       />
+    )
+  }
+
+  const filter = component.filter ?? {}
+  const unsupported = unsupportedProjectFilterKeys(filter)
+  if (unsupported.length > 0) {
+    return (
+      <UnavailablePanel
+        title={title}
+        reason={`This detail panel filters projects by ${unsupported.join(', ')}, which this build cannot evaluate.`}
+      />
+    )
+  }
+
+  if (component.sort) {
+    return (
+      <UnavailablePanel
+        title={title}
+        reason={`This detail panel declares a sort by “${component.sort}”. A project detail panel has no row collection to sort.`}
+      />
+    )
+  }
+
+  if (!projectMatchesDeclaredFilter(project, filter)) {
+    return (
+      <ComponentPanel title={title} eyebrow="Project detail">
+        <p className="text-sm leading-6 text-ink-muted">
+          This project does not match the panel&apos;s declared filter (
+          {Object.entries(filter)
+            .map(([key, value]) => `${key.replace(/_/g, ' ')} is ${value}`)
+            .join(', ')}
+          ), so the workload counts are not shown.
+        </p>
+      </ComponentPanel>
     )
   }
 
@@ -65,6 +107,8 @@ export function DetailView({ component, project, tasks, milestones, workflow }: 
         <ProvenanceNote>
           Project names cannot be changed yet: the API has no rename command. The id and name are
           therefore fixed for the life of the project.
+          {component.actions.length > 0 ? ' ' : ''}
+          <DeclaredActionsNote component={component} />
         </ProvenanceNote>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="secondary" size="sm">

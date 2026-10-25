@@ -1,7 +1,17 @@
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
+import { humanizeIdentifier } from '@/lib/humanize'
 import { formatDateTime, relativeTime } from '../task-meta'
 import { Section } from './section'
+
+/** `agent:<id>` and `external:<device>` name a source, never a raw identifier. */
+function originLabel(origin: string): string {
+  if (origin === 'human') return 'You'
+  if (origin === 'system') return 'System'
+  if (origin.startsWith('agent:')) return 'An agent'
+  if (origin.startsWith('external:')) return 'Another device'
+  return humanizeIdentifier(origin)
+}
 
 export function ActivitySection({
   entries,
@@ -37,10 +47,10 @@ export function ActivitySection({
               />
               <p className="text-xs leading-5 text-ink">{entry.summary}</p>
               <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-2xs text-ink-muted">
-                <span className="font-mono">{entry.kind}</span>
+                <span className="text-ink-muted">{humanizeIdentifier(entry.kind)}</span>
                 <span aria-hidden="true">·</span>
-                <span className="truncate" title={entry.origin}>
-                  {entry.origin}
+                <span className="truncate" title={originLabel(entry.origin)}>
+                  {originLabel(entry.origin)}
                 </span>
                 <span aria-hidden="true">·</span>
                 <time dateTime={new Date(entry.occurredAtMs).toISOString()} title={formatDateTime(entry.occurredAtMs)}>

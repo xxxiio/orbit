@@ -71,7 +71,7 @@ describe('plan review and explicit approval', () => {
     const client = testQueryClient()
     const { result } = renderHook(() => usePlanReview(), { wrapper: queryWrapper(client) })
 
-    let returned: Awaited<ReturnType<typeof reviewPlan>> | undefined
+    let returned: ReviewedSchedulePlan | undefined
     await act(async () => {
       returned = await result.current.reviewPlanAsync(plan)
     })

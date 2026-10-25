@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
-import { useDirtyGuard } from './use-edit-guard'
+import { useDirtyGuard } from '@/components/forms'
 
 /**
  * Comma-separated labels with a read view and an edit view. The server owns

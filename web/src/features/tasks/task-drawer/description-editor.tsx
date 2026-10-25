@@ -4,7 +4,7 @@ import { Markdown } from '@/components/markdown'
 import { LoaderIcon } from '@/components/ui/icons'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FieldError, Section } from './section'
-import { useDirtyGuard } from './use-edit-guard'
+import { useDirtyGuard } from '@/components/forms'
 
 /** Markdown draft with a write/preview switch; saves when the field loses focus. */
 export function DescriptionEditor({

@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState } from 'react'
 import type { Milestone } from '@/api/adapters'
 import type { MilestoneStatus } from '@/api/contracts'
 import { MILESTONE_STATUSES } from '@/api/contracts'
@@ -8,17 +8,28 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { IconButton } from '@/components/ui/icon-button'
 import { CloseIcon, LayersIcon, PlusIcon } from '@/components/ui/icons'
-import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
-import { MilestoneCreateDialog } from '@/features/projects/milestone-create-dialog'
-import { isTaskCompleted } from '@/features/projects/project-progress'
-import { milestoneStatusLabel } from '@/features/projects/project-status'
+import { MilestoneCreateDialog } from '../milestone-create-dialog'
+import { InlineTitle } from '@/components/forms'
+import { isTaskCompleted, milestoneStatusLabel } from '@/domain'
 import type { MilestoneCommandInput } from '@/hooks'
 import type { ViewRendererProps } from '../view-types'
-import { componentTypeName, viewHeaderAction } from '../view-metadata'
-import { ComponentPanel, InlineReadError, ProvenanceNote, RefusalNote } from './shared'
+import {
+  componentTypeName,
+  milestoneMatchesDeclaredFilter,
+  unsupportedMilestoneFilterKeys,
+  viewHeaderAction,
+} from '../view-metadata'
+import {
+  ComponentPanel,
+  DeclaredActionsNote,
+  InlineReadError,
+  ProvenanceNote,
+  RefusalNote,
+  UnavailablePanel,
+} from './shared'
 
 function progressOf(assigned: number, done: number): number {
   if (assigned === 0) return 0
@@ -42,8 +53,6 @@ function MilestoneRow({
   onChangeStatus: (status: MilestoneStatus) => void
   onDelete: () => void
 }) {
-  const [renaming, setRenaming] = useState(false)
-  const [draft, setDraft] = useState(milestone.name)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const assigned = tasks.filter((task) => task.milestoneId === milestone.id)
@@ -51,75 +60,45 @@ function MilestoneRow({
   const progress = progressOf(assigned.length, done)
   const terminal = milestone.status === 'completed' || milestone.status === 'cancelled'
 
-  const submitRename = async (event: FormEvent) => {
-    event.preventDefault()
-    const trimmed = draft.trim()
-    if (trimmed.length === 0 || trimmed === milestone.name) {
-      setRenaming(false)
-      setDraft(milestone.name)
-      return
-    }
-    const accepted = await onRename(trimmed)
-    if (accepted) setRenaming(false)
-  }
-
   return (
     <li data-milestone-row={milestone.id} className="px-4 py-3">
       <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-x-4 sm:gap-y-2">
         <div className="min-w-0 flex-1">
-          {renaming ? (
-            <form onSubmit={submitRename} className="flex max-w-md items-center gap-1.5">
-              <Input
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                aria-label={`New name for ${milestone.name}`}
-                autoFocus
-                className="h-8 text-sm"
-              />
-              <Button type="submit" size="sm" variant="secondary" disabled={pending} loading={pending}>
-                Save
-              </Button>
-              <IconButton
-                label="Cancel rename"
-                icon={<CloseIcon size={14} />}
-                size="sm"
-                variant="quiet"
-                onClick={() => {
-                  setDraft(milestone.name)
-                  setRenaming(false)
-                }}
-              />
-            </form>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <p className={cn('text-sm font-medium', terminal ? 'text-ink-muted' : 'text-ink')}>
-                {milestone.name}
-              </p>
-              <Badge
-                tone={
-                  milestone.status === 'completed'
-                    ? 'success'
-                    : milestone.status === 'blocked'
-                      ? 'danger'
-                      : 'neutral'
-                }
-                className="whitespace-nowrap"
-              >
-                {milestoneStatusLabel(milestone.status)}
-              </Badge>
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(milestone.name)
-                  setRenaming(true)
-                }}
-                disabled={pending}
-                className="rounded-sm text-2xs font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50"
-              >
-                Rename
-              </button>
-            </div>
-          )}
+          <InlineTitle
+            variant="form"
+            value={milestone.name}
+            label={`New name for ${milestone.name}`}
+            pending={pending}
+            disabled={pending}
+            onCommit={onRename}
+            renderDisplay={(beginEdit) => (
+              <div className="flex flex-wrap items-center gap-2">
+                <p className={cn('text-sm font-medium', terminal ? 'text-ink-muted' : 'text-ink')}>
+                  {milestone.name}
+                </p>
+                <Badge
+                  tone={
+                    milestone.status === 'completed'
+                      ? 'success'
+                      : milestone.status === 'blocked'
+                        ? 'danger'
+                        : 'neutral'
+                  }
+                  className="whitespace-nowrap"
+                >
+                  {milestoneStatusLabel(milestone.status)}
+                </Badge>
+                <button
+                  type="button"
+                  onClick={beginEdit}
+                  disabled={pending}
+                  className="rounded-sm text-2xs font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50"
+                >
+                  Rename
+                </button>
+              </div>
+            )}
+          />
 
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <span className="text-2xs tabular-nums text-ink-muted">
@@ -217,7 +196,11 @@ export function MilestoneProgressView({ component, view, project, tasks, milesto
     action: 'status' | 'rename' | 'delete'
   } | null>(null)
 
-  const all = query.data ?? milestones
+  const filter = component.filter ?? {}
+  const unsupported = unsupportedMilestoneFilterKeys(filter)
+  const all = (query.data ?? milestones).filter((milestone) =>
+    milestoneMatchesDeclaredFilter(milestone, filter),
+  )
   // A milestone panel inside an overview may declare a limit; keep the editor
   // on that panel scoped to what the workflow asked to show.
   const list = component.limit && component.limit > 0 ? all.slice(0, component.limit) : all
@@ -227,6 +210,24 @@ export function MilestoneProgressView({ component, view, project, tasks, milesto
     if (!command.isPending || !input) return null
     return input.type === 'create' ? null : input.milestoneId
   }, [command.isPending, command.variables])
+
+  if (unsupported.length > 0) {
+    return (
+      <UnavailablePanel
+        title={title}
+        reason={`This panel filters milestones by ${unsupported.join(', ')}, which this build cannot evaluate.`}
+      />
+    )
+  }
+
+  if (component.sort) {
+    return (
+      <UnavailablePanel
+        title={title}
+        reason={`This panel declares a sort by “${component.sort}”. Milestones keep the server's order in this build.`}
+      />
+    )
+  }
 
   const send = async (
     milestoneId: string,
@@ -245,7 +246,15 @@ export function MilestoneProgressView({ component, view, project, tasks, milesto
     <ComponentPanel
       title={title}
       eyebrow="Milestones"
-      description="Create checkpoints, rename them, and move them through the lifecycle."
+      description={
+        Object.keys(filter).length > 0
+          ? `Create checkpoints, rename them, and move them through the lifecycle. Showing milestones where ${Object.entries(
+              filter,
+            )
+              .map(([key, value]) => `${key.replace(/_/g, ' ')} is ${value}`)
+              .join(', ')}.`
+          : 'Create checkpoints, rename them, and move them through the lifecycle.'
+      }
       actions={
         headerOffersCreate ? null : (
           <Button
@@ -267,6 +276,8 @@ export function MilestoneProgressView({ component, view, project, tasks, milesto
           {all.length > list.length
             ? ` Showing the first ${list.length} of ${all.length} milestones; the workflow sets this limit.`
             : ''}
+          {component.actions.length > 0 ? ' ' : ''}
+          <DeclaredActionsNote component={component} />
         </ProvenanceNote>
       }
     >

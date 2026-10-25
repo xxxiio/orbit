@@ -27,8 +27,7 @@
   },
   "include": [
     "src",
-    "tests/unit/app",
-    "tests/unit/features",
+    "tests/unit",
     "tests/setup.ts",
     "vite.config.ts",
     "vitest.config.ts",

@@ -62,37 +62,56 @@ exchanges device credentials for an HttpOnly cookie; the client only sets
 
 ```text
 src/
-  api/            fetch wrapper, wire contracts, adapters, queries/mutations, endpoints/
+  api/            fetch wrapper, wire contracts, adapters, queries/mutations
+    adapters/     wire → domain mappers split by domain (planning)
+    contracts/    wire contracts split by domain (planning)
+    endpoints/    one module per endpoint family
   app/            providers, routing, guard, page shims, shell orchestration
   components/
     ui/           reusable primitives (Button, Field, Dialog, Select, Badge, …)
-    forms/        labelled select, property select, field/form error primitives
+    forms/        labelled select, property select, inline title, edit guard
     markdown/     the single Markdown renderer
     theme/        theme provider and preference toggle
     layout/       presentational sidebar (data comes from the app shell)
     navigation/   navigation configuration and project item shape
     feedback/     session gate, global error boundary
+  domain/         framework-free shared rules (project/milestone copy, task
+                  progress, workflow copy)
   features/
     auth/         sign-in screen and error copy
-    tasks/        shared task kernel: table, controls, list model, URL state, drawer
+    tasks/        shared task kernel: table, row meta, controls, list model,
+                  URL state, project task list, drawer (task-drawer/)
     inbox/        Inbox list and quick capture
     home/         Today
-    projects/     project index, workspace, task list, milestones, settings
-    workflows/    view registry: component-type renderers, layout and view metadata
+    projects/     project index, workspace, settings, create dialog
+    workflows/    view metadata + component-type registry (views/), milestone
+                  create dialog and the public barrel
     planning/     project day plan, schedule window and the approval gate
-  hooks/          shared hooks (media query, command feedback, document title, …)
+  hooks/          shared hooks (media query, command feedback, workflow
+                  catalog, …)
   lib/            browser-local stores and small helpers (recent projects, humanize)
   styles/         design tokens and global styles
 tests/
-  unit/           Vitest + Testing Library (jsdom)
+  unit/
+    api/          request shape, revision fences, adapters and errors
+    components/   design-system primitives
+    domain/       status labels and progress rules
+    features/     feature logic (list model, URL state, registry dispatch)
   e2e/            Playwright acceptance suite (real orbit-server)
+    harness/      server/session/fixture wiring shared by every spec
+  fixture/        deterministic seed data
 ```
 
 ### Shared modules and boundaries
 
+- `src/domain/` holds genuinely shared, framework-free rules. Its modules import no
+  React, hooks or UI; features import it through `@/domain`.
 - `src/features/tasks/index.ts` is the **public surface of the task kernel**. Inbox, Projects,
   Home and the app shell import task UI from `@/features/tasks` only; sections under
   `task-drawer/` are composition detail.
+- `src/features/workflows/index.ts` is the **public surface of the workflow feature**.
+  Projects compose workflows through it; workflows never import a projects module. A view
+  is data and a renderer is chosen by `component.type`, never by a workflow or view id.
 - Nothing under `src/components/**` imports `src/app/**` or `src/features/**`. Layout
   orchestration that needs workspace data (dialogs, drawer, navigation commands) lives in
   `src/app/workspace-*.tsx` and passes plain data down.
@@ -101,8 +120,8 @@ tests/
   `src/components/forms/`.
 - `src/api/**` imports only `api/*`, React and TanStack Query.
 
-Views declared by a project's workflow are resolved by `features/projects/use-project-workflow`;
-there is no separate `features/workflows/` module yet.
+Views declared by a project's workflow are resolved by `features/projects/use-project-workflow`
+and rendered by the registry in `features/workflows`.
 
 ## Design system
 
@@ -148,8 +167,9 @@ fabricated data.
 
 ## What is intentionally not here yet
 
-- Work-item views: a workflow may declare views beyond Overview and Tasks; those render an
-  honest "this view is not available yet" state until a view registry exists.
-- Planning, knowledge, attachments, and agent administration screens, and agent
-  administration beyond the read-only Agents placeholder.
-- Work items themselves: the task drawer is task-typed, though its field editors are shared.
+- Work-item views: the registry and the `work_items` source family exist, and every task
+  renderer refuses that source by name, but no work-item screen ships in this build yet.
+- Knowledge, attachments, and agent administration screens, including agent administration
+  beyond the read-only Agents placeholder.
+- Work items themselves: the task drawer is task-typed, though its field editors and inline
+  rename are shared form primitives.

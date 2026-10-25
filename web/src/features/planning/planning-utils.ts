@@ -69,13 +69,32 @@ export function toTimeInput(ms: number): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-/** Today at a local wall-clock time, for the first render of the pickers. */
+/** A day plan's authored capacity is capped at one day, exactly like the input. */
+export const MAX_DAY_CAPACITY = 24 * 60
+
+/**
+ * Read `?capacity=` from the URL. A hand-edited value is clamped to 1..1440;
+ * anything that is not a positive whole number means "no capacity authored".
+ */
+export function readCapacity(raw: string | null): number {
+  if (!raw) return 0
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < 1) return 0
+  return Math.min(value, MAX_DAY_CAPACITY)
+}
+
+/**
+ * The next 09:00–12:00 local window that is still in the future. A schedule
+ * window that already ended is useless on first render, so after 09:00 the
+ * default moves to tomorrow; the pickers still let the person choose today.
+ */
 export function defaultWindow(nowMs: number): { date: string; from: string; to: string } {
   const start = new Date(nowMs)
   start.setHours(9, 0, 0, 0)
-  const end = new Date(nowMs)
+  if (start.getTime() <= nowMs) start.setDate(start.getDate() + 1)
+  const end = new Date(start)
   end.setHours(12, 0, 0, 0)
-  return { date: toDateInput(nowMs), from: toTimeInput(start.getTime()), to: toTimeInput(end.getTime()) }
+  return { date: toDateInput(start.getTime()), from: toTimeInput(start.getTime()), to: toTimeInput(end.getTime()) }
 }
 
 export interface PlanningWindowInput {

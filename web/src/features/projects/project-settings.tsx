@@ -25,8 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/components/ui/utils'
 import { humanizeIdentifier } from '@/lib/humanize'
-import { projectStatusLabel } from './project-status'
-import { workflowCopy, workflowText } from '@/features/workflows/workflow-copy'
+import { projectStatusLabel, workflowCopy, workflowText } from '@/domain'
 
 function IdentityRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -108,7 +107,9 @@ function ViewList({ workflow, loading }: { workflow: Workflow | undefined; loadi
     <ul className="flex flex-col divide-y divide-line rounded-md border border-line">
       {workflow.views.map((view) => (
         <li key={view.id} className="px-3 py-2">
-          <p className="text-sm font-medium text-ink">{workflowText(view.title, view.id)}</p>
+          <p className="text-sm font-medium text-ink">
+            {workflowText(view.title) || humanizeIdentifier(view.id)}
+          </p>
           <p className="mt-0.5 text-2xs leading-4 text-ink-muted">
             {workflowCopy(view.description) || 'The workflow gives this view no description.'}
           </p>
@@ -221,7 +222,9 @@ export function ProjectSettings({
         tone: 'success',
         title: result.alreadyApplied ? 'Workflow already pinned' : 'Workflow changed',
         description: result.alreadyApplied
-          ? `This project was already on ${result.target.workflowId} v${result.target.version}.`
+          ? `This project was already on ${
+              targetDefinition.data?.name ?? humanizeIdentifier(result.target.workflowId)
+            } v${result.target.version}.`
           : `The project now follows ${targetDefinition.data?.name ?? humanizeIdentifier(target.id)} v${target.version}. Its tabs come from the new workflow.`,
       })
     } catch {
@@ -312,9 +315,6 @@ export function ProjectSettings({
                   <span className="font-mono text-2xs text-ink-muted">v{binding.version}</span>
                   <Badge tone="accent">Current</Badge>
                 </p>
-                <p className="mt-0.5 text-2xs text-ink-muted">
-                  Pinned binding id <span className="font-mono">{binding.workflowId}@{binding.version}</span>
-                </p>
               </div>
             ) : (
               <p className="text-xs leading-5 text-ink-muted">
@@ -373,7 +373,7 @@ export function ProjectSettings({
                   <>
                     <p className="text-2xs leading-4 text-ink-muted">
                       {preview.data.current
-                        ? `${viewTitles(preview.data.current.workflowId)} v${preview.data.current.version}`
+                        ? `${workflow?.name ?? humanizeIdentifier(preview.data.current.workflowId)} v${preview.data.current.version}`
                         : 'No workflow'}{' '}
                       → {targetDefinition.data?.name ?? humanizeIdentifier(target.id)} v
                       {preview.data.target.version}

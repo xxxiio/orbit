@@ -65,7 +65,7 @@ describe('EmptyState actions', () => {
     expect(screen.getByRole('link', { name: 'Open projects' })).toBeInTheDocument()
   })
 
-  it('slots an asChild action onto its element without dropping the button styling', () => {
+  it('slots an asChild action onto its element without dropping the link behaviour', () => {
     renderEmptyState(
       <EmptyState
         title="No projects yet"
@@ -82,7 +82,10 @@ describe('EmptyState actions', () => {
     const link = screen.getByRole('link', { name: 'Open projects' })
     expect(link.tagName).toBe('A')
     expect(link).toHaveAttribute('href', '/projects')
-    expect(link.className).toContain('inline-flex')
+    // The slotted element stays a real, focusable link rather than becoming a
+    // decorative wrapper around the button's styling.
+    link.focus()
+    expect(link).toHaveFocus()
   })
 })
 

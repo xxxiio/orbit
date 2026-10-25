@@ -4,8 +4,8 @@ import {
   milestoneStatusLabels,
   projectStatusLabel,
   projectStatusLabels,
-} from '@/features/projects/project-status'
-import { isTaskCompleted, isTaskOpen } from '@/features/projects/project-progress'
+} from '@/domain'
+import { isTaskCompleted, isTaskOpen } from '@/domain'
 
 describe('project status labels', () => {
   it('names every project status and humanizes an unmapped one', () => {

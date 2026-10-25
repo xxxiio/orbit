@@ -1,17 +1,36 @@
 import { describe, expect, it } from 'vitest'
-import type { Milestone, Task, WorkItem, WorkflowView, WorkflowViewComponent } from '@/api/adapters'
+import type {
+  Milestone,
+  Task,
+  WorkItem,
+  Workflow,
+  WorkflowView,
+  WorkflowViewComponent,
+} from '@/api/adapters'
 import {
+  aggregateMetric,
   componentFamily,
   componentSpansFullWidth,
   componentTypeName,
+  declaredWorkspaceViews,
   describeFilter,
+  isReservedViewId,
+  metricDeclaration,
   milestoneMatchesDeclaredFilter,
+  numericFieldsForSource,
+  reservedDeclaredViews,
+  sortByDeclaration,
   taskMatchesDeclaredFilter,
+  taskMetricRows,
+  taskSortDeclaration,
   unsupportedTaskFilterKeys,
   viewBadge,
+  viewBadgeCount,
   viewHeaderAction,
   viewLayoutClassName,
+  workspaceViewTabs,
   workItemMatchesDeclaredFilter,
+  workItemMetricRows,
 } from '@/features/workflows/view-metadata'
 
 function component(
@@ -90,7 +109,9 @@ describe('workflow view metadata', () => {
     expect(componentFamily(milestoneTimeline)).toBe('milestones')
     expect(componentFamily(progress)).toBe('milestones')
     expect(componentFamily(scheduleTimeline)).toBe('schedule')
-    expect(componentFamily(component({ id: 'w', type: 'kanban', source: 'work_items' }))).toBe('other')
+    expect(componentFamily(component({ id: 'w', type: 'kanban', source: 'work_items' }))).toBe('work_items')
+    expect(componentFamily(component({ id: 'wt', type: 'table', source: 'work_items' }))).toBe('work_items')
+    expect(componentFamily(component({ id: 'wl', type: 'list', source: 'work_items' }))).toBe('other')
     expect(componentFamily(component({ id: 'k', type: 'knowledge_refs', source: 'knowledge' }))).toBe('other')
   })
 
@@ -101,6 +122,10 @@ describe('workflow view metadata', () => {
       kind: 'new_milestone',
       label: 'New milestone',
     })
+    // Work items are a family of their own: I3's create action has a name now.
+    expect(
+      viewHeaderAction(view('items', [component({ id: 'wi', type: 'kanban', source: 'work_items' })])),
+    ).toEqual({ kind: 'new_work_item', label: 'New work item' })
     // An overview whose first panel is a metric still offers New task because a
     // task list is declared somewhere in the view.
     expect(viewHeaderAction(view('overview', [metric, table]))).toEqual({
@@ -122,6 +147,10 @@ describe('workflow view metadata', () => {
     // Mixed overviews and schedule-led timelines get no count badge.
     expect(viewBadge(view('overview', [metric, table]))).toBeNull()
     expect(viewBadge(view('timeline', [scheduleTimeline]))).toBeNull()
+    // A work-item view has no browser count read yet, so it claims no badge.
+    expect(
+      viewBadge(view('items', [component({ id: 'wi', type: 'kanban', source: 'work_items' })])),
+    ).toBeNull()
     expect(viewBadge(view('empty', []))).toBeNull()
   })
 
@@ -229,5 +258,212 @@ describe('declared component filters', () => {
       'status is ready, milestone id is m-1',
     )
     expect(describeFilter({})).toBeNull()
+  })
+})
+
+const workflowWithKinds: Workflow = {
+  id: 'wf',
+  version: 1,
+  name: 'Workflow',
+  description: '',
+  kinds: [
+    {
+      id: 'lesson',
+      name: 'Lesson',
+      initialState: 'draft',
+      states: ['draft'],
+      fields: [
+        { id: 'minutes', kind: { type: 'integer' }, required: false, default: 0 },
+        { id: 'summary', kind: { type: 'text' }, required: false, default: '' },
+      ],
+      transitions: [],
+    },
+    {
+      id: 'assessment',
+      name: 'Assessment',
+      initialState: 'draft',
+      states: ['draft'],
+      fields: [{ id: 'score', kind: { type: 'integer' }, required: false, default: 0 }],
+      transitions: [],
+    },
+  ],
+  requiredCapabilities: [],
+  templates: [],
+  views: [],
+}
+
+describe('declared metric aggregates', () => {
+  it('honours count, sum, average, min and max over estimated minutes', () => {
+    const rows = [30, null, 60, 120]
+    const declaration = (aggregate: string) =>
+      metricDeclaration(
+        component({ id: 'm', type: 'metric', source: 'tasks', aggregate, field: 'estimated_minutes' }),
+        undefined,
+      )
+
+    // A count of a declared field counts the non-null values; without a field
+    // it counts rows.
+    expect(aggregateMetric(declaration('count'), rows)).toBe(3)
+    expect(
+      aggregateMetric(
+        metricDeclaration(component({ id: 'm', type: 'metric', source: 'tasks' }), undefined),
+        rows,
+      ),
+    ).toBe(4)
+    expect(aggregateMetric(declaration('sum'), rows)).toBe(210)
+    expect(aggregateMetric(declaration('average'), rows)).toBe(70)
+    expect(aggregateMetric(declaration('min'), rows)).toBe(30)
+    expect(aggregateMetric(declaration('max'), rows)).toBe(120)
+    // `estimated_minutes` is the only numeric field tasks carry.
+    expect(taskMetricRows([task(), task({ estimatedMinutes: null })], 'estimated_minutes')).toEqual([30, null])
+    expect(numericFieldsForSource('tasks', undefined)).toEqual(new Set(['estimated_minutes']))
+  })
+
+  it('refuses an aggregate or field it cannot honour instead of counting under it', () => {
+    const unsupportedAggregate = metricDeclaration(
+      component({ id: 'm', type: 'metric', source: 'tasks', aggregate: 'median' }),
+      workflowWithKinds,
+    )
+    expect(unsupportedAggregate.refusal).toMatch(/cannot compute/)
+
+    const unsupportedField = metricDeclaration(
+      component({ id: 'm', type: 'metric', source: 'tasks', aggregate: 'sum', field: 'title' }),
+      workflowWithKinds,
+    )
+    expect(unsupportedField.refusal).toMatch(/not a numeric field/)
+
+    const missingField = metricDeclaration(
+      component({ id: 'm', type: 'metric', source: 'tasks', aggregate: 'sum' }),
+      workflowWithKinds,
+    )
+    expect(missingField.refusal).toMatch(/needs the numeric field/)
+
+    const milestones = metricDeclaration(
+      component({ id: 'm', type: 'metric', source: 'milestones', aggregate: 'sum', field: 'x' }),
+      workflowWithKinds,
+    )
+    expect(milestones.refusal).toMatch(/has no numeric field/)
+  })
+
+  it('aggregates integer work-item properties and refuses non-integer ones', () => {
+    expect(numericFieldsForSource('work_items', workflowWithKinds)).toEqual(new Set(['minutes', 'score']))
+    expect(numericFieldsForSource('work_items', workflowWithKinds, { kind: 'lesson' })).toEqual(
+      new Set(['minutes']),
+    )
+    const sum = metricDeclaration(
+      component({ id: 'm', type: 'metric', source: 'work_items', aggregate: 'sum', field: 'minutes' }),
+      workflowWithKinds,
+    )
+    expect(sum.refusal).toBeNull()
+    expect(aggregateMetric(sum, workItemMetricRows([
+      workItem({ properties: { minutes: 45 } }),
+      workItem({ properties: { minutes: '15' } }),
+    ], 'minutes'))).toBe(60)
+
+    const text = metricDeclaration(
+      component({ id: 'm', type: 'metric', source: 'work_items', aggregate: 'sum', field: 'summary' }),
+      workflowWithKinds,
+    )
+    expect(text.refusal).toMatch(/not a numeric field/)
+  })
+})
+
+describe('declared task sorts', () => {
+  it('maps supported fields and descending onto the shared comparators', () => {
+    expect(taskSortDeclaration(component({ id: 'l', type: 'list', source: 'tasks', sort: 'title' }))).toEqual({
+      sort: { key: 'title', direction: 'asc' },
+      refusal: null,
+    })
+    expect(
+      taskSortDeclaration(
+        component({ id: 'l', type: 'list', source: 'tasks', sort: 'deadline', descending: true }),
+      ),
+    ).toEqual({ sort: { key: 'due', direction: 'desc' }, refusal: null })
+
+    const sorted = sortByDeclaration(
+      [task({ id: 'a', title: 'Alpha' }), task({ id: 'b', title: 'Beta' })],
+      { key: 'title', direction: 'desc' },
+    )
+    expect(sorted.map((entry) => entry.title)).toEqual(['Beta', 'Alpha'])
+  })
+
+  it('refuses a field the adapter does not carry, notably `updated`', () => {
+    for (const field of ['updated', 'constructor', 'toString']) {
+      const declaration = taskSortDeclaration(
+        component({ id: 'l', type: 'list', source: 'tasks', sort: field }),
+      )
+      expect(declaration.sort, field).toBeNull()
+      expect(declaration.refusal, field).toMatch(/does not carry/)
+    }
+  })
+})
+
+describe('reserved view ids and tab counts', () => {
+  it('distinguishes no workflow from a workflow that declares no views', () => {
+    const fallback = [view('overview', [table])]
+    expect(declaredWorkspaceViews(undefined, fallback)).toEqual(fallback)
+    const empty = { ...workflowWithKinds, views: [] }
+    expect(declaredWorkspaceViews(empty, fallback)).toEqual([])
+  })
+
+  it('reserves the tool routes so a declared view cannot shadow them', () => {
+    const declared = [
+      view('planning', [table]),
+      view('tasks', [table]),
+      view('settings', [table]),
+    ]
+    expect(workspaceViewTabs(declared).map((entry) => entry.id)).toEqual(['tasks'])
+    expect(reservedDeclaredViews(declared).map((entry) => entry.id)).toEqual([
+      'planning',
+      'settings',
+    ])
+
+    expect(isReservedViewId('planning')).toBe(true)
+    expect(isReservedViewId('settings')).toBe(true)
+    expect(isReservedViewId('overview')).toBe(false)
+  })
+
+  it('counts the same filtered and limited set the primary panel renders', () => {
+    const badgeView = view('tasks', [
+      component({
+        id: 'list',
+        type: 'task_list',
+        source: 'tasks',
+        filter: { status: 'ready' },
+        limit: 2,
+      }),
+    ])
+    const tasks = [
+      task({ id: 'a', status: 'ready' }),
+      task({ id: 'b', status: 'ready' }),
+      task({ id: 'c', status: 'ready' }),
+      task({ id: 'd', status: 'done' }),
+    ]
+    expect(viewBadgeCount(badgeView, { tasks, milestones: [] })).toBe(2)
+
+    const milestoneView = view('goals', [
+      component({
+        id: 'progress',
+        type: 'milestone_progress',
+        source: 'milestones',
+        filter: { status: 'planned' },
+      }),
+    ])
+    expect(
+      viewBadgeCount(milestoneView, {
+        tasks,
+        milestones: [
+          milestone({ id: 'm-1', status: 'planned' }),
+          milestone({ id: 'm-2', status: 'completed' }),
+        ],
+      }),
+    ).toBe(1)
+  })
+})
+
+describe('prototype keys are data, not built-ins', () => {
+  it('never resolves a manifest type through Object.prototype', () => {
+    expect(componentTypeName(component({ id: 'x', type: 'constructor' }))).toBe('View panel')
+    expect(componentTypeName(component({ id: 'x', type: 'toString' }))).toBe('View panel')
   })
 })

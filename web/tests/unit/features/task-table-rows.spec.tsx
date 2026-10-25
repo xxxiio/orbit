@@ -54,8 +54,8 @@ describe('TaskTable row titles', () => {
     // Focusable: the title is the row's tab stop, not a decorative span.
     button.focus()
     expect(button).toHaveFocus()
-    // Still clickable with the mouse, same as before.
-    expect(button.className).toContain('focus-visible:ring-2')
+    // Still in the tab order (no `tabindex="-1"`) and clickable with the mouse.
+    expect(button).not.toHaveAttribute('tabindex', '-1')
   })
 
   it('opens the task on Enter and on Space', async () => {

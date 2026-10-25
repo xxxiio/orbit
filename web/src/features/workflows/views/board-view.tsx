@@ -19,18 +19,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/ui/empty-state'
-import { CalendarIcon, GridIcon, LoaderIcon } from '@/components/ui/icons'
+import { GridIcon, LoaderIcon } from '@/components/ui/icons'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
 import {
-  formatMoment,
-  isOverdue,
-  priorityLabels,
-  priorityTones,
+  isTerminalStatus,
+  statusDots,
   statusLabel,
+  statusOptions,
   statusTones,
-  TASK_STATUSES,
   TaskControlError,
+  TaskRowMeta,
   useTaskCommandState,
   useTaskDrawer,
 } from '@/features/tasks'
@@ -38,10 +37,17 @@ import type { ViewRendererProps } from '../view-types'
 import {
   componentTypeName,
   describeFilter,
+  sortByDeclaration,
   taskMatchesDeclaredFilter,
+  taskSortDeclaration,
   unsupportedTaskFilterKeys,
 } from '../view-metadata'
-import { ComponentPanel, ProvenanceNote, UnavailablePanel } from './shared'
+import {
+  ComponentPanel,
+  DeclaredActionsNote,
+  ProvenanceNote,
+  UnavailablePanel,
+} from './shared'
 
 interface BoardColumn {
   status: TaskStatus
@@ -54,46 +60,12 @@ interface BoardColumn {
  * count of zero is information, an invisible status is not.
  */
 function buildColumns(tasks: Task[]): BoardColumn[] {
-  return TASK_STATUSES.map((status) => ({
-    status,
-    tasks: tasks.filter((task) => task.status === status),
-  })).filter(
-    (column) => column.tasks.length > 0 || (column.status !== 'done' && column.status !== 'cancelled'),
-  )
-}
-
-function CardMeta({ task, projectName }: { task: Task; projectName: string }) {
-  return (
-    <>
-      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-        <span className="text-2xs font-medium text-ink-muted">{projectName}</span>
-        {task.priority ? (
-          <Badge tone={priorityTones[task.priority]}>{priorityLabels[task.priority]}</Badge>
-        ) : null}
-        {task.labels.slice(0, 2).map((label) => (
-          <Badge key={label} tone="neutral" className="lowercase">
-            {label}
-          </Badge>
-        ))}
-        {task.labels.length > 2 ? (
-          <span className="text-2xs text-ink-faint">+{task.labels.length - 2}</span>
-        ) : null}
-      </div>
-      {task.deadlineAtMs !== null ? (
-        <p
-          className={cn(
-            'mt-1 flex items-center gap-1 text-2xs',
-            isOverdue(task, Date.now()) ? 'font-medium text-danger-ink' : 'text-ink-muted',
-          )}
-        >
-          <CalendarIcon size={11} className="shrink-0 opacity-70" />
-          {formatMoment(task.deadlineAtMs)}
-        </p>
-      ) : (
-        <p className="mt-1 text-2xs text-ink-faint">No due date</p>
-      )}
-    </>
-  )
+  return (statusOptions.map((option) => option.value) as TaskStatus[])
+    .map((status) => ({
+      status,
+      tasks: tasks.filter((task) => task.status === status),
+    }))
+    .filter((column) => column.tasks.length > 0 || !isTerminalStatus(column.status))
 }
 
 function BoardSurface({
@@ -121,6 +93,7 @@ function BoardSurface({
   const cardRefs = useRef(new Map<string, HTMLButtonElement>())
 
   const filter = component.filter ?? {}
+  const sortDeclaration = useMemo(() => taskSortDeclaration(component), [component])
 
   const { boardTasks, matchedCount } = useMemo(() => {
     const matched = tasks.filter((task) =>
@@ -140,10 +113,11 @@ function BoardSurface({
           })
         : taskMatchesDeclaredFilter(task, filter),
     )
+    const sorted = sortByDeclaration(matched, sortDeclaration.sort)
     const limited =
-      component.limit && component.limit > 0 ? matched.slice(0, component.limit) : matched
+      component.limit && component.limit > 0 ? sorted.slice(0, component.limit) : sorted
     return { boardTasks: limited, matchedCount: matched.length }
-  }, [tasks, filter, readinessFilter, component.limit])
+  }, [tasks, filter, readinessFilter, component.limit, sortDeclaration])
 
   const columns = useMemo(() => buildColumns(boardTasks), [boardTasks])
   const flatOrder = useMemo(() => columns.flatMap((column) => column.tasks), [columns])
@@ -264,7 +238,7 @@ function BoardSurface({
                 className="flex w-[15.5rem] shrink-0 flex-col rounded-lg border border-line bg-surface-sunken/35"
               >
                 <header className="flex items-center gap-2 border-b border-line px-2.5 py-2">
-                  <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', dotFor(column.status))} />
+                  <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', statusDots[column.status])} />
                   <h3 className="text-xs font-semibold text-ink">{statusLabel(column.status)}</h3>
                   <span className="ml-auto rounded-full bg-surface px-1.5 py-0.5 text-2xs tabular-nums text-ink-muted">
                     {column.tasks.length}
@@ -300,9 +274,7 @@ function BoardSurface({
                                 className={cn(
                                   'min-w-0 flex-1 rounded-sm text-left text-sm font-medium leading-5 text-ink',
                                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
-                                  task.status === 'done' || task.status === 'cancelled'
-                                    ? 'text-ink-muted'
-                                    : 'text-ink',
+                                  isTerminalStatus(task.status) ? 'text-ink-muted' : 'text-ink',
                                 )}
                               >
                                 {task.title}
@@ -312,7 +284,7 @@ function BoardSurface({
                               ) : null}
                             </div>
 
-                            <CardMeta task={task} projectName={projectName} />
+                            <TaskRowMeta variant="card" task={task} projectName={projectName} />
 
                             <div className="mt-1.5 flex items-center justify-between gap-2">
                               <DropdownMenu
@@ -336,24 +308,27 @@ function BoardSurface({
                                     The server checks every move. Its answer is shown here.
                                   </p>
                                   <DropdownMenuSeparator />
-                                  {TASK_STATUSES.filter((status) => status !== task.status).map(
-                                    (status) => (
+                                  {statusOptions
+                                    .filter((option) => option.value !== task.status)
+                                    .map((option) => (
                                       <DropdownMenuItem
-                                        key={status}
+                                        key={option.value}
                                         onSelect={() => {
                                           setMoveFor(null)
                                           refocusAfterMove.current = task.id
-                                          changeStatus(task, status)
+                                          changeStatus(task, option.value as TaskStatus)
                                         }}
                                       >
                                         <span
                                           aria-hidden="true"
-                                          className={cn('h-1.5 w-1.5 rounded-full', dotFor(status))}
+                                          className={cn(
+                                            'h-1.5 w-1.5 rounded-full',
+                                            statusDots[option.value as TaskStatus],
+                                          )}
                                         />
-                                        {statusLabel(status)}
+                                        {option.label}
                                       </DropdownMenuItem>
-                                    ),
-                                  )}
+                                    ))}
                                 </DropdownMenuContent>
                               </DropdownMenu>
                               <Badge tone={statusTones[task.status]}>{statusLabel(task.status)}</Badge>
@@ -382,9 +357,14 @@ function BoardSurface({
         <ProvenanceNote>
           Columns follow the server&apos;s task statuses in their canonical order. Counts and card
           positions are read back from accepted state, never moved locally.
+          {sortDeclaration.sort
+            ? ` Cards within a column are sorted by ${sortDeclaration.sort.key} ${sortDeclaration.sort.direction === 'asc' ? 'ascending' : 'descending'} as declared.`
+            : ''}
           {matchedCount > boardTasks.length
             ? ` Showing the first ${boardTasks.length} of ${matchedCount} tasks; the workflow sets this limit.`
             : ''}
+          {component.actions.length > 0 ? ' ' : ''}
+          <DeclaredActionsNote component={component} />
         </ProvenanceNote>
         <p className="hidden items-center gap-1 text-2xs text-ink-muted md:flex">
           <kbd className="command-key">h</kbd>
@@ -404,26 +384,6 @@ function BoardSurface({
       </p>
     </>
   )
-}
-
-function dotFor(status: TaskStatus): string {
-  switch (status) {
-    case 'done':
-      return 'bg-success'
-    case 'cancelled':
-      return 'bg-ink-faint'
-    case 'blocked':
-      return 'bg-danger'
-    case 'waiting':
-    case 'review':
-      return 'bg-warning'
-    case 'in_progress':
-      return 'bg-accent'
-    case 'ready':
-      return 'bg-accent/60'
-    default:
-      return 'bg-line-strong'
-  }
 }
 
 /** A board that needs the server's readiness report for an `actionable` filter. */
@@ -500,6 +460,27 @@ export function BoardView(props: ViewRendererProps) {
       <UnavailablePanel
         title={componentTypeName(component)}
         reason={`This board filters tasks by ${unsupported.join(', ')}, which this build cannot evaluate.`}
+      />
+    )
+  }
+
+  if (component.groupBy !== null && component.groupBy.toLowerCase() !== 'status') {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={`This board groups tasks by “${component.groupBy}”. Boards in this build can only group by status.`}
+        hint="The panel is refused rather than showing status columns under a different grouping."
+      />
+    )
+  }
+
+  const sortDeclaration = taskSortDeclaration(component)
+  if (sortDeclaration.refusal) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={sortDeclaration.refusal}
+        hint="The board is refused rather than keeping the server's order under a declared sort."
       />
     )
   }

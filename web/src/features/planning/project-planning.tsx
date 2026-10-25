@@ -34,7 +34,7 @@ import { Panel, PanelBody, PanelFooter, PanelHeader } from '@/components/ui/pane
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/components/ui/utils'
-import { formatDateTime, useTaskDrawer } from '@/features/tasks'
+import { formatDateTime, formatTimeOfDay, useTaskDrawer } from '@/features/tasks'
 import {
   DISPOSITION_LABELS,
   DISPOSITION_TONES,
@@ -42,6 +42,7 @@ import {
   defaultWindow,
   formatDuration,
   parseWindow,
+  readCapacity,
   toDateInput,
 } from './planning-utils'
 
@@ -101,7 +102,6 @@ function DayPlanRow({ entry, onOpen }: { entry: PlannedTaskEntry; onOpen: (id: s
           <Badge tone={DISPOSITION_TONES[entry.disposition]}>
             {DISPOSITION_LABELS[entry.disposition]}
           </Badge>
-          <span className="font-mono text-2xs text-ink-faint">{entry.disposition}</span>
         </div>
         {entry.explanation.length > 0 ? (
           <ul className="mt-1 flex flex-col gap-0.5">
@@ -336,17 +336,11 @@ function FreeWindows({ plan }: { plan: SchedulePlanView }) {
           key={`${window.startsAtMs}-${window.endsAtMs}`}
           className="rounded-full border border-line bg-surface-sunken px-2 py-0.5 text-2xs tabular-nums text-ink-muted"
         >
-          {time(window.startsAtMs)}–{time(window.endsAtMs)} · {formatDuration(window.minutes)}
+          {formatTimeOfDay(window.startsAtMs)}–{formatTimeOfDay(window.endsAtMs)} · {formatDuration(window.minutes)}
         </li>
       ))}
     </ul>
   )
-}
-
-const timeFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
-
-function time(ms: number): string {
-  return timeFormatter.format(new Date(ms))
 }
 
 function SchedulePanel({
@@ -431,6 +425,10 @@ function SchedulePanel({
             />
           </Field>
         </div>
+        <p data-default-window="" className="text-2xs text-ink-muted">
+          The default window is the next 09:00–12:00 local time. Change any field to plan a different
+          window; the server plans exactly what is shown.
+        </p>
 
         {window.error ? (
           <p role="alert" className="flex items-center gap-1.5 text-xs text-danger-ink">
@@ -490,7 +488,7 @@ function SchedulePanel({
                       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                         <p className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{slot.title}</p>
                         <p className="whitespace-nowrap font-mono text-2xs tabular-nums text-ink-muted">
-                          {time(slot.startsAtMs)}–{time(slot.endsAtMs)} · {formatDuration(slot.minutes)}
+                          {formatTimeOfDay(slot.startsAtMs)}–{formatTimeOfDay(slot.endsAtMs)} · {formatDuration(slot.minutes)}
                         </p>
                       </div>
                       <p className="mt-0.5 text-2xs text-ink-faint">Server rank {slot.ranking}</p>
@@ -588,10 +586,32 @@ function SchedulePanel({
               </div>
             </dl>
 
+            <div className="flex flex-col gap-1.5" data-reviewed-items="">
+              <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                Reviewed items
+              </p>
+              <ul className="divide-y divide-line rounded-md border border-line bg-surface">
+                {reviewData.scheduled_slots.map((slot) => (
+                  <li
+                    key={slot.schedule_block_id}
+                    data-reviewed-slot={slot.task_id}
+                    className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-2.5 py-1.5"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-xs text-ink">
+                      {taskTitles.get(slot.task_id) ?? 'A task outside this project'}
+                    </span>
+                    <span className="whitespace-nowrap font-mono text-2xs tabular-nums text-ink-muted">
+                      {formatTimeOfDay(slot.starts_at_ms)}–{formatTimeOfDay(slot.ends_at_ms)} ·{' '}
+                      {formatDuration(slot.duration_minutes)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
             <p className="text-2xs leading-4 text-ink-muted">
               Window {formatDateTime(reviewed.plan.window_start_ms)} →{' '}
-              {formatDateTime(reviewed.plan.window_end_ms)} against accepted revision{' '}
-              {reviewData.expected_revision}. The server marked this plan as
+              {formatDateTime(reviewed.plan.window_end_ms)}. The server marked this plan as
               requiring explicit approval, and applying it creates calendar blocks.
             </p>
 
@@ -676,10 +696,16 @@ function SchedulePanel({
             </dl>
             <p className="text-2xs text-ink-muted">
               {receipt.blockIds.length} calendar block
-              {receipt.blockIds.length === 1 ? '' : 's'} stored:{' '}
-              <span className="break-all font-mono">{receipt.blockIds.join(', ')}</span>. Reload the
-              Timeline view to see them in the saved schedule.
+              {receipt.blockIds.length === 1 ? '' : 's'} stored. Reload the Timeline view to see
+              them in the saved schedule.
             </p>
+            <ul className="sr-only" data-receipt-blocks="">
+              {receipt.blockIds.map((id) => (
+                <li key={id} data-receipt-block={id}>
+                  {id}
+                </li>
+              ))}
+            </ul>
           </div>
         </PanelBody>
       ) : null}
@@ -712,8 +738,8 @@ export function ProjectPlanning({
   const defaults = useMemo(() => defaultWindow(nowMs), [nowMs])
   const { toast } = useToast()
 
-  const capacityValue = Number(searchParams.get('capacity'))
-  const capacity = Number.isInteger(capacityValue) && capacityValue > 0 ? capacityValue : 0
+  // The input clamps to 1..1440; a hand-edited URL must not bypass that.
+  const capacity = readCapacity(searchParams.get('capacity'))
 
   const date = searchParams.get('on') ?? defaults.date
   const from = searchParams.get('from') ?? defaults.from

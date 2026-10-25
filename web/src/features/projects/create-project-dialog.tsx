@@ -7,6 +7,7 @@ import {
   uncertainMessage,
   useAvailableWorkflows,
   useCreateProject,
+  useWorkflowCatalog,
   useWorkflowDefinition,
   userMessage,
   type ApiError,
@@ -126,7 +127,15 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
   const error: ApiError | null = createProject.disposition === 'rejected' ? createProject.error : null
   const uncertain = createProject.disposition === 'uncertain'
   const submitting = createProject.isPending
-  const additionalWorkflows = (workflows.data ?? []).filter((workflow) => workflow.id !== 'basic')
+  // The default is the task-only workflow the server offers, never a hardcoded
+  // id: its name and description come from the manifest the list points at.
+  const catalog = useWorkflowCatalog(workflows.data)
+  const defaultWorkflow = catalog.defaultWorkflow
+  const defaultName = defaultWorkflow
+    ? defaultWorkflow.name ?? humanizeIdentifier(defaultWorkflow.id)
+    : 'Server default workflow'
+  const catalogPending = workflows.isPending || catalog.entries.some((entry) => entry.isPending)
+  const additionalWorkflows = catalog.entries.filter((workflow) => workflow.id !== defaultWorkflow?.id)
 
   function attemptFor(key: string): CreateProjectAttempt {
     if (attemptRef.current?.key !== key) {
@@ -201,33 +210,40 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
               A workflow decides which views and work-item types this project gets.
             </p>
 
-            <label
-              className={cn(
-                'mt-1 flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 transition-colors',
-                workflowId === DEFAULT_WORKFLOW
-                  ? 'border-accent bg-accent-soft/50'
-                  : 'border-line bg-surface hover:border-line-strong hover:bg-surface-hover/40',
-              )}
-            >
-              <input
-                type="radio"
-                name="project-workflow"
-                value={DEFAULT_WORKFLOW}
-                checked={workflowId === DEFAULT_WORKFLOW}
-                onChange={() => setWorkflowId(DEFAULT_WORKFLOW)}
-                className="mt-0.5 h-3.5 w-3.5 accent-[hsl(var(--accent))]"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-ink">Basic</span>
-                  <span className="text-2xs font-medium uppercase tracking-label text-accent-soft-ink">Default</span>
-                  {workflowId === DEFAULT_WORKFLOW ? <CheckIcon size={13} className="text-accent" /> : null}
+            {catalogPending && !defaultWorkflow ? (
+              <div className="mt-1 rounded-md border border-line bg-surface px-3 py-2.5">
+                <Skeleton className="h-2.5 w-24" />
+                <Skeleton className="mt-2 h-2.5 w-2/3" />
+              </div>
+            ) : (
+              <label
+                className={cn(
+                  'mt-1 flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 transition-colors',
+                  workflowId === DEFAULT_WORKFLOW
+                    ? 'border-accent bg-accent-soft/50'
+                    : 'border-line bg-surface hover:border-line-strong hover:bg-surface-hover/40',
+                )}
+              >
+                <input
+                  type="radio"
+                  name="project-workflow"
+                  value={DEFAULT_WORKFLOW}
+                  checked={workflowId === DEFAULT_WORKFLOW}
+                  onChange={() => setWorkflowId(DEFAULT_WORKFLOW)}
+                  className="mt-0.5 h-3.5 w-3.5 accent-[hsl(var(--accent))]"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-ink">{defaultName}</span>
+                    <span className="text-2xs font-medium uppercase tracking-label text-accent-soft-ink">Default</span>
+                    {workflowId === DEFAULT_WORKFLOW ? <CheckIcon size={13} className="text-accent" /> : null}
+                  </span>
+                  <span className="mt-0.5 block text-xs leading-5 text-ink-muted">
+                    Statuses, priorities, deadlines and milestones for ordinary task work.
+                  </span>
                 </span>
-                <span className="mt-0.5 block text-xs leading-5 text-ink-muted">
-                  Statuses, priorities, deadlines and milestones for ordinary task work.
-                </span>
-              </span>
-            </label>
+              </label>
+            )}
 
             {workflows.isPending ? (
               <div className="flex flex-col gap-2">
@@ -237,7 +253,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
             ) : workflows.error ? (
               <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-ink">
                 <AlertCircleIcon size={14} className="shrink-0" />
-                <span className="flex-1">Other workflows could not be listed. Basic is still available.</span>
+                <span className="flex-1">Other workflows could not be listed. The server&apos;s default workflow is still available.</span>
                 <Button variant="quiet" size="sm" onClick={() => void workflows.refetch()}>
                   Retry
                 </Button>

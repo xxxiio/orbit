@@ -6,12 +6,20 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { CalendarIcon, ClockIcon } from '@/components/ui/icons'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
-import { milestoneStatusLabel } from '@/features/projects/project-status'
-import { isTaskCompleted } from '@/features/projects/project-progress'
-import { formatDate, formatMinutes } from '@/features/tasks'
+import { milestoneStatusLabel, isTaskCompleted } from '@/domain'
+import { formatDate, formatMinutes, formatTimeOfDay } from '@/features/tasks'
 import type { ViewRendererProps } from '../view-types'
-import { componentTypeName } from '../view-metadata'
-import { ComponentPanel, ProvenanceNote, UnavailablePanel } from './shared'
+import {
+  componentTypeName,
+  milestoneMatchesDeclaredFilter,
+  unsupportedMilestoneFilterKeys,
+} from '../view-metadata'
+import {
+  ComponentPanel,
+  DeclaredActionsNote,
+  ProvenanceNote,
+  UnavailablePanel,
+} from './shared'
 
 const STATUS_DOT: Record<string, string> = {
   planned: 'bg-line-strong',
@@ -28,19 +36,57 @@ const STATUS_DOT: Record<string, string> = {
  */
 function MilestoneTimeline({ component, tasks, milestones }: ViewRendererProps) {
   const title = componentTypeName(component)
+  const filter = component.filter ?? {}
+  const unsupported = unsupportedMilestoneFilterKeys(filter)
+
+  if (unsupported.length > 0) {
+    return (
+      <UnavailablePanel
+        title={title}
+        reason={`This timeline filters milestones by ${unsupported.join(', ')}, which this build cannot evaluate.`}
+      />
+    )
+  }
+
+  if (component.sort) {
+    return (
+      <UnavailablePanel
+        title={title}
+        reason={`This timeline declares a sort by “${component.sort}”. Milestones keep the server's order in this build.`}
+      />
+    )
+  }
+
+  const matching = milestones.filter((milestone) =>
+    milestoneMatchesDeclaredFilter(milestone, filter),
+  )
+  const list =
+    component.limit && component.limit > 0 ? matching.slice(0, component.limit) : matching
 
   return (
     <ComponentPanel
       title={title}
       eyebrow="Milestones"
+      description={
+        Object.keys(filter).length > 0
+          ? `Showing milestones where ${Object.entries(filter)
+              .map(([key, value]) => `${key.replace(/_/g, ' ')} is ${value}`)
+              .join(', ')}.`
+          : undefined
+      }
       footer={
         <ProvenanceNote>
           Milestone records carry no dates in this API yet. This is the server&apos;s order and status,
           not a time axis.
+          {matching.length > list.length
+            ? ` Showing the first ${list.length} of ${matching.length} milestones; the workflow sets this limit.`
+            : ''}
+          {component.actions.length > 0 ? ' ' : ''}
+          <DeclaredActionsNote component={component} />
         </ProvenanceNote>
       }
     >
-      {milestones.length === 0 ? (
+      {list.length === 0 ? (
         <EmptyState
           compact
           headingLevel="p"
@@ -50,7 +96,7 @@ function MilestoneTimeline({ component, tasks, milestones }: ViewRendererProps) 
         />
       ) : (
         <ol className="relative flex flex-col gap-0 border-l border-line pl-4">
-          {milestones.map((milestone) => {
+          {list.map((milestone) => {
             const assigned = tasks.filter((task) => task.milestoneId === milestone.id)
             const done = assigned.filter((task) => isTaskCompleted(task.status)).length
             return (
@@ -97,11 +143,36 @@ function groupByDay(blocks: ScheduleBlock[]): Array<{ day: number; blocks: Sched
 }
 
 /** Saved schedule blocks, which do have real start and end times. */
+const SCHEDULE_SORT_FIELDS = new Set(['starts_at', 'startsat', 'start', 'start_time', 'time'])
+
 function ScheduleTimeline({ component }: ViewRendererProps) {
   const title = componentTypeName(component)
   const snapshot = useWorkspaceSnapshot()
+  const filter = component.filter ?? {}
+  const filterKeys = Object.keys(filter)
+  const sort = component.sort?.trim().toLowerCase() ?? null
+  const groups = useMemo(() => groupByDay(snapshot.data?.schedule ?? []), [snapshot.data?.schedule])
+
+  if (filterKeys.length > 0) {
+    return (
+      <UnavailablePanel
+        title={title}
+        reason={`This schedule timeline filters calendar blocks by ${filterKeys.join(', ')}, which this build cannot evaluate.`}
+        hint="Calendar blocks have no task status, priority, milestone or project fields to filter on."
+      />
+    )
+  }
+
+  if (sort && !SCHEDULE_SORT_FIELDS.has(sort)) {
+    return (
+      <UnavailablePanel
+        title={title}
+        reason={`This schedule timeline sorts blocks by “${component.sort}”. Saved blocks are ordered by their start time.`}
+      />
+    )
+  }
+
   const blocks = snapshot.data?.schedule ?? []
-  const groups = useMemo(() => groupByDay(blocks), [blocks])
 
   return (
     <ComponentPanel
@@ -111,6 +182,8 @@ function ScheduleTimeline({ component }: ViewRendererProps) {
         <ProvenanceNote>
           Every block below is a saved calendar block from the workspace snapshot. Plans that have
           not been reviewed and approved do not appear here.
+          {component.actions.length > 0 ? ' ' : ''}
+          <DeclaredActionsNote component={component} />
         </ProvenanceNote>
       }
     >
@@ -141,7 +214,7 @@ function ScheduleTimeline({ component }: ViewRendererProps) {
                     className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-sm border border-line bg-surface-sunken/40 px-2.5 py-1.5"
                   >
                     <span className="font-mono text-2xs tabular-nums text-ink-muted">
-                      {formatTime(block.startsAtMs)}–{formatTime(block.endsAtMs)}
+                      {formatTimeOfDay(block.startsAtMs)}–{formatTimeOfDay(block.endsAtMs)}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-sm text-ink">{block.title}</span>
                     <span className="text-2xs tabular-nums text-ink-faint">
@@ -157,12 +230,6 @@ function ScheduleTimeline({ component }: ViewRendererProps) {
       )}
     </ComponentPanel>
   )
-}
-
-const timeFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
-
-function formatTime(ms: number): string {
-  return timeFormatter.format(new Date(ms))
 }
 
 export function TimelineView(props: ViewRendererProps) {

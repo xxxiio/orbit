@@ -8,7 +8,7 @@ import { ArrowDownIcon, ArrowUpIcon, PlusIcon } from '@/components/ui/icons'
 import { cn } from '@/components/ui/utils'
 import { FieldError, SavingNote, Section } from './section'
 import type { TaskCommand } from './task-command'
-import { useDirtyGuard } from './use-edit-guard'
+import { useDirtyGuard } from '@/components/forms'
 
 export function CriteriaSection({
   taskId,

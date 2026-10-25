@@ -104,11 +104,11 @@ test.describe('board', () => {
 
     const alert = inbox.getByRole('alert')
     await expect(alert).toBeVisible()
-    // The client frames the refusal; the quoted text is exactly what the API
-    // sent. (The HTTP layer flattens domain detail to "invalid request", which
-    // is reported as an API defect rather than asserted as a richer message.)
-    await expect(alert).toContainText(/did not allow that status change from Inbox/i)
-    await expect(alert).toContainText(/invalid request/i)
+    // The client frames the refusal; the quoted reason is exactly what the API
+    // sent, with no generic "invalid" fallback.
+    await expect(alert).toHaveText(
+      'The server did not allow that status change from Inbox. invalid task status transition: inbox -> done',
+    )
 
     // The card never moved and nothing was written.
     await expect(inbox.getByRole('button', { name: task!.title, exact: true })).toBeVisible()
@@ -168,9 +168,11 @@ test.describe('milestones', () => {
     await page.getByRole('option', { name: 'Planned', exact: true }).click()
     const refusal = row2.getByRole('alert')
     await expect(refusal).toBeVisible()
-    // The API answers a refused lifecycle edge with its generic validation
-    // message; the stored status below proves nothing was applied.
-    await expect(refusal).toContainText(/invalid/i)
+    // The API's exact refusal text is quoted, and the stored status below
+    // proves nothing was applied.
+    await expect(refusal).toHaveText(
+      'The server did not allow that milestone status change. invalid milestone status transition',
+    )
     await expect(status).toContainText('In progress')
 
     await page.reload()
@@ -188,7 +190,7 @@ test.describe('milestones', () => {
 })
 
 test.describe('dependencies and readiness', () => {
-  test('add and remove a prerequisite, with the server readiness reason verbatim', async ({
+  test('add and remove a prerequisite, with the server readiness reason named in product copy', async ({
     page,
     workspace,
   }) => {
@@ -219,7 +221,6 @@ test.describe('dependencies and readiness', () => {
     const section = drawer.getByRole('region', { name: 'Dependencies' })
     await expect(section.getByText('Unblocks', { exact: false })).toBeVisible()
     await expect(section.getByText(/Prerequisite depth/)).toBeVisible()
-    await expect(section.getByText('Server reason:', { exact: false })).toBeVisible()
 
     await section.getByLabel('Add a prerequisite').click()
     await page.getByRole('option', { name: candidate!.title, exact: true }).click()
@@ -230,8 +231,10 @@ test.describe('dependencies and readiness', () => {
       exact: true,
     })
     await expect(remove).toBeVisible()
-    // The server's readiness reason is quoted as-is, not re-worded by the UI.
-    await expect(section.getByText('unfinished_prerequisites', { exact: true })).toBeVisible()
+    // The server's readiness reason is named in the product's vocabulary, never
+    // as its raw enum value.
+    await expect(section.getByText('Waiting on unfinished prerequisites.', { exact: true })).toBeVisible()
+    await expect(section.getByText('unfinished_prerequisites', { exact: true })).toHaveCount(0)
 
     await page.reload()
     const reopened = page.getByRole('dialog')
@@ -338,8 +341,9 @@ test.describe('task list URL state', () => {
     // The URL selection is real: the bulk bar is already active.
     await expect(page.getByRole('region', { name: 'Bulk actions' })).toContainText('1 selected')
 
-    // The server is authoritative for readiness cells; the raw reason is shown.
-    const anyReason = table.locator('tbody td .font-mono').first()
+    // The server is authoritative for readiness cells; the reason is named in
+    // the product's vocabulary.
+    const anyReason = table.locator('tbody td [data-readiness-reason]').first()
     await expect(anyReason).toBeVisible()
 
     await page.reload()
@@ -359,6 +363,26 @@ test.describe('task list URL state', () => {
   })
 })
 
+interface ManifestComponent {
+  id: string
+  type: string
+  title: string | null
+  source: string | null
+}
+
+interface ManifestView {
+  id: string
+  title: string
+  components: ManifestComponent[]
+}
+
+/** The four declared types this build names as unavailable. */
+const NAMED_REFUSAL_TYPES = ['habit_tracker', 'metric_history', 'knowledge_refs', 'agent_jobs']
+
+function componentHeading(component: ManifestComponent): string {
+  return component.title?.trim() || 'View panel'
+}
+
 test.describe('workflow view registry', () => {
   test('every bundled workflow renders all of its declared views through one path', async ({
     page,
@@ -374,6 +398,7 @@ test.describe('workflow view registry', () => {
       'p-learning',
       'p-habits',
     ]
+    const refusalsSeen = new Set<string>()
 
     for (const projectId of projects) {
       const bindingResponse = await page.request.get(
@@ -390,9 +415,7 @@ test.describe('workflow view registry', () => {
         `${server.base}/v1/authoritative/blueprints/show?id=${binding!.blueprint_id}&version=${binding!.version}`,
       )
       expect(manifestResponse.status()).toBe(200)
-      const manifest = (await manifestResponse.json()) as {
-        views: Array<{ id: string; title: string }>
-      }
+      const manifest = (await manifestResponse.json()) as { views: ManifestView[] }
       expect(manifest.views.length, `${projectId} declares views`).toBeGreaterThan(0)
 
       for (const view of manifest.views) {
@@ -400,10 +423,35 @@ test.describe('workflow view registry', () => {
         await expect(
           page.getByRole('link', { name: new RegExp(`^${view.title}`) }),
         ).toHaveAttribute('aria-current', 'page')
-        // The registry knows every declared type (some are named as unavailable,
-        // which is different from a type it cannot render at all).
+
+        // EC-004: every declared component is a real panel on the page, not a
+        // blank surface behind the active tab. The wrapper carries the declared
+        // id/type so the assertion is about this component, not some heading
+        // elsewhere on the page.
+        expect(view.components.length, `${projectId}/${view.id} declares components`).toBeGreaterThan(0)
+        for (const component of view.components) {
+          const surface = page.locator(`[data-view-component="${component.id}"]`)
+          await expect(surface, `${projectId}/${view.id}/${component.id}`).toHaveCount(1)
+          await expect(
+            surface.getByRole('heading', { name: componentHeading(component), exact: true }).first(),
+            `${projectId}/${view.id}/${component.id} renders its panel heading`,
+          ).toBeVisible()
+
+          if (NAMED_REFUSAL_TYPES.includes(component.type)) {
+            refusalsSeen.add(component.type)
+            await expect(
+              surface.getByText('Not available in the browser yet', { exact: true }),
+              `${component.type} is refused by name`,
+            ).toBeVisible()
+          }
+        }
+
+        // A type this build cannot render at all is different from a named,
+        // declared refusal: the sweep must never see the former.
         await expect(page.getByText(/is not supported/)).toHaveCount(0)
       }
     }
+
+    expect([...refusalsSeen].sort()).toEqual([...NAMED_REFUSAL_TYPES].sort())
   })
 })

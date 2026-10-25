@@ -10,8 +10,9 @@
  *    `expected_revision` comes from the query cache inside `mutationFn`, so a
  *    snapshot refresh between render and click cannot produce a stale fence.
  *    After an accepted write the response's revision becomes the cache's new
- *    floor (`Math.max`), so a second command in the same interaction fences on
- *    the revision the server just reported instead of the pre-write one. The
+ *    floor (`Math.max`) in *both* ledger snapshots (tasks and milestones), so a
+ *    second command in the same interaction fences on the revision the server
+ *    just reported instead of the pre-write one. The
  *    client never decides what a legal transition is; it sends the command and
  *    renders the server's answer.
  * 3. **Idempotency keys are allocated by the caller.** `command_id` (and the
@@ -228,6 +229,19 @@ export function acceptRevision(
 }
 
 /**
+ * Every ledger write advances the *global* authority revision, and both cached
+ * snapshots (`snapshot` and `milestones`) read the same `MAX(cursor)`. Advancing
+ * only one of them lets the other fence a later command against an older
+ * revision and 409 "stale" even though nothing it reads changed. So every
+ * accepted ledger write calls this once, and neither cached revision is ever
+ * lowered (a replayed receipt carries the original, older revision).
+ */
+export function acceptLedgerRevision(queryClient: QueryClient, revision: number): void {
+  acceptRevision(queryClient, queryKeys.snapshot(), revision)
+  acceptRevision(queryClient, queryKeys.milestones(), revision)
+}
+
+/**
  * The freshest revision this browser knows about. Read inside `mutationFn`,
  * never captured at mount: a snapshot refresh between render and click must
  * fence the command against the new revision.
@@ -241,8 +255,9 @@ export function snapshotRevision(queryClient: QueryClient): number {
 }
 
 /**
- * Milestones have their own snapshot revision (they are not fenced by the task
- * snapshot). Read it at mutation time so a refreshed milestone list always wins.
+ * The milestones snapshot carries the same global ledger revision as the task
+ * snapshot (both project `MAX(cursor)`); the cached *shape* differs, not the
+ * fence. Read it at mutation time so a refreshed milestone list always wins.
  */
 export function milestoneRevision(queryClient: QueryClient): number {
   const snapshot = queryClient.getQueryData<MilestoneSnapshot>(queryKeys.milestones())
@@ -268,6 +283,9 @@ export function workItemRevision(queryClient: QueryClient, id: string): number {
 function derivedTaskKeys(): readonly QueryKey[] {
   return [
     queryKeys.snapshot(),
+    // A task write advances the same ledger revision the milestone snapshot
+    // fences on, so that read must be refreshed alongside the task reads.
+    queryKeys.milestones(),
     queryKeys.taskReadinessAll(),
     queryKeys.nextActionsAll(),
     queryKeys.dayPlanAll(),
@@ -505,7 +523,7 @@ export function useTaskCommand(): CommandMutation<TaskMutationOutcome, TaskComma
     },
     affectedKeys: (attempt) => taskKeys(attempt.input.taskId),
     onAccepted: (outcome, _attempt, queryClient) => {
-      acceptRevision(queryClient, queryKeys.snapshot(), outcome.revision)
+      acceptLedgerRevision(queryClient, outcome.revision)
     },
   })
 
@@ -592,7 +610,7 @@ export function useCreateTask(): CommandMutation<TaskMutationOutcome, CreateTask
     },
     affectedKeys: () => derivedTaskKeys(),
     onAccepted: (outcome, _variables, queryClient) => {
-      acceptRevision(queryClient, queryKeys.snapshot(), outcome.revision)
+      acceptLedgerRevision(queryClient, outcome.revision)
     },
   })
 }
@@ -637,9 +655,9 @@ export function useCreateProject(): CommandMutation<ProjectMutationOutcome, Crea
       }
       return sendProjectCommand(command).then(toProjectOutcome)
     },
-    affectedKeys: () => [queryKeys.snapshot()],
+    affectedKeys: () => [queryKeys.snapshot(), queryKeys.milestones()],
     onAccepted: (outcome, _variables, queryClient) => {
-      acceptRevision(queryClient, queryKeys.snapshot(), outcome.revision)
+      acceptLedgerRevision(queryClient, outcome.revision)
     },
   })
 }
@@ -724,8 +742,7 @@ export function useMilestoneCommand(): CommandMutation<
     },
     affectedKeys: () => [queryKeys.milestones(), queryKeys.snapshot()],
     onAccepted: (outcome, _attempt, queryClient) => {
-      acceptRevision(queryClient, queryKeys.milestones(), outcome.revision)
-      acceptRevision(queryClient, queryKeys.snapshot(), outcome.revision)
+      acceptLedgerRevision(queryClient, outcome.revision)
     },
   })
 
@@ -915,7 +932,7 @@ export function useImportAttachment(): CommandMutation<
         : []),
     ],
     onAccepted: (outcome, _variables, queryClient) => {
-      acceptRevision(queryClient, queryKeys.snapshot(), outcome.revision)
+      acceptLedgerRevision(queryClient, outcome.revision)
     },
   })
 }
@@ -1025,7 +1042,7 @@ export function useApplyApprovedPlan(): CommandMutation<
       queryKeys.workloadAll(),
     ],
     onAccepted: (outcome, _reviewed, queryClient) => {
-      acceptRevision(queryClient, queryKeys.snapshot(), outcome.acceptedRevision)
+      acceptLedgerRevision(queryClient, outcome.acceptedRevision)
     },
   })
 }

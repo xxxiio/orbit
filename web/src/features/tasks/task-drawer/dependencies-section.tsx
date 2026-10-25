@@ -90,14 +90,11 @@ export function DependenciesSection({
         ) : readiness ? (
           <>
             <p className="mt-1 text-xs leading-5 text-ink-soft">{readinessReasonLabel(readiness.reason)}</p>
-            <p className="mt-0.5 text-2xs text-ink-faint">
-              Server reason: <span className="font-mono text-ink-muted">{readiness.reason}</span>
-            </p>
             {readiness.blockingTaskIds.length > 0 ? (
               <p className="mt-1 text-2xs leading-4 text-ink-muted">
                 Blocked by{' '}
                 {readiness.blockingTaskIds
-                  .map((id) => titles.get(id) ?? id)
+                  .map((id) => titles.get(id) ?? 'another task')
                   .join(', ')}
               </p>
             ) : null}
@@ -158,20 +155,23 @@ export function DependenciesSection({
           <p className="mt-1 text-xs text-ink-muted">No prerequisites. This task does not wait on anything.</p>
         ) : (
           <ul className="mt-1 flex flex-col gap-1">
-            {prerequisites.map((id) => (
-              <li key={id} className="flex items-center gap-2 rounded-sm px-1 py-1 text-sm text-ink-soft">
-                <span className="min-w-0 flex-1 truncate">{titles.get(id) ?? id}</span>
-                <Button
-                  variant="quiet"
-                  size="sm"
-                  disabled={disabled || pending}
-                  onClick={() => onRemove(id)}
-                  aria-label={`Remove prerequisite ${titles.get(id) ?? id}`}
-                >
-                  Remove
-                </Button>
-              </li>
-            ))}
+            {prerequisites.map((id) => {
+              const title = titles.get(id)
+              return (
+                <li key={id} className="flex items-center gap-2 rounded-sm px-1 py-1 text-sm text-ink-soft">
+                  <span className="min-w-0 flex-1 truncate">{title ?? 'another task'}</span>
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    disabled={disabled || pending}
+                    onClick={() => onRemove(id)}
+                    aria-label={title ? `Remove prerequisite ${title}` : 'Remove prerequisite'}
+                  >
+                    Remove
+                  </Button>
+                </li>
+              )
+            })}
           </ul>
         )}
         <div className="mt-2 flex items-center gap-1.5">
@@ -215,7 +215,7 @@ export function DependenciesSection({
           <ul className="mt-1 flex flex-col gap-0.5">
             {dependents.map((id) => (
               <li key={id} className="truncate text-sm text-ink-soft">
-                {titles.get(id) ?? id}
+                {titles.get(id) ?? 'another task'}
               </li>
             ))}
           </ul>

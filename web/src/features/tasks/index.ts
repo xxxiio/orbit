@@ -9,6 +9,8 @@
  * section modules under `task-drawer/` (composition detail).
  */
 export { TaskTable, type TaskTableProps } from './task-table'
+export { TaskRowMeta } from './task-row-meta'
+export { ProjectTaskList } from './project-task-list'
 
 export {
   formatDate,
@@ -17,6 +19,7 @@ export {
   formatLongDay,
   formatMoment,
   formatMinutes,
+  formatTimeOfDay,
   formatWeekday,
   freshnessLabel,
   isDueToday,
@@ -29,6 +32,7 @@ export {
   readinessReasonLabel,
   relativeTime,
   sortByDeadline,
+  statusDots,
   statusLabel,
   statusLabels,
   statusTones,

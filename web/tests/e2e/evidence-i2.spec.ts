@@ -59,13 +59,12 @@ test.describe('I2 evidence', () => {
     await page.locator('[data-plan-review]').scrollIntoViewIfNeeded()
     await shot(page, 'planning-review-light-1440x900')
 
-    // Apply the reviewed plan so the milestone/schedule capture shows real
-    // saved blocks; the receipt is the fingerprint/command id pair.
-    await page.getByRole('checkbox', { name: 'Approve the reviewed schedule' }).check()
+    // The applied receipt is part of the evidence: the same reviewed command,
+    // now bound to stored block ids.
+    const review = page.locator('[data-plan-review]')
+    await review.getByRole('checkbox', { name: 'Approve the reviewed schedule' }).check()
     await page.getByRole('button', { name: 'Apply approved plan' }).click()
     await page.locator('[data-plan-receipt]').waitFor()
-    // The success toast overlaps the footer; the receipt itself is the evidence.
-    await page.getByRole('button', { name: 'Dismiss notification' }).click()
     await page.locator('[data-plan-receipt]').scrollIntoViewIfNeeded()
     await shot(page, 'planning-receipt-light-1440x900')
 

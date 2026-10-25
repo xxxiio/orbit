@@ -1,3 +1,5 @@
 export { FormErrorBanner, InlineFieldError } from './field-error'
+export { EditGuardProvider, useDirtyGuard, type EditorHandle } from './edit-guard'
+export { InlineTitle, type InlineTitleProps } from './inline-title'
 export { LabeledSelect, type LabeledSelectOption, type LabeledSelectProps } from './labeled-select'
 export { PropertyField, PropertySelect, type PropertySelectProps } from './property-select'

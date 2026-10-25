@@ -4,6 +4,13 @@ Browser captures of the M31 I2 build, produced from the deterministic fixture in
 `web/tests/fixture/seed.ts` (seeded through the public HTTP API on an isolated
 `orbit-server`). No mocked responses and no preview server.
 
+Captured on 2026-10-25 from the working tree based on commit
+`23a8fdff8c3832030ef7c410f1bc0884ffb12520` (includes the uncommitted Gate 2
+registry/cache fixes), using `target/debug/orbit-server` built 2026-10-25
+22:18 local (newer than every file under `crates/orbit-server/src`) and the
+`web/dist` build from that tree. Re-run the commands below after any change to
+the build; a capture is only comparable to the commit and binary named here.
+
 Reproduce:
 
 ```sh

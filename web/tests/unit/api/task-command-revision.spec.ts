@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { queryKeys } from '@/api/queries'
-import { useTaskCommand } from '@/api/mutations'
-import type { AuthoritySnapshotResponse, TaskCommand } from '@/api/contracts'
+import { milestoneRevision, useTaskCommand } from '@/api/mutations'
+import type { AuthoritySnapshotResponse, MilestoneSnapshot, TaskCommand } from '@/api/contracts'
 import { jsonResponse, queryWrapper, snapshotAt, taskRecord, testQueryClient } from './test-utils'
 
 /**
@@ -122,7 +122,7 @@ describe('useTaskCommand revision fence', () => {
     })
 
     const bodies = fetchMock.mock.calls.map(
-      ([, init]) => JSON.parse(init.body as string) as TaskCommand,
+      ([, init]) => JSON.parse(init?.body as string) as TaskCommand,
     )
     expect(bodies).toHaveLength(2)
     expect(bodies[0].expected_revision).toBe(5)
@@ -133,6 +133,60 @@ describe('useTaskCommand revision fence', () => {
     expect(
       client.getQueryData<AuthoritySnapshotResponse>(queryKeys.snapshot())?.revision,
     ).toBe(9)
+  })
+
+  it('advances the milestone ledger fence on a task acceptance and never lowers either', async () => {
+    const client = testQueryClient()
+    client.setQueryData(queryKeys.snapshot(), snapshotAt(5, { tasks: [taskRecord()] }))
+    // Both cached snapshots read the same global ledger revision. A task
+    // acceptance must advance the milestones fence too, or a later milestone
+    // command fences on 5 and the server refuses it as stale.
+    client.setQueryData<MilestoneSnapshot>(queryKeys.milestones(), {
+      revision: 5,
+      milestones: [],
+    })
+
+    const fetchMock = vi.mocked(fetch)
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ revision: 8, duplicate: false, task: taskRecord({ title: 'First' }) }),
+      )
+      // A replayed receipt carries the original, older revision.
+      .mockResolvedValueOnce(
+        jsonResponse({ revision: 3, duplicate: true, task: taskRecord({ title: 'First' }) }),
+      )
+
+    const { result } = renderHook(() => useTaskCommand(), { wrapper: queryWrapper(client) })
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        commandId: 'cmd-1',
+        input: { type: 'rename', taskId: 't-1', title: 'First' },
+      })
+    })
+
+    expect(
+      client.getQueryData<AuthoritySnapshotResponse>(queryKeys.snapshot())?.revision,
+    ).toBe(8)
+    expect(
+      client.getQueryData<MilestoneSnapshot>(queryKeys.milestones())?.revision,
+    ).toBe(8)
+    expect(milestoneRevision(client)).toBe(8)
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        commandId: 'cmd-1',
+        input: { type: 'rename', taskId: 't-1', title: 'First' },
+      })
+    })
+
+    // The older duplicate receipt never lowers either fence.
+    expect(
+      client.getQueryData<AuthoritySnapshotResponse>(queryKeys.snapshot())?.revision,
+    ).toBe(8)
+    expect(
+      client.getQueryData<MilestoneSnapshot>(queryKeys.milestones())?.revision,
+    ).toBe(8)
   })
 
   it('never lowers the cached revision when a duplicate receipt is older', async () => {

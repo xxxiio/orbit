@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
+  defaultNowMs,
   useProject,
   useProjectTasks,
   useProjects,
+  useTaskReadiness,
   useWorkspaceSnapshot,
   userMessage,
 } from '@/hooks'
 import { humanizeIdentifier } from '@/lib/humanize'
 import { useDocumentTitle } from '@/hooks'
-import type { WorkflowView, WorkflowViewComponent } from '@/api/adapters'
+import type { WorkItem, WorkflowView, WorkflowViewComponent } from '@/api/adapters'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -35,20 +37,33 @@ import { Panel } from '@/components/ui/panel'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
 import { useWorkspaceActions } from '@/lib/workspace-actions'
+import { projectStatusLabel, workflowText } from '@/domain'
 import { isTerminalStatus } from '@/features/tasks'
-import { ProjectPlanning } from '@/features/planning/project-planning'
-import { NewMilestoneButton } from './milestone-create-dialog'
+import { ProjectPlanning } from '@/features/planning'
 import { ProjectSettings } from './project-settings'
-import { projectStatusLabel } from './project-status'
 import { recordProjectOpen } from '@/lib/recent-projects'
 import { useProjectWorkflow } from './use-project-workflow'
-import { ViewSurface } from '@/features/workflows/view-registry'
-import { viewBadge, viewHeaderAction } from '@/features/workflows/view-metadata'
-import { workflowText } from '@/features/workflows/workflow-copy'
+import {
+  NewMilestoneButton,
+  ViewSurface,
+  declaredWorkspaceViews,
+  reservedDeclaredViews,
+  viewBadge,
+  viewBadgeCount,
+  viewHeaderAction,
+  workspaceViewTabs,
+} from '@/features/workflows'
 
 /** The two workspace tools that are not workflow views. Reserved ids. */
 const PLANNING_ID = 'planning'
 const SETTINGS_ID = 'settings'
+
+/**
+ * Work items have no workspace-snapshot projection yet (I3 adds the read).
+ * The renderer contract carries the source now so a work-item renderer plugs in
+ * instead of adding a fourth parallel copy of the view pipeline.
+ */
+const NO_WORK_ITEMS: WorkItem[] = []
 
 function fallbackComponent(
   component: Pick<WorkflowViewComponent, 'id' | 'type'> & Partial<WorkflowViewComponent>,
@@ -192,16 +207,32 @@ export function ProjectWorkspacePage() {
     if (projectId) recordProjectOpen(projectId)
   }, [projectId])
 
-  const views = workflow.workflow?.views.length ? workflow.workflow.views : FALLBACK_VIEWS
-  const currentId = viewId ?? views[0]?.id ?? 'overview'
-  const declaredView = views.find((view) => view.id === currentId)
-  const tool =
-    !declaredView && (currentId === PLANNING_ID || currentId === SETTINGS_ID) ? currentId : null
+  // `undefined` means "no workflow resolved yet" (fall back to Overview/Tasks);
+  // `[]` means the pinned workflow declares no views, which must say so instead
+  // of pretending it declared the fallback pair.
+  const views = declaredWorkspaceViews(workflow.workflow, FALLBACK_VIEWS)
+  // A workflow must not shadow the workspace tools with a declared view id.
+  const navViews = workspaceViewTabs(views)
+  const reservedViews = reservedDeclaredViews(views)
+  const currentId = viewId ?? navViews[0]?.id ?? 'overview'
+  const declaredView = navViews.find((view) => view.id === currentId)
+  // A reserved id always belongs to the tool, even if a workflow declared it.
+  const tool = currentId === PLANNING_ID || currentId === SETTINGS_ID ? currentId : null
   const openCount = tasks.filter((task) => !isTerminalStatus(task.status)).length
 
   const projectMilestones = useMemo(
     () => snapshot.data?.milestones.filter((milestone) => milestone.projectId === projectId) ?? [],
     [snapshot.data?.milestones, projectId],
+  )
+
+  const badgeNeedsReadiness = navViews.some((view) => {
+    const badge = viewBadge(view)
+    return badge?.kind === 'tasks' && view.components[0]?.filter?.actionable !== undefined
+  })
+  const badgeReadiness = useTaskReadiness(defaultNowMs(), badgeNeedsReadiness)
+  const badgeReadinessByTask = useMemo(
+    () => new Map((badgeReadiness.data?.tasks ?? []).map((entry) => [entry.taskId, entry])),
+    [badgeReadiness.data],
   )
 
   const primaryAction = declaredView ? viewHeaderAction(declaredView) : null
@@ -252,7 +283,20 @@ export function ProjectWorkspacePage() {
   const badgeFor = (view: WorkflowView) => {
     const badge = viewBadge(view)
     if (!badge) return null
-    const count = badge.kind === 'tasks' ? tasks.length : projectMilestones.length
+    // A readiness-backed badge has no honest number until the report arrives.
+    if (
+      badge.kind === 'tasks' &&
+      view.components[0]?.filter?.actionable !== undefined &&
+      (badgeReadiness.error || (badgeReadiness.isPending && !badgeReadiness.data))
+    ) {
+      return null
+    }
+    const count = viewBadgeCount(view, {
+      tasks,
+      milestones: projectMilestones,
+      readinessByTask: badgeReadinessByTask,
+    })
+    if (count === null) return null
     return (
       <span className="rounded-full bg-surface-sunken px-1.5 py-0.5 text-2xs tabular-nums text-ink-muted">
         <span className="sr-only">, {count} {badge.noun}</span>
@@ -323,7 +367,7 @@ export function ProjectWorkspacePage() {
           aria-label="Project sections"
           className="-mb-px flex gap-5 overflow-x-auto"
         >
-          {views.map((view) => {
+          {navViews.map((view) => {
             const active = view.id === currentId
             return (
               <Link
@@ -339,13 +383,13 @@ export function ProjectWorkspacePage() {
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
                 )}
               >
-                {workflowText(view.title) || view.id}
+                {workflowText(view.title) || humanizeIdentifier(view.id)}
                 {badgeFor(view)}
               </Link>
             )
           })}
           {views.length === 0 ? (
-            <span className="pb-2.5 text-sm text-ink-muted">No views declared</span>
+            <span className="pb-2.5 text-sm text-ink-muted">This workflow declares no views</span>
           ) : null}
 
           <span aria-hidden="true" className="mb-2 w-px shrink-0 self-end bg-line" />
@@ -381,6 +425,22 @@ export function ProjectWorkspacePage() {
             Settings
           </Link>
         </nav>
+
+        {reservedViews.length > 0 ? (
+          <div
+            role="status"
+            data-reserved-view={reservedViews.map((view) => view.id).join(',')}
+            className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-ink"
+          >
+            <LayersIcon size={14} className="shrink-0" />
+            <span className="min-w-0 flex-1">
+              The pinned workflow declares a view with the reserved id{' '}
+              {reservedViews.map((view) => `“${view.id}”`).join(', ')}. It is not rendered so the{' '}
+              {reservedViews.map((view) => (view.id === PLANNING_ID ? 'Planning' : 'Settings')).join(' and ')}{' '}
+              tool keeps that route. Rename the view id in the workflow to see it.
+            </span>
+          </div>
+        ) : null}
       </header>
 
       {workflow.error ? (
@@ -422,12 +482,22 @@ export function ProjectWorkspacePage() {
             className="min-h-[20rem]"
           />
         </Panel>
+      ) : !declaredView && !tool && views.length === 0 ? (
+        <Panel>
+          <EmptyState
+            icon={<LayersIcon size={21} />}
+            title="This workflow declares no views"
+            description="The project follows a workflow whose manifest publishes no views. Nothing is missing from the data, and this workspace does not substitute Overview or Tasks for a declaration that does not exist."
+            className="min-h-[20rem]"
+          />
+        </Panel>
       ) : declaredView ? (
         <ViewSurface
           view={declaredView}
           project={project}
           tasks={tasks}
           milestones={projectMilestones}
+          workItems={NO_WORK_ITEMS}
           workflow={workflow.workflow}
         />
       ) : (
@@ -448,8 +518,8 @@ export function ProjectWorkspacePage() {
             }
             action={
               <Button asChild variant="secondary" size="sm">
-                <Link to={`/projects/${project.id}/${views[0]?.id ?? ''}`}>
-                  Open {workflowText(views[0]?.title) || 'the first view'}
+                <Link to={`/projects/${project.id}/${navViews[0]?.id ?? ''}`}>
+                  Open {workflowText(navViews[0]?.title) || 'the first view'}
                 </Link>
               </Button>
             }

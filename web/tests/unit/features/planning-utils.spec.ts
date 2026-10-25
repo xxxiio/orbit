@@ -6,6 +6,7 @@ import {
   formatDuration,
   parseLocalDateTime,
   parseWindow,
+  readCapacity,
   toDateInput,
   toTimeInput,
 } from '@/features/planning/planning-utils'
@@ -64,9 +65,38 @@ describe('planning window parsing', () => {
     expect(valid?.startsAtMs).toBe(new Date(2026, 9, 25, 9, 0).getTime())
   })
 
-  it('builds a visible, explicit default window around the reference time', () => {
-    const window = defaultWindow(new Date(2026, 9, 25, 15, 45).getTime())
-    expect(window).toEqual({ date: '2026-10-25', from: '09:00', to: '12:00' })
+  it('defaults to the next 09:00–12:00 window, never one that is already past', () => {
+    // Before 09:00 the default is today's window.
+    expect(defaultWindow(new Date(2026, 9, 25, 7, 30).getTime())).toEqual({
+      date: '2026-10-25',
+      from: '09:00',
+      to: '12:00',
+    })
+    // At or after 09:00 the default moves to tomorrow rather than opening on a
+    // window that has already started (or ended).
+    expect(defaultWindow(new Date(2026, 9, 25, 9, 0).getTime())).toEqual({
+      date: '2026-10-26',
+      from: '09:00',
+      to: '12:00',
+    })
+    expect(defaultWindow(new Date(2026, 9, 25, 15, 45).getTime())).toEqual({
+      date: '2026-10-26',
+      from: '09:00',
+      to: '12:00',
+    })
+  })
+})
+
+describe('authored capacity', () => {
+  it('clamps a URL value to one day and treats junk as unauthored', () => {
+    expect(readCapacity('120')).toBe(120)
+    expect(readCapacity('1440')).toBe(1440)
+    expect(readCapacity('5000')).toBe(1440)
+    expect(readCapacity('0')).toBe(0)
+    expect(readCapacity('-15')).toBe(0)
+    expect(readCapacity('12.5')).toBe(0)
+    expect(readCapacity('lots')).toBe(0)
+    expect(readCapacity(null)).toBe(0)
   })
 })
 

@@ -3,14 +3,15 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { queryKeys } from '@/api/queries'
 import { useMilestoneCommand } from '@/api/mutations'
 import type { MilestoneCommand, MilestoneRecord, MilestoneSnapshot } from '@/api/contracts'
-import { jsonResponse, queryWrapper, testQueryClient } from './test-utils'
+import { jsonResponse, queryWrapper, snapshotAt, testQueryClient } from './test-utils'
 
 /**
- * Milestone commands are fenced by the *milestones* snapshot revision, which is
- * a different revision from the workspace snapshot. Reading it once at mount
- * would send a stale fence after any milestone refresh; reading it inside
- * `mutationFn` always sends the freshest one. The command id must be minted per
- * attempt, so a duplicate click cannot reuse the previous key.
+ * Milestone commands are fenced by the milestones snapshot's revision. That is
+ * the same global ledger revision the workspace snapshot carries (both project
+ * `MAX(cursor)`); only the cached shape differs. Reading it once at mount would
+ * send a stale fence after any refresh; reading it inside `mutationFn` always
+ * sends the freshest one. The command id must be minted per attempt, so a
+ * duplicate click cannot reuse the previous key.
  */
 describe('useMilestoneCommand revision fence', () => {
   const milestone: MilestoneRecord = {
@@ -35,6 +36,7 @@ describe('useMilestoneCommand revision fence', () => {
   it('sends the refreshed milestones revision, not the mount-time one', async () => {
     const client = testQueryClient()
     client.setQueryData(queryKeys.milestones(), milestonesAt(3))
+    client.setQueryData(queryKeys.snapshot(), snapshotAt(3))
 
     vi.mocked(fetch).mockResolvedValueOnce(
       jsonResponse({ revision: 12, duplicate: false, milestone: { ...milestone, name: 'Beta 2' } }),
@@ -65,6 +67,12 @@ describe('useMilestoneCommand revision fence', () => {
     expect(command.action).toEqual({ type: 'rename', milestone_id: 'm-1', name: 'Beta 2' })
     expect(typeof command.command_id).toBe('string')
     expect(command.command_id.length).toBeGreaterThan(0)
+
+    // The accepted revision advances both cached ledger fences.
+    expect(
+      client.getQueryData<MilestoneSnapshot>(queryKeys.milestones())?.revision,
+    ).toBe(12)
+    expect(client.getQueryData(queryKeys.snapshot())).toMatchObject({ revision: 12 })
   })
 
   it('mints a fresh command id per attempt and shapes each action on the wire', async () => {

@@ -16,11 +16,18 @@
  * None of this decides what the server allows; it only names chrome.
  */
 import type { Task } from '@/api/adapters'
-import type { Milestone, WorkItem, WorkflowView, WorkflowViewComponent } from '@/api/adapters'
+import type { Milestone, WorkItem, Workflow, WorkflowView, WorkflowViewComponent } from '@/api/adapters'
 import type { ReadinessEntry } from '@/hooks'
-import { workflowText } from './workflow-copy'
+import { workflowText } from '@/domain'
+import { compareTasks, type TaskSort, type TaskSortKey } from '@/features/tasks/task-list-model'
 
-export type ViewComponentFamily = 'tasks' | 'board' | 'milestones' | 'schedule' | 'other'
+export type ViewComponentFamily =
+  | 'tasks'
+  | 'board'
+  | 'milestones'
+  | 'work_items'
+  | 'schedule'
+  | 'other'
 
 const TASK_LIST_TYPES = new Set(['task_list', 'table'])
 const BOARD_TYPES = new Set(['kanban'])
@@ -28,9 +35,13 @@ const BOARD_TYPES = new Set(['kanban'])
 /**
  * The data family a component renders. `timeline` is declared twice in the
  * bundled workflows (milestones and schedule), so its source decides the family.
+ * `work_items` is a family of its own so I3's header action and badge come from
+ * one rule instead of a fourth branch on a component type.
  */
 export function componentFamily(component: WorkflowViewComponent): ViewComponentFamily {
   const source = component.source ?? null
+  const taskSurface = BOARD_TYPES.has(component.type) || TASK_LIST_TYPES.has(component.type)
+  if (taskSurface && source === 'work_items') return 'work_items'
   if (BOARD_TYPES.has(component.type)) {
     return source === 'tasks' || source === null ? 'board' : 'other'
   }
@@ -49,7 +60,7 @@ export function componentFamily(component: WorkflowViewComponent): ViewComponent
 }
 
 export interface ViewHeaderAction {
-  kind: 'new_task' | 'new_milestone'
+  kind: 'new_task' | 'new_milestone' | 'new_work_item'
   label: string
 }
 
@@ -62,9 +73,15 @@ export function viewHeaderAction(view: WorkflowView): ViewHeaderAction | null {
   if (primary === 'milestones') {
     return { kind: 'new_milestone', label: 'New milestone' }
   }
+  if (primary === 'work_items') {
+    return { kind: 'new_work_item', label: 'New work item' }
+  }
   const families = view.components.map(componentFamily)
   if (families.includes('tasks') || families.includes('board')) {
     return { kind: 'new_task', label: 'New task' }
+  }
+  if (families.includes('work_items')) {
+    return { kind: 'new_work_item', label: 'New work item' }
   }
   return null
 }
@@ -185,6 +202,303 @@ export function describeFilter(filter: Record<string, string>): string | null {
     .join(', ')
 }
 
+const PROJECT_FILTER_KEYS = new Set(['project_id', 'status'])
+
+export function unsupportedProjectFilterKeys(filter: Record<string, string>): string[] {
+  return unsupportedFilterKeys(filter, PROJECT_FILTER_KEYS)
+}
+
+/** A detail panel may declare a project filter; the project either matches or not. */
+export function projectMatchesDeclaredFilter(
+  project: { id: string; status: string },
+  filter: Record<string, string>,
+): boolean {
+  for (const [key, value] of Object.entries(filter)) {
+    if (key === 'project_id' && !matchesValue(project.id, value)) return false
+    if (key === 'status' && !matchesValue(project.status, value)) return false
+  }
+  return true
+}
+
+/* ------------------------------------------------------------------ */
+/* Metric declarations                                                 */
+/* ------------------------------------------------------------------ */
+
+export type MetricAggregate = 'count' | 'sum' | 'average' | 'min' | 'max'
+
+const METRIC_AGGREGATES = new Set<string>(['count', 'sum', 'average', 'min', 'max'])
+
+export interface MetricDeclaration {
+  aggregate: MetricAggregate
+  field: string | null
+  /** Non-null means the declaration cannot be honoured; render a refusal. */
+  refusal: string | null
+}
+
+function isMetricAggregate(value: string): value is MetricAggregate {
+  return METRIC_AGGREGATES.has(value)
+}
+
+/**
+ * The numeric fields a source can aggregate. Tasks carry exactly one
+ * (`estimated_minutes`); a work item carries the `integer` properties its kind
+ * declares. Milestones and the schedule carry none.
+ */
+export function numericFieldsForSource(
+  source: string,
+  workflow: Workflow | undefined,
+  filter: Record<string, string> = {},
+): ReadonlySet<string> {
+  if (source === 'tasks') return new Set(['estimated_minutes'])
+  if (source === 'work_items') {
+    const kindFilter = filter.kind?.toLowerCase()
+    const fields = new Set<string>()
+    for (const kind of workflow?.kinds ?? []) {
+      if (kindFilter && kind.id.toLowerCase() !== kindFilter) continue
+      for (const field of kind.fields) {
+        if (field.kind.type === 'integer') fields.add(field.id)
+      }
+    }
+    return fields
+  }
+  return new Set()
+}
+
+/**
+ * Resolve a metric's declared aggregate and field. A declaration this build
+ * cannot evaluate gets a named reason instead of a count under a "sum" title.
+ */
+export function metricDeclaration(
+  component: WorkflowViewComponent,
+  workflow: Workflow | undefined,
+): MetricDeclaration {
+  const source = component.source ?? 'tasks'
+  const raw = (component.aggregate ?? 'count').trim().toLowerCase()
+  if (!isMetricAggregate(raw)) {
+    return {
+      aggregate: 'count',
+      field: null,
+      refusal: `This panel asks for the “${component.aggregate}” aggregate, which this build cannot compute.`,
+    }
+  }
+
+  const field = component.field?.trim() || null
+  const numericFields = numericFieldsForSource(source, workflow, component.filter ?? {})
+
+  if (raw !== 'count' && numericFields.size === 0) {
+    return {
+      aggregate: raw,
+      field: null,
+      refusal: `${dataSourceName(source)} has no numeric field this build can aggregate; only a count is supported.`,
+    }
+  }
+
+  if (field && !numericFields.has(field)) {
+    const label = source === 'tasks' ? 'tasks' : dataSourceName(source)
+    return {
+      aggregate: raw,
+      field: null,
+      refusal: `This panel aggregates the “${field}” field, which is not a numeric field on ${label}.`,
+    }
+  }
+
+  if (raw !== 'count' && field === null) {
+    return {
+      aggregate: raw,
+      field: null,
+      refusal: `A ${raw} aggregate needs the numeric field to aggregate, and this panel does not declare one.`,
+    }
+  }
+
+  return { aggregate: raw, field, refusal: null }
+}
+
+function numericProperty(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+/**
+ * Compute the declared aggregate over rows. `count` counts rows (or non-null
+ * field values when a field is declared); the others ignore nulls and return
+ * `null` when nothing is left to aggregate.
+ */
+export function aggregateMetric(
+  declaration: MetricDeclaration,
+  rows: ReadonlyArray<number | null>,
+): number | null {
+  if (declaration.aggregate === 'count') {
+    return declaration.field
+      ? rows.filter((value) => value !== null).length
+      : rows.length
+  }
+  const values = rows.filter((value): value is number => value !== null && Number.isFinite(value))
+  if (values.length === 0) return declaration.aggregate === 'sum' ? 0 : null
+  const sum = values.reduce((total, value) => total + value, 0)
+  if (declaration.aggregate === 'sum') return sum
+  if (declaration.aggregate === 'average') return sum / values.length
+  if (declaration.aggregate === 'min') return Math.min(...values)
+  return Math.max(...values)
+}
+
+/** Task rows reduced to the declared numeric field (null when unestimated). */
+export function taskMetricRows(tasks: readonly Task[], field: string | null): Array<number | null> {
+  if (!field) return tasks.map(() => null)
+  if (field === 'estimated_minutes' || field === 'estimatedMinutes') {
+    return tasks.map((task) => task.estimatedMinutes)
+  }
+  return tasks.map(() => null)
+}
+
+export function workItemMetricRows(
+  items: readonly WorkItem[],
+  field: string | null,
+): Array<number | null> {
+  if (!field) return items.map(() => null)
+  return items.map((item) => numericProperty(item.properties[field]))
+}
+
+/* ------------------------------------------------------------------ */
+/* Sort declarations                                                   */
+/* ------------------------------------------------------------------ */
+
+const TASK_SORT_FIELDS: Record<string, TaskSortKey> = {
+  title: 'title',
+  name: 'title',
+  status: 'status',
+  priority: 'priority',
+  due: 'due',
+  due_date: 'due',
+  deadline: 'due',
+  deadline_at: 'due',
+  project: 'project',
+  project_id: 'project',
+  milestone: 'milestone',
+  milestone_id: 'milestone',
+}
+
+export interface TaskSortDeclaration {
+  /** `null` keeps the server's order. */
+  sort: TaskSort | null
+  refusal: string | null
+}
+
+/**
+ * Map a declared `sort`/`descending` pair onto the comparators task lists
+ * already use. Fields the adapter does not carry (notably `updated`) are
+ * refused by name instead of being dropped.
+ */
+export function taskSortDeclaration(component: WorkflowViewComponent): TaskSortDeclaration {
+  const declared = component.sort?.trim().toLowerCase()
+  if (!declared) return { sort: null, refusal: null }
+  const key = hasOwnKey(TASK_SORT_FIELDS, declared) ? TASK_SORT_FIELDS[declared] : null
+  if (!key) {
+    return {
+      sort: null,
+      refusal: `This panel sorts tasks by “${component.sort}”, a field this build does not carry for tasks.`,
+    }
+  }
+  return {
+    sort: { key, direction: component.descending ? 'desc' : 'asc' },
+    refusal: null,
+  }
+}
+
+/** A stable, copied sort using the shared task comparator. */
+export function sortByDeclaration(tasks: readonly Task[], sort: TaskSort | null): Task[] {
+  if (!sort) return [...tasks]
+  return [...tasks].sort((left, right) => compareTasks(left, right, sort))
+}
+
+/* ------------------------------------------------------------------ */
+/* Reserved view ids + badge counts                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Ids the workspace reserves for its own tools. A workflow that declares one of
+ * these must not shadow the tool: the declared view is not rendered and the page
+ * says so, while the tool keeps its route.
+ */
+export const RESERVED_VIEW_IDS: ReadonlySet<string> = new Set(['planning', 'settings'])
+
+export function isReservedViewId(id: string): boolean {
+  return RESERVED_VIEW_IDS.has(id)
+}
+
+/**
+ * `undefined` means no workflow could be resolved (use the fallback views);
+ * an empty array means the pinned workflow truthfully declares no views.
+ */
+export function declaredWorkspaceViews(
+  workflow: Workflow | undefined,
+  fallback: readonly WorkflowView[],
+): WorkflowView[] {
+  return workflow ? workflow.views : [...fallback]
+}
+
+/** Declared views a person may navigate to: reserved tool ids are excluded. */
+export function workspaceViewTabs(views: readonly WorkflowView[]): WorkflowView[] {
+  return views.filter((view) => !isReservedViewId(view.id))
+}
+
+/** Declared views that collide with a tool id, so the page can say so. */
+export function reservedDeclaredViews(views: readonly WorkflowView[]): WorkflowView[] {
+  return views.filter((view) => isReservedViewId(view.id))
+}
+
+export interface ViewBadgeCountInput {
+  tasks: readonly Task[]
+  milestones: readonly Milestone[]
+  /** The server's readiness report, needed only by an `actionable` badge. */
+  readinessByTask?: ReadonlyMap<string, ReadinessEntry>
+}
+
+function badgeLimitApplies(component: WorkflowViewComponent): boolean {
+  if (component.limit === null || component.limit === undefined || component.limit <= 0) return false
+  // A full task list/table carries its own toolbar and ignores `limit`; a
+  // summary list, a board and every milestone surface slice to it.
+  if (component.type === 'table') return false
+  if (component.type === 'task_list') return component.limit !== null && component.limit !== undefined
+  return true
+}
+
+/**
+ * The number a tab badge may show: the primary surface's rows after its declared
+ * filter and limit, i.e. the same set its panel renders. `null` means no badge.
+ */
+export function viewBadgeCount(
+  view: WorkflowView,
+  { tasks, milestones, readinessByTask }: ViewBadgeCountInput,
+): number | null {
+  const badge = viewBadge(view)
+  const component = view.components[0]
+  if (!badge || !component) return null
+  const filter = component.filter ?? {}
+  const limit = badgeLimitApplies(component) ? (component.limit as number) : null
+  if (badge.kind === 'tasks') {
+    const matching = tasks.filter((task) =>
+      taskMatchesDeclaredFilter(task, filter, readinessByTask?.get(task.id)),
+    )
+    return limit === null ? matching.length : Math.min(matching.length, limit)
+  }
+  const matching = milestones.filter((milestone) =>
+    milestoneMatchesDeclaredFilter(milestone, filter),
+  )
+  return limit === null ? matching.length : Math.min(matching.length, limit)
+}
+
+/**
+ * Own-property test for manifest-keyed tables. `in` and bracket lookup would
+ * walk `Object.prototype`, so a type named `constructor` would find a built-in.
+ */
+export function hasOwnKey(table: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(table, key)
+}
+
 /* ------------------------------------------------------------------ */
 /* Layout                                                              */
 /* ------------------------------------------------------------------ */
@@ -252,5 +566,11 @@ export const componentTypeNames: Record<string, string> = {
 
 export function componentTypeName(component: WorkflowViewComponent): string {
   const declared = workflowText(component.title)?.trim()
-  return declared || componentTypeNames[component.type] || 'View panel'
+  if (declared) return declared
+  // A manifest type is data, not a key of Object.prototype: `constructor` or
+  // `toString` must fall through to the generic name, never to a built-in.
+  if (hasOwnKey(componentTypeNames, component.type)) {
+    return componentTypeNames[component.type]
+  }
+  return 'View panel'
 }

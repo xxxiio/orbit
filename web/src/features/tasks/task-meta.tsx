@@ -36,6 +36,24 @@ export const statusTones: Record<TaskStatus, BadgeTone> = {
   cancelled: 'neutral',
 }
 
+/**
+ * The dot that names a status in a board column header or a move menu. Derived
+ * from the same status list as the labels and tones, so a board never invents a
+ * second status vocabulary.
+ */
+export const statusDots: Record<TaskStatus, string> = {
+  inbox: 'bg-line-strong',
+  planned: 'bg-line-strong',
+  ready: 'bg-accent/60',
+  in_progress: 'bg-accent',
+  waiting: 'bg-warning',
+  blocked: 'bg-danger',
+  review: 'bg-warning',
+  deferred: 'bg-line-strong',
+  done: 'bg-success',
+  cancelled: 'bg-ink-faint',
+}
+
 export const priorityLabels: Record<TaskPriority, string> = {
   low: 'Low',
   medium: 'Medium',
@@ -152,6 +170,11 @@ export function formatDay(ms: number): string {
 
 export function formatDateTime(ms: number): string {
   return dateTimeFormatter.format(new Date(ms))
+}
+
+/** Clock time only, for schedule blocks and windows. */
+export function formatTimeOfDay(ms: number): string {
+  return timeFormatter.format(new Date(ms))
 }
 
 export function formatDate(ms: number): string {

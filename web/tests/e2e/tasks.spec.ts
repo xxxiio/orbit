@@ -112,10 +112,12 @@ test.describe('tasks', () => {
     const status = drawer.getByLabel('Task status')
     await choose(page, status, /^done$/i)
 
-    // The rejection is visible and the stored value is still the old one.
+    // The rejection is visible and the stored value is still the old one. The
+    // drawer quotes the server's exact reason, not a generic "invalid".
     const alerts = drawer.getByRole('alert')
     await expect(alerts.first()).toBeVisible()
-    await expect(alerts.first()).toContainText(/invalid|cannot|not allowed|rejected/i)
+    // The drawer shows the server's message verbatim, with no generic fallback.
+    await expect(alerts.first()).toHaveText('invalid task status transition: inbox -> done')
     await expect(status).toContainText(/inbox/i)
     await expect(drawer.getByRole('button', { name: 'Edit task title' })).toContainText(task.title)
 

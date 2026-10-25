@@ -2,15 +2,21 @@ import { defaultNowMs, useTaskReadiness, useWorkItems } from '@/hooks'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ViewRendererProps } from '../view-types'
 import {
+  aggregateMetric,
   componentTypeName,
   dataSourceName,
   describeFilter,
+  metricDeclaration,
   milestoneMatchesDeclaredFilter,
+  numericFieldsForSource,
   taskMatchesDeclaredFilter,
+  taskMetricRows,
   unsupportedMilestoneFilterKeys,
   unsupportedTaskFilterKeys,
   unsupportedWorkItemFilterKeys,
   workItemMatchesDeclaredFilter,
+  workItemMetricRows,
+  type MetricDeclaration,
 } from '../view-metadata'
 import { ComponentPanel, InlineReadError, ProvenanceNote, UnavailablePanel } from './shared'
 
@@ -18,8 +24,21 @@ function nounFor(noun: string, value: number): string {
   return value === 1 ? noun.replace(/s$/, '') : noun
 }
 
-function MetricNumber({ value, noun }: { value: number | null; noun: string }) {
-  if (value === null) {
+function displayValue(value: number): string {
+  if (Number.isInteger(value)) return String(value)
+  return value.toFixed(1).replace(/\.0$/, '')
+}
+
+function MetricNumber({
+  value,
+  noun,
+  loading = false,
+}: {
+  value: number | null
+  noun: string
+  loading?: boolean
+}) {
+  if (loading) {
     return (
       <div className="flex flex-col gap-2" aria-busy="true">
         <Skeleton className="h-9 w-16" />
@@ -27,15 +46,23 @@ function MetricNumber({ value, noun }: { value: number | null; noun: string }) {
       </div>
     )
   }
+  if (value === null) {
+    return (
+      <p className="flex items-baseline gap-2">
+        <span className="font-display text-4xl leading-none text-ink-faint">—</span>
+        <span className="text-xs font-medium text-ink-muted">No numeric values to aggregate</span>
+      </p>
+    )
+  }
   const label = nounFor(noun, value)
   return (
     <p className="flex items-baseline gap-2">
       <span aria-hidden="true" className="font-display text-4xl tabular-nums leading-none text-ink">
-        {value}
+        {displayValue(value)}
       </span>
       <span className="text-xs font-medium text-ink-muted">{label}</span>
       <span className="sr-only">
-        {value} {label}
+        {displayValue(value)} {label}
       </span>
     </p>
   )
@@ -47,16 +74,33 @@ function MetricFrame({
   noun,
   filterNote,
   sourceNote,
+  loading = false,
+  actions = [],
 }: {
   title: string
   value: number | null
   noun: string
   filterNote: string | null
   sourceNote: string
+  loading?: boolean
+  actions?: string[]
 }) {
   return (
-    <ComponentPanel title={title} bodyClassName="py-5" className="justify-between">
-      <MetricNumber value={value} noun={noun} />
+    <ComponentPanel
+      title={title}
+      bodyClassName="py-5"
+      className="justify-between"
+      footer={
+        actions.length > 0 ? (
+          <ProvenanceNote>
+            The workflow also declares the {actions.join(', ')} action
+            {actions.length === 1 ? '' : 's'}; wiring declared actions is carried forward to I3
+            and this panel does not claim to honour them.
+          </ProvenanceNote>
+        ) : undefined
+      }
+    >
+      <MetricNumber value={value} noun={noun} loading={loading} />
       <div className="mt-3 flex flex-col gap-1">
         {filterNote ? <p className="text-2xs text-ink-muted">{filterNote}</p> : null}
         <ProvenanceNote>{sourceNote}</ProvenanceNote>
@@ -65,19 +109,64 @@ function MetricFrame({
   )
 }
 
-/** Tasks: every count is a count of rows the snapshot returned, never a guess. */
-function TaskMetric({ component, tasks }: ViewRendererProps) {
+function declarationRefusal(
+  component: ViewRendererProps['component'],
+  declaration: MetricDeclaration,
+) {
+  return (
+    <UnavailablePanel
+      title={componentTypeName(component)}
+      reason={declaration.refusal as string}
+      hint="The panel is refused by name rather than showing a number its declaration did not ask for."
+    />
+  )
+}
+
+function metricLabel(declaration: MetricDeclaration, source: string): string {
+  if (declaration.aggregate === 'count') {
+    return source === 'work_items' ? 'work items' : source
+  }
+  return 'minutes'
+}
+
+function metricSourceNote(
+  declaration: MetricDeclaration,
+  source: string,
+  fieldLabel: string | null,
+): string {
+  if (declaration.aggregate === 'count') {
+    if (source === 'tasks') return "Counted from this project's tasks in the workspace snapshot."
+    if (source === 'milestones') return "Counted from this project's milestones in the workspace snapshot."
+    return 'Counted from the work items the server returns for this project.'
+  }
+  const verb =
+    declaration.aggregate === 'sum'
+      ? 'Summed'
+      : declaration.aggregate === 'average'
+        ? 'Averaged'
+        : declaration.aggregate === 'min'
+          ? 'Minimum'
+          : 'Maximum'
+  return `${verb} ${declaration.aggregate === 'average' ? 'from' : 'of'} ${fieldLabel ?? 'the declared field'} across the matching ${source === 'work_items' ? 'work items' : source}.`
+}
+
+/** Tasks: every number is computed from rows the snapshot returned, never guessed. */
+function TaskMetric(props: ViewRendererProps) {
+  const { component, tasks, workflow } = props
   const filter = component.filter ?? {}
   const unsupported = unsupportedTaskFilterKeys(filter)
   const actionable = filter.actionable !== undefined
   const readiness = useTaskReadiness(defaultNowMs(), actionable)
+  const declaration = metricDeclaration(component, workflow)
+
+  if (declaration.refusal) return declarationRefusal(component, declaration)
 
   if (unsupported.length > 0) {
     return (
       <UnavailablePanel
         title={componentTypeName(component)}
         reason={`This panel filters tasks by ${unsupported.join(', ')}, which this build cannot evaluate.`}
-        hint="The panel is hidden rather than showing a count that might be wrong."
+        hint="The panel is hidden rather than showing a number that might be wrong."
       />
     )
   }
@@ -100,32 +189,40 @@ function TaskMetric({ component, tasks }: ViewRendererProps) {
       <MetricFrame
         title={componentTypeName(component)}
         value={null}
-        noun="tasks"
+        noun={metricLabel(declaration, 'tasks')}
         filterNote={describeFilter(filter)}
         sourceNote="Waiting for the server's readiness report."
+        loading
+        actions={component.actions}
       />
     )
   }
 
   const readinessByTask = new Map((readiness.data?.tasks ?? []).map((entry) => [entry.taskId, entry]))
-  const value = tasks.filter((task) =>
+  const matching = tasks.filter((task) =>
     taskMatchesDeclaredFilter(task, filter, actionable ? readinessByTask.get(task.id) : undefined),
-  ).length
+  )
+  const value = aggregateMetric(declaration, taskMetricRows(matching, declaration.field))
 
   return (
     <MetricFrame
       title={componentTypeName(component)}
       value={value}
-      noun="tasks"
+      noun={metricLabel(declaration, 'tasks')}
       filterNote={describeFilter(filter)}
-      sourceNote="Counted from this project's tasks in the workspace snapshot."
+      sourceNote={metricSourceNote(declaration, 'tasks', 'estimated minutes')}
+      actions={component.actions}
     />
   )
 }
 
-function MilestoneMetric({ component, milestones }: ViewRendererProps) {
+function MilestoneMetric({ component, milestones, workflow }: ViewRendererProps) {
   const filter = component.filter ?? {}
   const unsupported = unsupportedMilestoneFilterKeys(filter)
+  const declaration = metricDeclaration(component, workflow)
+
+  if (declaration.refusal) return declarationRefusal(component, declaration)
+
   if (unsupported.length > 0) {
     return (
       <UnavailablePanel
@@ -134,14 +231,17 @@ function MilestoneMetric({ component, milestones }: ViewRendererProps) {
       />
     )
   }
-  const value = milestones.filter((milestone) => milestoneMatchesDeclaredFilter(milestone, filter)).length
+  const matching = milestones.filter((milestone) =>
+    milestoneMatchesDeclaredFilter(milestone, filter),
+  )
   return (
     <MetricFrame
       title={componentTypeName(component)}
-      value={value}
+      value={aggregateMetric(declaration, matching.map(() => null))}
       noun="milestones"
       filterNote={describeFilter(filter)}
-      sourceNote="Counted from this project's milestones in the workspace snapshot."
+      sourceNote={metricSourceNote(declaration, 'milestones', null)}
+      actions={component.actions}
     />
   )
 }
@@ -151,10 +251,15 @@ function MilestoneMetric({ component, milestones }: ViewRendererProps) {
  * is of rows the server returned for this project, filtered by the declared
  * `kind`/`state`, nothing else.
  */
-function WorkItemMetric({ component, project }: ViewRendererProps) {
+function WorkItemMetric({ component, project, workflow }: ViewRendererProps) {
   const filter = component.filter ?? {}
   const unsupported = unsupportedWorkItemFilterKeys(filter)
-  const items = useWorkItems(unsupported.length > 0 ? undefined : project.id)
+  const declaration = metricDeclaration(component, workflow)
+  const items = useWorkItems(
+    unsupported.length > 0 || declaration.refusal ? undefined : project.id,
+  )
+
+  if (declaration.refusal) return declarationRefusal(component, declaration)
 
   if (unsupported.length > 0) {
     return (
@@ -178,17 +283,28 @@ function WorkItemMetric({ component, project }: ViewRendererProps) {
     )
   }
 
+  const matching = items.isPending
+    ? []
+    : (items.data ?? []).filter((item) => workItemMatchesDeclaredFilter(item, filter))
   const value = items.isPending
     ? null
-    : (items.data ?? []).filter((item) => workItemMatchesDeclaredFilter(item, filter)).length
+    : aggregateMetric(declaration, workItemMetricRows(matching, declaration.field))
+
+  const fieldLabel =
+    declaration.field &&
+    numericFieldsForSource('work_items', workflow, filter).has(declaration.field)
+      ? declaration.field.replace(/_/g, ' ')
+      : null
 
   return (
     <MetricFrame
       title={componentTypeName(component)}
       value={value}
-      noun="work items"
+      noun={metricLabel(declaration, 'work_items')}
       filterNote={describeFilter(filter)}
-      sourceNote="Counted from the work items the server returns for this project."
+      sourceNote={metricSourceNote(declaration, 'work_items', fieldLabel)}
+      loading={items.isPending}
+      actions={component.actions}
     />
   )
 }

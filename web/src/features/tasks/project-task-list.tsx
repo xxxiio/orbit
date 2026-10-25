@@ -27,30 +27,29 @@ import { cn } from '@/components/ui/utils'
 import { useWorkspaceActions } from '@/lib/workspace-actions'
 import {
   ALL,
-  ClearFiltersButton,
   filterAndSortTasks,
-  isTerminalStatus,
   projectBulkActionOptions,
   projectSortKey,
   projectSortOptions,
   projectSortValue,
-  TaskBulkBar,
-  TaskFilterBar,
-  TaskTable,
-  useTaskBulkCommand,
-  useTaskCommandState,
-  useTaskDrawer,
   type TaskSort,
-} from '@/features/tasks'
+} from './task-list-model'
+import { ClearFiltersButton, TaskBulkBar, TaskFilterBar } from './task-filter-bar'
+import { isTerminalStatus } from './task-meta'
+import { TaskTable } from './task-table'
+import { useTaskBulkCommand } from './use-task-bulk-command'
+import { useTaskCommandState } from './use-task-command-state'
+import { useTaskDrawer } from './use-task-drawer'
 import {
   DEFAULT_PROJECT_COLUMNS,
+  DEFAULT_TASK_SORT,
   LOCKED_TASK_COLUMNS,
   TASK_COLUMN_LABELS,
   readTaskListUrl,
   windowTasks,
   writeTaskListUrl,
   type TaskColumnKey,
-} from '@/features/tasks/task-list-state'
+} from './task-list-state'
 
 /**
  * The project task list.
@@ -65,15 +64,18 @@ export function ProjectTaskList({
   tasks,
   milestones,
   defaultColumns = DEFAULT_PROJECT_COLUMNS,
+  defaultSort = DEFAULT_TASK_SORT,
 }: {
   project: Project
   tasks: Task[]
   milestones: Milestone[]
   /** Columns declared by the workflow's table component, if it declared any. */
   defaultColumns?: readonly TaskColumnKey[]
+  /** The workflow's declared sort, used until the URL chooses another one. */
+  defaultSort?: TaskSort
 }) {
   const [searchParams, setSearchParams] = useSearchParams()
-  const state = readTaskListUrl(searchParams, defaultColumns)
+  const state = readTaskListUrl(searchParams, defaultColumns, defaultSort)
   const projects = useProjects()
   const { openNewTask } = useWorkspaceActions()
   const { openTask } = useTaskDrawer()

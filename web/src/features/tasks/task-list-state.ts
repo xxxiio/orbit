@@ -78,7 +78,7 @@ function readPositiveInteger(value: string | null, fallback: number): number {
   return parsed
 }
 
-function readSort(params: URLSearchParams): TaskSort {
+function readSort(params: URLSearchParams, fallback: TaskSort): TaskSort {
   const key = params.get('sort')
   const direction = params.get('dir')
   if (key && (SORT_KEYS as string[]).includes(key)) {
@@ -87,7 +87,7 @@ function readSort(params: URLSearchParams): TaskSort {
       direction: direction === 'desc' ? 'desc' : 'asc',
     }
   }
-  return DEFAULT_TASK_SORT
+  return fallback
 }
 
 /** `null` means "not in the URL": use the view's declared/default columns. */
@@ -106,6 +106,8 @@ export function readColumns(params: URLSearchParams): TaskColumnKey[] | null {
 export function readTaskListUrl(
   params: URLSearchParams,
   fallbackColumns: readonly TaskColumnKey[] = DEFAULT_PROJECT_COLUMNS,
+  /** The workflow's declared sort, used when the URL does not name one. */
+  fallbackSort: TaskSort = DEFAULT_TASK_SORT,
 ): TaskListUrlState {
   const columns = readColumns(params) ?? [...fallbackColumns]
   const selected = (params.get('sel') ?? '')
@@ -117,7 +119,7 @@ export function readTaskListUrl(
     search: params.get('q') ?? '',
     status: params.get('status') ?? ALL,
     priority: params.get('priority') ?? ALL,
-    sort: readSort(params),
+    sort: readSort(params, fallbackSort),
     page: readPositiveInteger(params.get('page'), 1),
     columns: [...new Set<TaskColumnKey>(['title', ...columns])],
     selected: [...new Set(selected)],

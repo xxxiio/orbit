@@ -14,6 +14,7 @@ import { AlertCircleIcon, LayersIcon } from '@/components/ui/icons'
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel'
 import { cn } from '@/components/ui/utils'
 import { userMessage, type ApiError } from '@/hooks'
+import type { WorkflowViewComponent } from '@/api/adapters'
 
 export function ComponentPanel({
   title,
@@ -120,6 +121,22 @@ export function RefusalNote({ message }: { message: string }) {
 /** A neutral provenance line: where a panel's data or wording comes from. */
 export function ProvenanceNote({ children }: { children: ReactNode }) {
   return <p className="text-2xs leading-4 text-ink-faint">{children}</p>
+}
+
+/**
+ * A declared `actions` list is an I3 carry-forward: this build offers the writes
+ * its panels own (open, move, rename) and never claims the manifest's list is
+ * wired. Say so where the declaration exists instead of dropping it silently.
+ */
+export function DeclaredActionsNote({ component }: { component: WorkflowViewComponent }) {
+  if (component.actions.length === 0) return null
+  return (
+    <span data-declared-actions={component.actions.join(',')}>
+      The workflow also declares the {component.actions.join(', ')} action
+      {component.actions.length === 1 ? '' : 's'}; wiring declared actions is carried forward to I3
+      and this panel does not claim to honour them.
+    </span>
+  )
 }
 
 /** A quiet panel action (usually Retry) that keeps the header compact. */

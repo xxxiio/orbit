@@ -18,6 +18,7 @@ import type { ViewRendererProps } from './view-types'
 import {
   componentSpansFullWidth,
   componentTypeName,
+  hasOwnKey,
   viewLayoutClassName,
 } from './view-metadata'
 import { BoardView } from './views/board-view'
@@ -88,7 +89,10 @@ export const viewComponentRenderers: Record<string, ComponentType<ViewRendererPr
 }
 
 export function isViewComponentImplemented(type: string): boolean {
-  const renderer = viewComponentRenderers[type]
+  // A manifest type is data: `constructor` must not resolve to a built-in.
+  const renderer = hasOwnKey(viewComponentRenderers, type)
+    ? viewComponentRenderers[type]
+    : undefined
   return Boolean(renderer) && !UNIMPLEMENTED_TYPES.has(type)
 }
 
@@ -116,7 +120,22 @@ function UnknownComponentView(props: ViewRendererProps) {
 }
 
 export function renderViewComponent(props: ViewRendererProps) {
-  const Renderer = viewComponentRenderers[props.component.type] ?? UnknownComponentView
+  const { component } = props
+  // `group_by` is only meaningful for a board. Any other declaration would be
+  // silently dropped otherwise, so it gets a named refusal instead.
+  if (component.groupBy && component.type !== 'kanban') {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={`This panel groups its data by “${component.groupBy}”, which this build cannot render for a ${component.type} panel.`}
+        hint="Only a board groups by a declared field (status) in this build."
+      />
+    )
+  }
+
+  const Renderer = hasOwnKey(viewComponentRenderers, component.type)
+    ? viewComponentRenderers[component.type]
+    : UnknownComponentView
   return <Renderer {...props} />
 }
 
@@ -145,6 +164,8 @@ export function ViewSurface(props: Omit<ViewRendererProps, 'component'>) {
       {view.components.map((component) => (
         <div
           key={component.id}
+          data-view-component={component.id}
+          data-view-component-type={component.type}
           className="min-w-0"
           style={
             componentSpansFullWidth(component, view.layout)

@@ -57,7 +57,7 @@ test.describe('planning', () => {
     await expect(
       dayPanel.getByText('Selected at minute 0 of available 120', { exact: false }).first(),
     ).toBeVisible()
-    await expect(dayPanel.getByText('selected', { exact: true }).first()).toBeVisible()
+    await expect(dayPanel.getByText('Selected', { exact: true }).first()).toBeVisible()
 
     // A disposition the UI did not choose: the server evaluated every bucket.
     await expect(dayPanel.getByText(/actionable and \d+ blocked tasks were evaluated/)).toBeVisible()
@@ -104,6 +104,15 @@ test.describe('planning', () => {
     expect(fingerprint).toMatch(/^[0-9a-f]{64}$/)
     expect(commandId.length).toBeGreaterThan(0)
 
+    // The reviewed items are named next to the fingerprint/command, with the
+    // server's times, not just a count.
+    const reviewedItems = page.locator('[data-reviewed-items] li')
+    await expect(reviewedItems).toHaveCount(slotCount)
+    await expect(
+      page.locator('[data-reviewed-items]').getByText(firstSlotTitle!, { exact: true }),
+    ).toBeVisible()
+    await expect(reviewedItems.first()).toContainText(/\d{1,2}:\d{2}/)
+
     // Review must not have written anything.
     expect(await scheduleBlocks(page, server)).toHaveLength(0)
 
@@ -122,6 +131,16 @@ test.describe('planning', () => {
 
     const blocks = await scheduleBlocks(page, server)
     expect(blocks).toHaveLength(slotCount)
+
+    // The receipt's block ids are the caller-minted identities the server
+    // stored; read them back from /schedule and prove the subset relation.
+    const receiptBlockIds = await receipt
+      .locator('[data-receipt-block]')
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-receipt-block') ?? ''))
+    expect(receiptBlockIds).toHaveLength(slotCount)
+    expect(receiptBlockIds.every((id) => id.length > 0)).toBe(true)
+    const storedBlockIds = new Set(blocks.map((block) => block.id))
+    for (const id of receiptBlockIds) expect(storedBlockIds.has(id)).toBe(true)
 
     // Reload and read the saved schedule from the Timeline view, not from the
     // planning page's in-memory state.

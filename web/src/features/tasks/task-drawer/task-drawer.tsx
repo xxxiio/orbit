@@ -30,11 +30,10 @@ import { ActivitySection } from './activity-section'
 import { CriteriaSection } from './criteria-section'
 import { DependenciesSection } from './dependencies-section'
 import { DescriptionEditor } from './description-editor'
-import { InlineTitle } from './inline-title'
 import { PropertiesSection } from './properties-section'
 import { DrawerSkeleton } from './skeleton'
 import type { TaskCommand } from './task-command'
-import { EditGuardProvider, type EditorHandle } from './use-edit-guard'
+import { EditGuardProvider, InlineTitle, type EditorHandle } from '@/components/forms'
 
 export function TaskDetailDrawer() {
   const { taskId, closeTask } = useTaskDrawer()

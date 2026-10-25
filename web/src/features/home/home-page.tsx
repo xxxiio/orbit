@@ -48,7 +48,7 @@ import {
   useTaskDrawer,
 } from '@/features/tasks'
 import { useRecentProjectIds } from '@/lib/recent-projects'
-import { isTaskCompleted, isTaskOpen } from '@/features/projects/project-progress'
+import { isTaskCompleted, isTaskOpen } from '@/domain'
 
 interface SectionTask {
   task: Task
@@ -401,7 +401,7 @@ export function HomePage() {
   const blockedLabel = (entry: SectionTask) => {
     const ids = entry.readiness?.blockingTaskIds ?? []
     if (ids.length === 0) return undefined
-    const names = ids.map((id) => taskById.get(id)?.title ?? id)
+    const names = ids.map((id) => taskById.get(id)?.title ?? 'another task')
     return names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2}` : names.join(', ')
   }
 
@@ -481,8 +481,6 @@ export function HomePage() {
           <div className="mt-3 flex items-center gap-2 text-2xs text-ink-muted">
             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-success/80" />
             <span aria-live="polite">{freshnessLabel(snapshot.dataUpdatedAt, now)}</span>
-            <span aria-hidden="true">·</span>
-            <span className="font-mono">rev {snapshot.data?.revision ?? '—'}</span>
           </div>
         </div>
 

@@ -5,16 +5,24 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { ListIcon } from '@/components/ui/icons'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
-import { formatMoment, statusLabel, statusTones, useTaskDrawer } from '@/features/tasks'
+import { formatMoment, readinessReasonLabel, statusLabel, statusTones, useTaskDrawer } from '@/features/tasks'
 import type { ViewRendererProps } from '../view-types'
 import {
   componentTypeName,
   dataSourceName,
   describeFilter,
+  sortByDeclaration,
   taskMatchesDeclaredFilter,
+  taskSortDeclaration,
   unsupportedTaskFilterKeys,
 } from '../view-metadata'
-import { ComponentPanel, InlineReadError, ProvenanceNote, UnavailablePanel } from './shared'
+import {
+  ComponentPanel,
+  DeclaredActionsNote,
+  InlineReadError,
+  ProvenanceNote,
+  UnavailablePanel,
+} from './shared'
 
 function TaskSummaryList({
   props,
@@ -27,11 +35,22 @@ function TaskSummaryList({
   const { openTask } = useTaskDrawer()
   const readiness = useTaskReadiness(defaultNowMs(), withReadiness)
   const filter = component.filter ?? {}
+  const sortDeclaration = taskSortDeclaration(component)
 
   const readinessByTask = useMemo(
     () => new Map((readiness.data?.tasks ?? []).map((entry) => [entry.taskId, entry])),
     [readiness.data],
   )
+
+  if (sortDeclaration.refusal) {
+    return (
+      <UnavailablePanel
+        title={componentTypeName(component)}
+        reason={sortDeclaration.refusal}
+        hint="The list is refused rather than keeping the server's order under a declared sort."
+      />
+    )
+  }
 
   if (readiness.error) {
     return (
@@ -46,12 +65,15 @@ function TaskSummaryList({
     )
   }
 
-  const matched = tasks.filter((task) =>
-    taskMatchesDeclaredFilter(
-      task,
-      filter,
-      withReadiness ? readinessByTask.get(task.id) : undefined,
+  const matched = sortByDeclaration(
+    tasks.filter((task) =>
+      taskMatchesDeclaredFilter(
+        task,
+        filter,
+        withReadiness ? readinessByTask.get(task.id) : undefined,
+      ),
     ),
+    sortDeclaration.sort,
   )
   const limited = component.limit && component.limit > 0 ? matched.slice(0, component.limit) : matched
 
@@ -61,10 +83,19 @@ function TaskSummaryList({
       description={describeFilter(filter) ?? undefined}
       bodyClassName="px-0 py-0"
       footer={
-        <ProvenanceNote>
-          Tasks from this project, in the order the server returned them. Readiness, if filtered,
-          comes from the server&apos;s report.
-        </ProvenanceNote>
+        <div className="flex flex-col gap-1">
+          <ProvenanceNote>
+            {sortDeclaration.sort
+              ? `Tasks from this project, sorted by ${sortDeclaration.sort.key} in ${sortDeclaration.sort.direction === 'asc' ? 'ascending' : 'descending'} order by the workflow's declaration.`
+              : 'Tasks from this project, in the order the server returned them.'}{' '}
+            Readiness, if filtered, comes from the server&apos;s report.
+          </ProvenanceNote>
+          {component.actions.length > 0 ? (
+            <ProvenanceNote>
+              <DeclaredActionsNote component={component} />
+            </ProvenanceNote>
+          ) : null}
+        </div>
       }
     >
       {withReadiness && readiness.isPending && !readiness.data ? (
@@ -101,7 +132,7 @@ function TaskSummaryList({
                   {task.title}
                 </button>
                 {withReadiness && entry ? (
-                  <span className="font-mono text-2xs text-ink-faint">{entry.reason}</span>
+                  <span className="text-2xs text-ink-faint">{readinessReasonLabel(entry.reason)}</span>
                 ) : null}
                 <span className="whitespace-nowrap text-2xs text-ink-muted">
                   {task.deadlineAtMs !== null ? formatMoment(task.deadlineAtMs) : 'No due date'}

@@ -8,18 +8,15 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowDownIcon,
   ArrowUpIcon,
-  CalendarIcon,
 } from '@/components/ui/icons'
 import { cn } from '@/components/ui/utils'
 import {
   formatMinutes,
-  formatMoment,
-  isOverdue,
   isTerminalStatus,
   priorityLabels,
-  priorityTones,
   readinessReasonLabel,
 } from './task-meta'
+import { TaskRowMeta, TaskDueChip } from './task-row-meta'
 import {
   TaskControlError,
   TaskPriorityControl,
@@ -129,25 +126,6 @@ function PlainHeader({ label, width }: { label: string; width?: string }) {
   )
 }
 
-function DueChip({ task }: { task: Task }) {
-  if (task.deadlineAtMs === null) {
-    return <span className="text-xs text-ink-faint">No deadline</span>
-  }
-  const overdue = isOverdue(task, Date.now())
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 whitespace-nowrap text-xs',
-        overdue ? 'font-medium text-danger-ink' : 'text-ink-muted',
-      )}
-      title={formatMoment(task.deadlineAtMs)}
-    >
-      <CalendarIcon size={12} className="shrink-0 opacity-70" />
-      {formatMoment(task.deadlineAtMs)}
-    </span>
-  )
-}
-
 function EstimateCell({ task }: { task: Task }) {
   const label = formatMinutes(task.estimatedMinutes)
   return label ? (
@@ -177,8 +155,8 @@ function ReadinessCell({ entry }: { entry: ReadinessEntry | undefined }) {
       <Badge tone={tone} dot>
         {label}
       </Badge>
-      <span className="font-mono text-2xs leading-4 text-ink-faint" title={readinessReasonLabel(entry.reason)}>
-        {entry.reason}
+      <span data-readiness-reason="" className="text-2xs leading-4 text-ink-faint">
+        {readinessReasonLabel(entry.reason)}
       </span>
     </span>
   )
@@ -378,7 +356,7 @@ export function TaskTable({
       ) : null}
       {show.due ? (
         <td className="px-3.5 py-2.5 align-top">
-          <DueChip task={task} />
+          <TaskDueChip task={task} />
         </td>
       ) : null}
       {show.estimate ? (
@@ -403,36 +381,20 @@ export function TaskTable({
   const stackedMilestone = columnSet ? show.milestone : showMilestone
   const stackedPriority = columnSet ? show.priority : showPriority
 
-  const stackedMeta = (task: Task) => (
-    <>
-      {stackedPriority && task.priority ? (
-        <Badge tone={priorityTones[task.priority]}>{priorityLabels[task.priority]}</Badge>
-      ) : null}
-      {stackedMilestone && task.milestoneId && milestoneNames.get(task.milestoneId) ? (
-        <Badge tone="neutral">{milestoneNames.get(task.milestoneId)}</Badge>
-      ) : null}
-      {stackedLabels
-        ? task.labels.slice(0, 2).map((label) => (
-            <Badge key={label} tone="neutral" className="lowercase">
-              {label}
-            </Badge>
-          ))
-        : null}
-      <DueChip task={task} />
-      {show.estimate && task.estimatedMinutes !== null ? (
-        <span className="text-2xs tabular-nums text-ink-muted">{formatMinutes(task.estimatedMinutes)}</span>
-      ) : null}
-      {show.readiness ? (
-        <span className="font-mono text-2xs text-ink-faint">
-          {readiness?.get(task.id)?.reason ?? 'readiness not reported'}
-        </span>
-      ) : null}
-      {show.dependencies && dependencies?.get(task.id) ? (
-        <span className="text-2xs text-ink-faint">
-          unblocks {dependencies.get(task.id)!.directDependents.length}
-        </span>
-      ) : null}
-    </>
+  const rowMeta = (task: Task) => (
+    <TaskRowMeta
+      variant="row"
+      task={task}
+      showPriority={stackedPriority}
+      showMilestone={stackedMilestone}
+      milestoneName={task.milestoneId ? milestoneNames.get(task.milestoneId) : undefined}
+      showLabels={stackedLabels}
+      showEstimate={show.estimate}
+      showReadiness={show.readiness}
+      readiness={readiness?.get(task.id)}
+      showDependencies={show.dependencies}
+      unblocks={dependencies?.get(task.id)?.directDependents.length}
+    />
   )
 
   return (
@@ -532,7 +494,7 @@ export function TaskTable({
                       {inlineMeta ? (
                         <>
                           {!wide ? (
-                            <span className="mt-1 flex flex-wrap items-center gap-1.5">{stackedMeta(task)}</span>
+                            <span className="mt-1 flex flex-wrap items-center gap-1.5">{rowMeta(task)}</span>
                           ) : null}
                           {wide && !labelsVisible && showLabels && task.labels.length > 0 ? (
                             <span className="mt-1 flex flex-wrap gap-1">
@@ -599,7 +561,7 @@ export function TaskTable({
                   ) : null}
                   <div className="min-w-0 flex-1">
                     <RowTitle task={task} onOpen={onOpen} truncate={false} />
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">{stackedMeta(task)}</div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">{rowMeta(task)}</div>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       {show.status ? (
                         <TaskStatusControl
