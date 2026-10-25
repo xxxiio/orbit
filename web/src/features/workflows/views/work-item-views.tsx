@@ -35,6 +35,7 @@ import {
   emptyTextOption,
   listOptionDeclaration,
   unsupportedWorkItemFilterKeys,
+  viewHeaderAction,
   workItemMatchesDeclaredFilter,
 } from '../view-metadata'
 import { NewWorkItemButton } from '../work-item-create-dialog'
@@ -123,6 +124,9 @@ function workItemPanelActions(
   kind: string | null,
   initialKind?: string | null,
 ): ReactNode {
+  // The workspace header already offers the primary create action when this
+  // view's first panel is work items; a second button in the panel is noise.
+  if (viewHeaderAction(props.view)?.kind === 'new_work_item') return null
   return (
     <NewWorkItemButton
       projectId={props.project.id}
