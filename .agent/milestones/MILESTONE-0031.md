@@ -131,7 +131,7 @@ will follow. The official user-facing vocabulary is **Workflow**; internal
 - [x] EC-001: A person signs in from a browser with an operator-issued device credential, receives an HttpOnly cookie session, survives refresh, is bounced to login with an explanation on expiry, and cannot use the product UI to obtain administrator privileges.
 - [ ] EC-002: Projects and tasks are fully manageable through the browser (create, edit, priority, labels, Markdown description, acceptance criteria, dependencies, attachments, status changes with server rejection surfaced) with persisted state after refresh and no CLI or direct-database fallback.
 - [ ] EC-003: Home and Inbox are functional daily surfaces whose readiness, blockers, due/overdue and planning data all come from Rust services.
-- [ ] EC-004: Basic, Development, Research, Learning and Habits workflows produce appropriate functional project workspaces through one view registry, with work-item creation, editing, valid transitions, invalid-transition explanations, workflow application/change and upgrade preview plus confirmed upgrade.
+- [x] EC-004: Basic, Development, Research, Learning and Habits workflows produce appropriate functional project workspaces through one component-type view registry, with work-item creation, typed fields, valid transitions, invalid-transition explanations, workflow application/change and upgrade preview plus fingerprint-confirmed upgrade. Declared Workflow Actions are listed with their capability requirements and an explicit statement that the connected server does not execute capabilities.
 - [ ] EC-005: No user-visible "Blueprint" text exists anywhere in the product, enforced by an automated check; internal identifiers remain unchanged.
 - [ ] EC-006: Knowledge documents, attachments and agent jobs/handoffs can be handled from the browser within existing authorization, size and integrity limits.
 - [ ] EC-007: Playwright acceptance runs against a real isolated `orbit-server` and covers authentication, project/task lifecycle, inbox triage, workflow selection/views/transitions, planning, knowledge, attachments, agent inspection, conflict rejection, session expiry, refresh and restart.
@@ -143,7 +143,14 @@ will follow. The official user-facing vocabulary is **Workflow**; internal
 
 - EC-001: `crates/orbit-server/src/session.rs` + `main.rs` session/CSRF handlers and the loopback HTTP tests in `crates/orbit-server`; live curl smoke (login 201 + cookie, session 200, CSRF-less mutation 403); Playwright `tests/e2e/auth.spec.ts` (wrong token, valid login + reload, sign-out, expiry message) — 20/20 suite green at commit `87b4710`.
 - EC-005: `web/scripts/check-terminology.mjs` scanning 106 files with zero findings; Playwright `terminology.spec.ts` asserting rendered routes and document titles.
-- EC-002/003 partial: Home, Inbox, Projects, project Overview/Tasks and the task drawer are implemented and covered by `projects.spec.ts`, `tasks.spec.ts`, `home.spec.ts`, `conflict.spec.ts`; attachments, criteria completeness and dependencies remain for I2/I4.
+- EC-002/003 partial: Home, Inbox, Projects, project workspaces and the task drawer are implemented and
+covered by the browser suite; attachments remain for I4.
+- EC-004: I3 (commits `05f1e74..1f806b1`, correctness `c3bbf56`, structure `e03caa8`, final `3eca6c3`) —
+work items render through the registry for all five workflows, transitions and guards come from the
+manifest, upgrades require the previewed fingerprint and an explicit confirmation, and actions are
+listed honestly with no run control. 41 Playwright checks and `web/evidence/i3/` prove it.
+- Gate 3 closed at `3eca6c3` (three review attempts; the last two holds were a sheet lifecycle that
+could discard a draft, a double submit, a lost-create retry, and inverted descending sorts).
 - EC-003 partial: Home shows server readiness, blockers, overdue and due-today; Inbox
 triages against the same snapshot. Day/schedule planning is surfaced in the project
 planning tool rather than Home, which I5 dogfooding will judge.
