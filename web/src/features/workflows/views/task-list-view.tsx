@@ -246,7 +246,7 @@ export function TableView(props: ViewRendererProps) {
       <UnavailablePanel
         title={componentTypeName(component)}
         reason={`This table is declared over “${dataSourceName(source)}”, which the browser does not tabulate yet.`}
-        hint="The Task list and Board cover the project's tasks; work items are still a console feature."
+        hint="The Task list and Board cover the project's tasks; this source has no table in this build."
       />
     )
   }
