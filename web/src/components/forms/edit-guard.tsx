@@ -16,6 +16,12 @@ export interface EditorHandle {
   id: string
   isDirty: () => boolean
   flush: () => void
+  /**
+   * Identifies the draft the editor holds right now. A shell that flushes on
+   * close records this alongside the flush, so a draft typed after that flush
+   * is never mistaken for the one it already tried to send.
+   */
+  draftKey: () => string
 }
 
 interface EditGuardValue {
@@ -35,12 +41,19 @@ export function EditGuardProvider({
   return <EditGuardContext.Provider value={value}>{children}</EditGuardContext.Provider>
 }
 
-export function useDirtyGuard(id: string, isDirty: () => boolean, flush: () => void) {
+export function useDirtyGuard(
+  id: string,
+  isDirty: () => boolean,
+  flush: () => void,
+  draftKey: () => string,
+) {
   const guard = useContext(EditGuardContext)
   const dirtyRef = useRef(isDirty)
   dirtyRef.current = isDirty
   const flushRef = useRef(flush)
   flushRef.current = flush
+  const draftKeyRef = useRef(draftKey)
+  draftKeyRef.current = draftKey
 
   useEffect(() => {
     if (!guard) return
@@ -48,6 +61,7 @@ export function useDirtyGuard(id: string, isDirty: () => boolean, flush: () => v
       id,
       isDirty: () => dirtyRef.current(),
       flush: () => flushRef.current(),
+      draftKey: () => draftKeyRef.current(),
     })
   }, [guard, id])
 }

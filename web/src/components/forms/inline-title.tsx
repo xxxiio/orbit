@@ -72,6 +72,7 @@ export function InlineTitle({
     'title',
     () => stateRef.current.editing && stateRef.current.draft.trim() !== valueRef.current,
     () => void commitRef.current(),
+    () => stateRef.current.draft,
   )
 
   const beginEdit = () => {

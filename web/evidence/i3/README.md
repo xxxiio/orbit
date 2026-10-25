@@ -6,9 +6,13 @@ Browser captures of the M31 I3 build, produced from the deterministic fixture in
 
 Captured on 2026-10-26 from commit
 `05f1e74ad5f1d4faea454f58dd7e62d9870c8f91` (M31 I3: work items, transitions,
-upgrades, actions). Later commits only widen test timeouts, scope one evidence
-assertion, and refresh a refusal string on a panel no capture shows, so the
-screenshots still describe this commit's UI. Captured using `target/debug/orbit-server` built 2026-10-25 22:18
+upgrades, actions). Later commits widen test timeouts, scope one evidence
+assertion, and refresh a refusal string on a panel no capture shows, so most
+screenshots still describe this commit's UI — except for two visible deltas added
+by `e03caa8` after the capture: the work-item board's keyboard hint (would show
+in the two 1440-wide board frames; hidden at phone width) and the count badge on
+workspace tabs (would show in every frame's tab strip). Those frames predate
+`e03caa8` and were not re-captured. Captured using `target/debug/orbit-server` built 2026-10-25 22:18
 local. I3 changed no Rust source, so that binary matches the committed server.
 The `web/dist` build used for the capture came from the same commit. Re-run the
 commands below after any change to the build; a capture is only comparable to

@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient } from '@tanstack/react-query'
 import type { BlueprintWorkItemRecord } from '@/api/contracts'
 import type { WorkItem } from '@/api/adapters'
+import { ApiError } from '@/api/errors'
 import { queryKeys } from '@/api/queries'
 import {
   acceptLedgerRevision,
@@ -127,6 +128,93 @@ describe('work-item create idempotency', () => {
     })
 
     expect(requests().map((body) => body.id)).toEqual(['wi-a', 'wi-b'])
+  })
+})
+
+describe('work-item create duplicate-check re-read', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const variables = {
+    commandId: 'cmd-create-1',
+    id: 'wi-new',
+    projectId: 'p-1',
+    kind: 'feature',
+    properties: { summary: 'Once' },
+  }
+
+  it('reports the server refusal when the re-read proves the id is not stored', async () => {
+    const client = testQueryClient()
+    seed(client)
+    vi.mocked(fetch)
+      // The first attempt may have been stored: pinned as uncertain.
+      .mockRejectedValueOnce(new TypeError('network down'))
+      // The retry's refusal is the server answering "that id is taken".
+      .mockResolvedValueOnce(jsonResponse({ error: 'duplicate item id' }, 409))
+      // The duplicate check then proves nothing is stored under the id.
+      .mockResolvedValueOnce(jsonResponse({ error: 'not found' }, 404))
+      // A third attempt still re-checks: the attempt stays pinned.
+      .mockResolvedValueOnce(jsonResponse({ error: 'duplicate item id' }, 409))
+      .mockResolvedValueOnce(jsonResponse({ error: 'not found' }, 404))
+
+    const { result } = renderHook(() => useCreateWorkItem(), { wrapper: queryWrapper(client) })
+
+    await act(async () => {
+      await result.current.mutateAsync(variables).catch(() => null)
+    })
+    await waitFor(() => expect(result.current.disposition).toBe('uncertain'))
+
+    let failure: unknown
+    await act(async () => {
+      failure = await result.current.mutateAsync(variables).catch((error: unknown) => error)
+    })
+
+    // The real refusal, not a synthetic "could not confirm" (status 0).
+    expect(failure).toBeInstanceOf(ApiError)
+    expect((failure as ApiError).status).toBe(409)
+    expect((failure as ApiError).message).toMatch(/duplicate item id/)
+    expect((failure as ApiError).message).not.toMatch(/could not confirm/)
+    await waitFor(() => expect(result.current.disposition).toBe('rejected'))
+
+    // Pinned: the next attempt reuses the id and re-checks the server.
+    await act(async () => {
+      await result.current.mutateAsync(variables).catch(() => null)
+    })
+    expect(requestUrls().filter((url) => url.includes('id=wi-new'))).toHaveLength(2)
+  })
+
+  it('surfaces a failed re-read instead of hiding it behind the refusal', async () => {
+    const client = testQueryClient()
+    seed(client)
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(new TypeError('network down'))
+      .mockResolvedValueOnce(jsonResponse({ error: 'duplicate item id' }, 409))
+      // The duplicate check itself fails: the outcome is genuinely unknown.
+      .mockResolvedValueOnce(jsonResponse({ error: 'storage unavailable' }, 503))
+
+    const { result } = renderHook(() => useCreateWorkItem(), { wrapper: queryWrapper(client) })
+
+    await act(async () => {
+      await result.current.mutateAsync(variables).catch(() => null)
+    })
+    await waitFor(() => expect(result.current.disposition).toBe('uncertain'))
+
+    let failure: unknown
+    await act(async () => {
+      failure = await result.current.mutateAsync(variables).catch((error: unknown) => error)
+    })
+
+    expect(failure).toBeInstanceOf(ApiError)
+    expect((failure as ApiError).status).toBe(503)
+    expect((failure as ApiError).message).toMatch(/storage unavailable/)
+    expect((failure as ApiError).message).not.toMatch(/could not confirm/)
+    // A failed read is an unconfirmed outcome, not a refusal.
+    await waitFor(() => expect(result.current.disposition).toBe('uncertain'))
   })
 })
 

@@ -25,7 +25,6 @@ import {
   numericFieldsForSource,
   parseActionable,
   reservedDeclaredViews,
-  sortByDeclaration,
   taskMatchesDeclaredFilter,
   taskMetricRows,
   taskSortDeclaration,
@@ -39,6 +38,8 @@ import {
   workItemKindFilterRefusal,
   workItemMetricRows,
 } from '@/features/workflows/view-metadata'
+import { taskSortDescriptor } from '@/features/workflows/declarations'
+import { filterSortLimit } from '@/features/workflows/views/resource-surface'
 
 function component(
   overrides: Partial<WorkflowViewComponent> & Pick<WorkflowViewComponent, 'id' | 'type'>,
@@ -559,12 +560,55 @@ describe('declared task sorts', () => {
         component({ id: 'l', type: 'list', source: 'tasks', sort: 'deadline', descending: true }),
       ),
     ).toEqual({ sort: { key: 'due', direction: 'desc' }, refusal: null })
+  })
 
-    const sorted = sortByDeclaration(
-      [task({ id: 'a', title: 'Alpha' }), task({ id: 'b', title: 'Beta' })],
-      { key: 'title', direction: 'desc' },
-    )
-    expect(sorted.map((entry) => entry.title)).toEqual(['Beta', 'Alpha'])
+  /**
+   * The live path: `list-view.tsx` and `board-view.tsx` both hand
+   * `taskSortDescriptor(component)` to `filterSortLimit`. The declaration's
+   * direction must reach the rows exactly once, so the copy ("descending") and
+   * the order the person sees agree.
+   */
+  it('applies a declared direction exactly once through the surface pipeline', () => {
+    const tasks = [
+      task({ id: 'a', title: 'Alpha' }),
+      task({ id: 'b', title: 'Beta' }),
+      task({ id: 'c', title: 'Gamma' }),
+    ]
+
+    const ascending = component({ id: 'l', type: 'list', source: 'tasks', sort: 'title' })
+    const descending = component({
+      id: 'l',
+      type: 'list',
+      source: 'tasks',
+      sort: 'title',
+      descending: true,
+    })
+
+    expect(
+      filterSortLimit(tasks, { sort: taskSortDescriptor(ascending) }).limited.map((entry) => entry.title),
+    ).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(
+      filterSortLimit(tasks, { sort: taskSortDescriptor(descending) }).limited.map((entry) => entry.title),
+    ).toEqual(['Gamma', 'Beta', 'Alpha'])
+
+    // The footer copy comes from the same declaration, so it cannot disagree.
+    expect(taskSortDeclaration(descending).sort?.direction).toBe('desc')
+    expect(taskSortDeclaration(ascending).sort?.direction).toBe('asc')
+  })
+
+  it('still honours a limit after sorting in the declared direction', () => {
+    const tasks = [
+      task({ id: 'a', title: 'Alpha' }),
+      task({ id: 'b', title: 'Beta' }),
+      task({ id: 'c', title: 'Gamma' }),
+    ]
+    const { limited } = filterSortLimit(tasks, {
+      sort: taskSortDescriptor(
+        component({ id: 'l', type: 'list', source: 'tasks', sort: 'title', descending: true, limit: 2 }),
+      ),
+      limit: 2,
+    })
+    expect(limited.map((entry) => entry.title)).toEqual(['Gamma', 'Beta'])
   })
 
   it('refuses a field the adapter does not carry, notably `updated`', () => {

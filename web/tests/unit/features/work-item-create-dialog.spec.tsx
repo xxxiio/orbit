@@ -160,9 +160,11 @@ describe('work item create dialog idempotency', () => {
     expect(screen.queryByText(/The server refused this work item/)).toBeNull()
   })
 
-  it('keeps the same-id attempt pinned when the duplicate check finds no stored item', async () => {
+  it('surfaces the duplicate refusal when the duplicate check finds no stored item', async () => {
     vi.mocked(fetch)
       .mockRejectedValueOnce(new TypeError('network down'))
+      .mockResolvedValueOnce(jsonResponse({ error: 'item id already exists' }, 400))
+      .mockResolvedValueOnce(jsonResponse({ error: 'work item not found' }, 404))
       .mockResolvedValueOnce(jsonResponse({ error: 'item id already exists' }, 400))
       .mockResolvedValueOnce(jsonResponse({ error: 'work item not found' }, 404))
 
@@ -175,14 +177,18 @@ describe('work item create dialog idempotency', () => {
 
     await user.click(screen.getByRole('button', { name: 'Retry the same request' }))
 
-    // The read says the item is not stored, but the earlier attempt is still
-    // the only safe retry: the dialog must not mint a second id.
-    await screen.findByText(/may or may not have been saved/i)
-    const retry = screen.getByRole('button', { name: 'Retry the same request' })
-    expect(retry).toBeEnabled()
+    // The read proves nothing is stored under the id, so the server's own
+    // refusal is the answer the person gets — not a synthetic "could not
+    // confirm" that hides a definitive refusal.
+    await screen.findByText(/The server refused this work item/)
+    expect(screen.getByText(/item id already exists/)).toBeInTheDocument()
+
+    // The attempt stays pinned: a retry still repeats the same item id, so the
+    // dialog cannot create a second item while the earlier one is unresolved.
+    await user.click(screen.getByRole('button', { name: 'Create work item' }))
     const createIds = bodies().map((body) => body.id)
-    expect(createIds).toHaveLength(2)
-    expect(createIds[1]).toBe(createIds[0])
+    expect(createIds.length).toBeGreaterThanOrEqual(2)
+    expect(new Set(createIds).size).toBe(1)
   })
 
   it('validates a required field and a typed control before sending anything', async () => {

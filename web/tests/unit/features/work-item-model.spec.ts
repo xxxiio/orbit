@@ -6,12 +6,13 @@ import {
   guardSentence,
   pinnedKindForView,
   resolveBoardKind,
-  sortWorkItems,
   stateLabel,
   workItemColumnPlan,
   workItemSortDeclaration,
   workItemTitle,
 } from '@/features/workflows/work-item-model'
+import type { SortDeclaration } from '@/lib/declarations'
+import { filterSortLimit } from '@/features/workflows/views/resource-surface'
 
 const workflow: Workflow = {
   id: 'guarded',
@@ -202,18 +203,32 @@ describe('work-item columns and order', () => {
   })
 
   it('sorts by a declared field, state or the title each row displays', () => {
-    const byPriority = workItemSortDeclaration(component({ sort: 'priority' }), workflow)
+    // The same pipeline the work-item list, table, board and chooser run:
+    // `workItemSortDeclaration` supplies an ascending comparator and the
+    // declaration supplies the direction, which `filterSortLimit` applies once.
+    const sortedIds = (sort: string, descending: boolean, rows: WorkItem[]) => {
+      const declaration = workItemSortDeclaration(component({ sort }), workflow)
+      const sortDeclaration: SortDeclaration<WorkItem> | null = declaration.compare
+        ? {
+            key: sort,
+            direction: descending ? 'desc' : 'asc',
+            compare: declaration.compare,
+            refusal: null,
+          }
+        : null
+      return filterSortLimit(rows, { sort: sortDeclaration }).limited.map((entry) => entry.id)
+    }
+
     const low = item({ id: 'low', properties: { priority: 'low' } })
     const high = item({ id: 'high', properties: { priority: 'high' } })
-    expect(sortWorkItems([high, low], byPriority, false).map((entry) => entry.id)).toEqual([
-      'high',
-      'low',
-    ])
+    // Textual comparison: "high" sorts before "low" ascending.
+    expect(sortedIds('priority', false, [low, high])).toEqual(['high', 'low'])
+    expect(sortedIds('priority', true, [high, low])).toEqual(['low', 'high'])
 
-    const byTitle = workItemSortDeclaration(component({ sort: 'title' }), workflow)
     const a = item({ id: 'a', kind: 'task', properties: { title: 'Alpha' } })
     const b = item({ id: 'b', kind: 'task', properties: { title: 'Beta' } })
-    expect(sortWorkItems([b, a], byTitle, false).map((entry) => entry.id)).toEqual(['a', 'b'])
+    expect(sortedIds('title', false, [b, a])).toEqual(['a', 'b'])
+    expect(sortedIds('title', true, [a, b])).toEqual(['b', 'a'])
   })
 
   it('refuses a declared sort field that no kind defines', () => {

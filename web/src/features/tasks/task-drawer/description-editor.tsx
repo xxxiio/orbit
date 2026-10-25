@@ -44,6 +44,7 @@ export function DescriptionEditor({
     'description',
     () => draftRef.current !== descriptionRef.current,
     () => commitRef.current(),
+    () => draftRef.current,
   )
 
   return (

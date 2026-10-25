@@ -240,16 +240,6 @@ export function workItemSortDeclaration(
   return { compare: resolved.compare, refusal: resolved.refusal }
 }
 
-export function sortWorkItems(
-  items: readonly WorkItem[],
-  declaration: WorkItemSortDeclaration,
-  descending: boolean,
-): WorkItem[] {
-  if (!declaration.compare) return [...items]
-  const compare = declaration.compare
-  return [...items].sort((left, right) => (descending ? compare(right, left) : compare(left, right)))
-}
-
 export interface WorkItemColumn {
   key: 'title' | 'kind' | 'state' | 'revision' | 'field'
   label: string

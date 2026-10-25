@@ -87,7 +87,12 @@ function TextProperty({
     onCommit(draft)
   }
 
-  useDirtyGuard(field.id, () => draft !== committed && draft !== submitted.current, commit)
+  useDirtyGuard(
+    field.id,
+    () => draft !== committed && draft !== submitted.current,
+    commit,
+    () => draft,
+  )
 
   return (
     <PropertyEditor
@@ -161,7 +166,12 @@ function IntegerProperty({
     }
   }
 
-  useDirtyGuard(field.id, () => draft !== committed && draft !== submitted.current, commit)
+  useDirtyGuard(
+    field.id,
+    () => draft !== committed && draft !== submitted.current,
+    commit,
+    () => draft,
+  )
 
   return (
     <PropertyEditor
@@ -372,7 +382,11 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
   const [closeNotice, setCloseNotice] = useState<string | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
   const editorsRef = useRef(new Map<string, EditorHandle>())
-  const flushRequestedRef = useRef(false)
+  // The draft each editor last handed to the server from a close, keyed by
+  // editor id. A close only abandons a draft it has already tried to send:
+  // comparing the recorded key with the editor's current one means a draft
+  // typed after that flush is flushed again, never discarded.
+  const flushedDraftsRef = useRef(new Map<string, string>())
   const register = useCallback((handle: EditorHandle) => {
     editorsRef.current.set(handle.id, handle)
     return () => {
@@ -401,20 +415,28 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
     }
     const dirty = [...editorsRef.current.values()].filter((editor) => editor.isDirty())
     if (dirty.length > 0) {
-      if (flushRequestedRef.current) {
-        // A previous close flushed and nothing is pending: the draft has either
-        // been rejected or cannot be sent (an invalid number). Discard it.
-        flushRequestedRef.current = false
+      // Flush every draft this close has not already tried to send.
+      const fresh = dirty.filter(
+        (editor) => flushedDraftsRef.current.get(editor.id) !== editor.draftKey(),
+      )
+      if (fresh.length === 0) {
+        // Every dirty editor still holds the draft the previous close handed
+        // over and the editor could not send it (an invalid number). Abandon
+        // it: no new draft can reach this branch, because a new draft has a
+        // different key.
+        flushedDraftsRef.current.clear()
         setCloseNotice(null)
         onClose()
         return
       }
-      flushRequestedRef.current = true
+      for (const editor of fresh) {
+        flushedDraftsRef.current.set(editor.id, editor.draftKey())
+        editor.flush()
+      }
       setCloseNotice('Your edit is being saved first. Close again when the server answers.')
-      for (const editor of dirty) editor.flush()
       return
     }
-    flushRequestedRef.current = false
+    flushedDraftsRef.current.clear()
     setCloseNotice(null)
     onClose()
   }, [busy, onClose])
@@ -423,7 +445,7 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
     setLocalError(null)
     try {
       await properties.mutateAsync({ id: item.id, changes: { [fieldId]: value } })
-      flushRequestedRef.current = false
+      flushedDraftsRef.current.clear()
       const field = kind?.fields.find((candidate) => candidate.id === fieldId)
       setAnnouncement(`${fieldLabel(field, fieldId)} saved.`)
     } catch {
@@ -435,7 +457,7 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
     setLocalError(null)
     try {
       const accepted = await transition.mutateAsync({ id: item.id, to })
-      flushRequestedRef.current = false
+      flushedDraftsRef.current.clear()
       setAnnouncement(`The server moved this item to ${stateLabel(accepted.state)}.`)
     } catch {
       // `transition.error` is shown next to the transition and in the footer.

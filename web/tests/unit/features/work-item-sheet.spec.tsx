@@ -170,6 +170,42 @@ describe('work-item sheet closes honestly', () => {
     expect(minutes).toHaveValue(30)
   })
 
+  it('saves a fresh draft after an earlier close already flushed another one', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        id: 'wi-open',
+        project_id: 'p-1',
+        kind: 'ticket',
+        state: 'open',
+        properties: { priority: 'low', minutes: 45 },
+        revision: 4,
+      }),
+    )
+    const user = userEvent.setup()
+    const { onClose } = renderSheet(openTicket)
+
+    const minutes = screen.getByLabelText(/Minutes/)
+    // Clear → Escape: the commit reverts (no clear command exists), so nothing
+    // is sent and the sheet asks for another close.
+    await user.clear(minutes)
+    await user.keyboard('{Escape}')
+    await screen.findByText(/Your edit is being saved first/)
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+
+    // A new draft typed after that flush must be saved, never discarded by the
+    // earlier flush's bookkeeping.
+    await user.clear(minutes)
+    await user.type(minutes, '45')
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1))
+    expect(sentBodies()[0]?.changes).toEqual({ minutes: 45 })
+    // The sheet stays open for the answer: a close with zero requests is the
+    // silent data loss this guards against.
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('sends a typed value once when the sheet is closed in the same interaction', async () => {
     vi.mocked(fetch).mockResolvedValue(
       jsonResponse({

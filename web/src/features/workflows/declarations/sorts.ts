@@ -9,7 +9,6 @@ import type { Task, WorkflowViewComponent } from '@/api/adapters'
 import { compareTasks, type TaskSort, type TaskSortKey } from '@/features/tasks'
 import {
   resolveSort,
-  sortByDescriptor,
   type SortDeclaration,
   type SortDescriptor,
   type SortDirection,
@@ -56,14 +55,18 @@ export interface TaskSortDeclaration {
   refusal: string | null
 }
 
+function resolveTaskSort(component: WorkflowViewComponent): SortDeclaration<Task> {
+  return resolveSort(component, TASK_SORT_DESCRIPTORS, (declared) =>
+    `This panel sorts tasks by “${declared}”, a field this build does not carry for tasks.`,
+  )
+}
+
 /**
  * Map a declared `sort`/`descending` pair onto the comparators task lists
  * already use. Fields the adapter does not carry are refused by name.
  */
 export function taskSortDeclaration(component: WorkflowViewComponent): TaskSortDeclaration {
-  const resolved = resolveSort(component, TASK_SORT_DESCRIPTORS, (declared) =>
-    `This panel sorts tasks by “${declared}”, a field this build does not carry for tasks.`,
-  )
+  const resolved = resolveTaskSort(component)
   if (!resolved.key) return { sort: null, refusal: resolved.refusal }
   return {
     sort: { key: resolved.key as TaskSortKey, direction: resolved.direction },
@@ -71,28 +74,15 @@ export function taskSortDeclaration(component: WorkflowViewComponent): TaskSortD
   }
 }
 
-/** A stable, copied sort using the shared task comparator. */
-export function sortByDeclaration(tasks: readonly Task[], sort: TaskSort | null): Task[] {
-  // `compareTasks` applies the direction itself, so the descriptor sort runs
-  // ascending and the comparator owns the order.
-  return sortByDescriptor(tasks, {
-    key: sort?.key ?? null,
-    direction: 'asc',
-    compare: sort ? (left, right) => compareTasks(left, right, sort) : null,
-    refusal: null,
-  })
-}
-
-/** The declared task sort as a generic descriptor declaration. */
+/**
+ * The declared task sort as a generic descriptor declaration.
+ *
+ * The comparator is ascending and the declared `direction` travels beside it,
+ * so `sortByDescriptor` applies the direction exactly once. A comparator that
+ * already applied it would invert a descending declaration back to ascending.
+ */
 export function taskSortDescriptor(
   component: WorkflowViewComponent,
 ): SortDeclaration<Task> {
-  const declared = taskSortDeclaration(component)
-  const sort = declared.sort
-  return {
-    key: sort?.key ?? null,
-    direction: sort?.direction ?? 'asc',
-    compare: sort ? (left, right) => compareTasks(left, right, sort) : null,
-    refusal: declared.refusal,
-  }
+  return resolveTaskSort(component)
 }

@@ -25,7 +25,6 @@ export {
   numericFieldsForSource,
   projectMatchesDeclaredFilter,
   reservedDeclaredViews,
-  sortByDeclaration,
   taskMetricRows,
   taskSortDeclaration,
   unsupportedProjectFilterKeys,

@@ -35,6 +35,7 @@ import {
   classifyError,
   errorInfo,
   isAmbiguousError,
+  isApiError,
 } from './errors'
 import { handleUnauthorized } from './session-store'
 import { queryKeys } from './queries'
@@ -869,18 +870,23 @@ export function useCreateWorkItem(): CommandMutation<WorkItem, CreateWorkItemVar
         if (uncertainCreates.current.has(id)) {
           // The retry repeats the id, so a stored first attempt answers with a
           // duplicate-insert refusal. Ask the server which fact is true.
-          const existing = await fetchWorkItem(id).catch(() => null)
-          if (existing) {
+          try {
+            const existing = await fetchWorkItem(id)
             uncertainCreates.current.delete(id)
             return toWorkItem(existing)
+          } catch (readError) {
+            if (!isApiError(readError) || readError.status !== 404) {
+              // The duplicate check itself failed. Say so: reporting the
+              // create's outcome would guess, and swallowing this would hide a
+              // real read failure behind the refusal below.
+              throw readError
+            }
           }
           // The server refused the insert and does not hold the id. The earlier
-          // attempt is still the only safe retry, so keep it uncertain instead
-          // of letting the dialog mint a second id.
-          throw new ApiError(
-            0,
-            'Orbit could not confirm whether the earlier create was saved. Retry the same request before changing it.',
-          )
+          // attempt is still the only safe retry, so keep it pinned — but the
+          // answer we did get was the server's own refusal, not an unknown
+          // outcome, so report that instead of a synthetic "unconfirmed".
+          throw error
         }
         throw error
       }

@@ -49,7 +49,12 @@ export function CriteriaSection({
   const addRef = useRef(add)
   addRef.current = add
 
-  useDirtyGuard('new-criterion', () => newTextRef.current.trim().length > 0, () => void addRef.current())
+  useDirtyGuard(
+    'new-criterion',
+    () => newTextRef.current.trim().length > 0,
+    () => void addRef.current(),
+    () => newTextRef.current,
+  )
 
   const ordered = [...criteria].sort((left, right) => left.position - right.position)
   const completed = ordered.filter((criterion) => criterion.completed).length
@@ -190,6 +195,7 @@ function CriterionText({
     `criterion-${criterion.id}`,
     () => stateRef.current.editing && stateRef.current.draft.trim() !== textRef.current,
     () => commitRef.current(),
+    () => stateRef.current.draft,
   )
 
   if (!editing) {

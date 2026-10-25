@@ -55,6 +55,7 @@ export function LabelsEditor({
     'labels',
     () => parse(draftRef.current).join('\u0000') !== labelsRef.current.join('\u0000'),
     () => commitRef.current(),
+    () => draftRef.current,
   )
 
   if (!editing) {
