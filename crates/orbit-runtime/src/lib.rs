@@ -1329,6 +1329,12 @@ impl AuthoritativeHost {
         self.authority.revoke(id)
     }
 
+    /// Whether the device still exists and has not been revoked. Used by
+    /// transports that hold longer-lived delegated credentials.
+    pub fn device_active(&self, id: &str) -> Result<bool, store::AuthorityError> {
+        self.authority.device_active(id)
+    }
+
     pub fn rotate_device_token(
         &mut self,
         id: &str,
@@ -1359,6 +1365,20 @@ mod host_tests {
         assert!(host.authorize_device("device-1", second).unwrap());
         assert!(host.revoke_device("device-1").unwrap());
         assert!(!host.authorize_device("device-1", second).unwrap());
+    }
+
+    #[test]
+    fn device_liveness_requires_an_enrolled_unrevoked_device() {
+        let mut host = AuthoritativeHost::open(":memory:").unwrap();
+        let secret = "device-secret-three-0123456789abc";
+        assert!(!host.device_active("device-2").unwrap());
+        host.enroll_device("device-2", secret).unwrap();
+        assert!(host.device_active("device-2").unwrap());
+        // Liveness must not depend on knowing the token.
+        assert!(host.device_active("device-2").unwrap());
+        assert!(host.revoke_device("device-2").unwrap());
+        assert!(!host.device_active("device-2").unwrap());
+        assert!(!host.device_active("device-unknown").unwrap());
     }
 
     #[test]

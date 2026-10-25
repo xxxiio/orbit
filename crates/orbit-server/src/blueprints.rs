@@ -16,8 +16,27 @@ pub(super) struct ProjectKey {
     project_id: String,
 }
 #[derive(Deserialize)]
-pub(super) struct ItemKey {
+pub(super) struct ItemsQuery {
+    id: Option<String>,
+    project_id: Option<String>,
+}
+#[derive(Deserialize)]
+pub(super) struct UpgradeQuery {
+    project_id: String,
     id: String,
+    version: u32,
+}
+#[derive(Deserialize)]
+pub(super) struct UpgradeBody {
+    project_id: String,
+    id: String,
+    version: u32,
+    #[serde(default)]
+    confirm: bool,
+    /// Optional preview fingerprint. When omitted the authority recomputes it,
+    /// so a caller can never apply a version it has not been shown.
+    #[serde(default)]
+    fingerprint: Option<String>,
 }
 #[derive(Deserialize)]
 pub(super) struct PublishBody {
@@ -184,17 +203,31 @@ pub(super) async fn create_item(
             .map_err(repo_error)?,
     ))
 }
-pub(super) async fn item(
+pub(super) async fn items(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(q): Query<ItemKey>,
-) -> Result<Json<orbit_blueprint::BlueprintWorkItem>, ApiError> {
+    Query(q): Query<ItemsQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
     device(&state, &headers)?;
-    let item = locked(&state)?
-        .project_work_item(&q.id)
-        .map_err(repo_error)?
-        .ok_or_else(|| error(StatusCode::NOT_FOUND, "work item not found"))?;
-    Ok(Json(item))
+    if let Some(id) = q.id.as_deref() {
+        let item = locked(&state)?
+            .project_work_item(id)
+            .map_err(repo_error)?
+            .ok_or_else(|| error(StatusCode::NOT_FOUND, "work item not found"))?;
+        return Ok(Json(json_value(item)?));
+    }
+    let project_id = q
+        .project_id
+        .as_deref()
+        .ok_or_else(|| error(StatusCode::BAD_REQUEST, "id or project_id is required"))?;
+    let items = locked(&state)?
+        .project_work_items(project_id)
+        .map_err(repo_error)?;
+    Ok(Json(json_value(items)?))
+}
+fn json_value<T: serde::Serialize>(value: T) -> Result<serde_json::Value, ApiError> {
+    serde_json::to_value(value)
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "serialization error"))
 }
 pub(super) async fn transition(
     State(state): State<AppState>,
@@ -258,5 +291,46 @@ pub(super) async fn accept_command(
         .map_err(repo_error)?;
     Ok(Json(
         serde_json::json!({"command_id":request.command_id,"response":result}),
+    ))
+}
+
+/// Read-only upgrade comparison. The runtime decides every diff and blocker.
+pub(super) async fn upgrade_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<UpgradeQuery>,
+) -> Result<Json<orbit_runtime::blueprint_upgrade::BlueprintUpgradePreview>, ApiError> {
+    device(&state, &headers)?;
+    Ok(Json(
+        locked(&state)?
+            .preview_blueprint_upgrade(&q.project_id, &q.id, q.version)
+            .map_err(repo_error)?,
+    ))
+}
+/// Explicit, confirmed re-pin. The authority re-checks blockers and the
+/// preview fingerprint, so a stale client cannot upgrade silently.
+pub(super) async fn upgrade(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<UpgradeBody>,
+) -> Result<Json<orbit_runtime::blueprint_upgrade::BlueprintUpgradeApplied>, ApiError> {
+    device(&state, &headers)?;
+    if !body.confirm {
+        return Err(error(StatusCode::BAD_REQUEST, "confirmation required"));
+    }
+    let mut store = locked(&state)?;
+    let fingerprint = match body.fingerprint.as_deref().map(str::trim) {
+        Some(fingerprint) if !fingerprint.is_empty() => fingerprint.to_owned(),
+        _ => {
+            store
+                .preview_blueprint_upgrade(&body.project_id, &body.id, body.version)
+                .map_err(repo_error)?
+                .fingerprint
+        }
+    };
+    Ok(Json(
+        store
+            .apply_blueprint_upgrade(&body.project_id, &body.id, body.version, &fingerprint, true)
+            .map_err(repo_error)?,
     ))
 }

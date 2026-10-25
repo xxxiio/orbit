@@ -364,6 +364,17 @@ impl AuthorityStore {
             .map(|(hash, revoked)| revoked == 0 && bool::from(hash.ct_eq(&digest(token))))
             .unwrap_or(false))
     }
+    /// Liveness without credentials. Browser sessions outlive the token they
+    /// were minted from, so transports need to re-check the device itself.
+    pub fn device_active(&self, id: &str) -> Result<bool, AuthorityError> {
+        let revoked: Option<i64> = self
+            .conn
+            .query_row("SELECT revoked FROM devices WHERE id=?1", [id], |row| {
+                row.get(0)
+            })
+            .optional()?;
+        Ok(revoked == Some(0))
+    }
     #[cfg(test)]
     pub fn append(
         &mut self,

@@ -9,13 +9,16 @@ mod domain_commands {
 }
 mod proposals;
 mod remote_mcp;
+mod session;
+mod web;
 
 use automation::{AutomationStore, Job, JobInput, QueueError, Run, SettleInput};
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path as AxumPath, Query, Request, State},
-    http::{HeaderMap, StatusCode, header},
-    response::{Html, IntoResponse},
+    http::{HeaderMap, Method, StatusCode, header},
+    middleware::{self, Next},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
 use domain_commands::{
@@ -30,6 +33,7 @@ use orbit_runtime::authority_schedule::{ScheduleCommand, ScheduleResult, Schedul
 use orbit_runtime::authority_strategy::{StrategyCommand, StrategyResult, StrategySnapshot};
 use proposals::{Audit, NewProposal, Proposal, ProposalError, ProposalStore};
 use serde::{Deserialize, Serialize};
+use session::{Authenticated, LoginThrottle, SessionError, SessionStore};
 use sha2::{Digest, Sha256};
 use std::{
     path::Path,
@@ -42,6 +46,11 @@ struct AppState {
     store: Arc<Mutex<AuthoritativeHost>>,
     automation: Arc<Mutex<AutomationStore>>,
     proposals: Arc<Mutex<ProposalStore>>,
+    sessions: Arc<Mutex<SessionStore>>,
+    login_attempts: Arc<Mutex<LoginThrottle>>,
+    web_dist: Arc<web::WebDist>,
+    /// `Secure` is only safe when the browser reaches the server over TLS.
+    cookie_secure: bool,
     admin_key_hash: Vec<u8>,
     /// Upper bound for attachment import bodies, checked before buffering.
     attachment_body_limit: usize,
@@ -2474,6 +2483,39 @@ fn admin(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
     }
 }
 fn device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
+    if headers.contains_key(header::AUTHORIZATION) {
+        return bearer_device(state, headers);
+    }
+    // Browser sessions are the only alternative credential; absent a bearer
+    // token there is nothing else to authenticate.
+    let token =
+        session_cookie(headers).ok_or_else(|| error(StatusCode::UNAUTHORIZED, "unauthorized"))?;
+    let now = now_ms()?;
+    let session = {
+        let mut sessions = state
+            .sessions
+            .lock()
+            .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "session lock error"))?;
+        sessions.authenticate(&token, now).map_err(session_error)?
+    };
+    let Some(Authenticated { device_id, .. }) = session else {
+        return Err(error(StatusCode::UNAUTHORIZED, "unauthorized"));
+    };
+    // A session outlives the device credential, so liveness is re-checked on
+    // every request through the runtime rather than trusted from the session.
+    let active = state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?
+        .device_active(&device_id)
+        .map_err(map_error)?;
+    if active {
+        Ok(device_id)
+    } else {
+        Err(error(StatusCode::UNAUTHORIZED, "unauthorized"))
+    }
+}
+fn bearer_device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
     let token = bearer(headers)?;
     let id = headers
         .get("x-orbit-device-id")
@@ -2490,6 +2532,269 @@ fn device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
         Err(error(StatusCode::UNAUTHORIZED, "unauthorized"))
     }
 }
+
+const SESSION_COOKIE: &str = "orbit_session";
+const CLEARED_SESSION_COOKIE: &str = "orbit_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict";
+
+/// Tolerant cookie parsing: other cookies, malformed pairs and whitespace are
+/// ignored, and a suspicious session value is treated as absent.
+fn session_cookie(headers: &HeaderMap) -> Option<String> {
+    for value in headers.get_all(header::COOKIE) {
+        let Ok(raw) = value.to_str() else { continue };
+        for pair in raw.split(';') {
+            let Some((name, value)) = pair.split_once('=') else {
+                continue;
+            };
+            if name.trim() != SESSION_COOKIE {
+                continue;
+            }
+            let value = value.trim();
+            if value.is_empty() || value.contains(';') || value.chars().any(char::is_whitespace) {
+                return None;
+            }
+            return Some(value.to_owned());
+        }
+    }
+    None
+}
+fn session_cookie_header(token: &str, secure: bool) -> String {
+    let secure = if secure { "; Secure" } else { "" };
+    format!("orbit_session={token}; Path=/; HttpOnly; SameSite=Strict{secure}")
+}
+
+fn session_error(failure: SessionError) -> ApiError {
+    match failure {
+        SessionError::Sql(sql) => {
+            eprintln!("orbit-server session storage error: {sql}");
+            error(StatusCode::INTERNAL_SERVER_ERROR, "storage error")
+        }
+        SessionError::Invalid(message) => error(StatusCode::BAD_REQUEST, message),
+        SessionError::Random => error(StatusCode::INTERNAL_SERVER_ERROR, "session error"),
+    }
+}
+/// Small error wrapper so handler signatures stay cheap to move; the response
+/// itself is boxed.
+struct WebFailure(Box<Response>);
+impl IntoResponse for WebFailure {
+    fn into_response(self) -> Response {
+        *self.0
+    }
+}
+/// Session endpoints never cache, including their failures.
+fn web_api_error(api: ApiError) -> WebFailure {
+    let mut response = api.into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    WebFailure(Box::new(response))
+}
+fn web_error(status: StatusCode, message: &'static str) -> WebFailure {
+    web_api_error(error(status, message))
+}
+/// A failed session read invalidates the browser cookie too.
+fn web_session_unauthorized() -> WebFailure {
+    let failure = web_error(StatusCode::UNAUTHORIZED, "unauthorized");
+    let mut response = failure.into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        axum::http::HeaderValue::from_static(CLEARED_SESSION_COOKIE),
+    );
+    WebFailure(Box::new(response))
+}
+fn web_lock_error() -> WebFailure {
+    web_error(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "session storage lock error",
+    )
+}
+
+#[derive(Deserialize)]
+struct WebLogin {
+    device_id: String,
+    token: String,
+}
+#[derive(Serialize)]
+struct WebSessionResponse {
+    device_id: String,
+    expires_at_ms: i64,
+}
+
+/// Exchange device credentials for an HttpOnly cookie session. Failures never
+/// reveal whether the device id or the token was wrong.
+async fn create_web_session(
+    State(state): State<AppState>,
+    Json(request): Json<WebLogin>,
+) -> Result<Response, WebFailure> {
+    if request.device_id.trim().is_empty() || request.device_id.len() > 128 {
+        return Err(web_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid device credentials",
+        ));
+    }
+    let now = now_ms().map_err(web_api_error)?;
+    {
+        let throttle = state.login_attempts.lock().map_err(|_| web_lock_error())?;
+        if throttle.blocked(&request.device_id, now) {
+            return Err(web_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "too many attempts",
+            ));
+        }
+    }
+    let authorized = state
+        .store
+        .lock()
+        .map_err(|_| web_error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?
+        .authorize_device(&request.device_id, &request.token)
+        .map_err(|err| web_api_error(map_error(err)))?;
+    if !authorized {
+        state
+            .login_attempts
+            .lock()
+            .map_err(|_| web_lock_error())?
+            .record_failure(&request.device_id, now);
+        return Err(web_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid device credentials",
+        ));
+    }
+    state
+        .login_attempts
+        .lock()
+        .map_err(|_| web_lock_error())?
+        .reset(&request.device_id);
+    let (token, expires_at_ms) = {
+        let mut sessions = state.sessions.lock().map_err(|_| web_lock_error())?;
+        let ttl = sessions.ttl_ms();
+        let absolute_ttl = sessions.absolute_ttl_ms();
+        let created = sessions
+            .create(&request.device_id, now, ttl, absolute_ttl)
+            .map_err(|err| web_api_error(session_error(err)))?;
+        (created.token, created.expires_at_ms)
+    };
+    let cookie =
+        axum::http::HeaderValue::from_str(&session_cookie_header(&token, state.cookie_secure))
+            .map_err(|_| web_error(StatusCode::INTERNAL_SERVER_ERROR, "session error"))?;
+    let mut response = (
+        StatusCode::CREATED,
+        Json(WebSessionResponse {
+            device_id: request.device_id,
+            expires_at_ms,
+        }),
+    )
+        .into_response();
+    response.headers_mut().insert(header::SET_COOKIE, cookie);
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    Ok(response)
+}
+async fn get_web_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, WebFailure> {
+    let now = now_ms().map_err(web_api_error)?;
+    let Some(token) = session_cookie(&headers) else {
+        return Err(web_session_unauthorized());
+    };
+    let session = state
+        .sessions
+        .lock()
+        .map_err(|_| web_lock_error())?
+        .authenticate(&token, now)
+        .map_err(|err| web_api_error(session_error(err)))?;
+    let Some(Authenticated {
+        device_id,
+        expires_at_ms,
+    }) = session
+    else {
+        return Err(web_session_unauthorized());
+    };
+    let active = state
+        .store
+        .lock()
+        .map_err(|_| web_error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?
+        .device_active(&device_id)
+        .map_err(|err| web_api_error(map_error(err)))?;
+    if !active {
+        // Revoked device: drop the session and clear the browser cookie.
+        if let Ok(mut sessions) = state.sessions.lock() {
+            let _ = sessions.revoke(&token, now);
+        }
+        return Err(web_session_unauthorized());
+    }
+    let mut response = Json(WebSessionResponse {
+        device_id,
+        expires_at_ms,
+    })
+    .into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    Ok(response)
+}
+async fn delete_web_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, WebFailure> {
+    let now = now_ms().map_err(web_api_error)?;
+    if let Some(token) = session_cookie(&headers) {
+        state
+            .sessions
+            .lock()
+            .map_err(|_| web_lock_error())?
+            .revoke(&token, now)
+            .map_err(|err| web_api_error(session_error(err)))?;
+    }
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        axum::http::HeaderValue::from_static(CLEARED_SESSION_COOKIE),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    Ok(response)
+}
+
+/// Cookie-authenticated browser mutations need a custom header (impossible to
+/// set on a cross-site form post) and must not be cross-site fetches.
+async fn csrf_guard(State(_state): State<AppState>, request: Request, next: Next) -> Response {
+    if csrf_violation(request.method(), request.headers(), request.uri().path()) {
+        return error(StatusCode::FORBIDDEN, "csrf check failed").into_response();
+    }
+    next.run(request).await
+}
+fn csrf_violation(method: &Method, headers: &HeaderMap, path: &str) -> bool {
+    if matches!(method.as_str(), "GET" | "HEAD" | "OPTIONS") {
+        return false;
+    }
+    // Login has no ambient cookie authority yet and requires device credentials.
+    if method.as_str() == "POST" && path == "/v1/web/session" {
+        return false;
+    }
+    // Bearer clients (CLI, MCP workers) are not browsers and are unaffected.
+    if headers.contains_key(header::AUTHORIZATION) || session_cookie(headers).is_none() {
+        return false;
+    }
+    if headers
+        .get("sec-fetch-site")
+        .and_then(|value| value.to_str().ok())
+        == Some("cross-site")
+    {
+        return true;
+    }
+    headers
+        .get("x-orbit-csrf")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        != Some("1")
+}
+
 async fn console() -> impl IntoResponse {
     (
         [
@@ -2532,6 +2837,7 @@ async fn revoke(
         .lock()
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
     if store.revoke_device(&id).map_err(map_error)? {
+        revoke_device_sessions(&state, &id);
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(error(
@@ -2555,9 +2861,22 @@ async fn rotate_token(
         .rotate_device_token(&id, &request.token)
         .map_err(map_error)?
     {
+        // A rotated credential invalidates delegated browser sessions too.
+        revoke_device_sessions(&state, &id);
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(error(StatusCode::NOT_FOUND, "active device not found"))
+    }
+}
+
+fn revoke_device_sessions(state: &AppState, device_id: &str) {
+    match state.sessions.lock() {
+        Ok(mut sessions) => {
+            if let Err(error) = sessions.revoke_device_sessions(device_id) {
+                eprintln!("orbit-server session revoke error: {error:?}");
+            }
+        }
+        Err(_) => eprintln!("orbit-server session lock error during device revoke"),
     }
 }
 
@@ -2904,6 +3223,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ProposalStore::open(Path::new(&database))
                 .map_err(|e| format!("proposals open: {e:?}"))?,
         )),
+        sessions: Arc::new(Mutex::new(
+            SessionStore::open(Path::new(&database))
+                .map_err(|e| format!("sessions open: {e:?}"))?,
+        )),
+        login_attempts: Arc::new(Mutex::new(LoginThrottle::new())),
+        web_dist: Arc::new(web::WebDist::from_env()),
+        cookie_secure: std::env::var("ORBIT_WEB_COOKIE_SECURE").as_deref() == Ok("1"),
         admin_key_hash: Sha256::digest(admin_key.as_bytes()).to_vec(),
         attachment_body_limit,
     };
@@ -2922,9 +3248,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    let app = Router::new()
+    let app = routes(state);
+    // Intentionally loopback by default. Put the service behind a TLS
+    // reverse-proxy/private-network gate before making it remotely reachable.
+    let bind = std::env::var("ORBIT_SERVER_BIND").unwrap_or_else(|_| "127.0.0.1:8787".into());
+    let listener = tokio::net::TcpListener::bind(&bind).await?;
+    eprintln!("orbit-server authoritative runtime listening on {bind}");
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await?;
+    Ok(())
+}
+
+fn routes(state: AppState) -> Router {
+    Router::new()
         .route("/health", get(health))
         .route("/console", get(console))
+        .route(
+            "/v1/web/session",
+            post(create_web_session)
+                .get(get_web_session)
+                .delete(delete_web_session),
+        )
         .route("/v1/devices", post(enroll))
         .route("/v1/devices/{id}", axum::routing::delete(revoke))
         .route("/v1/devices/{id}/token", post(rotate_token))
@@ -3031,7 +3378,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Route-scoped limit: only attachment bytes bypass axum's 2 MiB
             // default, and they are still bounded before buffering.
             post(authoritative_attachment_import)
-                .layer(DefaultBodyLimit::max(attachment_body_limit)),
+                .layer(DefaultBodyLimit::max(state.attachment_body_limit)),
         )
         .route(
             "/v1/authoritative/attachments",
@@ -3215,7 +3562,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .route(
             "/v1/authoritative/blueprints/items",
-            get(blueprints::item).post(blueprints::create_item),
+            get(blueprints::items).post(blueprints::create_item),
+        )
+        .route(
+            "/v1/authoritative/blueprints/upgrade-preview",
+            get(blueprints::upgrade_preview),
+        )
+        .route(
+            "/v1/authoritative/blueprints/upgrade",
+            post(blueprints::upgrade),
         )
         .route(
             "/v1/authoritative/blueprints/transition",
@@ -3282,16 +3637,408 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/v1/automation-runs", get(list_runs))
         .route("/v1/automation-runs/claim", post(claim_run))
         .route("/v1/automation-runs/{id}/settle", post(settle_run))
-        .with_state(state);
-    // Intentionally loopback by default. Put the service behind a TLS
-    // reverse-proxy/private-network gate before making it remotely reachable.
-    let bind = std::env::var("ORBIT_SERVER_BIND").unwrap_or_else(|_| "127.0.0.1:8787".into());
-    let listener = tokio::net::TcpListener::bind(&bind).await?;
-    eprintln!("orbit-server authoritative runtime listening on {bind}");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
-    Ok(())
+        // Browser app routes come last: the catch-all never shadows an API
+        // route, and it answers API-shaped paths with JSON 404s.
+        .route("/", get(web::index))
+        .route("/{*path}", get(web::fallback))
+        .layer(middleware::from_fn_with_state(state.clone(), csrf_guard))
+        .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
+
+    const DEVICE_TOKEN: &str = "device-secret-0123456789abcdefghij";
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    /// Stand-in for a built `web/dist`, removed when the test ends.
+    struct TempDist {
+        root: PathBuf,
+    }
+    impl TempDist {
+        fn built() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "orbit-server-web-{}-{}",
+                std::process::id(),
+                SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir_all(root.join("assets")).unwrap();
+            std::fs::write(
+                root.join("index.html"),
+                "<!doctype html><title>Orbit</title>",
+            )
+            .unwrap();
+            std::fs::write(root.join("assets/app.js"), "console.log(1)").unwrap();
+            Self { root }
+        }
+        fn absent() -> Self {
+            Self {
+                root: std::env::temp_dir().join(format!(
+                    "orbit-server-web-absent-{}-{}",
+                    std::process::id(),
+                    SEQUENCE.fetch_add(1, Ordering::Relaxed)
+                )),
+            }
+        }
+        fn dist(&self) -> web::WebDist {
+            web::WebDist::new(self.root.clone())
+        }
+    }
+    impl Drop for TempDist {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn test_state(dist: &TempDist) -> AppState {
+        let state = AppState {
+            store: Arc::new(Mutex::new(AuthoritativeHost::open(":memory:").unwrap())),
+            automation: Arc::new(Mutex::new(
+                AutomationStore::open(Path::new(":memory:")).unwrap(),
+            )),
+            proposals: Arc::new(Mutex::new(
+                ProposalStore::open(Path::new(":memory:")).unwrap(),
+            )),
+            sessions: Arc::new(Mutex::new(
+                SessionStore::open_with_ttl(Path::new(":memory:"), 60_000, 3_600_000).unwrap(),
+            )),
+            login_attempts: Arc::new(Mutex::new(LoginThrottle::new())),
+            web_dist: Arc::new(dist.dist()),
+            cookie_secure: false,
+            admin_key_hash: Sha256::digest(b"test-admin-key-0123456789abcdef").to_vec(),
+            attachment_body_limit: 1024 * 1024,
+        };
+        state
+            .store
+            .lock()
+            .unwrap()
+            .enroll_device("device-1", DEVICE_TOKEN)
+            .unwrap();
+        state
+    }
+
+    async fn spawn(app: Router) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        address.to_string()
+    }
+
+    /// Minimal HTTP/1.1 client: the crate has no test-only HTTP dependencies.
+    fn send(address: &str, request: &str) -> (u16, String) {
+        let mut stream = TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream.write_all(request.as_bytes()).unwrap();
+        let mut raw = Vec::new();
+        stream.read_to_end(&mut raw).unwrap();
+        let raw = String::from_utf8_lossy(&raw).into_owned();
+        let status = raw
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .and_then(|code| code.parse().ok())
+            .unwrap_or(0);
+        (status, raw)
+    }
+    fn header_value(raw: &str, name: &str) -> Option<String> {
+        raw.split("\r\n\r\n")
+            .next()
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.trim().to_owned())
+    }
+    fn body_of(raw: &str) -> &str {
+        raw.split_once("\r\n\r\n")
+            .map(|(_, body)| body)
+            .unwrap_or("")
+    }
+    fn session_token(raw: &str) -> String {
+        header_value(raw, "set-cookie")
+            .and_then(|cookie| {
+                cookie
+                    .strip_prefix("orbit_session=")
+                    .and_then(|rest| rest.split(';').next().map(str::to_owned))
+            })
+            .expect("login must set an orbit_session cookie")
+    }
+
+    fn post(address: &str, path: &str, headers: &str, body: &str) -> (u16, String) {
+        send(
+            address,
+            &format!(
+                "POST {path} HTTP/1.1\r\nHost: orbit.test\r\nConnection: close\r\n\
+                 Content-Type: application/json\r\nContent-Length: {}\r\n{headers}\r\n{body}",
+                body.len()
+            ),
+        )
+    }
+    fn get(address: &str, path: &str, headers: &str) -> (u16, String) {
+        send(
+            address,
+            &format!(
+                "GET {path} HTTP/1.1\r\nHost: orbit.test\r\nConnection: close\r\n{headers}\r\n"
+            ),
+        )
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn login_cookie_authentication_and_csrf_over_http() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let login = format!(r#"{{"device_id":"device-1","token":"{DEVICE_TOKEN}"}}"#);
+        let (status, raw) = post(&address, "/v1/web/session", "", &login);
+        assert_eq!(status, 201);
+        assert_eq!(header_value(&raw, "cache-control").unwrap(), "no-store");
+        let cookie = header_value(&raw, "set-cookie").unwrap();
+        assert!(cookie.contains("HttpOnly"));
+        assert!(cookie.contains("SameSite=Strict"));
+        assert!(!cookie.contains("Secure"));
+        assert!(body_of(&raw).contains("\"device_id\":\"device-1\""));
+
+        let token = session_token(&raw);
+        let cookie_header = format!("Cookie: orbit_session={token}\r\n");
+        let (status, _) = get(&address, "/v1/authoritative/projects", &cookie_header);
+        assert_eq!(status, 200);
+        let (status, _) = get(&address, "/v1/web/session", &cookie_header);
+        assert_eq!(status, 200);
+
+        // A cookie-authenticated mutation needs the CSRF header.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &cookie_header,
+            "{}",
+        );
+        assert_eq!(status, 403);
+        assert!(body_of(&raw).contains("csrf check failed"));
+        let csrf = format!("{cookie_header}x-orbit-csrf: 1\r\n");
+        let (status, _) = post(&address, "/v1/authoritative/project-commands", &csrf, "{}");
+        // 422 is the body extractor rejecting `{}`; the point is CSRF passed.
+        assert_ne!(status, 403);
+
+        // Cross-site browser mutations are refused even with the header.
+        let cross_site =
+            format!("{cookie_header}x-orbit-csrf: 1\r\nSec-Fetch-Site: cross-site\r\n");
+        let (status, _) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &cross_site,
+            "{}",
+        );
+        assert_eq!(status, 403);
+
+        // Logout clears the cookie (and, like every cookie mutation, needs the
+        // CSRF header).
+        let (status, raw) = send(
+            &address,
+            &format!(
+                "DELETE /v1/web/session HTTP/1.1\r\nHost: orbit.test\r\nConnection: close\r\n\
+                 {cookie_header}x-orbit-csrf: 1\r\n\r\n"
+            ),
+        );
+        assert_eq!(status, 204);
+        assert!(
+            header_value(&raw, "set-cookie")
+                .unwrap()
+                .contains("Max-Age=0")
+        );
+        let (status, raw) = get(&address, "/v1/web/session", &cookie_header);
+        assert_eq!(status, 401);
+        // A dead cookie is cleared, so the browser stops presenting it.
+        assert!(
+            header_value(&raw, "set-cookie")
+                .unwrap()
+                .contains("Max-Age=0")
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn bearer_clients_are_unaffected_by_cookie_csrf() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        let (status, _) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &bearer,
+            "{}",
+        );
+        assert_ne!(status, 403);
+        // A stale cookie next to a bearer token still takes the bearer path.
+        let mixed = format!("{bearer}Cookie: orbit_session=stale\r\n");
+        let (status, _) = post(&address, "/v1/authoritative/project-commands", &mixed, "{}");
+        assert_ne!(status, 403);
+        let (status, _) = get(&address, "/v1/authoritative/projects", &bearer);
+        assert_eq!(status, 200);
+        // Workflow upgrades require explicit confirmation before the authority
+        // is asked to re-pin anything.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/blueprints/upgrade",
+            &bearer,
+            r#"{"project_id":"project-1","id":"b","version":1}"#,
+        );
+        assert_eq!(status, 400);
+        assert!(body_of(&raw).contains("confirmation required"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn failed_logins_are_uniform_and_throttled() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let bad = r#"{"device_id":"device-1","token":"wrong-token-0123456789abcdef"}"#;
+        for _ in 0..5 {
+            let (status, raw) = post(&address, "/v1/web/session", "", bad);
+            assert_eq!(status, 401);
+            assert!(body_of(&raw).contains("invalid device credentials"));
+        }
+        let (status, raw) = post(&address, "/v1/web/session", "", bad);
+        assert_eq!(status, 429);
+        assert!(body_of(&raw).contains("too many attempts"));
+        // An unknown device id is indistinguishable from a wrong token.
+        let unknown = r#"{"device_id":"device-unknown","token":"wrong-token-0123456789abcdef"}"#;
+        let (status, raw) = post(&address, "/v1/web/session", "", unknown);
+        assert_eq!(status, 401);
+        assert!(body_of(&raw).contains("invalid device credentials"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn static_app_and_api_404s() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let (status, raw) = get(&address, "/", "");
+        assert_eq!(status, 200);
+        assert_eq!(
+            header_value(&raw, "content-type").unwrap(),
+            "text/html; charset=utf-8"
+        );
+        assert!(
+            header_value(&raw, "content-security-policy")
+                .unwrap()
+                .contains("frame-ancestors 'none'")
+        );
+        assert_eq!(header_value(&raw, "cache-control").unwrap(), "no-store");
+        assert!(body_of(&raw).contains("Orbit"));
+
+        let (status, raw) = get(&address, "/workflows/123", "");
+        assert_eq!(status, 200);
+        assert!(body_of(&raw).contains("Orbit"));
+
+        let (status, raw) = get(&address, "/assets/app.js", "");
+        assert_eq!(status, 200);
+        assert_eq!(
+            header_value(&raw, "cache-control").unwrap(),
+            "public, max-age=31536000, immutable"
+        );
+
+        let (status, raw) = get(&address, "/v1/nope", "");
+        assert_eq!(status, 404);
+        assert_eq!(
+            header_value(&raw, "content-type").unwrap(),
+            "application/json"
+        );
+        assert!(body_of(&raw).contains("not found"));
+        // `/mcp` is an existing POST-only route, so a GET stays a 405; the
+        // static handler guards it with a JSON 404 if it is ever reached.
+        let (status, _) = get(&address, "/mcp", "");
+        assert_eq!(status, 405);
+
+        let (status, _) = get(&address, "/console", "");
+        assert_eq!(status, 200);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn missing_build_keeps_the_console_and_api_working() {
+        let dist = TempDist::absent();
+        let address = spawn(routes(test_state(&dist))).await;
+        let (status, raw) = get(&address, "/", "");
+        assert_eq!(status, 503);
+        assert_eq!(
+            header_value(&raw, "content-type").unwrap(),
+            "text/plain; charset=utf-8"
+        );
+        assert!(body_of(&raw).contains("npm run build"));
+        let (status, _) = get(&address, "/console", "");
+        assert_eq!(status, 200);
+        let (status, raw) = get(&address, "/v1/nope", "");
+        assert_eq!(status, 404);
+        assert!(body_of(&raw).contains("not found"));
+    }
+
+    #[test]
+    fn cookie_parsing_is_tolerant() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::COOKIE,
+            "theme=dark; malformed; orbit_session=abc123"
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(session_cookie(&headers).as_deref(), Some("abc123"));
+        let mut spaced = HeaderMap::new();
+        spaced.insert(
+            header::COOKIE,
+            "orbit_session=abc 123; theme=dark".parse().unwrap(),
+        );
+        assert!(session_cookie(&spaced).is_none());
+        let mut empty = HeaderMap::new();
+        empty.insert(header::COOKIE, "orbit_session=".parse().unwrap());
+        assert!(session_cookie(&empty).is_none());
+        let mut other = HeaderMap::new();
+        other.insert(header::COOKIE, "theme=dark".parse().unwrap());
+        assert!(session_cookie(&other).is_none());
+    }
+
+    #[test]
+    fn csrf_applies_only_to_cookie_mutations() {
+        let mut cookie = HeaderMap::new();
+        cookie.insert(header::COOKIE, "orbit_session=abc".parse().unwrap());
+        assert!(csrf_violation(
+            &Method::POST,
+            &cookie,
+            "/v1/authoritative/projects"
+        ));
+        assert!(!csrf_violation(
+            &Method::GET,
+            &cookie,
+            "/v1/authoritative/projects"
+        ));
+        assert!(!csrf_violation(&Method::POST, &cookie, "/v1/web/session"));
+        // Logout is a cookie mutation; the browser client sends the header.
+        assert!(csrf_violation(&Method::DELETE, &cookie, "/v1/web/session"));
+        let mut with_header = cookie.clone();
+        with_header.insert("x-orbit-csrf", "1".parse().unwrap());
+        assert!(!csrf_violation(
+            &Method::POST,
+            &with_header,
+            "/v1/authoritative/projects"
+        ));
+        let mut cross_site = with_header;
+        cross_site.insert("sec-fetch-site", "cross-site".parse().unwrap());
+        assert!(csrf_violation(
+            &Method::POST,
+            &cross_site,
+            "/v1/authoritative/projects"
+        ));
+        let bearer = HeaderMap::new();
+        assert!(!csrf_violation(
+            &Method::POST,
+            &bearer,
+            "/v1/authoritative/projects"
+        ));
+    }
 }

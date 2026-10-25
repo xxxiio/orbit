@@ -1098,6 +1098,7 @@ name = "orbit-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "getrandom 0.2.17",
  "orbit-application",
  "orbit-blueprint",
  "orbit-domain",

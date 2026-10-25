@@ -370,6 +370,17 @@ mod tests {
                 crate::proposals::ProposalStore::open(&path.with_extension("proposals.sqlite"))
                     .unwrap(),
             )),
+            sessions: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::session::SessionStore::open(&path.with_extension("sessions.sqlite"))
+                    .unwrap(),
+            )),
+            login_attempts: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::session::LoginThrottle::new(),
+            )),
+            web_dist: std::sync::Arc::new(crate::web::WebDist::new(
+                std::env::temp_dir().join("orbit-server-absent-dist"),
+            )),
+            cookie_secure: false,
             admin_key_hash: vec![0; 32],
             attachment_body_limit: 64 * 1024 * 1024,
         };
@@ -408,6 +419,17 @@ mod rich_domain_mcp_contract {
                 crate::proposals::ProposalStore::open(&path.with_extension("proposals.sqlite"))
                     .unwrap(),
             )),
+            sessions: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::session::SessionStore::open(&path.with_extension("sessions.sqlite"))
+                    .unwrap(),
+            )),
+            login_attempts: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::session::LoginThrottle::new(),
+            )),
+            web_dist: std::sync::Arc::new(crate::web::WebDist::new(
+                std::env::temp_dir().join("orbit-server-absent-dist"),
+            )),
+            cookie_secure: false,
             admin_key_hash: vec![0; 32],
             attachment_body_limit: 64 * 1024 * 1024,
         }
