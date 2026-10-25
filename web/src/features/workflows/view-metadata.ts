@@ -142,6 +142,20 @@ function matchesValue(actual: string | undefined, expected: string): boolean {
 }
 
 /**
+ * One reading of a declared `actionable` value, shared by the matcher, the
+ * refusal and the panel copy. The manifest validator only bounds the string, so
+ * a padded spelling such as `" true "` is valid: it is normalized once here so
+ * the guard, the note and the filter can never disagree about what it meant.
+ */
+export function parseActionable(value: string | undefined): boolean | null {
+  const normalized = value?.trim().toLowerCase()
+  if (normalized === 'true') return true
+  if (normalized === 'false') return false
+  return null
+}
+
+
+/**
  * Apply a declared filter to a task. `actionable` is answered by the server's
  * readiness report; without it the task cannot match, so a pending readiness
  * read never overstates the count.
@@ -157,8 +171,8 @@ export function taskMatchesDeclaredFilter(
     if (key === 'milestone_id' && !matchesValue(task.milestoneId ?? '', value)) return false
     if (key === 'project_id' && !matchesValue(task.projectId ?? '', value)) return false
     if (key === 'actionable') {
-      const expected = value.toLowerCase() === 'true'
-      if (!readiness || readiness.actionable !== expected) return false
+      const expected = parseActionable(value)
+      if (expected === null || !readiness || readiness.actionable !== expected) return false
     }
   }
   return true
@@ -172,18 +186,17 @@ export function taskMatchesDeclaredFilter(
 export function actionableFilterRefusal(filter: Record<string, string>): string | null {
   const value = filter.actionable
   if (value === undefined) return null
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'true' || normalized === 'false') return null
+  if (parseActionable(value) !== null) return null
   return `This panel filters tasks by actionable = “${value}”; only true or false are supported.`
 }
 
 /** The board's copy for a valid `actionable` filter, derived from its value. */
 export function actionableFilterNote(filter: Record<string, string>): string | null {
-  const normalized = filter.actionable?.trim().toLowerCase()
-  if (normalized === 'true') {
+  const expected = parseActionable(filter.actionable)
+  if (expected === true) {
     return 'Filtered to tasks the server marks actionable. Columns still show the server’s status.'
   }
-  if (normalized === 'false') {
+  if (expected === false) {
     return 'Filtered to tasks the server does not mark actionable. Columns still show the server’s status.'
   }
   return null
@@ -319,7 +332,7 @@ export function numericFieldsForSource(
  *   columns (`columnsFromComponent`), and the list renderer ignores them;
  * - `limit` on a `table` or a full task list: those surfaces own paging and do
  *   not slice to the declared limit (see `badgeLimitApplies`).
- * TODO(I4): honour each of these, or refuse it by name.
+ * TODO(I3): honour each of these, or refuse it by name.
  */
 /**
  * Resolve a metric's declared aggregate and field. A declaration this build

@@ -20,6 +20,7 @@ import {
   metricDeclaration,
   milestoneMatchesDeclaredFilter,
   numericFieldsForSource,
+  parseActionable,
   reservedDeclaredViews,
   sortByDeclaration,
   taskMatchesDeclaredFilter,
@@ -280,6 +281,37 @@ describe('declared component filters', () => {
       /^Filtered to tasks the server does not mark actionable/,
     )
     expect(actionableFilterNote({ actionable: 'maybe' })).toBeNull()
+  })
+
+  it('reads a padded actionable value the same way in the guard, the note and the filter', () => {
+    // The manifest validator only bounds the string, so " true " is valid input.
+    expect(parseActionable(' true ')).toBe(true)
+    expect(parseActionable(' FALSE ')).toBe(false)
+    expect(parseActionable('yes')).toBeNull()
+    expect(parseActionable(undefined)).toBeNull()
+
+    const filter = { actionable: ' true ' }
+    expect(actionableFilterRefusal(filter)).toBeNull()
+    expect(actionableFilterNote(filter)).toMatch(/^Filtered to tasks the server marks actionable/)
+
+    const readiness = (actionable: boolean) => ({
+      taskId: 't-1',
+      title: 'Task',
+      status: 'ready' as const,
+      actionable,
+      reason: actionable ? 'ready' : 'unfinished_prerequisites',
+      blockingTaskIds: [],
+      prerequisiteIds: [],
+      earliestStartAtMs: null,
+      deadlineAtMs: null,
+      estimatedMinutes: null,
+      projectId: null,
+    })
+    expect(taskMatchesDeclaredFilter(task({ status: 'ready' }), filter, readiness(true))).toBe(true)
+    expect(taskMatchesDeclaredFilter(task({ status: 'ready' }), filter, readiness(false))).toBe(false)
+    expect(
+      taskMatchesDeclaredFilter(task({ status: 'ready' }), { actionable: ' false ' }, readiness(false)),
+    ).toBe(true)
   })
 })
 
