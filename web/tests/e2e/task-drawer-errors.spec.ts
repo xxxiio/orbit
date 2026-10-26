@@ -28,6 +28,55 @@ function overlaps(
   )
 }
 
+test('a stale description revision is shown once in the drawer', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  const { server, fixture } = workspace
+  const taskId = fixture.ids.orbitTask
+
+  await signInViaApi(page, server)
+  await page.goto(`${server.base}/inbox?task=${taskId}`)
+  const drawer = page.getByRole('dialog')
+  await expect(drawer).toBeVisible()
+  const description = drawer.getByLabel('Task description')
+  await expect(description).toBeVisible()
+
+  // A second session moves the ledger first, so the description save below is
+  // a definitive 409 rather than an ambiguous transport failure.
+  const second = await context.browser()!.newContext()
+  const other = await second.newPage()
+  try {
+    await signInViaApi(other, server)
+    const revision = await currentRevision(other, server)
+    const response = await other.request.post(`${server.base}/v1/authoritative/task-commands`, {
+      data: {
+        command_id: `error-surface-description-${taskId}`,
+        expected_revision: revision,
+        action: { type: 'rename', task_id: taskId, title: 'Moved by the other window' },
+      },
+      headers: { 'content-type': 'application/json', 'x-orbit-csrf': '1' },
+    })
+    expect(response.status(), 'the second writer must be accepted').toBe(200)
+
+    await description.fill('A description typed against a stale revision.')
+    await description.blur()
+
+    // Exactly one alert: the description section's own error. PropertiesSection
+    // must not repeat the same `set_details` refusal.
+    const alerts = drawer.getByRole('alert')
+    await expect(alerts).toHaveCount(1)
+    await expect(alerts).toContainText(/conflicted with a newer version/i)
+
+    // Exactly one recovery action, beside the description, not duplicated.
+    const reload = drawer.getByRole('button', { name: 'Reload this task and try again' })
+    await expect(reload).toHaveCount(1)
+  } finally {
+    await second.close()
+  }
+})
+
 test('a stale revision is shown once in the drawer and the toast clears it', async ({
   page,
   context,

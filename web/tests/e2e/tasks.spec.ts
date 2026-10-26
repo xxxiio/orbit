@@ -116,9 +116,10 @@ test.describe('tasks', () => {
     await expect(page.getByRole('option', { name: 'Planned', exact: true })).toBeVisible()
     await expect(page.getByRole('option', { name: 'Done', exact: true })).toHaveCount(0)
     await expect(page.getByRole('option', { name: 'In progress', exact: true })).toHaveCount(0)
-    await page.keyboard.press('Escape')
 
-    // Nothing changed by opening the control.
+    // Nothing changed by opening the control. Reloading closes the open list
+    // and proves the stored value is unchanged; a bare Escape can race the
+    // drawer's own dismiss handler under load.
     await expect(status).toContainText(/inbox/i)
     await page.reload()
     await expect(page.getByRole('dialog').getByLabel('Task status')).toContainText(/inbox/i)
@@ -157,6 +158,53 @@ test.describe('tasks', () => {
     await expect(drawer.getByRole('button', { name: 'Edit task title' })).toContainText(
       fixture.tasks.find((candidate) => candidate.id === taskId)!.title,
     )
+  })
+
+  test('an Inbox row offers only the status edges the domain accepts', async ({
+    page,
+    workspace,
+  }) => {
+    const { server } = workspace
+    const title = 'Row edge control inbox task'
+
+    await captureTask(page, server, title)
+    const row = page.locator('tr[data-row]').filter({ hasText: title }).first()
+    const control = row.getByLabel(`Status for ${title}`)
+    await expect(control).toBeVisible()
+    await expect(control).toHaveValue('inbox')
+
+    // The server's edge set for Inbox, and nothing else: the row control must
+    // not offer the same refused targets the drawer already filters out.
+    await expect(control.locator('option[value="planned"]')).toHaveCount(1)
+    await expect(control.locator('option[value="done"]')).toHaveCount(0)
+    await expect(control.locator('option[value="in_progress"]')).toHaveCount(0)
+    await expect(control).toHaveValue('inbox')
+  })
+
+  test('a failed row edge read falls back to every status and the server still refuses', async ({
+    page,
+    workspace,
+  }) => {
+    const { server } = workspace
+    const title = 'Row edge fallback inbox task'
+
+    // The read is unavailable: the row must keep the old offer-everything
+    // behaviour rather than inventing an edge set.
+    await page.route('**/authoritative/task-transitions*', (route) => route.abort())
+
+    await captureTask(page, server, title)
+    const row = page.locator('tr[data-row]').filter({ hasText: title }).first()
+    const control = row.getByLabel(`Status for ${title}`)
+    await expect(control.locator('option[value="done"]')).toHaveCount(1)
+
+    await control.selectOption('done')
+
+    // The rejection is visible in the row and the stored value is still the old
+    // one; the server's exact reason is quoted, not a generic "invalid".
+    const alert = row.getByRole('alert')
+    await expect(alert).toHaveCount(1)
+    await expect(alert).toContainText('invalid task status transition: inbox -> done')
+    await expect(control).toHaveValue('inbox')
   })
 
   test('bulk status change applies to every selected task and survives a reload', async ({

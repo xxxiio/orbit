@@ -20,7 +20,7 @@ import {
   TaskProjectControl,
   TaskStatusControl,
 } from './task-controls'
-import { useMediaQuery } from '@/hooks'
+import { useMediaQuery, useTaskTransitionEdges } from '@/hooks'
 import type { SortDirection, TaskSort, TaskSortKey } from './task-list-model'
 import type { TaskColumnKey } from './task-list-state'
 import type { TaskCommandField } from './use-task-command-state'
@@ -189,6 +189,14 @@ export function TaskTable({
   showStatus = true,
 }: TaskTableProps) {
   const milestoneNames = new Map(milestones.map((milestone) => [milestone.id, milestone.name]))
+  // One read per distinct status on this page, shared by every row's control.
+  // No status column means no read. The server's edge set is authoritative; a
+  // failed read leaves `null` so the row keeps offering every status and the
+  // server still refuses.
+  const statusColumnVisible = columns ? columns.includes('status') : showStatus
+  const transitions = useTaskTransitionEdges(
+    statusColumnVisible ? tasks.map((task) => task.status) : [],
+  )
   const wide = useMediaQuery('(min-width: 1280px)')
   const labelsVisible = useMediaQuery('(min-width: 1440px)')
   const allSelected = selection ? tasks.length > 0 && tasks.every((task) => selection.selected.has(task.id)) : false
@@ -230,6 +238,7 @@ export function TaskTable({
         <td className="px-3.5 py-2.5 align-top">
           <TaskStatusControl
             task={task}
+            allowedNext={transitions.edges.get(task.status) ?? null}
             pending={pendingFor(task, 'status')}
             invalid={Boolean(rowError(task))}
             onChange={(status) => onStatusChange(task, status)}
@@ -508,6 +517,7 @@ export function TaskTable({
                       {show.status ? (
                         <TaskStatusControl
                           task={task}
+                          allowedNext={transitions.edges.get(task.status) ?? null}
                           pending={pendingFor(task, 'status')}
                           invalid={Boolean(rowError(task))}
                           onChange={(status) => onStatusChange(task, status)}

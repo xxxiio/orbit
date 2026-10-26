@@ -50,6 +50,12 @@ export const prioritySelectOptions: CompactOption[] = [
 
 export interface TaskStatusControlProps {
   task: Task
+  /**
+   * The server's edge set for `task.status`, read once by the list that owns
+   * the rows. `null` means the read failed or has not resolved, so the control
+   * keeps offering every status and the server remains the only refusal.
+   */
+  allowedNext: readonly TaskStatus[] | null
   pending?: boolean
   invalid?: boolean
   onChange: (status: TaskStatus) => void
@@ -58,6 +64,7 @@ export interface TaskStatusControlProps {
 
 export function TaskStatusControl({
   task,
+  allowedNext,
   pending,
   invalid,
   onChange,
@@ -67,7 +74,7 @@ export function TaskStatusControl({
     <CompactSelect
       label={`Status for ${task.title}`}
       value={task.status}
-      options={statusOptions}
+      options={statusOptionsFor(task.status, allowedNext)}
       pending={pending}
       invalid={invalid}
       onChange={(value) => onChange(value as TaskStatus)}

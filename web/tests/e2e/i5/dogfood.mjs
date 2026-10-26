@@ -1329,17 +1329,19 @@ async function run() {
     label: 'the stale-revision refusal',
   })
   const alertsInDrawer = await taskA.getByRole('alert').count()
-  const conflictAlert = (await taskA.getByRole('alert').first().innerText()).trim()
-  if (alertsInDrawer < 1) {
-    throw new Error('the stale-revision refusal did not render an in-drawer alert')
+  if (alertsInDrawer !== 1) {
+    throw new Error(`the stale-revision refusal must render exactly one in-drawer alert, got ${alertsInDrawer}`)
   }
+  const conflictAlert = (await taskA.getByRole('alert').innerText()).trim()
   if (!/conflicted with a newer version/i.test(conflictAlert)) {
     throw new Error(`the refusal did not name the stale revision: ${conflictAlert}`)
   }
   const reloadControl = taskA.getByRole('button', { name: 'Reload this task and try again' })
   const conflictReloadControls = await reloadControl.count()
-  if (conflictReloadControls < 1) {
-    throw new Error('the stale-revision refusal did not offer the drawer reload action')
+  if (conflictReloadControls !== 1) {
+    throw new Error(
+      `the stale-revision refusal must offer exactly one drawer reload action, got ${conflictReloadControls}`,
+    )
   }
   state.conflict = {
     secondDeviceId: SECOND_DEVICE_ID,
@@ -1362,7 +1364,7 @@ async function run() {
 
   // Recover in place: the drawer reloads the task and snapshot, then the stored
   // text is the second device's, not the refused draft.
-  await reloadControl.first().click()
+  await reloadControl.click()
   await waitUntil(
     async () => (await taskA.getByLabel('Task description').inputValue()).includes(secondWriterMarker),
     { label: 'the second writer text after the drawer reload', timeout: 15_000 },

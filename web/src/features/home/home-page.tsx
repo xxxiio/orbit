@@ -10,6 +10,7 @@ import {
   useTaskCommand,
   useTaskCounts,
   useTaskReadiness,
+  useTaskTransitionEdges,
   useWorkspaceSnapshot,
   userMessage,
 } from '@/hooks'
@@ -292,6 +293,7 @@ function HomeTaskRow({
   compact = false,
   onOpen,
   onStatusChange,
+  allowedNext,
   onProjectChange,
   onChangeProject,
   projects,
@@ -305,6 +307,8 @@ function HomeTaskRow({
   compact?: boolean
   onOpen: () => void
   onStatusChange: (status: TaskStatus) => void
+  /** The server's edge set for this row's status; `null` falls back to all. */
+  allowedNext: readonly TaskStatus[] | null
   onProjectChange: (projectId: string | null) => void
   onChangeProject: boolean
   projects: Array<{ id: string; name: string }>
@@ -370,6 +374,7 @@ function HomeTaskRow({
       <div className="flex flex-wrap items-center gap-1.5">
         <TaskStatusControl
           task={task}
+          allowedNext={allowedNext}
           pending={pending?.taskId === task.id && pending.field === 'status'}
           invalid={Boolean(error)}
           onChange={onStatusChange}
@@ -452,6 +457,18 @@ export function HomePage() {
     return { overdue, dueToday, ready, blocked }
   }, [tasks, readiness.data, readinessById, taskById, now])
 
+  // One read per distinct status in these sections; each row's control offers
+  // only those edges. A failed read leaves `null`, so the row offers every
+  // status and the server still refuses.
+  const transitions = useTaskTransitionEdges(
+    [
+      ...overview.overdue,
+      ...overview.dueToday,
+      ...overview.ready,
+      ...overview.blocked,
+    ].map((entry) => entry.task.status),
+  )
+
   const orderedProjects = useMemo(() => {
     const rank = new Map(recentIds.map((id, index) => [id, index]))
     return [...projects].sort((left, right) => {
@@ -512,6 +529,7 @@ export function HomePage() {
           blockedBy={blockedLabel(entry)}
           onOpen={() => openTask(entry.task.id)}
           onStatusChange={(status) => changeStatus(entry.task, status)}
+          allowedNext={transitions.edges.get(entry.task.status) ?? null}
           onProjectChange={(projectId) => changeProject(entry.task, projectId)}
           onChangeProject
           projects={projects}

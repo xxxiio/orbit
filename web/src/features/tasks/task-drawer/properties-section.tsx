@@ -19,6 +19,7 @@ export function PropertiesSection({
   command,
   error,
   errorType,
+  detailField,
   onRefresh,
   pendingField,
   pendingDetail,
@@ -35,6 +36,12 @@ export function PropertiesSection({
   command: TaskCommand
   error: ApiError | null
   errorType: string | undefined
+  /**
+   * Which `set_details` field the rejected command targeted. Only the fields
+   * this section renders (priority/labels) may quote that error; the
+   * description owns its own surface beside the editor.
+   */
+  detailField: 'description' | 'priority' | 'labels' | null
   /** Offered beside a conflict so the person can recover without leaving. */
   onRefresh?: () => void
   pendingField: (field: 'title' | 'status' | 'project' | 'milestone' | 'criteria' | 'dependencies') => boolean
@@ -49,7 +56,7 @@ export function PropertiesSection({
     errorType === 'change_status' ||
     errorType === 'assign_project' ||
     errorType === 'assign_milestone' ||
-    errorType === 'set_details'
+    (errorType === 'set_details' && (detailField === 'priority' || detailField === 'labels'))
       ? error
       : null
 

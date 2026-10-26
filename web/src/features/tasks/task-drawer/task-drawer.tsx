@@ -351,6 +351,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     command={command}
                     error={error}
                     errorType={errorType}
+                    detailField={detailField.current}
                     onRefresh={conflict ? refreshTask : undefined}
                     pendingField={pendingField}
                     pendingDetail={pendingDetail}
