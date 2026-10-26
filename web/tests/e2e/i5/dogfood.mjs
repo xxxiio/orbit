@@ -1343,7 +1343,7 @@ async function run() {
 
   // Recover in place: the drawer reloads the task and snapshot, then the stored
   // text is the second device's, not the refused draft.
-  await reloadControl.click()
+  await reloadControl.first().click()
   await waitUntil(
     async () => (await taskA.getByLabel('Task description').inputValue()).includes(secondWriterMarker),
     { label: 'the second writer text after the drawer reload', timeout: 15_000 },
