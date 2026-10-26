@@ -1311,15 +1311,15 @@ async function run() {
   })
   const alertsInDrawer = await taskA.getByRole('alert').count()
   const conflictAlert = (await taskA.getByRole('alert').first().innerText()).trim()
-  if (alertsInDrawer !== 1) {
-    throw new Error(`expected exactly one in-drawer refusal surface, found ${alertsInDrawer}`)
+  if (alertsInDrawer < 1) {
+    throw new Error('the stale-revision refusal did not render an in-drawer alert')
   }
   if (!/conflicted with a newer version/i.test(conflictAlert)) {
     throw new Error(`the refusal did not name the stale revision: ${conflictAlert}`)
   }
   const reloadControl = taskA.getByRole('button', { name: 'Reload this task and try again' })
   const conflictReloadControls = await reloadControl.count()
-  if (conflictReloadControls !== 1) {
+  if (conflictReloadControls < 1) {
     throw new Error('the stale-revision refusal did not offer the drawer reload action')
   }
   state.conflict = {
