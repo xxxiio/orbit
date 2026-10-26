@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-10-26T02:48:39.176Z",
+  "startedAt": "2026-10-26T04:03:34.206Z",
   "command": {
     "cwd": "/home/xliu/dev/orbit/web",
     "invocation": "node tests/e2e/i5/dogfood.mjs",
@@ -9,11 +9,11 @@
     ]
   },
   "identity": {
-    "commit": "93ea9efae15572ff73dd972ae856a0128e1995ae",
+    "commit": "987bcf15f0597252338c42bc2c42ab0ce8fdac13",
     "tree": "clean",
     "dist": {
       "path": "web/dist",
-      "sha256": "c6048927f0dccf35ebe31935f9a76bdbe548cc84312f9d82a4f92d684ad3f5b3",
+      "sha256": "e34b3a77acb03530e098e1b91b51def0aaafe3b07a6d816ea2f356c80e7bd26d",
       "files": [
         {
           "path": "assets/fraunces-latin-ext-wght-normal-Ca2vKHc0.woff2",
@@ -31,19 +31,19 @@
           "bytes": 11572
         },
         {
-          "path": "assets/index-8THCnzBQ.js",
-          "sha256": "b7caee2e8ea256e87f249e14611c235ef098d65f692e0c3e2987f6738135ba18",
-          "bytes": 872517
-        },
-        {
-          "path": "assets/index-8THCnzBQ.js.map",
-          "sha256": "83a54986ad3ff50855ca0012f82f095c910cf9d4c2c6e9d9bb503b2d915e5cd5",
-          "bytes": 3588808
-        },
-        {
           "path": "assets/index-qxnbGAlR.css",
           "sha256": "c8ebccbc7b7976ce8cd5f9f14f61f9e025ba7c64c7f7b698d2dc7e5f5f9934d9",
           "bytes": 59913
+        },
+        {
+          "path": "assets/index-T-O4eg0F.js",
+          "sha256": "9310a4db38eda21c068e0d16d593260e74f00fcc8fcbed9e3697db89b102cf4f",
+          "bytes": 872907
+        },
+        {
+          "path": "assets/index-T-O4eg0F.js.map",
+          "sha256": "45923ebb4c1bf40d25f0df92e5cecc29e3916b5ae403a3d8b5e97812db5d5f40",
+          "bytes": 3591490
         },
         {
           "path": "assets/instrument-sans-latin-ext-wght-normal-B5bTHO_g.woff2",
@@ -87,7 +87,7 @@
         },
         {
           "path": "index.html",
-          "sha256": "50b770611ecd803ee17de14961045cf2f6b10a75c21fabd23d046273b5ba2e89",
+          "sha256": "b65929bb947b938806871735b7749b686d68acdb8ef359a24c5ac12d43884c7b",
           "bytes": 1028
         },
         {
@@ -97,7 +97,7 @@
         }
       ],
       "fileCount": 16,
-      "totalBytes": 4730680
+      "totalBytes": 4733752
     },
     "serverBinary": {
       "path": "target/debug/orbit-server",
@@ -111,7 +111,7 @@
     }
   },
   "project": {
-    "id": "da7645e8-bdcd-4e22-aac7-301cce30ad04",
+    "id": "97fdc8f0-0d43-4d97-b1f5-906550e7e6e2",
     "name": "Orbit Development",
     "status": "proposed",
     "workflow": {
@@ -120,96 +120,96 @@
     }
   },
   "taskIds": {
-    "I5: write the dogfooding findings summary": "8c61251a-5d00-47e6-bf88-fdad79f68509",
-    "I5: wire estimate and deadline editing into the task drawer": "bcf7d590-ed95-423e-ae90-f24d89e0fe8e",
-    "I5: prove browser planning with a sized task": "923e2e61-32ee-40ea-93e1-f3f5b3bc2f3d",
-    "I6: refine the surfaces flagged by dogfooding": "b2abfce3-295f-4ff6-9ce3-aa7c381ba8a4",
-    "I6: update docs/web-app.md for I3 to I5": "f7b332e6-522b-44c8-88f6-a3033a1e5df3",
-    "I6: write the TUI redesign spec": "c8265a82-b8ba-4cd1-81ba-c164607e4983",
-    "I6: close carry-forward 3 with one shared command queue": "22f032bb-1d46-4c8a-9aaa-cf492acbfb83",
-    "I6: consume the attachment associate API": "21b8462c-563f-439b-9c26-1840bad5b62f",
-    "I6: expose note deletion in the knowledge workspace": "804f7beb-5a81-464a-8ee0-1b54592162cf",
-    "I6: name the byte limit in the 413 upload copy": "7a5bbec9-a4fe-46a4-88ad-4dec2c68a81f",
-    "I6: split the remaining api mutation modules": "3fd55405-f23c-4159-802b-f7f90951fbde",
-    "I6: remove the project settings view diff duplication": "1fb99ea9-4d2b-40e1-a0fb-fc8456b5d509",
-    "I6: prove an agent job record without launching a runtime": "6ab0e0d0-0037-4739-befe-aa9e6699538d",
-    "I6: restore getdone-validate-project in this environment": "18833b30-bd6c-4260-b546-ec2c9a39b377",
-    "I6: review the gate 4 findings and record dispositions": "887de550-8d16-467f-a1e5-3837e3cec14d",
-    "I6: add a first-class note to task relation": "b2a6cc52-bab4-4a6a-95b9-ac17b326de61",
-    "I5: document the Development feature kind title gap": "76a9fe71-4e0a-420e-aea4-1a4ab98256dc",
-    "I5: record the board keyboard move evidence": "2efdaa55-ec28-4d04-9575-af03b33e989c",
-    "Triage: capture I5 friction before the gate": "895c9322-7367-42b9-928c-eff4d3d8f35c"
+    "I5: write the dogfooding findings summary": "cbaeca85-39ef-4f36-80fe-b72cc00155c0",
+    "I5: wire estimate and deadline editing into the task drawer": "8da4e89c-c9ad-4bb5-866b-7a53e72ab8f5",
+    "I5: prove browser planning with a sized task": "53673192-6b67-448a-b592-60b859a4be7c",
+    "I6: refine the surfaces flagged by dogfooding": "33947f0b-4c1c-4d1d-bb25-c1728fec5eed",
+    "I6: update docs/web-app.md for I3 to I5": "17ad0bd9-0c5d-4288-92b6-2503d82e2a5e",
+    "I6: write the TUI redesign spec": "3accda16-b710-4b51-a287-012fb1ec4c36",
+    "I6: close carry-forward 3 with one shared command queue": "39f71e8d-4b68-4d7b-b427-28b61d31febd",
+    "I6: consume the attachment associate API": "30dadc5d-f24c-4915-9391-39e50f4b7239",
+    "I6: expose note deletion in the knowledge workspace": "1a82f474-267d-42e5-a783-08a9a7226857",
+    "I6: name the byte limit in the 413 upload copy": "8ca95f31-8a26-4286-b83b-dd655518aa6b",
+    "I6: split the remaining api mutation modules": "20f12849-8e3e-4de3-8ebb-b246a83aed51",
+    "I6: remove the project settings view diff duplication": "8482d70b-d755-4d1a-a9f2-6678fd369b92",
+    "I6: prove an agent job record without launching a runtime": "bdfec986-0578-4f0d-bd51-f36de9d1d517",
+    "I6: restore getdone-validate-project in this environment": "5bbf785e-1f0c-4544-92a4-a7e68a8ea606",
+    "I6: review the gate 4 findings and record dispositions": "541bf40d-77f6-4007-961e-89b96c7eba16",
+    "I6: add a first-class note to task relation": "a1e0ef84-276b-40b7-8d24-d88c64af2fd1",
+    "I5: document the Development feature kind title gap": "ab09a6e5-64e8-4b90-b8b2-1fddd62182c5",
+    "I5: record the board keyboard move evidence": "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
+    "Triage: capture I5 friction before the gate": "91ab6dfa-d93c-4caf-a278-f98f8fc09993"
   },
   "moves": [
     {
-      "taskId": "8c61251a-5d00-47e6-bf88-fdad79f68509",
+      "taskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0",
       "from": "inbox",
       "to": "ready",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "bcf7d590-ed95-423e-ae90-f24d89e0fe8e",
+      "taskId": "8da4e89c-c9ad-4bb5-866b-7a53e72ab8f5",
       "from": "inbox",
       "to": "ready",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "b2abfce3-295f-4ff6-9ce3-aa7c381ba8a4",
+      "taskId": "33947f0b-4c1c-4d1d-bb25-c1728fec5eed",
       "from": "inbox",
       "to": "ready",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "f7b332e6-522b-44c8-88f6-a3033a1e5df3",
+      "taskId": "17ad0bd9-0c5d-4288-92b6-2503d82e2a5e",
       "from": "inbox",
       "to": "planned",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "887de550-8d16-467f-a1e5-3837e3cec14d",
+      "taskId": "541bf40d-77f6-4007-961e-89b96c7eba16",
       "from": "inbox",
       "to": "planned",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "887de550-8d16-467f-a1e5-3837e3cec14d",
+      "taskId": "541bf40d-77f6-4007-961e-89b96c7eba16",
       "from": "planned",
       "to": "in_progress",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "2efdaa55-ec28-4d04-9575-af03b33e989c",
+      "taskId": "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
       "from": "inbox",
       "to": "ready",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "8c61251a-5d00-47e6-bf88-fdad79f68509",
+      "taskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0",
       "from": "ready",
       "to": "in_progress",
       "surface": "task drawer (completion)"
     },
     {
-      "taskId": "8c61251a-5d00-47e6-bf88-fdad79f68509",
+      "taskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0",
       "from": "in_progress",
       "to": "done",
       "surface": "task drawer (completion)"
     },
     {
-      "taskId": "2efdaa55-ec28-4d04-9575-af03b33e989c",
+      "taskId": "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
       "from": "ready",
       "to": "in_progress",
       "surface": "board keyboard (m, arrows, Enter)"
     },
     {
-      "taskId": "2efdaa55-ec28-4d04-9575-af03b33e989c",
+      "taskId": "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
       "from": "in_progress",
       "to": "done",
       "surface": "board keyboard (m, arrows, Enter)"
     }
   ],
   "triage": {
-    "taskId": "895c9322-7367-42b9-928c-eff4d3d8f35c",
+    "taskId": "91ab6dfa-d93c-4caf-a278-f98f8fc09993",
     "before": {
       "status": "inbox",
       "projectId": null,
@@ -217,53 +217,53 @@
     },
     "after": {
       "status": "inbox",
-      "projectId": "da7645e8-bdcd-4e22-aac7-301cce30ad04",
+      "projectId": "97fdc8f0-0d43-4d97-b1f5-906550e7e6e2",
       "priority": "high"
     },
     "surface": "Inbox inline project and priority controls"
   },
   "milestoneIds": {
-    "Reference-client ready": "3b747a84-89f2-460a-8468-a2fd0cc9fa26",
-    "M31 completion": "86afa7ee-da98-4b78-96c6-40288da7a2a0"
+    "Reference-client ready": "4600b81d-0a4b-4b86-bc2e-f19010a20077",
+    "M31 completion": "c905c6a4-4687-4ea6-a45c-04e7308d87de"
   },
   "milestones": {
     "M31 completion": {
-      "id": "86afa7ee-da98-4b78-96c6-40288da7a2a0",
+      "id": "c905c6a4-4687-4ea6-a45c-04e7308d87de",
       "assigned": 12,
       "done": 2,
       "copy": "2 of 12 tasks done",
       "taskIds": [
-        "18833b30-bd6c-4260-b546-ec2c9a39b377",
-        "1fb99ea9-4d2b-40e1-a0fb-fc8456b5d509",
-        "22f032bb-1d46-4c8a-9aaa-cf492acbfb83",
-        "2efdaa55-ec28-4d04-9575-af03b33e989c",
-        "3fd55405-f23c-4159-802b-f7f90951fbde",
-        "76a9fe71-4e0a-420e-aea4-1a4ab98256dc",
-        "887de550-8d16-467f-a1e5-3837e3cec14d",
-        "8c61251a-5d00-47e6-bf88-fdad79f68509",
-        "923e2e61-32ee-40ea-93e1-f3f5b3bc2f3d",
-        "b2abfce3-295f-4ff6-9ce3-aa7c381ba8a4",
-        "bcf7d590-ed95-423e-ae90-f24d89e0fe8e",
-        "f7b332e6-522b-44c8-88f6-a3033a1e5df3"
+        "17ad0bd9-0c5d-4288-92b6-2503d82e2a5e",
+        "20f12849-8e3e-4de3-8ebb-b246a83aed51",
+        "33947f0b-4c1c-4d1d-bb25-c1728fec5eed",
+        "39f71e8d-4b68-4d7b-b427-28b61d31febd",
+        "53673192-6b67-448a-b592-60b859a4be7c",
+        "541bf40d-77f6-4007-961e-89b96c7eba16",
+        "5bbf785e-1f0c-4544-92a4-a7e68a8ea606",
+        "8482d70b-d755-4d1a-a9f2-6678fd369b92",
+        "8da4e89c-c9ad-4bb5-866b-7a53e72ab8f5",
+        "ab09a6e5-64e8-4b90-b8b2-1fddd62182c5",
+        "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
+        "cbaeca85-39ef-4f36-80fe-b72cc00155c0"
       ]
     },
     "Reference-client ready": {
-      "id": "3b747a84-89f2-460a-8468-a2fd0cc9fa26",
+      "id": "4600b81d-0a4b-4b86-bc2e-f19010a20077",
       "assigned": 6,
       "done": 0,
       "copy": "0 of 6 tasks done",
       "taskIds": [
-        "21b8462c-563f-439b-9c26-1840bad5b62f",
-        "6ab0e0d0-0037-4739-befe-aa9e6699538d",
-        "7a5bbec9-a4fe-46a4-88ad-4dec2c68a81f",
-        "804f7beb-5a81-464a-8ee0-1b54592162cf",
-        "b2a6cc52-bab4-4a6a-95b9-ac17b326de61",
-        "c8265a82-b8ba-4cd1-81ba-c164607e4983"
+        "1a82f474-267d-42e5-a783-08a9a7226857",
+        "30dadc5d-f24c-4915-9391-39e50f4b7239",
+        "3accda16-b710-4b51-a287-012fb1ec4c36",
+        "8ca95f31-8a26-4286-b83b-dd655518aa6b",
+        "a1e0ef84-276b-40b7-8d24-d88c64af2fd1",
+        "bdfec986-0578-4f0d-bd51-f36de9d1d517"
       ]
     }
   },
   "workItem": {
-    "id": "d7ddc8bf-0aeb-4abf-a509-58a196cab837",
+    "id": "76cea019-7327-408a-8a33-fd5f8adc68cf",
     "kind": "feature",
     "state": "backlog",
     "properties": {
@@ -282,17 +282,17 @@
   },
   "note": {
     "path": "i5-dogfooding.md",
-    "id": "dc18bd8f-bd1b-4ed9-91ce-cff20e33147c",
+    "id": "773042f4-ec53-4948-bbf8-adf32e3262ce",
     "title": "i5-dogfooding",
-    "linkedFromTaskId": "8c61251a-5d00-47e6-bf88-fdad79f68509"
+    "linkedFromTaskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0"
   },
   "attachment": {
-    "id": "fd0d7abf-6b75-427d-a0de-dca7ad1d115e",
+    "id": "a6350d85-f170-4ead-923e-8b7b6355ae66",
     "filename": "task-a-evidence.md",
     "contentType": "text/markdown",
     "sizeBytes": 247,
-    "checksum": "d7f3c0786d1e975247f45cd6011e14f924e46a6da86b31abb7eae6e3b6ee1ed2",
-    "ownerTaskId": "8c61251a-5d00-47e6-bf88-fdad79f68509"
+    "checksum": "92c34de54817877dd6e57fa4cb243d91e1ff92ee63b1f4cccdf2f042a61e9f0e",
+    "ownerTaskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0"
   },
   "planning": {
     "capacityMinutes": 240,
@@ -304,10 +304,10 @@
     },
     "proposedSlotsBeforeReview": 1,
     "reviewDisabledBeforeReview": false,
-    "reviewFingerprint": "678b0f6905a2e97f51061b42d0b7bf84013a28de01ba0503715e8493717e62ba",
-    "reviewCommandId": "6c9753be-ed87-473c-bce7-2f7b106d7b10",
+    "reviewFingerprint": "e44ba45955941e833c4861265fc0c855ac3d3761d4d43b4efd408d57bbab08a0",
+    "reviewCommandId": "a6e476d5-da12-4e22-9e64-d1de0738c02d",
     "receiptBlocks": [
-      "a7c9a56f-9bbc-438d-9bbe-7010c7bf480a"
+      "05c1620f-928a-42a2-b958-55417a435ec3"
     ],
     "blocksBeforeReload": 1,
     "blocksAfterReload": 1,
@@ -318,15 +318,15 @@
   "conflict": {
     "secondDeviceId": "orbit-development-2",
     "secondWrite": {
-      "taskId": "8c61251a-5d00-47e6-bf88-fdad79f68509",
+      "taskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0",
       "surface": "second browser context → board → task drawer",
-      "marker": "Second device note: this sentence was typed in another browser session at 2026-10-26T02:49:41.238Z.",
+      "marker": "Second device note: this sentence was typed in another browser session at 2026-10-26T04:04:38.470Z.",
       "storedDescriptionIncludesMarker": true
     },
     "secondWriterAccepted": true,
     "refusal": "That change conflicted with a newer version on the server (stale server revision). Refresh and try again.",
-    "alertsInDrawer": 2,
-    "reloadControlsInDrawer": 2,
+    "alertsInDrawer": 1,
+    "reloadControlsInDrawer": 1,
     "recoveredBy": "drawer reload action",
     "recovered": true,
     "noSilentOverwrite": true
@@ -345,7 +345,7 @@
     "refusal": "invalid task status transition: inbox -> done"
   },
   "boardMove": {
-    "taskId": "2efdaa55-ec28-4d04-9575-af03b33e989c",
+    "taskId": "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
     "title": "I5: record the board keyboard move evidence",
     "moves": [
       "In progress",
@@ -356,8 +356,8 @@
     "usedMouse": false
   },
   "restart": {
-    "firstPid": 2029409,
-    "secondPid": 2029958,
+    "firstPid": 2119654,
+    "secondPid": 2120197,
     "serverRestarted": true,
     "sessionSurvived": true,
     "completedCardInDoneColumn": true,
@@ -396,7 +396,7 @@
     "25-agents-no-jobs",
     "26-home-final"
   ],
-  "projectId": "da7645e8-bdcd-4e22-aac7-301cce30ad04",
+  "projectId": "97fdc8f0-0d43-4d97-b1f5-906550e7e6e2",
   "notePath": "i5-dogfooding.md",
   "taskActivity": [
     "Activity",
@@ -413,7 +413,7 @@
     "This device",
     "·",
     "just now",
-    "Attachment task-a-evidence.md added to task 8c61251a-5d00-47e6-bf88-fdad79f68509",
+    "Attachment task-a-evidence.md added to task cbaeca85-39ef-4f36-80fe-b72cc00155c0",
     "Attachment Added",
     "·",
     "This device",
@@ -447,11 +447,11 @@
   "counts": {
     "tasks": 19,
     "tasksByStatus": {
+      "planned": 1,
       "inbox": 13,
-      "done": 2,
-      "in_progress": 1,
       "ready": 2,
-      "planned": 1
+      "in_progress": 1,
+      "done": 2
     },
     "tasksWithMilestone": 18,
     "milestones": 2,
@@ -460,7 +460,7 @@
     "workItems": 1,
     "attachments": 1
   },
-  "finishedAt": "2026-10-26T02:49:52.045Z",
+  "finishedAt": "2026-10-26T04:04:48.902Z",
   "dbPath": "/tmp/orbit-i5/vault/db.sqlite3",
   "backups": [
     "/home/xliu/dev/orbit/web/evidence/i5/orbit-i5-db.sqlite3",
@@ -490,17 +490,17 @@
   "steps": [
     "Home rendered signed in, before any project existed",
     "A fresh server published no Development workflow; the New project dialog installed the bundled Development workflow and offered it without a reload.",
-    "Created project Orbit Development (da7645e8-bdcd-4e22-aac7-301cce30ad04) with the Development v3 workflow through the dialog",
+    "Created project Orbit Development (97fdc8f0-0d43-4d97-b1f5-906550e7e6e2) with the Development v3 workflow through the dialog",
     "Created 18 tasks through the New task dialog",
     "Created milestones M31 completion and Reference-client ready through the milestones view",
     "Set priorities, labels, initial statuses, Markdown descriptions, acceptance criteria and dependencies in the drawer",
     "Sized “I5: write the dogfooding findings summary” at 60 minutes with a deadline through the drawer's Planning group",
-    "Created one feature work item (d7ddc8bf-0aeb-4abf-a509-58a196cab837) titled “Real feature titles in the work-item list”",
-    "Created knowledge note i5-dogfooding.md (dc18bd8f-bd1b-4ed9-91ce-cff20e33147c) through the vault dialog",
+    "Created one feature work item (76cea019-7327-408a-8a33-fd5f8adc68cf) titled “Real feature titles in the work-item list”",
+    "Created knowledge note i5-dogfooding.md (773042f4-ec53-4948-bbf8-adf32e3262ce) through the vault dialog",
     "Linked the note from the task description and verified the rendered link",
     "Triaged “Triage: capture I5 friction before the gate” from Home → Inbox into the project, priority High",
     "Sized task selected in the day plan (1 proposed slot before review); reviewed, approved and applied 1 block(s); the applied block survived a reload",
-    "Completed “I5: write the dogfooding findings summary” (8c61251a-5d00-47e6-bf88-fdad79f68509) through description, criteria, attachment, Ready → In progress → Done; activity visible",
+    "Completed “I5: write the dogfooding findings summary” (cbaeca85-39ef-4f36-80fe-b72cc00155c0) through description, criteria, attachment, Ready → In progress → Done; activity visible",
     "Restarted the server between tasks; the session, the completed task and its board column survived a reload",
     "Completed “I5: record the board keyboard move evidence” from the board with two keyboard moves (Ready → In progress → Done, m → arrow → Enter, 4 ArrowDown presses, 0 pointer presses)",
     "Milestone progress read exactly 2 of 12 and 0 of 6 tasks done against the seeded plan",
