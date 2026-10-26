@@ -437,24 +437,42 @@ async function setStatus(drawer, statusLabel, taskId, surface) {
 }
 
 /** Author an estimate and deadline through the drawer's Planning group. */
-async function setPlanning(drawer, { estimate, deadline }) {
+async function setPlanning(drawer, { estimate, deadline }, taskId) {
   const input = drawer.getByLabel('Task estimate in minutes')
   await input.fill(String(estimate))
   await input.press('Tab')
   await waitUntil(async () => Number(await input.inputValue()) === estimate, {
-    label: `the estimate to read back ${estimate}`,
+    label: `the estimate draft to read back ${estimate}`,
     timeout: 10_000,
   })
+  // The estimate and deadline are two commands on one mutation instance. Wait
+  // for the server to store the first before sending the second, or the second
+  // fences on the pre-estimate revision and is refused as stale by our own
+  // script's speed rather than by the deliberate conflict later.
+  await waitUntil(async () => (await readTask(taskId)).estimated_minutes === estimate, {
+    label: `the server to store the estimate ${estimate}`,
+    timeout: 15_000,
+  })
+  await waitUntil(async () => !/Saving…/.test(await drawer.locator('footer').innerText()), {
+    label: 'the estimate command to settle',
+  })
+  await checkNoAlert(drawer)
   const deadlineInput = drawer.getByLabel('Task deadline')
   await deadlineInput.fill(deadline)
   // A `datetime-local` input has internal segments; Tab moves between them, so
   // blur explicitly to commit the whole value.
   await deadlineInput.blur()
+  const expectedDeadlineAtMs = new Date(deadline).getTime()
+  await waitUntil(async () => (await readTask(taskId)).deadline_at_ms === expectedDeadlineAtMs, {
+    label: `the server to store the deadline ${deadline}`,
+    timeout: 15_000,
+  })
   await waitUntil(async () => (await deadlineInput.inputValue()) === deadline, {
     label: `the deadline to read back ${deadline}`,
     timeout: 10_000,
   })
   await checkNoAlert(drawer)
+  return readTask(taskId)
 }
 
 async function setLabels(drawer, labels) {
@@ -966,8 +984,9 @@ async function run() {
   // Size the task the planning stage will schedule (I5-01). The deadline is
   // far enough out that the server does not judge it past.
   {
-    const { drawer } = await openTaskFromBoard(TASKS[0].title)
-    await setPlanning(drawer, { estimate: 60, deadline: '2030-01-15T12:30' })
+    const { drawer, taskId } = await openTaskFromBoard(TASKS[0].title)
+    const stored = await setPlanning(drawer, { estimate: 60, deadline: '2030-01-15T12:30' }, taskId)
+    if (stored.estimated_minutes !== 60) throw new Error('the drawer did not store the estimate')
     await closeTaskDrawer()
     steps.push(`Sized “${TASKS[0].title}” at 60 minutes with a deadline through the drawer's Planning group`)
   }
