@@ -1,0 +1,174 @@
+{
+  "startedAt": "2026-10-25T23:41:17.313Z",
+  "projectId": "4939d23d-4f9c-437c-bf21-4aca00321e4f",
+  "taskIds": {
+    "I5: write the dogfooding findings summary": "dac48ec8-8d23-4e16-aa41-f44747c09ad8",
+    "I5: wire estimate and deadline editing into the task drawer": "c9965f3a-a7f8-4d74-979d-578637722d4c",
+    "I5: prove browser planning with a sized task": "8e1ba26b-70f9-41ce-98ba-c1995e9ad784",
+    "I6: refine the surfaces flagged by dogfooding": "3d3bd342-69ac-45b6-9c48-4faa1e74403e",
+    "I6: update docs/web-app.md for I3 to I5": "8248f040-b687-406c-9fc7-e9c5e706318c",
+    "I6: write the TUI redesign spec": "7975b422-fd2f-4784-8d4e-0a7df8c51c94",
+    "I6: close carry-forward 3 with one shared command queue": "3297d9af-a129-4849-b7d2-527596c741b7",
+    "I6: consume the attachment associate API": "32e624f0-c9d9-4d84-864e-8408e13f6579",
+    "I6: expose note deletion in the knowledge workspace": "3ab6c8cf-945f-4104-8daf-4cf303ef3bd3",
+    "I6: name the byte limit in the 413 upload copy": "1e6b61f4-38fe-4b83-b48b-c333116eb610",
+    "I6: split the remaining api mutation modules": "159f4453-8573-4f49-9a8b-d09c2113b3e8",
+    "I6: remove the project settings view diff duplication": "1295f6ab-4bad-4825-ab18-f6f14d46f2dc",
+    "I6: prove an agent job record without launching a runtime": "b9303fa9-b510-4c68-878a-7ce688f6c2f4",
+    "I6: restore getdone-validate-project in this environment": "36b402cb-c8e6-49a5-b9c5-0cd82bab52fc",
+    "I6: review the gate 4 findings and record dispositions": "cb10cbd3-2c69-458e-bb56-b3dca7999509",
+    "I6: add a first-class note to task relation": "a816d1ce-62f6-4313-bb7a-773e8de951ed",
+    "I5: document the Development feature kind title gap": "f31fbba9-feed-41a1-bd6f-714aa0e51542",
+    "I5: record the board keyboard move evidence": "4e5e93d2-5740-44ff-8a46-13bc2a5465a9",
+    "Triage: capture I5 friction before the gate": "22471168-8d11-4060-966b-553bd4e8333e"
+  },
+  "milestoneIds": {
+    "M31 completion": "41539b10-9828-43d3-a338-47673c311788",
+    "Reference-client ready": "d6994d8a-73fd-4218-811c-d2cfaca987db"
+  },
+  "workItemId": "1ce5d4bf-d612-48c6-937b-90793d55ab05",
+  "notePath": "i5-dogfooding.md",
+  "planning": {
+    "capacityMinutes": 240,
+    "dayPlanRowsMissingEstimate": 3,
+    "window": {
+      "date": "2026-10-27",
+      "from": "13:00",
+      "to": "16:00"
+    },
+    "proposedSlots": 0,
+    "reviewDisabled": true,
+    "reviewDisabledReason": "There is nothing to review until the server places at least one task.",
+    "applied": false,
+    "blockedBecause": "No task can be given an estimate from the browser, so the server proposes no slots and the review/apply gate cannot be reached."
+  },
+  "conflict": {
+    "secondWriterStatus": 200,
+    "refusal": "That change conflicted with a newer version on the server (stale server revision). Refresh and try again.",
+    "reloadControlsInDrawer": 0,
+    "recoveredBy": "full page reload, then reopen the drawer"
+  },
+  "boardMove": {
+    "taskId": "4e5e93d2-5740-44ff-8a46-13bc2a5465a9",
+    "title": "I5: record the board keyboard move evidence",
+    "moves": [
+      "In progress",
+      "Done"
+    ],
+    "arrowPresses": 9,
+    "usedMouse": false
+  },
+  "restart": {
+    "serverRestarted": true,
+    "sessionSurvived": true,
+    "completedCardInDoneColumn": true,
+    "boardTaskCount": 19
+  },
+  "captureCommit": "fa6d653a6b8a90070b0fc74fc734d5df798faab4",
+  "invalidTransition": {
+    "attempted": "inbox -> in_progress",
+    "offeredByControl": true,
+    "refusal": "invalid task status transition: inbox -> in_progress"
+  },
+  "taskActivity": [
+    "Activity",
+    "The server's own record for this task.",
+    "Task status changed to done",
+    "Status Changed",
+    "·",
+    "Another device",
+    "·",
+    "just now",
+    "Task status changed to in_progress",
+    "Status Changed",
+    "·",
+    "Another device",
+    "·",
+    "just now",
+    "Attachment task-a-evidence.md added to task dac48ec8-8d23-4e16-aa41-f44747c09ad8",
+    "Attachment Added",
+    "·",
+    "Another device",
+    "·",
+    "just now"
+  ],
+  "milestones": {
+    "names": [
+      "M31 completion",
+      "Reference-client ready"
+    ],
+    "progressCopy": [
+      "tasks",
+      ", 19 tasks",
+      "2 of 12 tasks done",
+      "0 of 6 tasks done",
+      "Progress",
+      "2 of 12 tasks done",
+      "17%",
+      "0 of 6 tasks done",
+      "0%",
+      "The server owns the milestone lifecycle: every status is offered, and a refused transition leaves the stored value untouched. Milestone records have no dates in this API yet, so progress is counted from the tasks assigned to each milestone."
+    ]
+  },
+  "upgrade": {
+    "offered": false,
+    "copy": "This project is on the newest published version of Development. No upgrade is pending."
+  },
+  "agentJobs": {
+    "created": false,
+    "reason": "The web app exposes no launch or create control for agent jobs; the overview was empty and says so.",
+    "overviewCopy": [
+      "WORKSPACE",
+      "Agents",
+      "Jobs this device can see. Reviewing a handoff records a decision; it never completes the Orbit task, and this browser never launches an agent.",
+      "Refresh",
+      "No agent jobs are visible to this device",
+      "Jobs are owned by the device that started them. An executor or the command line starts one; this browser never launches an agent.",
+      "Open projects"
+    ]
+  },
+  "finishedAt": "2026-10-25T23:42:30.987Z",
+  "dbPath": "/tmp/orbit-i5/vault/db.sqlite3",
+  "backups": [
+    "/home/xliu/dev/orbit/web/evidence/i5/orbit-i5-db.sqlite3",
+    "/home/xliu/dev/orbit/web/evidence/i5/orbit-i5-db.sqlite3-wal",
+    "/home/xliu/dev/orbit/web/evidence/i5/orbit-i5-db.sqlite3-shm"
+  ],
+  "evidenceDir": "/home/xliu/dev/orbit/web/evidence/i5",
+  "httpErrors": [
+    {
+      "status": 400,
+      "method": "POST",
+      "url": "http://127.0.0.1:8790/v1/authoritative/task-commands"
+    },
+    {
+      "status": 409,
+      "method": "POST",
+      "url": "http://127.0.0.1:8790/v1/authoritative/task-commands"
+    }
+  ],
+  "steps": [
+    "Home rendered signed in, before any project existed",
+    "A fresh server had no Development workflow; the New project dialog listed only the default. Published it with the setup API, reloaded so the cached list refreshed, then chose it in the form.",
+    "Created project Orbit Development (4939d23d-4f9c-437c-bf21-4aca00321e4f) with the Development workflow through the dialog",
+    "Created 18 tasks through the New task dialog",
+    "Created milestones M31 completion and Reference-client ready through the milestones view",
+    "Set priorities, labels, initial statuses, Markdown descriptions, acceptance criteria and dependencies in the drawer",
+    "Created one Feature work item (1ce5d4bf-d612-48c6-937b-90793d55ab05); declared fields: Priority*\n(required) / Medium / Cancel / Create work item / ",
+    "Created knowledge note i5-dogfooding.md through the vault dialog",
+    "Linked the note from the task description and verified the rendered link",
+    "Triaged “Triage: capture I5 friction before the gate” from Home → Inbox into the project, priority High",
+    "Authored 240 minutes; the server returned 3 “missing an estimate” rows and 0 slots; review disabled=true",
+    "Completed “I5: write the dogfooding findings summary” (dac48ec8-8d23-4e16-aa41-f44747c09ad8) through description, criteria, attachment, Ready → In progress → Done; activity visible",
+    "Restarted the server between tasks; the session, the completed task and its board column survived a reload",
+    "Completed “I5: record the board keyboard move evidence” from the board with two keyboard moves (Ready → In progress → Done, m → arrow → Enter, 9 ArrowDown presses, no pointer used for the move)",
+    "Reviewed milestone progress; settings honestly reported no newer published workflow version"
+  ],
+  "environment": {
+    "port": 8790,
+    "device": "orbit-development",
+    "dist": "/home/xliu/dev/orbit/web/dist",
+    "vault": "/tmp/orbit-i5/vault/db.knowledge",
+    "serverBinary": "/home/xliu/dev/orbit/target/debug/orbit-server"
+  }
+}
