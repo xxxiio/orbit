@@ -1,7 +1,7 @@
 # I5 task evidence
 
-Task: cbaeca85-39ef-4f36-80fe-b72cc00155c0
+Task: 8c2b85f9-1855-4eec-b578-0fa6fa119918
 Title: I5: write the dogfooding findings summary
-Captured: 2026-10-26T04:04:41.180Z
+Captured: 2026-10-26T05:44:13.846Z
 
 This file was uploaded through the task drawer's attachment control during the real browser cycle.

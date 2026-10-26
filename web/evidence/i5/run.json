@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-10-26T04:03:34.206Z",
+  "startedAt": "2026-10-26T05:43:08.212Z",
   "command": {
     "cwd": "/home/xliu/dev/orbit/web",
     "invocation": "node tests/e2e/i5/dogfood.mjs",
@@ -9,11 +9,11 @@
     ]
   },
   "identity": {
-    "commit": "987bcf15f0597252338c42bc2c42ab0ce8fdac13",
+    "commit": "adb6b26c054cb4e22137be235f15a16440ae829b",
     "tree": "clean",
     "dist": {
       "path": "web/dist",
-      "sha256": "e34b3a77acb03530e098e1b91b51def0aaafe3b07a6d816ea2f356c80e7bd26d",
+      "sha256": "23a5a0e8bdc1fce68502c883218b0e489e9b7e08acaeac3a4c4759838d8bd0b7",
       "files": [
         {
           "path": "assets/fraunces-latin-ext-wght-normal-Ca2vKHc0.woff2",
@@ -31,19 +31,19 @@
           "bytes": 11572
         },
         {
-          "path": "assets/index-qxnbGAlR.css",
-          "sha256": "c8ebccbc7b7976ce8cd5f9f14f61f9e025ba7c64c7f7b698d2dc7e5f5f9934d9",
+          "path": "assets/index-DAxWsnmx.js",
+          "sha256": "1a7fd74f495bc95c76d4f4315ab37e084e01c6403de101d3480967d0d0efb045",
+          "bytes": 874108
+        },
+        {
+          "path": "assets/index-DAxWsnmx.js.map",
+          "sha256": "f423571f36c1212f46a23604b335d76176cafc60b1c76fd5c2becf421c58dc4f",
+          "bytes": 3595921
+        },
+        {
+          "path": "assets/index-Tjh-PGzd.css",
+          "sha256": "12fb9c11b91c7ff16828605071291561344d43a31c485f771e36bb8238aeed48",
           "bytes": 59913
-        },
-        {
-          "path": "assets/index-T-O4eg0F.js",
-          "sha256": "9310a4db38eda21c068e0d16d593260e74f00fcc8fcbed9e3697db89b102cf4f",
-          "bytes": 872907
-        },
-        {
-          "path": "assets/index-T-O4eg0F.js.map",
-          "sha256": "45923ebb4c1bf40d25f0df92e5cecc29e3916b5ae403a3d8b5e97812db5d5f40",
-          "bytes": 3591490
         },
         {
           "path": "assets/instrument-sans-latin-ext-wght-normal-B5bTHO_g.woff2",
@@ -87,7 +87,7 @@
         },
         {
           "path": "index.html",
-          "sha256": "b65929bb947b938806871735b7749b686d68acdb8ef359a24c5ac12d43884c7b",
+          "sha256": "a7179e1434ff61b392ba284cef3e4248441221263903ec3d1e240495a83414fc",
           "bytes": 1028
         },
         {
@@ -97,7 +97,7 @@
         }
       ],
       "fileCount": 16,
-      "totalBytes": 4733752
+      "totalBytes": 4739384
     },
     "serverBinary": {
       "path": "target/debug/orbit-server",
@@ -111,7 +111,7 @@
     }
   },
   "project": {
-    "id": "97fdc8f0-0d43-4d97-b1f5-906550e7e6e2",
+    "id": "2540e17a-ff49-44ea-bf39-42c6e0594bcb",
     "name": "Orbit Development",
     "status": "proposed",
     "workflow": {
@@ -120,96 +120,96 @@
     }
   },
   "taskIds": {
-    "I5: write the dogfooding findings summary": "cbaeca85-39ef-4f36-80fe-b72cc00155c0",
-    "I5: wire estimate and deadline editing into the task drawer": "8da4e89c-c9ad-4bb5-866b-7a53e72ab8f5",
-    "I5: prove browser planning with a sized task": "53673192-6b67-448a-b592-60b859a4be7c",
-    "I6: refine the surfaces flagged by dogfooding": "33947f0b-4c1c-4d1d-bb25-c1728fec5eed",
-    "I6: update docs/web-app.md for I3 to I5": "17ad0bd9-0c5d-4288-92b6-2503d82e2a5e",
-    "I6: write the TUI redesign spec": "3accda16-b710-4b51-a287-012fb1ec4c36",
-    "I6: close carry-forward 3 with one shared command queue": "39f71e8d-4b68-4d7b-b427-28b61d31febd",
-    "I6: consume the attachment associate API": "30dadc5d-f24c-4915-9391-39e50f4b7239",
-    "I6: expose note deletion in the knowledge workspace": "1a82f474-267d-42e5-a783-08a9a7226857",
-    "I6: name the byte limit in the 413 upload copy": "8ca95f31-8a26-4286-b83b-dd655518aa6b",
-    "I6: split the remaining api mutation modules": "20f12849-8e3e-4de3-8ebb-b246a83aed51",
-    "I6: remove the project settings view diff duplication": "8482d70b-d755-4d1a-a9f2-6678fd369b92",
-    "I6: prove an agent job record without launching a runtime": "bdfec986-0578-4f0d-bd51-f36de9d1d517",
-    "I6: restore getdone-validate-project in this environment": "5bbf785e-1f0c-4544-92a4-a7e68a8ea606",
-    "I6: review the gate 4 findings and record dispositions": "541bf40d-77f6-4007-961e-89b96c7eba16",
-    "I6: add a first-class note to task relation": "a1e0ef84-276b-40b7-8d24-d88c64af2fd1",
-    "I5: document the Development feature kind title gap": "ab09a6e5-64e8-4b90-b8b2-1fddd62182c5",
-    "I5: record the board keyboard move evidence": "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
-    "Triage: capture I5 friction before the gate": "91ab6dfa-d93c-4caf-a278-f98f8fc09993"
+    "I5: write the dogfooding findings summary": "8c2b85f9-1855-4eec-b578-0fa6fa119918",
+    "I5: wire estimate and deadline editing into the task drawer": "549bfd21-a421-401a-a692-5aba5da9d6a1",
+    "I5: prove browser planning with a sized task": "93471e93-cb71-497c-83c3-6eb2a8b4a110",
+    "I6: refine the surfaces flagged by dogfooding": "a3abdf13-36cd-46cf-87fc-e363326321af",
+    "I6: update docs/web-app.md for I3 to I5": "88d9166c-7453-4e14-98e6-f5d59562647c",
+    "I6: write the TUI redesign spec": "1a7c36a9-1fc9-4b6c-bd79-1ef405b8ac70",
+    "I6: close carry-forward 3 with one shared command queue": "d2c78699-6e73-4af0-ab41-407ccc565c16",
+    "I6: consume the attachment associate API": "673b460b-8b8f-4634-8b87-337872a89fc8",
+    "I6: expose note deletion in the knowledge workspace": "4b40b537-e999-4d76-8786-e9b10807cc01",
+    "I6: name the byte limit in the 413 upload copy": "8491f020-49db-48ff-9b78-356959a497f3",
+    "I6: split the remaining api mutation modules": "1048cdb0-4d66-4aad-a52a-60921f0b3a1a",
+    "I6: remove the project settings view diff duplication": "eb6e32c8-5eae-4e51-af35-7dc60e42b2e7",
+    "I6: prove an agent job record without launching a runtime": "2253c8e2-6e94-48b6-a3eb-cabee2bf34de",
+    "I6: restore getdone-validate-project in this environment": "d950aed2-94f3-4e8e-bdcc-923c39a2b8f8",
+    "I6: review the gate 4 findings and record dispositions": "c765da03-86c4-4b1f-b2cc-aabed5f94962",
+    "I6: add a first-class note to task relation": "81cb2a4c-f916-4ab3-90d3-83a4f7ac2098",
+    "I5: document the Development feature kind title gap": "0642401d-9504-4aef-bc1c-cd7e2f253b04",
+    "I5: record the board keyboard move evidence": "af67da2d-42f5-421b-a1da-345cd410453e",
+    "Triage: capture I5 friction before the gate": "12688ef5-ab55-4b9d-ade0-7bfe1ddcb1e1"
   },
   "moves": [
     {
-      "taskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0",
+      "taskId": "8c2b85f9-1855-4eec-b578-0fa6fa119918",
       "from": "inbox",
       "to": "ready",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "8da4e89c-c9ad-4bb5-866b-7a53e72ab8f5",
+      "taskId": "549bfd21-a421-401a-a692-5aba5da9d6a1",
       "from": "inbox",
       "to": "ready",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "33947f0b-4c1c-4d1d-bb25-c1728fec5eed",
+      "taskId": "a3abdf13-36cd-46cf-87fc-e363326321af",
       "from": "inbox",
       "to": "ready",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "17ad0bd9-0c5d-4288-92b6-2503d82e2a5e",
+      "taskId": "88d9166c-7453-4e14-98e6-f5d59562647c",
       "from": "inbox",
       "to": "planned",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "541bf40d-77f6-4007-961e-89b96c7eba16",
+      "taskId": "c765da03-86c4-4b1f-b2cc-aabed5f94962",
       "from": "inbox",
       "to": "planned",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "541bf40d-77f6-4007-961e-89b96c7eba16",
+      "taskId": "c765da03-86c4-4b1f-b2cc-aabed5f94962",
       "from": "planned",
       "to": "in_progress",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
+      "taskId": "af67da2d-42f5-421b-a1da-345cd410453e",
       "from": "inbox",
       "to": "ready",
       "surface": "task drawer (setup)"
     },
     {
-      "taskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0",
+      "taskId": "8c2b85f9-1855-4eec-b578-0fa6fa119918",
       "from": "ready",
       "to": "in_progress",
       "surface": "task drawer (completion)"
     },
     {
-      "taskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0",
+      "taskId": "8c2b85f9-1855-4eec-b578-0fa6fa119918",
       "from": "in_progress",
       "to": "done",
       "surface": "task drawer (completion)"
     },
     {
-      "taskId": "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
+      "taskId": "af67da2d-42f5-421b-a1da-345cd410453e",
       "from": "ready",
       "to": "in_progress",
       "surface": "board keyboard (m, arrows, Enter)"
     },
     {
-      "taskId": "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
+      "taskId": "af67da2d-42f5-421b-a1da-345cd410453e",
       "from": "in_progress",
       "to": "done",
       "surface": "board keyboard (m, arrows, Enter)"
     }
   ],
   "triage": {
-    "taskId": "91ab6dfa-d93c-4caf-a278-f98f8fc09993",
+    "taskId": "12688ef5-ab55-4b9d-ade0-7bfe1ddcb1e1",
     "before": {
       "status": "inbox",
       "projectId": null,
@@ -217,53 +217,53 @@
     },
     "after": {
       "status": "inbox",
-      "projectId": "97fdc8f0-0d43-4d97-b1f5-906550e7e6e2",
+      "projectId": "2540e17a-ff49-44ea-bf39-42c6e0594bcb",
       "priority": "high"
     },
     "surface": "Inbox inline project and priority controls"
   },
   "milestoneIds": {
-    "Reference-client ready": "4600b81d-0a4b-4b86-bc2e-f19010a20077",
-    "M31 completion": "c905c6a4-4687-4ea6-a45c-04e7308d87de"
+    "Reference-client ready": "a764e044-5685-412e-8699-2658dccd92d3",
+    "M31 completion": "f21cdbc1-9bdd-4529-baa1-b312371989d6"
   },
   "milestones": {
     "M31 completion": {
-      "id": "c905c6a4-4687-4ea6-a45c-04e7308d87de",
+      "id": "f21cdbc1-9bdd-4529-baa1-b312371989d6",
       "assigned": 12,
       "done": 2,
       "copy": "2 of 12 tasks done",
       "taskIds": [
-        "17ad0bd9-0c5d-4288-92b6-2503d82e2a5e",
-        "20f12849-8e3e-4de3-8ebb-b246a83aed51",
-        "33947f0b-4c1c-4d1d-bb25-c1728fec5eed",
-        "39f71e8d-4b68-4d7b-b427-28b61d31febd",
-        "53673192-6b67-448a-b592-60b859a4be7c",
-        "541bf40d-77f6-4007-961e-89b96c7eba16",
-        "5bbf785e-1f0c-4544-92a4-a7e68a8ea606",
-        "8482d70b-d755-4d1a-a9f2-6678fd369b92",
-        "8da4e89c-c9ad-4bb5-866b-7a53e72ab8f5",
-        "ab09a6e5-64e8-4b90-b8b2-1fddd62182c5",
-        "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
-        "cbaeca85-39ef-4f36-80fe-b72cc00155c0"
+        "0642401d-9504-4aef-bc1c-cd7e2f253b04",
+        "1048cdb0-4d66-4aad-a52a-60921f0b3a1a",
+        "549bfd21-a421-401a-a692-5aba5da9d6a1",
+        "88d9166c-7453-4e14-98e6-f5d59562647c",
+        "8c2b85f9-1855-4eec-b578-0fa6fa119918",
+        "93471e93-cb71-497c-83c3-6eb2a8b4a110",
+        "a3abdf13-36cd-46cf-87fc-e363326321af",
+        "af67da2d-42f5-421b-a1da-345cd410453e",
+        "c765da03-86c4-4b1f-b2cc-aabed5f94962",
+        "d2c78699-6e73-4af0-ab41-407ccc565c16",
+        "d950aed2-94f3-4e8e-bdcc-923c39a2b8f8",
+        "eb6e32c8-5eae-4e51-af35-7dc60e42b2e7"
       ]
     },
     "Reference-client ready": {
-      "id": "4600b81d-0a4b-4b86-bc2e-f19010a20077",
+      "id": "a764e044-5685-412e-8699-2658dccd92d3",
       "assigned": 6,
       "done": 0,
       "copy": "0 of 6 tasks done",
       "taskIds": [
-        "1a82f474-267d-42e5-a783-08a9a7226857",
-        "30dadc5d-f24c-4915-9391-39e50f4b7239",
-        "3accda16-b710-4b51-a287-012fb1ec4c36",
-        "8ca95f31-8a26-4286-b83b-dd655518aa6b",
-        "a1e0ef84-276b-40b7-8d24-d88c64af2fd1",
-        "bdfec986-0578-4f0d-bd51-f36de9d1d517"
+        "1a7c36a9-1fc9-4b6c-bd79-1ef405b8ac70",
+        "2253c8e2-6e94-48b6-a3eb-cabee2bf34de",
+        "4b40b537-e999-4d76-8786-e9b10807cc01",
+        "673b460b-8b8f-4634-8b87-337872a89fc8",
+        "81cb2a4c-f916-4ab3-90d3-83a4f7ac2098",
+        "8491f020-49db-48ff-9b78-356959a497f3"
       ]
     }
   },
   "workItem": {
-    "id": "76cea019-7327-408a-8a33-fd5f8adc68cf",
+    "id": "9f78cdc2-7bf3-4365-a260-168c4fd301fa",
     "kind": "feature",
     "state": "backlog",
     "properties": {
@@ -282,17 +282,17 @@
   },
   "note": {
     "path": "i5-dogfooding.md",
-    "id": "773042f4-ec53-4948-bbf8-adf32e3262ce",
+    "id": "73d3b723-5d83-4eec-b3c9-e3398ac6ac7d",
     "title": "i5-dogfooding",
-    "linkedFromTaskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0"
+    "linkedFromTaskId": "8c2b85f9-1855-4eec-b578-0fa6fa119918"
   },
   "attachment": {
-    "id": "a6350d85-f170-4ead-923e-8b7b6355ae66",
+    "id": "bf03690e-cfa1-4975-828b-c725c0fbd855",
     "filename": "task-a-evidence.md",
     "contentType": "text/markdown",
     "sizeBytes": 247,
-    "checksum": "92c34de54817877dd6e57fa4cb243d91e1ff92ee63b1f4cccdf2f042a61e9f0e",
-    "ownerTaskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0"
+    "checksum": "f3a38842d2c2c7e313834a58ecb2bd3977ab3f9bb17f61a359f35452b0edcb54",
+    "ownerTaskId": "8c2b85f9-1855-4eec-b578-0fa6fa119918"
   },
   "planning": {
     "capacityMinutes": 240,
@@ -304,10 +304,10 @@
     },
     "proposedSlotsBeforeReview": 1,
     "reviewDisabledBeforeReview": false,
-    "reviewFingerprint": "e44ba45955941e833c4861265fc0c855ac3d3761d4d43b4efd408d57bbab08a0",
-    "reviewCommandId": "a6e476d5-da12-4e22-9e64-d1de0738c02d",
+    "reviewFingerprint": "f27702e7e46ef484a5b65ba53a342df42a4af57bd0a9594d380d0625558586b3",
+    "reviewCommandId": "d5dc8376-df31-4edb-a277-4b5b54dac3f0",
     "receiptBlocks": [
-      "05c1620f-928a-42a2-b958-55417a435ec3"
+      "b34da9ee-648e-40f2-bfb3-688aeff3d894"
     ],
     "blocksBeforeReload": 1,
     "blocksAfterReload": 1,
@@ -318,9 +318,9 @@
   "conflict": {
     "secondDeviceId": "orbit-development-2",
     "secondWrite": {
-      "taskId": "cbaeca85-39ef-4f36-80fe-b72cc00155c0",
+      "taskId": "8c2b85f9-1855-4eec-b578-0fa6fa119918",
       "surface": "second browser context → board → task drawer",
-      "marker": "Second device note: this sentence was typed in another browser session at 2026-10-26T04:04:38.470Z.",
+      "marker": "Second device note: this sentence was typed in another browser session at 2026-10-26T05:44:11.145Z.",
       "storedDescriptionIncludesMarker": true
     },
     "secondWriterAccepted": true,
@@ -345,7 +345,7 @@
     "refusal": "invalid task status transition: inbox -> done"
   },
   "boardMove": {
-    "taskId": "c7fe3cae-ac61-45af-b71a-bfa738c91f9a",
+    "taskId": "af67da2d-42f5-421b-a1da-345cd410453e",
     "title": "I5: record the board keyboard move evidence",
     "moves": [
       "In progress",
@@ -356,8 +356,8 @@
     "usedMouse": false
   },
   "restart": {
-    "firstPid": 2119654,
-    "secondPid": 2120197,
+    "firstPid": 2241673,
+    "secondPid": 2242205,
     "serverRestarted": true,
     "sessionSurvived": true,
     "completedCardInDoneColumn": true,
@@ -396,7 +396,7 @@
     "25-agents-no-jobs",
     "26-home-final"
   ],
-  "projectId": "97fdc8f0-0d43-4d97-b1f5-906550e7e6e2",
+  "projectId": "2540e17a-ff49-44ea-bf39-42c6e0594bcb",
   "notePath": "i5-dogfooding.md",
   "taskActivity": [
     "Activity",
@@ -413,7 +413,7 @@
     "This device",
     "·",
     "just now",
-    "Attachment task-a-evidence.md added to task cbaeca85-39ef-4f36-80fe-b72cc00155c0",
+    "Attachment task-a-evidence.md added to task 8c2b85f9-1855-4eec-b578-0fa6fa119918",
     "Attachment Added",
     "·",
     "This device",
@@ -447,11 +447,11 @@
   "counts": {
     "tasks": 19,
     "tasksByStatus": {
-      "planned": 1,
       "inbox": 13,
       "ready": 2,
-      "in_progress": 1,
-      "done": 2
+      "planned": 1,
+      "done": 2,
+      "in_progress": 1
     },
     "tasksWithMilestone": 18,
     "milestones": 2,
@@ -460,7 +460,7 @@
     "workItems": 1,
     "attachments": 1
   },
-  "finishedAt": "2026-10-26T04:04:48.902Z",
+  "finishedAt": "2026-10-26T05:44:21.591Z",
   "dbPath": "/tmp/orbit-i5/vault/db.sqlite3",
   "backups": [
     "/home/xliu/dev/orbit/web/evidence/i5/orbit-i5-db.sqlite3",
@@ -490,17 +490,17 @@
   "steps": [
     "Home rendered signed in, before any project existed",
     "A fresh server published no Development workflow; the New project dialog installed the bundled Development workflow and offered it without a reload.",
-    "Created project Orbit Development (97fdc8f0-0d43-4d97-b1f5-906550e7e6e2) with the Development v3 workflow through the dialog",
+    "Created project Orbit Development (2540e17a-ff49-44ea-bf39-42c6e0594bcb) with the Development v3 workflow through the dialog",
     "Created 18 tasks through the New task dialog",
     "Created milestones M31 completion and Reference-client ready through the milestones view",
     "Set priorities, labels, initial statuses, Markdown descriptions, acceptance criteria and dependencies in the drawer",
     "Sized “I5: write the dogfooding findings summary” at 60 minutes with a deadline through the drawer's Planning group",
-    "Created one feature work item (76cea019-7327-408a-8a33-fd5f8adc68cf) titled “Real feature titles in the work-item list”",
-    "Created knowledge note i5-dogfooding.md (773042f4-ec53-4948-bbf8-adf32e3262ce) through the vault dialog",
+    "Created one feature work item (9f78cdc2-7bf3-4365-a260-168c4fd301fa) titled “Real feature titles in the work-item list”",
+    "Created knowledge note i5-dogfooding.md (73d3b723-5d83-4eec-b3c9-e3398ac6ac7d) through the vault dialog",
     "Linked the note from the task description and verified the rendered link",
     "Triaged “Triage: capture I5 friction before the gate” from Home → Inbox into the project, priority High",
     "Sized task selected in the day plan (1 proposed slot before review); reviewed, approved and applied 1 block(s); the applied block survived a reload",
-    "Completed “I5: write the dogfooding findings summary” (cbaeca85-39ef-4f36-80fe-b72cc00155c0) through description, criteria, attachment, Ready → In progress → Done; activity visible",
+    "Completed “I5: write the dogfooding findings summary” (8c2b85f9-1855-4eec-b578-0fa6fa119918) through description, criteria, attachment, Ready → In progress → Done; activity visible",
     "Restarted the server between tasks; the session, the completed task and its board column survived a reload",
     "Completed “I5: record the board keyboard move evidence” from the board with two keyboard moves (Ready → In progress → Done, m → arrow → Enter, 4 ArrowDown presses, 0 pointer presses)",
     "Milestone progress read exactly 2 of 12 and 0 of 6 tasks done against the seeded plan",

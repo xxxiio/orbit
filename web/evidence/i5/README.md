@@ -7,9 +7,9 @@ identities below come from `run.json`; do not edit them by hand.
 
 | Item | Value |
 | --- | --- |
-| Application commit | `987bcf15f0597252338c42bc2c42ab0ce8fdac13` |
+| Application commit | `adb6b26c054cb4e22137be235f15a16440ae829b` |
 | Tree at capture | clean |
-| Built SPA | `e34b3a77acb03530e098e1b91b51def0aaafe3b07a6d816ea2f356c80e7bd26d` (16 files, 4733752 bytes) |
+| Built SPA | `23a5a0e8bdc1fce68502c883218b0e489e9b7e08acaeac3a4c4759838d8bd0b7` (16 files, 4739384 bytes) |
 | Server binary | `4ac3f39141a436fbeb379f69a871311a10c96a04ed1f2443149ac770ec96de1d` (149936584 bytes) |
 | Workflow manifest | Development v3 (`development` v3) |
 | Origin | http://127.0.0.1:8790 |
@@ -18,7 +18,7 @@ identities below come from `run.json`; do not edit them by hand.
 | Attachment store | /tmp/orbit-i5/vault/attachments/objects |
 | Enrolled devices | orbit-development, orbit-development-2 |
 | Browser | Chromium 1440x900, light theme, headless |
-| Capture window | 2026-10-26T04:03:34.206Z → 2026-10-26T04:04:48.902Z |
+| Capture window | 2026-10-26T05:43:08.212Z → 2026-10-26T05:44:21.591Z |
 | Exact command | `node tests/e2e/i5/dogfood.mjs` from `/home/xliu/dev/orbit/web` |
 | Machine-readable run | [`run.json`](run.json) |
 
@@ -26,43 +26,43 @@ identities below come from `run.json`; do not edit them by hand.
 
 | Item | Value |
 | --- | --- |
-| Project | Orbit Development (`97fdc8f0-0d43-4d97-b1f5-906550e7e6e2`), status proposed |
+| Project | Orbit Development (`2540e17a-ff49-44ea-bf39-42c6e0594bcb`), status proposed |
 | Workflow binding | `development` v3 |
 | Tasks (including the Inbox capture) | 19 |
-| Tasks by status | planned: 1, inbox: 13, ready: 2, in_progress: 1, done: 2 |
+| Tasks by status | inbox: 13, ready: 2, planned: 1, done: 2, in_progress: 1 |
 | Tasks with a milestone | 18 |
 | Milestones | 2 |
 | Schedule blocks | 1 |
 | Knowledge notes | 1 |
 | Work items | 1 |
 | Attachments | 1 |
-| Feature work item | 76cea019-7327-408a-8a33-fd5f8adc68cf — title “Real feature titles in the work-item list”, kind feature, state backlog |
-| Knowledge note | 773042f4-ec53-4948-bbf8-adf32e3262ce — `i5-dogfooding.md` (“i5-dogfooding”) |
-| Attachment | a6350d85-f170-4ead-923e-8b7b6355ae66 — `task-a-evidence.md`, 247 bytes, checksum `92c34de54817877dd6e57fa4cb243d91e1ff92ee63b1f4cccdf2f042a61e9f0e` |
+| Feature work item | 9f78cdc2-7bf3-4365-a260-168c4fd301fa — title “Real feature titles in the work-item list”, kind feature, state backlog |
+| Knowledge note | 73d3b723-5d83-4eec-b3c9-e3398ac6ac7d — `i5-dogfooding.md` (“i5-dogfooding”) |
+| Attachment | bf03690e-cfa1-4975-828b-c725c0fbd855 — `task-a-evidence.md`, 247 bytes, checksum `f3a38842d2c2c7e313834a58ecb2bd3977ab3f9bb17f61a359f35452b0edcb54` |
 
 ## Task ids that actually moved
 
 | Task | Id | Stored change | Surface |
 | --- | --- | --- | --- |
-| I5: write the dogfooding findings summary | cbaeca85-39ef-4f36-80fe-b72cc00155c0 | inbox → ready | task drawer (setup) |
-| I5: wire estimate and deadline editing into the task drawer | 8da4e89c-c9ad-4bb5-866b-7a53e72ab8f5 | inbox → ready | task drawer (setup) |
-| I6: refine the surfaces flagged by dogfooding | 33947f0b-4c1c-4d1d-bb25-c1728fec5eed | inbox → ready | task drawer (setup) |
-| I6: update docs/web-app.md for I3 to I5 | 17ad0bd9-0c5d-4288-92b6-2503d82e2a5e | inbox → planned | task drawer (setup) |
-| I6: review the gate 4 findings and record dispositions | 541bf40d-77f6-4007-961e-89b96c7eba16 | inbox → planned | task drawer (setup) |
-| I6: review the gate 4 findings and record dispositions | 541bf40d-77f6-4007-961e-89b96c7eba16 | planned → in_progress | task drawer (setup) |
-| I5: record the board keyboard move evidence | c7fe3cae-ac61-45af-b71a-bfa738c91f9a | inbox → ready | task drawer (setup) |
-| I5: write the dogfooding findings summary | cbaeca85-39ef-4f36-80fe-b72cc00155c0 | ready → in_progress | task drawer (completion) |
-| I5: write the dogfooding findings summary | cbaeca85-39ef-4f36-80fe-b72cc00155c0 | in_progress → done | task drawer (completion) |
-| I5: record the board keyboard move evidence | c7fe3cae-ac61-45af-b71a-bfa738c91f9a | ready → in_progress | board keyboard (m, arrows, Enter) |
-| I5: record the board keyboard move evidence | c7fe3cae-ac61-45af-b71a-bfa738c91f9a | in_progress → done | board keyboard (m, arrows, Enter) |
-| Triage: capture I5 friction before the gate | 91ab6dfa-d93c-4caf-a278-f98f8fc09993 | inbox (status unchanged) | Inbox inline project and priority controls: project none → 97fdc8f0-0d43-4d97-b1f5-906550e7e6e2, priority none → high |
+| I5: write the dogfooding findings summary | 8c2b85f9-1855-4eec-b578-0fa6fa119918 | inbox → ready | task drawer (setup) |
+| I5: wire estimate and deadline editing into the task drawer | 549bfd21-a421-401a-a692-5aba5da9d6a1 | inbox → ready | task drawer (setup) |
+| I6: refine the surfaces flagged by dogfooding | a3abdf13-36cd-46cf-87fc-e363326321af | inbox → ready | task drawer (setup) |
+| I6: update docs/web-app.md for I3 to I5 | 88d9166c-7453-4e14-98e6-f5d59562647c | inbox → planned | task drawer (setup) |
+| I6: review the gate 4 findings and record dispositions | c765da03-86c4-4b1f-b2cc-aabed5f94962 | inbox → planned | task drawer (setup) |
+| I6: review the gate 4 findings and record dispositions | c765da03-86c4-4b1f-b2cc-aabed5f94962 | planned → in_progress | task drawer (setup) |
+| I5: record the board keyboard move evidence | af67da2d-42f5-421b-a1da-345cd410453e | inbox → ready | task drawer (setup) |
+| I5: write the dogfooding findings summary | 8c2b85f9-1855-4eec-b578-0fa6fa119918 | ready → in_progress | task drawer (completion) |
+| I5: write the dogfooding findings summary | 8c2b85f9-1855-4eec-b578-0fa6fa119918 | in_progress → done | task drawer (completion) |
+| I5: record the board keyboard move evidence | af67da2d-42f5-421b-a1da-345cd410453e | ready → in_progress | board keyboard (m, arrows, Enter) |
+| I5: record the board keyboard move evidence | af67da2d-42f5-421b-a1da-345cd410453e | in_progress → done | board keyboard (m, arrows, Enter) |
+| Triage: capture I5 friction before the gate | 12688ef5-ab55-4b9d-ade0-7bfe1ddcb1e1 | inbox (status unchanged) | Inbox inline project and priority controls: project none → 2540e17a-ff49-44ea-bf39-42c6e0594bcb, priority none → high |
 
 ## Milestone progress against the seeded plan
 
 | Milestone | Id | Assigned | Done | Observed copy |
 | --- | --- | --- | --- | --- |
-| M31 completion | c905c6a4-4687-4ea6-a45c-04e7308d87de | 12 | 2 | 2 of 12 tasks done |
-| Reference-client ready | 4600b81d-0a4b-4b86-bc2e-f19010a20077 | 6 | 0 | 0 of 6 tasks done |
+| M31 completion | f21cdbc1-9bdd-4529-baa1-b312371989d6 | 12 | 2 | 2 of 12 tasks done |
+| Reference-client ready | a764e044-5685-412e-8699-2658dccd92d3 | 6 | 0 | 0 of 6 tasks done |
 
 The run refused to finish unless the milestone rows read exactly these counts.
 
@@ -75,9 +75,9 @@ The run refused to finish unless the milestone rows read exactly these counts.
 | Proposed slots read before review | 1 |
 | Review disabled before review | false |
 | Window | 2026-10-27 13:00–16:00 |
-| Review fingerprint | `e44ba45955941e833c4861265fc0c855ac3d3761d4d43b4efd408d57bbab08a0` |
-| Review command id | `a6e476d5-da12-4e22-9e64-d1de0738c02d` |
-| Receipt block ids | `05c1620f-928a-42a2-b958-55417a435ec3` |
+| Review fingerprint | `f27702e7e46ef484a5b65ba53a342df42a4af57bd0a9594d380d0625558586b3` |
+| Review command id | `d5dc8376-df31-4edb-a277-4b5b54dac3f0` |
+| Receipt block ids | `b34da9ee-648e-40f2-bfb3-688aeff3d894` |
 | Blocks before reload | 1 |
 | Blocks after reload | 1 |
 | Applied | true |
@@ -89,7 +89,7 @@ The run refused to finish unless the milestone rows read exactly these counts.
 | Fact | Value |
 | --- | --- |
 | Second enrolled device | orbit-development-2 |
-| Second write | second browser context → board → task drawer on task `cbaeca85-39ef-4f36-80fe-b72cc00155c0` |
+| Second write | second browser context → board → task drawer on task `8c2b85f9-1855-4eec-b578-0fa6fa119918` |
 | Second write stored | true |
 | Primary refusal | That change conflicted with a newer version on the server (stale server revision). Refresh and try again. |
 | In-drawer alerts | 1 |
@@ -109,7 +109,7 @@ The run refused to finish unless the milestone rows read exactly these counts.
 
 | Fact | Value |
 | --- | --- |
-| Task | I5: record the board keyboard move evidence (`c7fe3cae-ac61-45af-b71a-bfa738c91f9a`) |
+| Task | I5: record the board keyboard move evidence (`af67da2d-42f5-421b-a1da-345cd410453e`) |
 | Moves | In progress → Done |
 | ArrowDown presses | 4 |
 | Pointer presses during the move | 0 |
@@ -119,8 +119,8 @@ The run refused to finish unless the milestone rows read exactly these counts.
 
 | Fact | Value |
 | --- | --- |
-| Server pid before | 2119654 |
-| Server pid after | 2120197 |
+| Server pid before | 2241673 |
+| Server pid after | 2242205 |
 | Server restarted | true |
 | Session survived | true |
 | Completed card in Done column | true |
