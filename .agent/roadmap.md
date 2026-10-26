@@ -6,7 +6,7 @@ project_owned: true
 record_contract: roadmap
 record_schema_version: 1
 status: current
-current_milestone: null
+current_milestone: MILESTONE-0031
 ---
 
 # Project Roadmap
@@ -478,6 +478,59 @@ MILESTONE-0030
 - EC-006: CLI `blueprint capability|action` in `blueprint_commands.rs`; connected refusal in `connected_blueprint.rs`; acceptance test asserts refusal.
 - EC-007: acceptance pytest restart/replay; workspace 1,623 tests; PTY 65 passed/1 skipped.
 - EC-008: updated docs tree; M25 EC-003 evidence; `.agent` records; `getdone-validate-project`.
+
+#### Next milestone
+
+MILESTONE-0031
+
+### MILESTONE-0031 — M31 Self-Hosted Web Application as Orbit's Reference Product Experience
+
+- **Status:** active
+- **Outcome:** A self-hosted browser client served by `orbit-server` that lets a person sign in, manage projects and tasks, plan work, drive workflow work items and upgrades, browse knowledge, handle attachments and inspect agent jobs — and that has been used for a real Orbit development cycle, producing the evidence-based input for the next TUI redesign.
+- **Why now:** M22–M30 built real domain and application capability reachable only through the CLI/TUI, and the only browser surface was an administrative console. The web app is the internal dogfooding environment, the reference experience for a future TUI redesign, and the reference client for the planned Flutter app.
+- **Depends on:** MILESTONE-0024, MILESTONE-0025, MILESTONE-0028, MILESTONE-0029, MILESTONE-0030
+
+#### Scope
+
+- Browser session authentication, CSRF defence and SPA serving through the existing server.
+- Home, Inbox, Projects, project workspaces, task drawer and shareable list state.
+- Workflow-driven views, work items, transitions, guards, upgrade preview/apply and honest action discovery.
+- Planning with authored capacity, review, approval and fingerprint-fenced apply.
+- Knowledge, attachments and agent job/handoff/review inspection.
+- A real dogfooding cycle, refinement, documentation and a derived TUI redesign specification.
+
+#### Non-goals
+
+- Reopening M22–M30, the M25 workflow engine, or TUI architecture in this milestone.
+- Offline browser editing, a second business-logic layer, authoritative scheduling in TypeScript.
+- Hosted cloud dependencies, third-party identity providers, or administrator privileges in the product UI.
+- Connected capability execution, agent launch from the browser, or Flutter implementation.
+
+#### Exit criteria
+
+- [x] EC-001: Browser session authentication with HttpOnly cookies, CSRF defence, expiry and revocation.
+- [ ] EC-002: Full project and task management in the browser including descriptions, criteria, dependencies, priorities and attachments.
+- [x] EC-003: Home and Inbox functional with server-derived readiness, blockers and due/overdue data.
+- [x] EC-004: Five bundled workflows produce functional workspaces through one view registry, with work items, transitions, upgrade preview/apply and honest action discovery.
+- [x] EC-005: No user-visible legacy product term; enforced by an automated check over the frontend.
+- [ ] EC-006: Knowledge, attachments and agent jobs/handoffs inspectable within existing authorization and integrity limits.
+- [ ] EC-007: Real-browser acceptance against an isolated authoritative server covering the acceptance surface.
+- [x] EC-008: An Orbit Development project managed through the browser for a real planning-to-completion cycle, with a layer-classified issue log.
+- [ ] EC-009: User documentation matches the shipped product and every documented command was executed.
+- [ ] EC-010: A TUI redesign specification derived from real usage, classifying each proven pattern.
+
+#### Evidence
+
+- EC-001: `crates/orbit-server/src/session.rs` + session/CSRF HTTP tests; Playwright `auth.spec.ts` (wrong token, login, reload, sign-out, expiry); live curl smoke (login 201 + cookie, CSRF-less mutation 403).
+- EC-002: partial — projects, tasks, descriptions, criteria, priorities, dependencies, milestones and planning are implemented and covered (`tasks.spec.ts`, `planning-estimates.spec.ts`); attachments exist (I4) but the full criterion stays open until I6 re-checks the whole list.
+- EC-003: Playwright `home.spec.ts` (server readiness, overdue, empty workspace) and `tasks.spec.ts` (Inbox capture/triage).
+- EC-004: `workspaces-*` and `work-items.spec.ts`; five workflows resolve through one registry; upgrade preview/apply and action honesty panels; `web/evidence/i2`–`i3`.
+- EC-005: `web/scripts/check-terminology.mjs` scanning 217 files with zero findings; `terminology.spec.ts` asserts rendered routes and titles.
+- EC-006: partial — knowledge, attachments and agent job/handoff/review surfaces ship (`knowledge.spec.ts`, `attachments*.spec.ts`, `agents.spec.ts`); criterion stays open until I6 re-checks authorization/integrity limits end to end.
+- EC-007: Playwright suite (65 passed, 4 opt-in captures skipped) against per-worker real servers plus the I5 dogfood script on an isolated persistent server.
+- EC-008: `web/tests/e2e/i5/dogfood.mjs` + `web/evidence/i5/` (commit `93ea9ef`, dist/binary hashes, 30 captures, DB+WAL), issue log `.slim/deepwork/m31-web-app/i5-issues.md`.
+- EC-009: partial — `docs/web-app.md` covers I1 and is being extended for I3–I6 in I6; criterion stays open until every documented command is re-executed.
+- EC-010: open — the TUI redesign specification is an I6 deliverable.
 
 #### Next milestone
 

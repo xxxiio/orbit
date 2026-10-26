@@ -5,111 +5,93 @@ template_digest: "b88835ce70ef09490ad55db0e910dc05ff721384d6ccad8d45eafedd7654aa
 project_owned: true
 record_contract: next-step
 record_schema_version: 1
-id: NEXT-0013
-status: active
+id: NEXT-0014
+status: ready
 milestone_id: MILESTONE-0031
-advances_exit_criteria: [EC-002, EC-003, EC-004]
+advances_exit_criteria: [EC-002, EC-006, EC-007, EC-009, EC-010]
 ---
 
 # Next Deterministic Step
 
 ## Objective
 
-Render the workflow-declared project views and the planning surface through the
-already-implemented I2 API layer: board and timeline from the pinned workflow,
-milestone management, dependency and readiness inspection, authored-capacity day
-planning, schedule plan review followed by fingerprint-fenced apply, project
-settings, and shareable list filters — each proven in real-browser acceptance.
+Complete M31 iteration I6: close the remaining dogfooding findings in their correct layers,
+measure and fix the real performance and accessibility gaps, bring the user documentation up
+to the shipped product, and derive the TUI redesign specification from the recorded I5 cycle.
 
 ## Why this is next
 
-I1 delivered the authenticated shell and daily core, and I2's API surface
-(milestone commands, graph/dependencies/work-brief/day-plan/schedule-plan/
-workload/portfolio reads, plan review plus apply) is implemented and unit
-covered. The remaining I2 work is presentation and interaction on top of that
-authority; doing it before I3 keeps the workflow view registry from being built
-against a half-populated workspace.
+I1–I5 delivered and verified the web application: session auth, daily core, workflow-driven
+workspaces, planning, knowledge, attachments, agents, and a real Orbit Development cycle on an
+isolated server whose evidence is pinned to a clean commit. What remains is refinement and the
+documentation artefacts the milestone requires — including the TUI redesign specification, which
+must be derived from that usage rather than assumed.
 
 ## Preconditions
 
-- MILESTONE-0031 I1 committed (`bf2c4bd`, `87b4710`) with a green Playwright
-  suite against a real server.
-- I2 API layer: `web/src/api/endpoints/{milestones,planning}.ts` and the
-  milestone/planning hooks, with `expected_revision` read at mutate time and
-  plan apply replaying the reviewed fingerprint and command id.
-- Structure remediation so `features/**` no longer duplicates list controllers
-  and `components/**` no longer imports features.
+- MILESTONE-0031 I1–I5 committed and verified (`3f4101f`, `0ff8af9`, `1ae1600`).
+- I5 issue log with layer classification at `.slim/deepwork/m31-web-app/i5-issues.md`.
+- I5 evidence at `web/evidence/i5/` with a reproducible script.
 
 ## Inputs
 
-- `web/src/api/**`, `web/src/hooks/**`, `web/src/features/**`, `web/src/app/**`.
-- `.slim/deepwork/m31-web-app/api-contract.md` §6–§8 for exact query shapes.
-- `web/tests/e2e/**` harness, fixture and specs; `web/evidence/i1/**`.
+- `web/src/**` (all features), `web/tests/**`, `web/evidence/i5/**`.
+- `.slim/deepwork/m31-web-app/{i5-issues.md,i6-plan.md,gate-5.md}`.
+- `docs/web-app.md` and the documentation index.
 
 ## Ordered actions
 
-1. Board view from the pinned workflow's `kanban`/task views with server-validated
-   moves, keyboard traversal and honest rejection feedback.
-2. Milestones and timeline: status lifecycle, task counts, no invented dates.
-3. Dependency and readiness inspection quoting the server's `reason` verbatim,
-   plus graph depth and unblock counts.
-4. Planning: authored capacity input, day plan dispositions, schedule window,
-   plan review, explicit approval, apply receipt that survives reload.
-5. Project settings: pinned workflow and available views, workflow change with
-   confirmation, honest note about unsupported rename, destructive actions only
-   where the API supports them.
-6. Task-list upgrades: column choice, URL-backed filter/sort state, bulk actions,
-   local windowing beyond 200 rows.
-7. Extend Playwright with I2 specs; keep every assertion strict.
-8. Update docs and records; capture evidence.
+1. Close or explicitly record the remaining I5 findings: status controls on rows/table cards,
+   the description double-alert, note links, humanized activity summaries, project status,
+   board completion shortcut, time-input width, folder creation.
+2. Responsive and accessibility sweep across every primary route at 1440/1280/1024/900/390,
+   with keyboard-only passes, focus return, aria-live, contrast and reduced motion.
+3. Measure cold load, project switch, 122-task list render, board interaction, detail open and
+   mutation round trip; fix only measured bottlenecks and record the numbers.
+4. Update `docs/web-app.md` and the index for the shipped I3–I6 behaviour, including the honest
+   remaining gaps; verify every documented command and shortcut.
+5. Write `docs/guides/tui-redesign-spec.md` from the I5 record, classifying each proven pattern.
+6. Freeze, run the full suite and the dogfood script, reconcile records and close the milestone
+   only for criteria genuinely demonstrated.
 
 ## Expected outputs
 
-- Five workflow types producing appropriate functional workspaces through one
-  view dispatch seam, with unavailable views named explicitly.
-- Planning that is server-authored end to end, with no client scheduling math.
-- Real-browser acceptance for board, milestones, dependencies, planning, settings
-  and filters.
-- Documentation matching the shipped I2 behaviour.
+- Every I5 finding either fixed with a regression test or open with a recorded reason.
+- A measured performance/a11y/responsive record, not impressions.
+- Documentation that matches the product, using Workflow terminology.
+- A TUI redesign specification derived from real usage.
+- Green full suite and dogfood evidence on a frozen commit.
 
 ## Acceptance criteria
 
-- [ ] NS-001: A board move is accepted or rejected by the server, and a rejected
-  move never relocates the card while showing the server's reason.
-- [ ] NS-002: Milestones can be created, renamed and transitioned, with invalid
-  edges surfaced as server rejections.
-- [ ] NS-003: Readiness and blockers display server `reason` values, and adding
-  or removing a prerequisite changes them without a reload.
-- [ ] NS-004: Day planning requires an authored capacity and shows server
-  dispositions; schedule plan review cannot be skipped before apply, and the
-  applied plan survives a reload.
-- [ ] NS-005: Project settings show the pinned workflow and version; changing the
-  workflow updates the available views; unsupported edits are stated, not faked.
-- [ ] NS-006: Filter/sort/selection state is URL-shareable and survives a reload.
-- [ ] NS-007: `tsc`, unit tests, terminology check, build and the full Playwright
-  suite pass; documentation and records reflect only verified behaviour.
+- [ ] NS-001: No primary route overflows horizontally at 390px and every route is keyboard-operable.
+- [ ] NS-002: The measured route timings are recorded and any fix cites the measurement it improved.
+- [ ] NS-003: `docs/web-app.md` documents only shipped behaviour and every command in it was run.
+- [ ] NS-004: `docs/guides/tui-redesign-spec.md` classifies each pattern with evidence from I5.
+- [ ] NS-005: The full Playwright suite and the dogfood script pass on a frozen commit.
+- [ ] NS-006: Milestone exit criteria are marked only where demonstrated; the rest stay open with reasons.
+- [ ] NS-007: `getdone-validate-project --project-root . --skills-root /home/xliu/dev/getdone` exits 0.
 
 ## Validation
 
 ```sh
-cargo test -p orbit-server --offline
-cargo test -p orbit-runtime --offline
 cd web && node node_modules/typescript/bin/tsc --noEmit
 cd web && node node_modules/vitest/vitest.mjs run
 cd web && node scripts/check-terminology.mjs
 cd web && node node_modules/vite/bin/vite.js build
 cd web && node node_modules/@playwright/test/cli.js test
+cd web && node tests/e2e/i5/dogfood.mjs
+cargo test -p orbit-server -p orbit-runtime -p orbit-blueprint --offline
+getdone-validate-project --project-root . --skills-root /home/xliu/dev/getdone
 ```
 
 ## Stop conditions
 
-- A planning or board interaction would require client-side scheduling or
-  transition rules to work.
-- A server response cannot be shown honestly (rejection must be visible).
-- A criterion cannot be evidenced in a real browser.
+- A performance or accessibility claim cannot be measured or reproduced.
+- Documentation would describe behaviour the build does not have.
+- A milestone criterion cannot be evidenced end to end.
 
 ## Out of scope
 
-- I3 workflow registry implementation, work items and upgrades (next iteration).
-- Knowledge, attachments and agent surfaces.
-- TUI changes.
+- Reopening M22–M30, connected capability execution, or a TUI implementation change.
+- Flutter client work and M27 public release verification.
