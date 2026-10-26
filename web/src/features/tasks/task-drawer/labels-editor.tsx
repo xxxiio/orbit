@@ -70,8 +70,8 @@ export function LabelsEditor({
           disabled={disabled}
           onClick={() => setEditing(true)}
           className="mt-1 flex min-h-8 w-full flex-wrap items-center gap-1.5 rounded-sm border border-dashed border-line px-2 py-1 text-left transition-colors hover:border-line-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-          aria-label={ariaLabel}
         >
+          <span className="sr-only">{ariaLabel}</span>
           {labels.length === 0 ? (
             <span className="text-xs text-ink-faint">No labels yet</span>
           ) : (

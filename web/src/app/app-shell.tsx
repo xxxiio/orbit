@@ -29,6 +29,24 @@ export function AppShell({
 }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
+  const paletteReturnFocus = useRef<HTMLElement | null>(null)
+
+  // A keyboard shortcut is not a Radix Trigger, so the palette has to remember
+  // the element to return to itself. Restoring in a timer lets Radix finish its
+  // own close pass first.
+  const openPalette = () => {
+    const active = document.activeElement
+    paletteReturnFocus.current = active instanceof HTMLElement ? active : null
+    setCommandOpen(true)
+  }
+  const closePalette = () => {
+    setCommandOpen(false)
+    window.setTimeout(() => {
+      const target = paletteReturnFocus.current
+      if (target?.isConnected) target.focus({ preventScroll: true })
+      else document.getElementById('main')?.focus({ preventScroll: true })
+    }, 0)
+  }
   const location = useLocation()
   const navigate = useNavigate()
   const previousPath = useRef(location.pathname)
@@ -46,7 +64,8 @@ export function AppShell({
 
       if ((event.metaKey || event.ctrlKey) && key === 'k') {
         event.preventDefault()
-        setCommandOpen((open) => !open)
+        if (commandOpen) closePalette()
+        else openPalette()
         return
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return
@@ -104,7 +123,7 @@ export function AppShell({
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [navigate, onNewTask])
+  }, [commandOpen, navigate, onNewTask])
 
   useEffect(() => {
     if (previousPath.current === location.pathname) return
@@ -126,7 +145,7 @@ export function AppShell({
           <Sidebar
             projects={projects}
             onNewProject={onNewProject}
-            onOpenCommandPalette={() => setCommandOpen(true)}
+            onOpenCommandPalette={openPalette}
             session={session}
           />
         </div>
@@ -151,7 +170,7 @@ export function AppShell({
                 label="Open command palette"
                 tooltip={`Search or jump to (${commandShortcutLabel})`}
                 icon={<SearchIcon size={18} />}
-                onClick={() => setCommandOpen(true)}
+                onClick={openPalette}
               />
             </div>
           </header>
@@ -180,12 +199,19 @@ export function AppShell({
           session={session}
           onOpenCommandPalette={() => {
             setDrawerOpen(false)
-            setCommandOpen(true)
+            openPalette()
           }}
         />
       </Drawer>
 
-      <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} commands={commands} />
+      <CommandPalette
+        open={commandOpen}
+        onOpenChange={(open) => {
+          if (open) openPalette()
+          else closePalette()
+        }}
+        commands={commands}
+      />
     </div>
   )
 }

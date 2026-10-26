@@ -1,0 +1,407 @@
+{
+  "label": "after",
+  "capturedAt": "2026-10-26T04:52:12.002Z",
+  "commit": "dfcfb8adf1817cbcbbe14cce61d63fd4f38f5240",
+  "dirty": true,
+  "host": {
+    "platform": "linux",
+    "arch": "x64",
+    "node": "v18.19.1",
+    "cpus": 8,
+    "totalMemoryBytes": 16771174400
+  },
+  "fixture": {
+    "totalTasks": 122,
+    "projects": 7,
+    "taskListRows": 20,
+    "nowMs": 1792990294446
+  },
+  "build": {
+    "dist": {
+      "sha256": "956eb23be5fbfec87969467adb5fa42cb8a57cbba5e40e524bc784bed896d3a8",
+      "fileCount": 16,
+      "totalBytes": 4739384
+    },
+    "serverBinaryBytes": 149936584,
+    "serverBinarySha256": "4ac3f39141a436fbeb379f69a871311a10c96a04ed1f2443149ac770ec96de1d"
+  },
+  "method": {
+    "repeats": 10,
+    "median": "middle sample of the sorted set",
+    "p95": "nearest-rank: sorted[ceil(0.95*n)-1]",
+    "clock": "Node wall clock around the Playwright action, resolved by a page-side condition (includes a few ms of CDP overhead); FCP/DCL/load come from the Paint and Navigation timing entries",
+    "coldLoad": "fresh browser context per repeat; server warm",
+    "warmInteractions": "same page, route reset before each measured action"
+  },
+  "scenarios": {
+    "cold_load": {
+      "description": "navigation → first meaningful Home content (heading rendered, no aria-busy surface)",
+      "samples": [
+        {
+          "contentMs": 184,
+          "fcp": 64,
+          "domContentLoaded": 38.3,
+          "load": 38.4,
+          "transferSize": 1328
+        },
+        {
+          "contentMs": 188,
+          "fcp": 64,
+          "domContentLoaded": 37.6,
+          "load": 37.6,
+          "transferSize": 1328
+        },
+        {
+          "contentMs": 177,
+          "fcp": 64,
+          "domContentLoaded": 38.4,
+          "load": 38.4,
+          "transferSize": 1328
+        },
+        {
+          "contentMs": 187,
+          "fcp": 64,
+          "domContentLoaded": 37.1,
+          "load": 37.1,
+          "transferSize": 1328
+        },
+        {
+          "contentMs": 188,
+          "fcp": 68,
+          "domContentLoaded": 38.2,
+          "load": 38.2,
+          "transferSize": 1328
+        },
+        {
+          "contentMs": 185,
+          "fcp": 72,
+          "domContentLoaded": 41.2,
+          "load": 41.2,
+          "transferSize": 1328
+        },
+        {
+          "contentMs": 185,
+          "fcp": 64,
+          "domContentLoaded": 38.5,
+          "load": 38.6,
+          "transferSize": 1328
+        },
+        {
+          "contentMs": 196,
+          "fcp": 68,
+          "domContentLoaded": 41.9,
+          "load": 42,
+          "transferSize": 1328
+        },
+        {
+          "contentMs": 184,
+          "fcp": 64,
+          "domContentLoaded": 39.3,
+          "load": 39.5,
+          "transferSize": 1328
+        },
+        {
+          "contentMs": 179,
+          "fcp": 60,
+          "domContentLoaded": 37.8,
+          "load": 37.8,
+          "transferSize": 1328
+        }
+      ],
+      "stats": {
+        "contentMs": {
+          "n": 10,
+          "median": 185,
+          "p95": 196,
+          "min": 177,
+          "max": 196
+        },
+        "fcp": {
+          "n": 10,
+          "median": 64,
+          "p95": 72,
+          "min": 60,
+          "max": 72
+        },
+        "domContentLoaded": {
+          "n": 10,
+          "median": 38.3,
+          "p95": 41.9,
+          "min": 37.1,
+          "max": 41.9
+        },
+        "load": {
+          "n": 10,
+          "median": 38.4,
+          "p95": 42,
+          "min": 37.1,
+          "max": 42
+        }
+      }
+    },
+    "project_switch": {
+      "description": "in-workspace project switcher: menu selection → new project heading and data",
+      "samples": [
+        {
+          "switchMs": 351
+        },
+        {
+          "switchMs": 322
+        },
+        {
+          "switchMs": 335
+        },
+        {
+          "switchMs": 331
+        },
+        {
+          "switchMs": 344
+        },
+        {
+          "switchMs": 336
+        },
+        {
+          "switchMs": 327
+        },
+        {
+          "switchMs": 331
+        },
+        {
+          "switchMs": 329
+        },
+        {
+          "switchMs": 328
+        }
+      ],
+      "stats": {
+        "switchMs": {
+          "n": 10,
+          "median": 331,
+          "p95": 351,
+          "min": 322,
+          "max": 351
+        }
+      }
+    },
+    "task_list": {
+      "description": "Tasks view navigation → rows rendered (20 rows from the 122-task fixture)",
+      "samples": [
+        {
+          "renderMs": 91,
+          "rows": 20
+        },
+        {
+          "renderMs": 93,
+          "rows": 20
+        },
+        {
+          "renderMs": 90,
+          "rows": 20
+        },
+        {
+          "renderMs": 96,
+          "rows": 20
+        },
+        {
+          "renderMs": 152,
+          "rows": 20
+        },
+        {
+          "renderMs": 136,
+          "rows": 20
+        },
+        {
+          "renderMs": 121,
+          "rows": 20
+        },
+        {
+          "renderMs": 91,
+          "rows": 20
+        },
+        {
+          "renderMs": 126,
+          "rows": 20
+        },
+        {
+          "renderMs": 128,
+          "rows": 20
+        }
+      ],
+      "stats": {
+        "renderMs": {
+          "n": 10,
+          "median": 108.5,
+          "p95": 152,
+          "min": 90,
+          "max": 152
+        }
+      }
+    },
+    "board_move": {
+      "description": "card focused → m → Planned → card in the Planned column, with the server response time",
+      "samples": [
+        {
+          "moveMs": 337,
+          "apiMs": 320
+        },
+        {
+          "moveMs": 325,
+          "apiMs": 312
+        },
+        {
+          "moveMs": 331,
+          "apiMs": 317
+        },
+        {
+          "moveMs": 351,
+          "apiMs": 336
+        },
+        {
+          "moveMs": 317,
+          "apiMs": 304
+        },
+        {
+          "moveMs": 326,
+          "apiMs": 310
+        },
+        {
+          "moveMs": 320,
+          "apiMs": 306
+        },
+        {
+          "moveMs": 323,
+          "apiMs": 309
+        },
+        {
+          "moveMs": 320,
+          "apiMs": 307
+        },
+        {
+          "moveMs": 334,
+          "apiMs": 320
+        }
+      ],
+      "stats": {
+        "moveMs": {
+          "n": 10,
+          "median": 325.5,
+          "p95": 351,
+          "min": 317,
+          "max": 351
+        },
+        "apiMs": {
+          "n": 10,
+          "median": 311,
+          "p95": 336,
+          "min": 304,
+          "max": 336
+        }
+      }
+    },
+    "detail_open": {
+      "description": "board card click → drawer with its description field",
+      "samples": [
+        {
+          "openMs": 127
+        },
+        {
+          "openMs": 129
+        },
+        {
+          "openMs": 105
+        },
+        {
+          "openMs": 115
+        },
+        {
+          "openMs": 103
+        },
+        {
+          "openMs": 132
+        },
+        {
+          "openMs": 125
+        },
+        {
+          "openMs": 109
+        },
+        {
+          "openMs": 102
+        },
+        {
+          "openMs": 106
+        }
+      ],
+      "stats": {
+        "openMs": {
+          "n": 10,
+          "median": 112,
+          "p95": 132,
+          "min": 102,
+          "max": 132
+        }
+      }
+    },
+    "mutation": {
+      "description": "priority change → task-commands response → footer saved announcement",
+      "samples": [
+        {
+          "mutationMs": 650,
+          "apiMs": 613
+        },
+        {
+          "mutationMs": 478,
+          "apiMs": 454
+        },
+        {
+          "mutationMs": 740,
+          "apiMs": 695
+        },
+        {
+          "mutationMs": 710,
+          "apiMs": 666
+        },
+        {
+          "mutationMs": 709,
+          "apiMs": 658
+        },
+        {
+          "mutationMs": 696,
+          "apiMs": 651
+        },
+        {
+          "mutationMs": 721,
+          "apiMs": 674
+        },
+        {
+          "mutationMs": 485,
+          "apiMs": 433
+        },
+        {
+          "mutationMs": 498,
+          "apiMs": 452
+        },
+        {
+          "mutationMs": 717,
+          "apiMs": 671
+        }
+      ],
+      "stats": {
+        "mutationMs": {
+          "n": 10,
+          "median": 702.5,
+          "p95": 740,
+          "min": 478,
+          "max": 740
+        },
+        "apiMs": {
+          "n": 10,
+          "median": 654.5,
+          "p95": 695,
+          "min": 433,
+          "max": 695
+        }
+      }
+    }
+  }
+}

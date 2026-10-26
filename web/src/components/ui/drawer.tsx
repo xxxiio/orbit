@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from 'react'
+import { type ReactNode, useEffect, useRef } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { CloseIcon } from './icons'
 import { DialogOverlay } from './dialog'
@@ -39,11 +39,37 @@ export function Drawer({
     return openDrawer(side)
   }, [open, side])
 
+  // Radix restores focus to the trigger by itself in the common case, but a
+  // deep-linked task drawer and a drawer opened from a key press have no
+  // registered Trigger; in those paths focus fell to <body>. Capture the
+  // pre-open element and restore it explicitly on close (falling back to the
+  // main landmark).
+  const returnFocusRef = useRef<HTMLElement | null>(
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  )
+
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogOverlay />
         <DialogPrimitive.Content
+          onOpenAutoFocus={() => {
+            if (returnFocusRef.current && returnFocusRef.current !== document.body) return
+            const active = document.activeElement
+            if (active instanceof HTMLElement && active !== document.body) {
+              returnFocusRef.current = active
+            }
+          }}
+          onCloseAutoFocus={(event) => {
+            // Focus restoration is deliberate here: Radix can leave focus on
+            // <body> when the dialog had no registered Trigger.
+            event.preventDefault()
+            const target = returnFocusRef.current
+            if (target?.isConnected) target.focus({ preventScroll: true })
+            else document.getElementById('main')?.focus({ preventScroll: true })
+          }}
           className={cn(
             'fixed inset-y-0 z-50 flex h-dvh w-[min(19rem,88vw)] flex-col bg-canvas text-ink shadow-lift focus:outline-none',
             side === 'left'

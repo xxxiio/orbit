@@ -93,13 +93,15 @@ export function Sidebar({
   const others = projects.filter((project) => !project.pinned && !recent.includes(project))
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col bg-canvas', className)}>
+    <aside
+      aria-label="Workspace"
+      className={cn('flex h-full min-h-0 flex-col bg-canvas', className)}
+    >
       <div className="flex items-center justify-between gap-2 px-4 pb-4 pt-5">
         <Link
           to="/"
           onClick={onNavigate}
           className="group flex items-center gap-2.5 rounded-md pr-8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-          aria-label="Orbit — go to Home"
         >
           <OrbitMark size={30} className="transition-transform duration-500 ease-out group-hover:rotate-12" />
           <span className="flex flex-col">
@@ -265,6 +267,6 @@ export function Sidebar({
           </Tooltip>
         </div>
       </div>
-    </div>
+    </aside>
   )
 }

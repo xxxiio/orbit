@@ -38,7 +38,7 @@ documented follow-ups.
 ## Current milestone
 
 MILESTONE-0031 — Self-hosted web application as Orbit's reference product
-experience, active (I1 complete, I2 in progress). A React/TypeScript application
+experience, active (I1–I5 complete, I6 in progress). A React/TypeScript application
 served by `orbit-server` now provides browser session authentication, Home,
 Inbox, project management, a workflow-driven project workspace and a task
 inspector against the authoritative domain; 20 real-browser acceptance checks

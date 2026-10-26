@@ -88,7 +88,7 @@ export function InlineTitle({
         type="button"
         onClick={beginEdit}
         className={className ?? 'mt-2 block w-full rounded-sm text-left font-display text-xl font-medium leading-7 tracking-tight text-ink transition-colors hover:text-accent-soft-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60'}
-        aria-label={`Edit ${label}`}
+        aria-label={`Edit ${label}: ${value}`}
         disabled={disabled}
       >
         {value}

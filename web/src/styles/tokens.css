@@ -17,8 +17,8 @@
   /* Text */
   --ink: 225 14% 10%;
   --ink-soft: 222 7% 31%;
-  --ink-muted: 220 5% 43%;
-  --ink-faint: 220 5% 52%;
+  --ink-muted: 220 5% 40%;
+  --ink-faint: 220 5% 44%;
 
   /* Lines */
   --line: 42 13% 87%;
@@ -78,7 +78,7 @@
   --ink: 40 18% 94%;
   --ink-soft: 220 8% 76%;
   --ink-muted: 220 7% 61%;
-  --ink-faint: 220 6% 48%;
+  --ink-faint: 220 6% 56%;
 
   --line: 228 8% 18%;
   --line-strong: 228 7% 29%;

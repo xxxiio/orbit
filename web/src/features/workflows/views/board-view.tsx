@@ -266,7 +266,7 @@ function BoardSurface({
                                     size="sm"
                                     className="h-6 px-1 text-2xs"
                                     disabled={command.isPending || !canMove}
-                                    aria-label={`Move ${task.title} to another status`}
+                                    aria-label={`Move to… ${task.title}`}
                                   >
                                     Move to…
                                   </Button>

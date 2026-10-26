@@ -29,7 +29,7 @@ must be derived from that usage rather than assumed.
 
 ## Preconditions
 
-- MILESTONE-0031 I1–I5 committed and verified (`3f4101f`, `0ff8af9`, `1ae1600`).
+- MILESTONE-0031 I1–I5 committed and verified (`3f4101f`, `0ff8af9`, `987bcf1`, `dfcfb8a`).
 - I5 issue log with layer classification at `.slim/deepwork/m31-web-app/i5-issues.md`.
 - I5 evidence at `web/evidence/i5/` with a reproducible script.
 

@@ -61,7 +61,7 @@ test.describe('board', () => {
     await goto(page, server, '/projects/p-basic/board')
     const inbox = boardColumn(page, /^Inbox column/)
     await inbox
-      .getByRole('button', { name: `Move ${task!.title} to another status` })
+      .getByRole('button', { name: `Move to… ${task!.title}` })
       .click()
 
     // `inbox → done` is refused by the domain, so the menu never offers it and

@@ -455,6 +455,22 @@ function SchedulePanel({
   const data = plan.data
   const reviewData = review.review
   const reviewed = review.reviewedPlan
+
+  // The Review button is replaced by its loading state while the server answers,
+  // which drops keyboard focus to <body>. Move it to the reviewed plan so the
+  // reviewer lands on the thing that just appeared.
+  useEffect(() => {
+    if (!reviewData) return
+    document.getElementById('plan-review')?.focus({ preventScroll: true })
+  }, [reviewData?.fingerprint])
+
+  // Applying hides the approval controls; land focus on the receipt instead of
+  // <body>.
+  useEffect(() => {
+    if (!receipt) return
+    document.getElementById('plan-receipt')?.focus({ preventScroll: true })
+  }, [receipt?.fingerprint])
+
   const estimateBlocker = data?.unplaced.find((entry) => /estimate/i.test(entry.reason)) ?? null
 
   const reviewBlockedReason = (plan: SchedulePlanView): string => {
@@ -664,7 +680,14 @@ function SchedulePanel({
       </PanelBody>
 
       {reviewData && reviewed ? (
-        <PanelBody className="border-t border-line bg-surface-sunken/30" data-plan-review="">
+        <PanelBody
+          className="border-t border-line bg-surface-sunken/30"
+          data-plan-review=""
+          id="plan-review"
+          role="region"
+          aria-label="Reviewed schedule"
+          tabIndex={-1}
+        >
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="accent" dot>
@@ -777,7 +800,14 @@ function SchedulePanel({
       ) : null}
 
       {receipt ? (
-        <PanelBody className="border-t border-line bg-success-soft/40" data-plan-receipt="">
+        <PanelBody
+          className="border-t border-line bg-success-soft/40"
+          data-plan-receipt=""
+          id="plan-receipt"
+          role="region"
+          aria-label="Applied plan"
+          tabIndex={-1}
+        >
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <CheckCircleIcon size={16} className="text-success" />

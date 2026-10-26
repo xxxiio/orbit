@@ -528,7 +528,7 @@ MILESTONE-0031
 - EC-005: `web/scripts/check-terminology.mjs` scanning 217 files with zero findings; `terminology.spec.ts` asserts rendered routes and titles.
 - EC-006: partial — knowledge, attachments and agent job/handoff/review surfaces ship (`knowledge.spec.ts`, `attachments*.spec.ts`, `agents.spec.ts`); criterion stays open until I6 re-checks authorization/integrity limits end to end.
 - EC-007: Playwright suite (65 passed, 4 opt-in captures skipped) against per-worker real servers plus the I5 dogfood script on an isolated persistent server.
-- EC-008: `web/tests/e2e/i5/dogfood.mjs` + `web/evidence/i5/` (commit `93ea9ef`, dist/binary hashes, 30 captures, DB+WAL), issue log `.slim/deepwork/m31-web-app/i5-issues.md`.
+- EC-008: `web/tests/e2e/i5/dogfood.mjs` + `web/evidence/i5/` (run on `987bcf1`, evidence `dfcfb8a`; dist/binary hashes, 30 captures, DB+WAL), issue log `.slim/deepwork/m31-web-app/i5-issues.md`.
 - EC-009: partial — `docs/web-app.md` covers I1 and is being extended for I3–I6 in I6; criterion stays open until every documented command is re-executed.
 - EC-010: open — the TUI redesign specification is an I6 deliverable.
 
