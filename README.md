@@ -1,9 +1,9 @@
 # Orbit
 
-Orbit is a local-first Rust CLI for projects, tasks, habits, routines,
-schedules, Markdown notes and optional agent-assisted execution. The default
-workspace is a local SQLite database that works offline. A self-hosted server,
-Herdr, MCP clients and AI providers are optional.
+Orbit is a local-first Rust CLI for projects, tasks, workflow-defined Work
+Items, habits, routines, schedules, Markdown notes and optional agent-assisted
+execution. The default workspace is a local SQLite database that works offline.
+A self-hosted server, Herdr, MCP clients and AI providers are optional.
 
 ## Install
 
@@ -80,25 +80,38 @@ orbit-tui
 ```
 
 The sidebar exposes Home/Today, Inbox, Projects and Agents; project screens show
-the views declared by the pinned blueprint, with generated defaults for older
-blueprints. Press `?` for the keyboard map, `:` for the command palette and `/`
+the views declared by the pinned workflow, with generated defaults for older
+workflows. Press `?` for the keyboard map, `:` for the command palette and `/`
 to search. Mutations use the same authorized client commands as the CLI, while
 job completion never silently completes a task.
 
 See the [terminal workspace guide](docs/guides/tui-workspace.md) and
-[blueprint view authoring](docs/guides/blueprint-views.md).
+[workflow view authoring](docs/guides/blueprint-views.md).
 
 ## Web app
 
 `orbit-server` can serve a browser client at `http://127.0.0.1:8787/`. It signs in
-with a device credential enrolled by the server operator and covers Home, Inbox,
-projects and tasks; boards, planning and knowledge screens are not implemented
-yet. See the [web app guide](docs/web-app.md).
+with a device credential enrolled by the server operator and covers:
+
+- Home and Inbox, including task capture, triage and the agent-attention rail.
+- Projects with the views their workflow declares: tasks, boards, milestones,
+  timelines, metrics, detail, knowledge references and agent jobs.
+- Work Items whose fields, states, guards and Workflow Actions come from the
+  workflow's kind declaration, with declared moves and capability chips.
+- Planning: authoring estimates, earliest starts and deadlines; day plans and
+  schedule windows; review, explicit approval, confirmed apply and a receipt.
+- Knowledge (tree, note, edit, move, relations), attachments, agent job review
+  and resume, project settings, and previewed workflow upgrades.
+
+The browser cannot start an agent job, execute a Workflow Action, rename or
+transition a project, create a knowledge folder, or persist saved views; those
+limits are stated in the UI. See the [web app guide](docs/web-app.md) and the
+[internal-tester quickstart](docs/guides/web-quickstart.md).
 
 ## Documentation
 
 The [documentation index](docs/README.md) is organized by task: installation,
-first project, everyday workflows, blueprints, agent work, connected mode, MCP,
+first project, everyday work, project workflows, agent work, connected mode, MCP,
 reference and release maintenance. Start with the
 [local quickstart](docs/getting-started/quickstart.md) or
 [installation guide](docs/getting-started/installation.md).
@@ -120,8 +133,9 @@ reference and release maintenance. Start with the
   subcommand are not implemented in this build. Use deadlines, readiness and
   impact for planning; use `task add --milestone` only as a reference to an
   existing milestone; use the documented SQLite backup procedure.
-- Capability actions declared by blueprints are partially implemented and are
-  not exposed as executable commands.
+- Capability execution: Workflow Actions declared by a workflow are listed in
+  the web app and API, but the browser does not execute them. Execution belongs
+  to the local Orbit authority, and the server exposes no execution route.
 
 See [platforms and components](docs/releasing/platforms-and-components.md),
 [the release checklist](docs/releasing/release-checklist.md), and

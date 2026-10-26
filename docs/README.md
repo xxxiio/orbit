@@ -15,8 +15,8 @@ uses commands implemented by the current `orbit` binary; run `orbit --help` or
 - A file-authoritative Markdown knowledge vault alongside the database.
 - A content-addressed attachment object store for tasks, projects and notes.
 - Habits, routines, schedule blocks and deterministic daily planning.
-- Versioned project workflows (bundled manifests retain the `blueprint` name)
-  for custom work items and views.
+- Versioned project workflows for custom Work Items, declared states, guards and
+  Workflow Actions.
 - Optional agent jobs, handoffs and human review through Herdr.
 - Optional connected mode where a self-hosted server is authoritative.
 
@@ -45,6 +45,7 @@ uses commands implemented by the current `orbit` binary; run `orbit --help` or
 ## Terminal workspace
 
 - [The Orbit terminal workspace](guides/tui-workspace.md) — project-centric navigation, keyboard, panels and agent monitoring.
+- [TUI redesign specification](guides/tui-redesign-spec.md) — the I5 web evidence, translated into terminal patterns, non-goals and a measurable acceptance checklist.
 - [Workflow-defined project views](guides/blueprint-views.md) — declare overviews, boards, tables, metrics and detail views; Basic is the default.
 - [Task details, acceptance criteria and attachments](guides/task-details-and-attachments.md) — rich task fields, ordered criteria and the managed attachment store.
 - [UI view reference](reference/ui-views.md) — exact component, source, binding and action schema.
@@ -62,11 +63,11 @@ uses commands implemented by the current `orbit` binary; run `orbit --help` or
 - [Research workflow](guides/research-workflow.md) — research questions, evidence and decision memos.
 - [Offline operation](guides/offline-operation.md) — local authority, replica queues and pending work.
 
-## Workflows (blueprints)
+## Workflows
 
-- [Blueprints versus tasks](guides/blueprints-vs-tasks.md) — when a custom work item is the right model.
+- [Work Items versus tasks](guides/blueprints-vs-tasks.md) — when a workflow-defined record is the right model.
 - [Custom workflow walkthrough](guides/blueprint-walkthrough.md) — export, edit, validate, publish and bind.
-- [Build your own project workflow](guides/custom-blueprints.md) — manifest structure and safety boundaries.
+- [Build your own project workflow](guides/custom-blueprints.md) — manifest structure, kinds, states, guards, actions and safety boundaries.
 
 ## Agent-assisted work
 
@@ -82,7 +83,8 @@ Orbit task.
 
 - [Connected mode onboarding](getting-started/connected-mode.md) — authority, enrollment, replicas and offline queues.
 - [Self-hosting](guides/self-hosting.md) — optional server deployment and TLS boundaries.
-- [The Orbit web app](web-app.md) — build it, sign in with an enrolled device, then use Home, Inbox, projects and tasks; includes the current limits.
+- [The Orbit web app](web-app.md) — Home, Inbox, Projects, workflow views, Work Items, planning, knowledge, attachments, agents, settings and upgrades; includes the current limits.
+- [Web app quickstart for internal testers](guides/web-quickstart.md) — build the client, start the server, enrol a device, sign in, create the first project, run the dogfood cycle and acceptance suite.
 - [Server API](server-api.md) — the current authority endpoints, not the retired relay.
 
 ## MCP and extensions
