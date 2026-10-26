@@ -10,6 +10,7 @@ export function DescriptionEditor({
   pending,
   disabled = false,
   error,
+  onRefresh,
   onCommit,
 }: {
   description: string
@@ -17,6 +18,8 @@ export function DescriptionEditor({
   /** Any task command is in flight: the editor must not start a second one. */
   disabled?: boolean
   error: ApiError | null
+  /** Offered beside a conflict so the person can recover without leaving. */
+  onRefresh?: () => void
   onCommit: (description: string) => void
 }) {
   const [draft, setDraft] = useState(description)
@@ -66,7 +69,7 @@ export function DescriptionEditor({
           draftKey: () => draftRef.current,
         }}
       />
-      <FieldError error={error} />
+      <FieldError error={error} onRefresh={onRefresh} />
     </Section>
   )
 }

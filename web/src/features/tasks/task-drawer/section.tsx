@@ -9,9 +9,36 @@ import { userMessage } from '@/hooks'
  */
 export { Section } from '@/components/ui/section'
 
-/** The server's rejection message, scoped to the field that caused it. */
-export function FieldError({ error }: { error: ApiError | null }) {
-  return <InlineFieldError error={error ? userMessage(error) : null} />
+/**
+ * The server's rejection message, scoped to the field that caused it.
+ *
+ * This is the drawer's only refusal surface for a command: the footer no longer
+ * repeats the same sentence, so the message appears exactly once beside the
+ * control that failed. A conflict also carries its recovery here.
+ */
+export function FieldError({
+  error,
+  onRefresh,
+}: {
+  error: ApiError | null
+  onRefresh?: () => void
+}) {
+  return (
+    <InlineFieldError
+      error={error ? userMessage(error) : null}
+      action={
+        onRefresh ? (
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          >
+            Reload this task and try again
+          </button>
+        ) : null
+      }
+    />
+  )
 }
 
 export function SavingNote({ visible }: { visible: boolean }) {

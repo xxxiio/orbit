@@ -19,6 +19,7 @@ export function PropertiesSection({
   command,
   error,
   errorType,
+  onRefresh,
   pendingField,
   pendingDetail,
   onChangeStatus,
@@ -34,6 +35,8 @@ export function PropertiesSection({
   command: TaskCommand
   error: ApiError | null
   errorType: string | undefined
+  /** Offered beside a conflict so the person can recover without leaving. */
+  onRefresh?: () => void
   pendingField: (field: 'title' | 'status' | 'project' | 'milestone' | 'criteria' | 'dependencies') => boolean
   pendingDetail: (field: 'description' | 'priority' | 'labels') => boolean
   onChangeStatus: (status: TaskStatus) => void
@@ -142,7 +145,7 @@ export function PropertiesSection({
         />
       </div>
 
-      <FieldError error={propertyError} />
+      <FieldError error={propertyError} onRefresh={onRefresh} />
       <SavingNote visible={pendingField('status') || pendingField('project') || pendingField('milestone') || pendingDetail('priority') || pendingDetail('labels')} />
       {errorType === 'assign_project' && error && userMessage(error).includes('milestone') ? (
         <p className="mt-1.5 text-2xs leading-4 text-ink-muted">

@@ -10,6 +10,7 @@ import {
 import * as ToastPrimitive from '@radix-ui/react-toast'
 import { AlertCircleIcon, CheckCircleIcon, CloseIcon } from './icons'
 import { cn } from './utils'
+import { useOpenDrawerSide } from './drawer-stack'
 
 export type ToastTone = 'default' | 'success' | 'danger'
 
@@ -46,6 +47,9 @@ export function useToast(): ToastContextValue {
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastRecord[]>([])
   const nextId = useRef(1)
+  // A right-side drawer owns the right edge, so notifications move left (and
+  // vice versa) instead of covering the drawer that just failed.
+  const drawerSide = useOpenDrawerSide()
 
   const toast = useCallback((options: ToastOptions) => {
     const id = nextId.current++
@@ -122,7 +126,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         <ToastPrimitive.Viewport
           aria-live="polite"
           aria-label="Notifications"
-          className="fixed bottom-4 right-4 z-[80] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 outline-none"
+          className={cn(
+            'fixed bottom-4 z-[80] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 outline-none',
+            drawerSide === 'right' ? 'left-4' : 'right-4',
+          )}
         />
       </ToastPrimitive.Provider>
     </ToastContext.Provider>

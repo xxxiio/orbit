@@ -15,6 +15,7 @@ export function CriteriaSection({
   criteria,
   pending,
   error,
+  onRefresh,
   command,
   onAdd,
   onChangeText,
@@ -26,6 +27,8 @@ export function CriteriaSection({
   criteria: AcceptanceCriterion[]
   pending: boolean
   error: ApiError | null
+  /** Offered beside a conflict so the person can recover without leaving. */
+  onRefresh?: () => void
   command: TaskCommand
   onAdd: (text: string) => Promise<boolean>
   onChangeText: (criterion: AcceptanceCriterion, text: string) => void
@@ -152,7 +155,7 @@ export function CriteriaSection({
       </form>
 
       <SavingNote visible={pending} />
-      <FieldError error={error} />
+      <FieldError error={error} onRefresh={onRefresh} />
     </Section>
   )
 }

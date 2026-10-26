@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '@/api/errors'
+import { EditGuardProvider, type EditorHandle } from '@/components/forms'
 import { PlanningSection } from '@/features/tasks/task-drawer/planning-section'
 
 const stored = {
@@ -23,6 +24,36 @@ function renderSection(overrides: Partial<Parameters<typeof PlanningSection>[0]>
     />,
   )
   return { onCommit, view }
+}
+
+/** The same section inside the drawer's close guard, exposing its one handle. */
+function renderGuarded(overrides: Partial<Parameters<typeof PlanningSection>[0]> = {}) {
+  const onCommit = vi.fn()
+  const editors = new Map<string, EditorHandle>()
+  const register = (handle: EditorHandle) => {
+    editors.set(handle.id, handle)
+    return () => {
+      editors.delete(handle.id)
+    }
+  }
+  render(
+    <EditGuardProvider register={register}>
+      <PlanningSection
+        task={stored}
+        pending={null}
+        disabled={false}
+        error={null}
+        onCommit={onCommit}
+        {...overrides}
+      />
+    </EditGuardProvider>,
+  )
+  const guard = () => {
+    const handle = editors.get('planning')
+    if (!handle) throw new Error('planning group did not register with the close guard')
+    return handle
+  }
+  return { onCommit, guard }
 }
 
 describe('task drawer planning group', () => {
@@ -109,5 +140,69 @@ describe('task drawer planning group', () => {
 
     expect(estimate).toHaveValue(null)
     expect(screen.queryByText('90')).not.toBeInTheDocument()
+  })
+
+  it('registers a dirty draft window and flushes every edited field in one command', () => {
+    const { onCommit, guard } = renderGuarded({
+      task: { estimatedMinutes: null, earliestStartAtMs: 1_000, deadlineAtMs: null },
+    })
+
+    expect(guard().isDirty()).toBe(false)
+
+    const estimate = screen.getByLabelText('Task estimate in minutes')
+    const deadline = screen.getByLabelText('Task deadline')
+    // `fireEvent.change` edits the drafts without moving focus, so the guard
+    // flush is the only commit path this test exercises.
+    fireEvent.change(estimate, { target: { value: '90' } })
+    fireEvent.change(deadline, { target: { value: '2030-01-15T12:30' } })
+
+    expect(guard().isDirty()).toBe(true)
+
+    act(() => guard().flush())
+
+    // One whole-window command, built from the explicit drafts rather than a
+    // partial object spread over the stored record.
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenCalledWith('estimate', {
+      estimatedMinutes: 90,
+      earliestStartAtMs: 1_000,
+      deadlineAtMs: new Date(2030, 0, 15, 12, 30, 0, 0).getTime(),
+    })
+    expect(guard().isDirty()).toBe(false)
+  })
+
+  it('flushes a cleared estimate as an explicit null and stays clean afterwards', async () => {
+    const user = userEvent.setup()
+    const { onCommit, guard } = renderGuarded({ task: { ...stored, estimatedMinutes: 60 } })
+
+    const estimate = screen.getByLabelText('Task estimate in minutes')
+    await user.clear(estimate)
+    expect(guard().isDirty()).toBe(true)
+
+    act(() => guard().flush())
+
+    expect(onCommit).toHaveBeenCalledWith('estimate', {
+      estimatedMinutes: null,
+      earliestStartAtMs: null,
+      deadlineAtMs: null,
+    })
+    expect(guard().isDirty()).toBe(false)
+  })
+
+  it('refuses to flush an invalid draft and rolls it back to the stored value', async () => {
+    const user = userEvent.setup()
+    const { onCommit, guard } = renderGuarded({ task: { ...stored, estimatedMinutes: 60 } })
+
+    const estimate = screen.getByLabelText('Task estimate in minutes')
+    await user.clear(estimate)
+    await user.type(estimate, '0')
+    expect(guard().isDirty()).toBe(true)
+
+    act(() => guard().flush())
+
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(estimate).toHaveValue(60)
+    expect(screen.getByRole('alert')).toHaveTextContent(/at least one minute/i)
+    expect(guard().isDirty()).toBe(false)
   })
 })

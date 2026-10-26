@@ -1,8 +1,9 @@
-import { type ReactNode } from 'react'
+import { type ReactNode, useEffect } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { CloseIcon } from './icons'
 import { DialogOverlay } from './dialog'
 import { cn } from './utils'
+import { openDrawer } from './drawer-stack'
 
 export interface DrawerProps {
   open: boolean
@@ -32,6 +33,12 @@ export function Drawer({
   showClose = true,
   closeLabel = 'Close panel',
 }: DrawerProps) {
+  // Toasts watch this so they never park on top of an open drawer's controls.
+  useEffect(() => {
+    if (!open) return
+    return openDrawer(side)
+  }, [open, side])
+
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>

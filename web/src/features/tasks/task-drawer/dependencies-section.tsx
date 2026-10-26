@@ -24,6 +24,7 @@ export function DependenciesSection({
   pending,
   disabled = false,
   error,
+  onRefresh,
   onAdd,
   onRemove,
 }: {
@@ -42,6 +43,8 @@ export function DependenciesSection({
   /** Any task command is in flight; do not start another from here either. */
   disabled?: boolean
   error: ApiError | null
+  /** Offered beside a conflict so the person can recover without leaving. */
+  onRefresh?: () => void
   onAdd: (prerequisiteId: string) => void
   onRemove: (prerequisiteId: string) => void
 }) {
@@ -225,7 +228,7 @@ export function DependenciesSection({
         </p>
       </div>
 
-      <FieldError error={error} />
+      <FieldError error={error} onRefresh={onRefresh} />
       <SavingNote visible={pending} />
     </Section>
   )

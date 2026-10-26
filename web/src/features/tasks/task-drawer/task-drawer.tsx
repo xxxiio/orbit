@@ -37,6 +37,7 @@ import { DescriptionEditor } from './description-editor'
 import { PlanningSection, type PlanningField } from './planning-section'
 import type { PlanningPatch } from './planning-fields'
 import { PropertiesSection } from './properties-section'
+import { FieldError } from './section'
 import { DrawerSkeleton } from './skeleton'
 import type { TaskCommand } from './task-command'
 import { EditGuardProvider, InlineTitle, type EditorHandle } from '@/components/forms'
@@ -315,10 +316,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                   }}
                 />
                 {errorType === 'rename' && error ? (
-                  <p role="alert" className="mt-1.5 flex items-start gap-1.5 text-xs leading-5 text-danger-ink">
-                    <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
-                    {userMessage(error)}
-                  </p>
+                  <FieldError error={error} onRefresh={conflict ? refreshTask : undefined} />
                 ) : null}
 
                 <p className="mt-1.5 text-xs text-ink-muted">
@@ -353,6 +351,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     command={command}
                     error={error}
                     errorType={errorType}
+                    onRefresh={conflict ? refreshTask : undefined}
                     pendingField={pendingField}
                     pendingDetail={pendingDetail}
                     onChangeStatus={changeStatus}
@@ -367,6 +366,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     pending={pendingPlanning}
                     disabled={command.isPending}
                     error={errorType === 'set_planning' ? error : null}
+                    onRefresh={conflict ? refreshTask : undefined}
                     onCommit={(field, patch) => setPlanning(field, patch)}
                   />
 
@@ -375,6 +375,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     pending={pendingDetail('description')}
                     disabled={command.isPending}
                     error={errorType === 'set_details' && detailField.current === 'description' ? error : null}
+                    onRefresh={conflict ? refreshTask : undefined}
                     onCommit={(description) => setDetails('Description', 'description', { description })}
                   />
 
@@ -383,6 +384,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     criteria={detail.criteria}
                     pending={pendingField('criteria')}
                     error={errorType === 'acceptance_criteria' ? error : null}
+                    onRefresh={conflict ? refreshTask : undefined}
                     command={command}
                     onAdd={addCriterion}
                     onChangeText={(criterion, text) =>
@@ -444,6 +446,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     error={
                       errorType === 'add_prerequisite' || errorType === 'remove_prerequisite' ? error : null
                     }
+                    onRefresh={conflict ? refreshTask : undefined}
                     onAdd={(prerequisiteId) =>
                       void run('Prerequisite not added', () =>
                         send('Dependencies', { type: 'add_prerequisite', taskId, prerequisiteId }),
@@ -496,33 +499,22 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     </span>
                   ) : null}
                 </div>
-                {error ? (
-                  <p
-                    role="alert"
-                    className="flex items-start gap-1.5 rounded-sm border border-danger/30 bg-danger-soft px-2 py-1.5 text-xs leading-5 text-danger-ink"
-                  >
-                    <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
-                    <span className="min-w-0">
-                      {userMessage(error)}
-                      {conflict ? (
-                        <button
-                          type="button"
-                          onClick={refreshTask}
-                          className="ml-1 font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                        >
-                          Reload this task and try again
-                        </button>
-                      ) : null}
-                    </span>
-                  </p>
-                ) : null}
-                {uncertain ? (
+                {uncertain && !error ? (
                   <p
                     role="alert"
                     className="flex items-start gap-1.5 rounded-sm border border-warning/40 bg-warning-soft px-2 py-1.5 text-xs leading-5 text-warning-ink"
                   >
                     <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
-                    <span className="min-w-0">{uncertainMessage(command.error ?? undefined)}</span>
+                    <span className="min-w-0">
+                      {uncertainMessage(command.error ?? undefined)}{' '}
+                      <button
+                        type="button"
+                        onClick={refreshTask}
+                        className="font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                      >
+                        Reload this task
+                      </button>
+                    </span>
                   </p>
                 ) : null}
                 {closeNotice ? (

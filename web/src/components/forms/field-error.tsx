@@ -7,13 +7,23 @@ import { cn } from '@/components/ui/utils'
  * surfaces (field-scoped and form-scoped) that dialogs and drawers share.
  */
 
-export function InlineFieldError({ error }: { error: ReactNode }) {
+export function InlineFieldError({
+  error,
+  action,
+}: {
+  error: ReactNode
+  /** Recovery for this exact refusal, rendered beside the one copy of its copy. */
+  action?: ReactNode
+}) {
   if (!error) return null
   return (
-    <p role="alert" className="mt-1.5 flex items-start gap-1.5 text-xs leading-5 text-danger-ink">
-      <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
-      <span className="min-w-0">{error}</span>
-    </p>
+    <div className="mt-1.5 flex flex-wrap items-start gap-x-2 gap-y-1 text-xs leading-5 text-danger-ink">
+      <p role="alert" className="flex min-w-0 items-start gap-1.5">
+        <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
+        <span className="min-w-0">{error}</span>
+      </p>
+      {action ? <span className="shrink-0">{action}</span> : null}
+    </div>
   )
 }
 
