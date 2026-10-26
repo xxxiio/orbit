@@ -6,7 +6,7 @@ project_owned: true
 record_contract: milestone-plan
 record_schema_version: 1
 id: MILESTONE-0031
-status: active
+status: completed
 ---
 
 # Milestone: Self-hosted web application as Orbit's reference product experience
@@ -129,15 +129,15 @@ will follow. The official user-facing vocabulary is **Workflow**; internal
 ## Exit criteria
 
 - [x] EC-001: A person signs in from a browser with an operator-issued device credential, receives an HttpOnly cookie session, survives refresh, is bounced to login with an explanation on expiry, and cannot use the product UI to obtain administrator privileges.
-- [ ] EC-002: Projects and tasks are fully manageable through the browser (create, edit, priority, labels, Markdown description, acceptance criteria, dependencies, attachments, status changes with server rejection surfaced) with persisted state after refresh and no CLI or direct-database fallback.
-- [ ] EC-003: Home and Inbox are functional daily surfaces whose readiness, blockers, due/overdue and planning data all come from Rust services.
+- [x] EC-002: Projects and tasks are fully manageable through the browser (create, edit, priority, labels, Markdown description, acceptance criteria, dependencies, attachments, status changes with server rejection surfaced) with persisted state after refresh and no CLI or direct-database fallback.
+- [x] EC-003: Home and Inbox are functional daily surfaces whose readiness, blockers, due/overdue and planning data all come from Rust services.
 - [x] EC-004: Basic, Development, Research, Learning and Habits workflows produce appropriate functional project workspaces through one component-type view registry, with work-item creation, typed fields, valid transitions, invalid-transition explanations, workflow application/change and upgrade preview plus fingerprint-confirmed upgrade. Declared Workflow Actions are listed with their capability requirements and an explicit statement that the connected server does not execute capabilities.
-- [ ] EC-005: No user-visible "Blueprint" text exists anywhere in the product, enforced by an automated check; internal identifiers remain unchanged.
-- [ ] EC-006: Knowledge documents, attachments and agent jobs/handoffs can be handled from the browser within existing authorization, size and integrity limits.
-- [ ] EC-007: Playwright acceptance runs against a real isolated `orbit-server` and covers authentication, project/task lifecycle, inbox triage, workflow selection/views/transitions, planning, knowledge, attachments, agent inspection, conflict rejection, session expiry, refresh and restart.
-- [ ] EC-008: An Orbit Development project has been actively managed through the web app for at least one planning-to-completion cycle, with a dogfooding issue log, fixes in the correct layer and regression tests.
-- [ ] EC-009: User documentation matches the shipped product, uses Workflow terminology, and every documented command was executed.
-- [ ] EC-010: A TUI redesign specification classifies each proven web interaction pattern as must-match, adapt, not-appropriate or shared-domain/API change, derived from real usage rather than assumptions.
+- [x] EC-005: No user-visible "Blueprint" text exists anywhere in the product, enforced by an automated check; internal identifiers remain unchanged.
+- [x] EC-006: Knowledge documents, attachments and agent jobs/handoffs can be handled from the browser within existing authorization, size and integrity limits.
+- [x] EC-007: Playwright acceptance runs against a real isolated `orbit-server` and covers authentication, project/task lifecycle, inbox triage, workflow selection/views/transitions, planning, knowledge, attachments, agent inspection, conflict rejection, session expiry, refresh and restart.
+- [x] EC-008: An Orbit Development project has been actively managed through the web app for at least one planning-to-completion cycle, with a dogfooding issue log, fixes in the correct layer and regression tests.
+- [x] EC-009: User documentation matches the shipped product, uses Workflow terminology, and every documented command was executed.
+- [x] EC-010: A TUI redesign specification classifies each proven web interaction pattern as must-match, adapt, not-appropriate or shared-domain/API change, derived from real usage rather than assumptions.
 
 ## Evidence
 
@@ -160,14 +160,24 @@ transitions and upgrade confirmation remain I3.
 - I2 evidence: commits `78ef2d6` (registry/board/milestones/planning/settings) and
 `686eeda` (quoted domain refusals, humanized planning reasons, manifest copy); 34
 Playwright checks and `web/evidence/i2/` from the deterministic fixture.
-- Implementation records: commits `bf2c4bd` (server foundation) and `87b4710` (web app I1); `.slim/deepwork/m31-web-app/{progress.md,api-contract.md,gate-1.md,structure-scan.md,gate-2.md}`.
+- EC-002: projects, tasks (title/description/priority/labels), acceptance criteria, dependencies, milestones, planning fields and attachments are all browser-managed with server read-back; `tasks.spec.ts`, `planning-estimates.spec.ts`, `attachments.spec.ts`, `conflict.spec.ts`.
+- EC-003: `home.spec.ts` (server readiness/overdue/blocked, honest empty state) and `tasks.spec.ts` (Inbox capture/triage); planning data is surfaced in the project planning tool.
+- EC-005: `check-terminology.mjs` over 217 files with zero findings plus `terminology.spec.ts` asserting rendered routes and titles.
+- EC-006: `knowledge.spec.ts`, `attachments*.spec.ts`, `agents.spec.ts` against a real server, including the agent 403 path and approval leaving the task untouched.
+- EC-007: 87 Playwright checks (4 opt-in evidence captures skipped) across auth, projects, tasks, board, milestones, dependencies, planning, knowledge, attachments, agents, conflicts, expiry, restart and the quality specs (a11y/keyboard/responsive).
+- EC-008: `web/tests/e2e/i5/dogfood.mjs` + `web/evidence/i5/` (run on `987bcf1`, evidence `dfcfb8a`; dist/binary hashes, 30 captures, DB+WAL) and `.slim/deepwork/m31-web-app/i5-issues.md`.
+- EC-009: `docs/web-app.md` rewritten for the shipped product and `docs/guides/web-quickstart.md` added; every documented command executed; `tests/documentation` + `tests/contracts` 82 passed.
+- EC-010: `docs/guides/tui-redesign-spec.md` (788 lines; 7/3/1/1 classification) derived from the I5 run, with the five shared-domain follow-ups and A1-A14 acceptance checks.
+- Implementation records: commits `bf2c4bd`, `87b4710`, `78ef2d6`, `686eeda`, `05f1e74..3eca6c3`, `87119af..292e898`, `972a09d`, `3f4101f`, `0ff8af9`, `987bcf1`, `dfcfb8a`, `27d7edc`, `077b4a9`; `.slim/deepwork/m31-web-app/{progress.md,api-contract.md,gate-1..5.md,structure-scan*.md,i5-issues.md}`.
 
 ## Remaining work
 
-- EC-002–EC-004, EC-006–EC-010 remain open; I2 begins with project workspaces,
-  board, dependencies, milestones and planning.
+- None. M31 is complete; the recorded follow-ups (project rename/status, task
+  timestamps, folder creation, note links, saved views, agent start, capability execution,
+  the v3 creation default and the `store.rs` fallback distinction) are post-milestone work.
 
 ## Next milestone
 
-MILESTONE-0031 iterations I2–I6, then the TUI redesign informed by EC-010 and
-the externally constrained M27 release verification.
+None — M31 is complete. Post-milestone work: the TUI redesign using
+`docs/guides/tui-redesign-spec.md`, the externally constrained MILESTONE-0027 release
+verification, and the recorded follow-ups.

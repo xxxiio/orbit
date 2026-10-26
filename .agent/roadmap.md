@@ -6,7 +6,7 @@ project_owned: true
 record_contract: roadmap
 record_schema_version: 1
 status: current
-current_milestone: MILESTONE-0031
+current_milestone: null
 ---
 
 # Project Roadmap
@@ -485,7 +485,7 @@ MILESTONE-0031
 
 ### MILESTONE-0031 — M31 Self-Hosted Web Application as Orbit's Reference Product Experience
 
-- **Status:** active
+- **Status:** completed
 - **Outcome:** A self-hosted browser client served by `orbit-server` that lets a person sign in, manage projects and tasks, plan work, drive workflow work items and upgrades, browse knowledge, handle attachments and inspect agent jobs — and that has been used for a real Orbit development cycle, producing the evidence-based input for the next TUI redesign.
 - **Why now:** M22–M30 built real domain and application capability reachable only through the CLI/TUI, and the only browser surface was an administrative console. The web app is the internal dogfooding environment, the reference experience for a future TUI redesign, and the reference client for the planned Flutter app.
 - **Depends on:** MILESTONE-0024, MILESTONE-0025, MILESTONE-0028, MILESTONE-0029, MILESTONE-0030
@@ -509,15 +509,15 @@ MILESTONE-0031
 #### Exit criteria
 
 - [x] EC-001: Browser session authentication with HttpOnly cookies, CSRF defence, expiry and revocation.
-- [ ] EC-002: Full project and task management in the browser including descriptions, criteria, dependencies, priorities and attachments.
+- [x] EC-002: Full project and task management in the browser including descriptions, criteria, dependencies, priorities and attachments.
 - [x] EC-003: Home and Inbox functional with server-derived readiness, blockers and due/overdue data.
 - [x] EC-004: Five bundled workflows produce functional workspaces through one view registry, with work items, transitions, upgrade preview/apply and honest action discovery.
 - [x] EC-005: No user-visible legacy product term; enforced by an automated check over the frontend.
-- [ ] EC-006: Knowledge, attachments and agent jobs/handoffs inspectable within existing authorization and integrity limits.
-- [ ] EC-007: Real-browser acceptance against an isolated authoritative server covering the acceptance surface.
+- [x] EC-006: Knowledge, attachments and agent jobs/handoffs inspectable within existing authorization and integrity limits.
+- [x] EC-007: Real-browser acceptance against an isolated authoritative server covering the acceptance surface.
 - [x] EC-008: An Orbit Development project managed through the browser for a real planning-to-completion cycle, with a layer-classified issue log.
-- [ ] EC-009: User documentation matches the shipped product and every documented command was executed.
-- [ ] EC-010: A TUI redesign specification derived from real usage, classifying each proven pattern.
+- [x] EC-009: User documentation matches the shipped product and every documented command was executed.
+- [x] EC-010: A TUI redesign specification derived from real usage, classifying each proven pattern.
 
 #### Evidence
 

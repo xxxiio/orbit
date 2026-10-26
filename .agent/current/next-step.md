@@ -6,7 +6,7 @@ project_owned: true
 record_contract: next-step
 record_schema_version: 1
 id: NEXT-0014
-status: ready
+status: completed
 milestone_id: MILESTONE-0031
 advances_exit_criteria: [EC-002, EC-006, EC-007, EC-009, EC-010]
 ---

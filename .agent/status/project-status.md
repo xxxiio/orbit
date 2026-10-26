@@ -38,7 +38,7 @@ documented follow-ups.
 ## Current milestone
 
 MILESTONE-0031 — Self-hosted web application as Orbit's reference product
-experience, active (I1–I5 complete, I6 in progress). A React/TypeScript application
+experience, complete (I1–I6). A React/TypeScript application
 served by `orbit-server` now provides browser session authentication, Home,
 Inbox, project management, a workflow-driven project workspace and a task
 inspector against the authoritative domain; 20 real-browser acceptance checks
@@ -109,7 +109,9 @@ externally.
 
 ## In progress
 
-- MILESTONE-0031 I2: board/timeline rendering from workflow-declared views,
+- None. M31 I6 completed; post-milestone work is listed under remaining milestones.
+
+- (historical) MILESTONE-0031 I2: board/timeline rendering from workflow-declared views,
   milestones, dependencies and readiness, day/schedule planning with explicit
   approval and apply, project settings, and list filters. The I2 API surface
   (milestone commands, graph/dependencies/work-brief/day-plan/schedule-plan/
@@ -187,18 +189,16 @@ externally.
 
 ## Remaining milestones
 
-1. MILESTONE-0031 — iterations I2–I6 (project workspaces and planning,
-   workflow-driven views, knowledge/attachments/agents, real dogfooding,
-   refinement plus the TUI redesign specification).
-2. MILESTONE-0027 — blocked on authorized external release verification.
-3. Product follow-ups after M25/M30/M31: connected capability execution, MCP
-   capability tools, per-device project ACLs, server attachment GC, live Herdr
-   acceptance.
+1. MILESTONE-0027 — blocked on authorized external release verification.
+2. Post-milestone work: the TUI redesign using `docs/guides/tui-redesign-spec.md`
+   (7 must-match / 3 adapt / 1 not-appropriate / 1 shared-domain), the recorded
+   web follow-ups (project rename/status, task timestamps, knowledge folders, note
+   links, saved views, agent start, capability execution), and connected capability
+   execution, MCP capability tools, per-device project ACLs, server attachment GC,
+   live Herdr acceptance.
 
 ## Next deterministic step
 
-NEXT-0013 — M31 I2: render the workflow-declared project views (board,
-timeline, milestones) and the planning surface (authored capacity, day plan,
-schedule plan, explicit review then fingerprint-fenced apply) through the
-already-implemented I2 API layer, with project settings and list filters, and
-prove each in real-browser acceptance.
+NEXT-0014 is completed with M31. The next authorized work is the TUI redesign
+against `docs/guides/tui-redesign-spec.md`; MILESTONE-0027 remains blocked on
+external release authorization.
