@@ -20,6 +20,7 @@ import {
   applyUpgrade,
   createWorkItem,
   fetchWorkItem,
+  installBundledWorkflow,
   transitionWorkItem,
   updateWorkItemProperties,
 } from '../endpoints/workflows'
@@ -243,5 +244,23 @@ export function useUpdateWorkItemProperties(): CommandMutation<
     onAccepted: (item, _variables, queryClient) => {
       acceptWorkItemRecord(queryClient, item)
     },
+  })
+}
+
+/**
+ * Publish one of the server's own bundled workflows. The list the New project
+ * dialog and project settings render comes from `useAvailableWorkflows`, so
+ * every key that list is derived from is invalidated here: a clean install can
+ * choose the workflow without a page reload.
+ */
+export function useInstallBundledWorkflow(): CommandMutation<{ id: string; version: number; name: string }, { id: string }> {
+  return useApiMutation<{ id: string; version: number; name: string }, { id: string }>({
+    mutationFn: ({ id }) =>
+      installBundledWorkflow(id).then((manifest) => ({
+        id: manifest.id,
+        version: manifest.version,
+        name: manifest.name,
+      })),
+    affectedKeys: () => [queryKeys.workflows(), ['workflow'], queryKeys.bundledWorkflows()],
   })
 }

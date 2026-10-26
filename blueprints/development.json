@@ -18,6 +18,13 @@
       ],
       "fields": [
         {
+          "id": "title",
+          "kind": {
+            "type": "text"
+          },
+          "required": true
+        },
+        {
           "id": "priority",
           "kind": {
             "type": "choice",

@@ -50,12 +50,43 @@ export function fieldLabel(field: WorkItemField | undefined, fallback: string): 
   return humanizeIdentifier(id)
 }
 
-/** The first text field, else the first choice field: the item's name fallback. */
+/**
+ * Field ids that read as a name. A kind is expected to declare one of these,
+ * but older manifests only declared a classification like `priority`.
+ */
+const TITLE_LIKE_FIELD_IDS = new Set(['title', 'name', 'subject', 'question', 'topic', 'heading'])
+
+/**
+ * Classification fields are not names: a card that says “Medium” cannot tell
+ * two Features apart. They stay visible as badges/rows, never as the heading.
+ */
+const CLASSIFICATION_FIELD_IDS = new Set([
+  'priority',
+  'severity',
+  'difficulty',
+  'confidence',
+  'status',
+  'state',
+])
+
+function titleLikeTextField(kind: WorkItemKind): WorkItemField | undefined {
+  const textFields = kind.fields.filter((field) => field.kind.type === 'text')
+  return textFields.find((field) => TITLE_LIKE_FIELD_IDS.has(field.id)) ?? textFields[0]
+}
+
+/**
+ * The declared field a kind intends as its name: a title-like text field first,
+ * then any text field. A classification such as `priority` is deliberately not
+ * a title candidate; the kind name plus the short id is the honest heading for
+ * a kind that declares no text field.
+ */
 export function titleFieldFor(kind: WorkItemKind | undefined): WorkItemField | undefined {
   if (!kind) return undefined
   return (
-    kind.fields.find((field) => field.kind.type === 'text') ??
-    kind.fields.find((field) => field.kind.type === 'choice')
+    titleLikeTextField(kind) ??
+    kind.fields.find(
+      (field) => field.kind.type === 'choice' && !CLASSIFICATION_FIELD_IDS.has(field.id),
+    )
   )
 }
 
@@ -70,9 +101,16 @@ export function titleFieldForItem(
   item: WorkItem,
 ): WorkItemField | undefined {
   if (!kind) return undefined
+  const titleLike = titleLikeTextField(kind)
   return (
+    (titleLike && fieldHasValue(titleLike, item) ? titleLike : undefined) ??
     kind.fields.find((field) => field.kind.type === 'text' && fieldHasValue(field, item)) ??
-    kind.fields.find((field) => field.kind.type === 'choice' && fieldHasValue(field, item)) ??
+    kind.fields.find(
+      (field) =>
+        field.kind.type === 'choice' &&
+        !CLASSIFICATION_FIELD_IDS.has(field.id) &&
+        fieldHasValue(field, item),
+    ) ??
     titleFieldFor(kind)
   )
 }

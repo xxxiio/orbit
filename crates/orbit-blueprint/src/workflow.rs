@@ -171,12 +171,13 @@ mod tests {
     fn fixture() -> Blueprint {
         serde_json::from_str(include_str!("../../../blueprints/development.json")).unwrap()
     }
+    fn props() -> BTreeMap<String, Value> {
+        BTreeMap::from([("title".into(), Value::String("A feature".into()))])
+    }
     #[test]
     fn validates_properties_and_revision() {
         let schema = fixture();
-        let item = schema
-            .instantiate("i1", "p1", "feature", BTreeMap::new())
-            .unwrap();
+        let item = schema.instantiate("i1", "p1", "feature", props()).unwrap();
         assert_eq!(item.properties["priority"], "medium");
         assert!(
             schema
@@ -208,9 +209,7 @@ mod tests {
         let mut schema = fixture();
         schema.required_capabilities.push("approval".into());
         schema.work_items[0].transitions[0].required_capability = Some("approval".into());
-        let item = schema
-            .instantiate("i1", "p1", "feature", BTreeMap::new())
-            .unwrap();
+        let item = schema.instantiate("i1", "p1", "feature", props()).unwrap();
         assert!(
             schema
                 .transition(&item, "ready", 0, &BTreeSet::new())
@@ -262,7 +261,12 @@ mod declarative_guard_tests {
         });
         schema.validate(&BTreeSet::new()).unwrap();
         let initial = schema
-            .instantiate("one", "project", "feature", BTreeMap::new())
+            .instantiate(
+                "one",
+                "project",
+                "feature",
+                BTreeMap::from([("title".into(), Value::String("A feature".into()))]),
+            )
             .unwrap();
         assert!(
             schema

@@ -30,6 +30,7 @@ import { cn } from '@/components/ui/utils'
 import { humanizeIdentifier } from '@/lib/humanize'
 import { projectStatusLabel, workflowCopy, workflowText } from '@/domain'
 import { UpgradeDiff, UpgradeReceipt } from '@/features/workflows'
+import { BundledWorkflowInstall } from '@/features/workflows/bundled-workflow-install'
 
 function IdentityRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -395,6 +396,10 @@ export function ProjectSettings({
                 </details>
               </>
             )}
+
+            <div className="border-t border-line pt-3">
+              <BundledWorkflowInstall />
+            </div>
           </PanelBody>
           <PanelFooter>
             <p className="text-2xs leading-4 text-ink-muted">

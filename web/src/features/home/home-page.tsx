@@ -619,7 +619,7 @@ export function HomePage() {
             <EmptyState
               icon={<CheckCircleIcon size={21} />}
               title="Nothing planned yet"
-              description="Capture your first task with the button below, or press c anywhere in Orbit. Deadlines, priorities and projects can come later."
+              description="Capture your first task with the button below, or press c anywhere in Orbit. Estimates, deadlines, priorities and projects can come later."
               action={
                 <Button leadingIcon={<PlusIcon size={15} />} onClick={() => openNewTask()}>
                   Create the first task

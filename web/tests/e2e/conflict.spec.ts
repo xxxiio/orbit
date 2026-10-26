@@ -76,10 +76,26 @@ test.describe('conflict', () => {
       expect(after.status()).toBe(200)
       expect((await after.json()).title).toBe(renamed)
 
-      // Refetch recovers: the stale value is replaced by the server's truth.
-      await page.reload()
-      await expect(page.getByText(renamed, { exact: true }).first()).toBeVisible()
+      // The drawer offers the recovery the message promises: reload this task
+      // without leaving the page, then edit against the new revision.
+      const reload = drawer.getByRole('button', { name: 'Reload this task and try again' })
+      await expect(reload).toBeVisible()
+      await reload.click()
+      await expect(
+        drawer.getByRole('button', { name: 'Edit task title' }),
+      ).toContainText(renamed)
       await expect(page.getByText(staleTitle, { exact: true })).toHaveCount(0)
+
+      const edit = drawer.getByRole('button', { name: 'Edit task title' })
+      await edit.click()
+      const recoveredTitle = `${renamed} (recovered here)`
+      await drawer.getByLabel('Task title').fill(recoveredTitle)
+      await drawer.getByLabel('Task title').press('Enter')
+      await expect(edit).toContainText(recoveredTitle)
+
+      const accepted = await other.request.get(`${server.base}/v1/authoritative/tasks/${taskId}`)
+      expect(accepted.status()).toBe(200)
+      expect((await accepted.json()).title).toBe(recoveredTitle)
     } finally {
       await second.close()
     }

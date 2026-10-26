@@ -407,7 +407,7 @@ export const WORK_ITEM_PLANS: readonly SeedWorkItemPlan[] = [
     projectId: PROJECT_IDS.orbit,
     kind: 'feature',
     state: 'backlog',
-    properties: { priority: 'medium' },
+    properties: { title: 'Board says what each Feature is', priority: 'medium' },
     transitions: [],
   },
   {
@@ -415,7 +415,7 @@ export const WORK_ITEM_PLANS: readonly SeedWorkItemPlan[] = [
     projectId: PROJECT_IDS.orbit,
     kind: 'feature',
     state: 'ready',
-    properties: { priority: 'high' },
+    properties: { title: 'Typed workflow declarations', priority: 'high' },
     transitions: ['ready'],
   },
   {
@@ -423,7 +423,7 @@ export const WORK_ITEM_PLANS: readonly SeedWorkItemPlan[] = [
     projectId: PROJECT_IDS.orbit,
     kind: 'feature',
     state: 'review',
-    properties: { priority: 'low' },
+    properties: { title: 'Review keeps the item named', priority: 'low' },
     transitions: ['ready', 'implementing', 'review'],
   },
   {

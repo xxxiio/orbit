@@ -191,7 +191,7 @@ test.describe('workflow upgrades', () => {
           id: 'wi-fingerprint-drift',
           project_id: projectId,
           kind: 'feature',
-          properties: { priority: 'low' },
+          properties: { title: 'Fingerprint drift', priority: 'low' },
         },
       },
     )

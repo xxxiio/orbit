@@ -3,6 +3,7 @@ import {
   createNoteBody,
   isNotePath,
   joinMarkdown,
+  noteCountLabel,
   noteHref,
   notePathFromSplat,
   noteTitleFromPath,
@@ -11,6 +12,12 @@ import {
 } from '@/features/knowledge/knowledge-model'
 
 describe('knowledge markdown model', () => {
+  it('pluralises the vault count', () => {
+    expect(noteCountLabel(0)).toBe('0 notes')
+    expect(noteCountLabel(1)).toBe('1 note')
+    expect(noteCountLabel(2)).toBe('2 notes')
+  })
+
   it('splits frontmatter from the editable body without rewriting either', () => {
     const raw = '---\norbit_id: n-1\ntitle: Hello\n---\n# Hello\n\nBody.\n'
     const parts = splitMarkdown(raw)

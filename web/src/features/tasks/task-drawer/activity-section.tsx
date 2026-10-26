@@ -4,12 +4,19 @@ import { humanizeIdentifier } from '@/lib/humanize'
 import { formatDateTime, relativeTime } from '../task-meta'
 import { Section } from './section'
 
-/** `agent:<id>` and `external:<device>` name a source, never a raw identifier. */
-function originLabel(origin: string): string {
+/**
+ * `agent:<id>` and `external:<device>` name a source, never a raw identifier.
+ * A browser write carries the signed-in device id, so comparing it with the
+ * session is what separates this device from a genuinely different one.
+ */
+export function originLabel(origin: string, sessionDeviceId?: string | null): string {
   if (origin === 'human') return 'You'
   if (origin === 'system') return 'System'
   if (origin.startsWith('agent:')) return 'An agent'
-  if (origin.startsWith('external:')) return 'Another device'
+  if (origin.startsWith('external:')) {
+    const deviceId = origin.slice('external:'.length)
+    return sessionDeviceId && deviceId === sessionDeviceId ? 'This device' : 'Another device'
+  }
   return humanizeIdentifier(origin)
 }
 
@@ -17,10 +24,13 @@ export function ActivitySection({
   entries,
   loading,
   now,
+  sessionDeviceId,
 }: {
   entries: Array<{ id: string; kind: string; origin: string; occurredAtMs: number; summary: string }>
   loading: boolean
   now: number
+  /** The signed-in device; its own `external:` writes read “This device”. */
+  sessionDeviceId?: string | null
 }) {
   return (
     <Section title="Activity" description="The server's own record for this task.">
@@ -49,8 +59,8 @@ export function ActivitySection({
               <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-2xs text-ink-muted">
                 <span className="text-ink-muted">{humanizeIdentifier(entry.kind)}</span>
                 <span aria-hidden="true">·</span>
-                <span className="truncate" title={originLabel(entry.origin)}>
-                  {originLabel(entry.origin)}
+                <span className="truncate" title={originLabel(entry.origin, sessionDeviceId)}>
+                  {originLabel(entry.origin, sessionDeviceId)}
                 </span>
                 <span aria-hidden="true">·</span>
                 <time dateTime={new Date(entry.occurredAtMs).toISOString()} title={formatDateTime(entry.occurredAtMs)}>

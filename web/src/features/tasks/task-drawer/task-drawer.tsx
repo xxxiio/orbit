@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { TaskPriority, TaskStatus } from '@/api/contracts'
 import type { ApiError } from '@/api/errors'
 import {
+  classifyError,
   defaultNowMs,
   newCommandId,
   taskCommandAttempt,
@@ -14,6 +15,7 @@ import {
   useTaskDetail,
   useTaskGraph,
   useTaskReadiness,
+  useSession,
   useWorkspaceSnapshot,
   userMessage,
   type TaskCommandInput,
@@ -32,6 +34,8 @@ import { ActivitySection } from './activity-section'
 import { CriteriaSection } from './criteria-section'
 import { DependenciesSection } from './dependencies-section'
 import { DescriptionEditor } from './description-editor'
+import { PlanningSection, type PlanningField } from './planning-section'
+import type { PlanningPatch } from './planning-fields'
 import { PropertiesSection } from './properties-section'
 import { DrawerSkeleton } from './skeleton'
 import type { TaskCommand } from './task-command'
@@ -54,6 +58,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   const milestones = useMilestones(detail.task?.projectId ?? undefined)
   const readiness = useTaskReadiness(defaultNowMs())
   const graph = useTaskGraph(defaultNowMs())
+  const session = useSession()
   const command: TaskCommand = useTaskCommand()
   const queryClient = useQueryClient()
   const { run } = useCommandFeedback()
@@ -70,6 +75,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   const [announcement, setAnnouncement] = useState<string | null>(null)
   const lastLabel = useRef('Change')
   const detailField = useRef<'description' | 'priority' | 'labels' | null>(null)
+  const planningFieldRef = useRef<PlanningField | null>(null)
   const inFlight = useRef(false)
 
   const [now, setNow] = useState(() => Date.now())
@@ -85,6 +91,13 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
     }
     // Reading the transition into `accepted` is the point of this effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [command.disposition])
+
+  useEffect(() => {
+    // A refusal must not sit beside the previous success sentence.
+    if (command.disposition === 'rejected' || command.disposition === 'uncertain') {
+      setAnnouncement(null)
+    }
   }, [command.disposition])
 
   useEffect(() => {
@@ -132,6 +145,19 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   const uncertain = command.disposition === 'uncertain'
   const error: ApiError | null = command.disposition === 'rejected' ? command.error : null
   const errorType = error ? command.variables?.input.type : undefined
+  // A conflict is a definitive refusal: the draft was not written, and the
+  // server's newer record is one refetch away. Fetch before the next edit
+  // rather than making the person reload the whole page.
+  const conflict = error !== null && classifyError(error) === 'conflict'
+
+  const refreshTask = () => {
+    command.reset()
+    detailField.current = null
+    planningFieldRef.current = null
+    setAnnouncement(null)
+    void detail.refetch()
+    void snapshot.refetch()
+  }
 
   const pendingField = (field: 'title' | 'status' | 'project' | 'milestone' | 'criteria' | 'dependencies') => {
     if (!command.isPending || !command.variables) return false
@@ -159,6 +185,11 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
     command.variables?.input.type === 'set_details' &&
     detailField.current === field
 
+  const pendingPlanning: PlanningField | null =
+    command.isPending && command.variables?.input.type === 'set_planning'
+      ? planningFieldRef.current
+      : null
+
   const changeStatus = (status: TaskStatus) => {
     void run('Status not changed', () =>
       send('Status', { type: 'change_status', taskId, status }),
@@ -174,6 +205,21 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   const assignMilestone = (milestoneId: string | null) => {
     void run('Milestone not changed', () =>
       send('Milestone', { type: 'assign_milestone', taskId, milestoneId }),
+    )
+  }
+
+  const setPlanning = (field: PlanningField, patch: PlanningPatch) => {
+    planningFieldRef.current = field
+    const label =
+      field === 'estimate' ? 'Estimate' : field === 'earliestStart' ? 'Earliest start' : 'Deadline'
+    void run(`${label} not saved`, () =>
+      send(label, {
+        type: 'set_planning',
+        taskId,
+        estimatedMinutes: patch.estimatedMinutes,
+        earliestStartAtMs: patch.earliestStartAtMs,
+        deadlineAtMs: patch.deadlineAtMs,
+      }),
     )
   }
 
@@ -316,6 +362,14 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     onSetLabels={(labels) => setDetails('Labels', 'labels', { labels })}
                   />
 
+                  <PlanningSection
+                    task={task}
+                    pending={pendingPlanning}
+                    disabled={command.isPending}
+                    error={errorType === 'set_planning' ? error : null}
+                    onCommit={(field, patch) => setPlanning(field, patch)}
+                  />
+
                   <DescriptionEditor
                     description={task.description}
                     pending={pendingDetail('description')}
@@ -417,6 +471,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     entries={detail.activity}
                     loading={detail.isLoading}
                     now={now}
+                    sessionDeviceId={session.session?.device_id}
                   />
                 </div>
               </div>
@@ -435,9 +490,11 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                         {announcement}
                       </span>
                     </>
-                  ) : (
-                    <span className="text-ink-faint">Changes save when you leave a field.</span>
-                  )}
+                  ) : !error && !uncertain ? (
+                    <span className="text-ink-faint">
+                      Edits are sent when you leave a field. The server's answer is shown here.
+                    </span>
+                  ) : null}
                 </div>
                 {error ? (
                   <p
@@ -445,7 +502,18 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     className="flex items-start gap-1.5 rounded-sm border border-danger/30 bg-danger-soft px-2 py-1.5 text-xs leading-5 text-danger-ink"
                   >
                     <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
-                    <span className="min-w-0">{userMessage(error)}</span>
+                    <span className="min-w-0">
+                      {userMessage(error)}
+                      {conflict ? (
+                        <button
+                          type="button"
+                          onClick={refreshTask}
+                          className="ml-1 font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                        >
+                          Reload this task and try again
+                        </button>
+                      ) : null}
+                    </span>
                   </p>
                 ) : null}
                 {uncertain ? (

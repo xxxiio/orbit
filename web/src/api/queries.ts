@@ -49,6 +49,7 @@ import { fetchMilestones } from './endpoints/milestones'
 import { fetchSnapshot } from './endpoints/snapshot'
 import { fetchAcceptanceCriteria, fetchTaskActivity, fetchTaskDetail } from './endpoints/tasks'
 import {
+  fetchBundledWorkflows,
   fetchProjectBinding,
   fetchUpgradePreview,
   fetchWorkItems,
@@ -145,6 +146,7 @@ export const queryKeys = {
   workload: (params: WorkloadParams) => ['workload', params] as const,
   workloadAll: () => ['workload'] as const,
   workflows: () => ['workflows'] as const,
+  bundledWorkflows: () => ['bundled-workflows'] as const,
   workflow: (id: string, version: number) => ['workflow', id, version] as const,
   workflowBinding: (projectId: string) => ['workflow-binding', projectId] as const,
   workItems: (projectId: string) => ['work-items', projectId] as const,
@@ -697,5 +699,22 @@ export function useAgentResumeContext(
     queryFn: ({ signal }) => fetchAgentResumeContext(id as string, signal),
     enabled: Boolean(id),
     select: toAgentResumeContext,
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Bundled workflows                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The ids the server can install from its own package. Short-lived so a
+ * just-installed workflow drops off the list; the install mutation also
+ * invalidates both this read and `useAvailableWorkflows`.
+ */
+export function useBundledWorkflows(): UseQueryResult<string[], ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.bundledWorkflows(),
+    queryFn: ({ signal }) => fetchBundledWorkflows(signal),
+    staleTime: 60_000,
   })
 }

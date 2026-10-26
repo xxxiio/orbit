@@ -107,3 +107,17 @@ export function fetchUpgradePreview(
 export function applyUpgrade(body: ApplyUpgradeBody): Promise<BlueprintUpgradeApplied> {
   return api.post<BlueprintUpgradeApplied>(`${BASE}/upgrade`, body)
 }
+
+/**
+ * Bundled, trusted workflow ids this server can install. The list is static in
+ * the binary until an install publishes a version; it is not the same list as
+ * `fetchWorkflowVersions` (which only reports published versions).
+ */
+export function fetchBundledWorkflows(signal?: AbortSignal): Promise<string[]> {
+  return api.get<string[]>(`${BASE}/bundled`, { signal })
+}
+
+/** Publish one bundled workflow. Idempotent: a second install returns the same version. */
+export function installBundledWorkflow(id: string): Promise<BlueprintManifest> {
+  return api.post<BlueprintManifest>(`${BASE}/install`, { id })
+}

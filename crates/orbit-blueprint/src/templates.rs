@@ -146,13 +146,13 @@ mod tests {
                 TemplateItem {
                     key: "design".into(),
                     kind: "feature".into(),
-                    properties: BTreeMap::new(),
+                    properties: BTreeMap::from([("title".into(), Value::String("Design".into()))]),
                     prerequisites: vec![],
                 },
                 TemplateItem {
                     key: "build".into(),
                     kind: "feature".into(),
-                    properties: BTreeMap::new(),
+                    properties: BTreeMap::from([("title".into(), Value::String("Build".into()))]),
                     prerequisites: vec!["design".into()],
                 },
             ],

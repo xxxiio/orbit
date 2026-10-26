@@ -120,3 +120,8 @@ export function splitRelations(relations: NoteRelations): {
     unresolved: relations.unresolved,
   }
 }
+
+/** “0 notes”, “1 note”, “2 notes”: the vault header never says “1 notes”. */
+export function noteCountLabel(count: number): string {
+  return `${count} note${count === 1 ? '' : 's'}`
+}

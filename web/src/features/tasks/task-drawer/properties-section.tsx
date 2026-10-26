@@ -78,6 +78,12 @@ export function PropertiesSection({
           options={statusOptions}
           pending={pendingField('status')}
           disabled={command.isPending}
+          hint={
+            <span className="text-2xs leading-4 text-ink-muted">
+              Only the next states this task&apos;s workflow allows are accepted. A refusal keeps
+              the stored value and quotes the server&apos;s reason below.
+            </span>
+          }
         />
 
         <PropertySelect

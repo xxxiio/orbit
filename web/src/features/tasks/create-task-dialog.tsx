@@ -106,7 +106,7 @@ export function CreateTaskDialog({ open, onOpenChange, defaultProjectId }: Creat
     <Dialog open={open} onOpenChange={(next) => (submitting ? undefined : onOpenChange(next))}>
       <DialogContent
         title="New task"
-        description="Capture it now. You can add details, a deadline or a checklist from the task itself."
+        description="Capture it now. You can add details, an estimate, a deadline or a checklist from the task itself."
         size="md"
       >
         <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">

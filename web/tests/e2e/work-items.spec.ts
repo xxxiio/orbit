@@ -65,6 +65,9 @@ test.describe('work items', () => {
     // The view does not pin a kind and Development declares exactly one, so the
     // dialog names it without a pointless selector.
     await expect(create.getByText('Feature', { exact: true })).toBeVisible()
+    // A Feature is named by its own title, not by its priority choice.
+    await expect(create.getByLabel('Title')).toBeVisible()
+    await create.getByLabel('Title').fill('Readable feature names')
     await create.getByLabel('Priority').click()
     await page.getByRole('option', { name: 'High', exact: true }).click()
     await create.getByRole('button', { name: 'Create work item' }).click()
@@ -73,10 +76,12 @@ test.describe('work items', () => {
     const item = await createdItem(page, server, projectId, before)
     expect(item.kind).toBe('feature')
     expect(item.state).toBe('backlog')
+    expect(item.properties.title).toBe('Readable feature names')
     expect(item.properties.priority).toBe('high')
 
     const card = page.locator(`[data-work-item-key="${item.id}"]`)
     await expect(card).toBeVisible()
+    await expect(card.getByText('Readable feature names', { exact: true })).toBeVisible()
     await expect(
       page.getByRole('region', { name: /^Backlog column/ }).locator(`[data-work-item-key="${item.id}"]`),
     ).toBeVisible()
@@ -177,6 +182,30 @@ test.describe('work items', () => {
     await expect(
       page.getByRole('region', { name: /^Approved column/ }).locator(`[data-work-item-key="${item.id}"]`),
     ).toBeVisible()
+  })
+
+  test('two Features keep two distinct, readable names', async ({ page, workspace }) => {
+    const { server } = workspace
+    const projectId = 'p-orbit-development'
+    await goto(page, server, `/projects/${projectId}/board`)
+
+    for (const title of ['Readable feature one', 'Readable feature two']) {
+      await page.getByRole('button', { name: 'New work item' }).first().click()
+      const create = page.getByRole('dialog')
+      await create.getByLabel('Title').fill(title)
+      await create.getByRole('button', { name: 'Create work item' }).click()
+      await expect(create).toBeHidden()
+      await expect(page.getByText(title, { exact: true }).first()).toBeVisible()
+    }
+
+    const items = await workItems(page, server, projectId)
+    const created = items.filter((item) =>
+      ['Readable feature one', 'Readable feature two'].includes(String(item.properties.title)),
+    )
+    expect(created).toHaveLength(2)
+    expect(new Set(created.map((item) => item.properties.title)).size).toBe(2)
+    // The priority choice is not what names either card.
+    expect(created.some((item) => item.properties.title === item.properties.priority)).toBe(false)
   })
 
 })

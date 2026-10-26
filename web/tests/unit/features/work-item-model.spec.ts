@@ -111,12 +111,44 @@ function item(overrides: Partial<WorkItem> = {}): WorkItem {
 }
 
 describe('work-item titles and values', () => {
-  it('uses the first text field, then the first choice field, then the kind name', () => {
+  it('uses the first text field, and never promotes a classification such as priority', () => {
     expect(workItemTitle(item(), workflow.kinds[0])).toBe('Ready')
+    // `priority` is a classification, not a name: a card must not read “High”.
     expect(
       workItemTitle(item({ properties: { priority: 'high' } }), workflow.kinds[0]),
-    ).toBe('High')
+    ).toBe('Ticket')
     expect(workItemTitle(item({ properties: {} }), workflow.kinds[0])).toBe('Ticket')
+  })
+
+  it('prefers a title-like text field over an earlier free-text field', () => {
+    const kind = {
+      ...workflow.kinds[0],
+      fields: [
+        { id: 'note', kind: { type: 'text' as const }, required: false, default: null },
+        { id: 'title', kind: { type: 'text' as const }, required: true, default: null },
+      ],
+    }
+    expect(
+      workItemTitle(
+        item({ properties: { note: 'Internal note', title: 'Readable name' } }),
+        kind,
+      ),
+    ).toBe('Readable name')
+  })
+
+  it('falls back to the kind name when the only declared field is priority', () => {
+    const kind = {
+      ...workflow.kinds[0],
+      fields: [
+        {
+          id: 'priority',
+          kind: { type: 'choice' as const, options: ['low', 'high'] },
+          required: true,
+          default: 'low',
+        },
+      ],
+    }
+    expect(workItemTitle(item({ properties: { priority: 'medium' } }), kind)).toBe('Ticket')
   })
 
   it('humanizes state and choice values but leaves free text alone', () => {

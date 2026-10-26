@@ -22,6 +22,7 @@ import { useToast } from '@/components/ui/toast'
 import { AlertCircleIcon, CheckIcon } from '@/components/ui/icons'
 import { FormErrorBanner } from '@/components/forms'
 import { humanizeIdentifier } from '@/lib/humanize'
+import { BundledWorkflowInstall } from '@/features/workflows/bundled-workflow-install'
 import { cn } from '@/components/ui/utils'
 
 const DEFAULT_WORKFLOW = ''
@@ -237,7 +238,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                     {workflowId === DEFAULT_WORKFLOW ? <CheckIcon size={13} className="text-accent" /> : null}
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-ink-muted">
-                    Statuses, priorities, deadlines and milestones for ordinary task work.
+                    Statuses, priorities, estimates, deadlines and milestones for ordinary task work.
                   </span>
                 </span>
               </label>
@@ -258,7 +259,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
               </div>
             ) : additionalWorkflows.length === 0 ? (
               <p className="text-xs text-ink-muted">
-                No other workflows are installed on this server yet.
+                No other workflow has been published on this server yet.
               </p>
             ) : (
               additionalWorkflows.map((workflow) => (
@@ -271,6 +272,10 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                 />
               ))
             )}
+
+            <div className="mt-2 border-t border-line pt-3">
+              <BundledWorkflowInstall compact />
+            </div>
           </fieldset>
 
           {error ? <FormErrorBanner title="The project was not created" description={userMessage(error)} /> : null}

@@ -144,13 +144,31 @@ function DayPlanPanel({
   const [draft, setDraft] = useState(capacity > 0 ? String(capacity) : '')
   const [localError, setLocalError] = useState<string | null>(null)
   const [showUnplanned, setShowUnplanned] = useState(false)
+  // The API's escape hatch for unsized work is explicit, not silent: when on,
+  // every task without an estimate is planned at the authored default duration.
+  const [useDefaultDuration, setUseDefaultDuration] = useState(false)
+  const [defaultMinutesDraft, setDefaultMinutesDraft] = useState('30')
+  const defaultMinutes = Number(defaultMinutesDraft)
+  const authoredDefault =
+    Number.isInteger(defaultMinutes) && defaultMinutes > 0 ? defaultMinutes : null
   const { openTask } = useTaskDrawer()
 
   useEffect(() => {
     setDraft(capacity > 0 ? String(capacity) : '')
   }, [capacity])
 
-  const plan = useDayPlan(capacity > 0 ? { nowMs, availableMinutes: capacity, projectId: project.id } : null)
+  const plan = useDayPlan(
+    capacity > 0
+      ? {
+          nowMs,
+          availableMinutes: capacity,
+          projectId: project.id,
+          ...(useDefaultDuration && authoredDefault !== null
+            ? { includeUnsized: true, defaultMinutes: authoredDefault }
+            : {}),
+        }
+      : null,
+  )
 
   const commit = () => {
     const parsed = Number(draft)
@@ -174,6 +192,7 @@ function DayPlanPanel({
   const unplanned = (plan.data?.tasks ?? []).filter(
     (entry) => entry.disposition === 'not_actionable' || entry.disposition === 'outside_project',
   )
+  const missingEstimate = planned.filter((entry) => entry.disposition === 'missing_estimate')
 
   return (
     <Panel className="flex flex-col">
@@ -223,6 +242,41 @@ function DayPlanPanel({
           <Button variant="secondary" size="md" onClick={commit}>
             Build day plan
           </Button>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+          <label className="flex items-start gap-2 text-xs leading-5 text-ink-soft">
+            <Checkbox
+              checked={useDefaultDuration}
+              onCheckedChange={(checked) => setUseDefaultDuration(checked === true)}
+              aria-label="Plan unsized tasks with a default duration"
+              className="mt-0.5"
+            />
+            <span className="min-w-0">
+              Plan tasks without an estimate at a default duration.
+              <span className="mt-0.5 block text-2xs text-ink-muted">
+                Off, the server reports them as “Missing an estimate”. On, it uses the minutes
+                below for allocation. This is the API&apos;s explicit option, never a guess.
+              </span>
+            </span>
+          </label>
+          {useDefaultDuration ? (
+            <Field label="Default minutes" className="w-32">
+              <Input
+                type="number"
+                min={1}
+                max={1440}
+                step={5}
+                inputMode="numeric"
+                aria-label="Default duration in minutes"
+                value={defaultMinutesDraft}
+                onChange={(event) => setDefaultMinutesDraft(event.target.value)}
+                onBlur={() => {
+                  if (authoredDefault === null) setDefaultMinutesDraft('30')
+                }}
+              />
+            </Field>
+          ) : null}
         </div>
 
         {capacity <= 0 ? (
@@ -276,7 +330,28 @@ function DayPlanPanel({
               />
             ) : (
               <>
-                {planned.length === 0 ? (
+                {plan.data.selectedCount === 0 && missingEstimate.length > 0 ? (
+                  <EmptyState
+                    compact
+                    headingLevel="p"
+                    icon={<ClockIcon size={18} />}
+                    title="Add an estimate to these tasks"
+                    description={`${missingEstimate.length} task${
+                      missingEstimate.length === 1 ? '' : 's'
+                    } in this project ${
+                      missingEstimate.length === 1 ? 'has' : 'have'
+                    } no duration estimate, so the server placed nothing. Size one below, or turn on the default duration.`}
+                    action={
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => openTask(missingEstimate[0].taskId)}
+                      >
+                        Open “{missingEstimate[0].title}” to add an estimate
+                      </Button>
+                    }
+                  />
+                ) : planned.length === 0 ? (
                   <p className="rounded-md border border-line bg-surface-sunken/40 px-3 py-2 text-xs leading-5 text-ink-muted">
                     Nothing in this project can be placed at that capacity. The server&apos;s reasons
                     are listed below.
@@ -356,6 +431,7 @@ function SchedulePanel({
   onApply,
   approvalChecked,
   onApprovalChange,
+  onOpenTask,
 }: {
   window: { date: string; from: string; to: string; error: string | null }
   taskTitles: ReadonlyMap<string, string>
@@ -374,10 +450,22 @@ function SchedulePanel({
   onApply: () => void
   approvalChecked: boolean
   onApprovalChange: (checked: boolean) => void
+  onOpenTask: (taskId: string) => void
 }) {
   const data = plan.data
   const reviewData = review.review
   const reviewed = review.reviewedPlan
+  const estimateBlocker = data?.unplaced.find((entry) => /estimate/i.test(entry.reason)) ?? null
+
+  const reviewBlockedReason = (plan: SchedulePlanView): string => {
+    if (estimateBlocker) {
+      return 'The server placed nothing because the remaining tasks have no duration estimate. Add one to a task, or plan unsized tasks with a default duration in the day plan.'
+    }
+    if (plan.unplaced.length > 0) {
+      return `The server placed nothing. ${plan.unplaced[0].reason}`
+    }
+    return 'The server found no actionable task in this window. Choose a wider window or a project with actionable work.'
+  }
 
   return (
     <Panel className="flex flex-col">
@@ -530,21 +618,38 @@ function SchedulePanel({
               </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={onReview}
-                loading={review.isPending}
-                disabled={data.slots.length === 0 || review.isPending || apply.isPending}
-              >
-                Review this plan
-              </Button>
-              <p className="text-2xs text-ink-muted">
-                {data.slots.length === 0
-                  ? 'There is nothing to review until the server places at least one task.'
-                  : 'Review is read-only: it fingerprints the exact command but writes nothing.'}
-              </p>
+            <div className="flex flex-col gap-2 border-t border-line pt-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={onReview}
+                  loading={review.isPending}
+                  disabled={data.slots.length === 0 || review.isPending || apply.isPending}
+                >
+                  Review this plan
+                </Button>
+                {data.slots.length > 0 ? (
+                  <p className="text-2xs text-ink-muted">
+                    Review is read-only: it fingerprints the exact command but writes nothing.
+                  </p>
+                ) : null}
+              </div>
+              {data.slots.length === 0 ? (
+                <div className="flex flex-col gap-2 rounded-md border border-line bg-surface-sunken/40 px-3 py-2">
+                  <p className="text-xs leading-5 text-ink-muted">{reviewBlockedReason(data)}</p>
+                  {estimateBlocker ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="self-start"
+                      onClick={() => onOpenTask(estimateBlocker.taskId)}
+                    >
+                      Open “{taskTitles.get(estimateBlocker.taskId) ?? 'this task'}” to add an estimate
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             {review.error ? (
               <p role="alert" className="flex items-start gap-1.5 text-xs leading-5 text-danger-ink">
@@ -738,6 +843,7 @@ export function ProjectPlanning({
   const nowMs = useMemo(() => defaultNowMs(), [])
   const defaults = useMemo(() => defaultWindow(nowMs), [nowMs])
   const { toast } = useToast()
+  const { openTask } = useTaskDrawer()
 
   // The input clamps to 1..1440; a hand-edited URL must not bypass that.
   const capacity = readCapacity(searchParams.get('capacity'))
@@ -867,6 +973,7 @@ export function ProjectPlanning({
             onApply={() => void handleApply()}
             approvalChecked={approvalChecked}
             onApprovalChange={setApprovalChecked}
+            onOpenTask={openTask}
           />
           <Panel>
             <PanelBody className="flex flex-col gap-2">

@@ -1,55 +1,60 @@
 {
-  "startedAt": "2026-10-25T23:41:17.313Z",
-  "projectId": "4939d23d-4f9c-437c-bf21-4aca00321e4f",
+  "startedAt": "2026-10-26T01:09:37.069Z",
+  "projectId": "3df24a14-de94-4b30-b888-c7a3adddd8aa",
   "taskIds": {
-    "I5: write the dogfooding findings summary": "dac48ec8-8d23-4e16-aa41-f44747c09ad8",
-    "I5: wire estimate and deadline editing into the task drawer": "c9965f3a-a7f8-4d74-979d-578637722d4c",
-    "I5: prove browser planning with a sized task": "8e1ba26b-70f9-41ce-98ba-c1995e9ad784",
-    "I6: refine the surfaces flagged by dogfooding": "3d3bd342-69ac-45b6-9c48-4faa1e74403e",
-    "I6: update docs/web-app.md for I3 to I5": "8248f040-b687-406c-9fc7-e9c5e706318c",
-    "I6: write the TUI redesign spec": "7975b422-fd2f-4784-8d4e-0a7df8c51c94",
-    "I6: close carry-forward 3 with one shared command queue": "3297d9af-a129-4849-b7d2-527596c741b7",
-    "I6: consume the attachment associate API": "32e624f0-c9d9-4d84-864e-8408e13f6579",
-    "I6: expose note deletion in the knowledge workspace": "3ab6c8cf-945f-4104-8daf-4cf303ef3bd3",
-    "I6: name the byte limit in the 413 upload copy": "1e6b61f4-38fe-4b83-b48b-c333116eb610",
-    "I6: split the remaining api mutation modules": "159f4453-8573-4f49-9a8b-d09c2113b3e8",
-    "I6: remove the project settings view diff duplication": "1295f6ab-4bad-4825-ab18-f6f14d46f2dc",
-    "I6: prove an agent job record without launching a runtime": "b9303fa9-b510-4c68-878a-7ce688f6c2f4",
-    "I6: restore getdone-validate-project in this environment": "36b402cb-c8e6-49a5-b9c5-0cd82bab52fc",
-    "I6: review the gate 4 findings and record dispositions": "cb10cbd3-2c69-458e-bb56-b3dca7999509",
-    "I6: add a first-class note to task relation": "a816d1ce-62f6-4313-bb7a-773e8de951ed",
-    "I5: document the Development feature kind title gap": "f31fbba9-feed-41a1-bd6f-714aa0e51542",
-    "I5: record the board keyboard move evidence": "4e5e93d2-5740-44ff-8a46-13bc2a5465a9",
-    "Triage: capture I5 friction before the gate": "22471168-8d11-4060-966b-553bd4e8333e"
+    "I5: write the dogfooding findings summary": "cc98eac2-0731-4231-ad4e-783d923e810f",
+    "I5: wire estimate and deadline editing into the task drawer": "8cf2da85-72fd-4c39-b507-cc3beb6badf2",
+    "I5: prove browser planning with a sized task": "7a44537e-e89f-4988-898e-1e1e47d21044",
+    "I6: refine the surfaces flagged by dogfooding": "6be67e96-f542-4b4c-a594-0c5aef55fffa",
+    "I6: update docs/web-app.md for I3 to I5": "08617680-6583-4fd6-b62d-f5d6e7510bd5",
+    "I6: write the TUI redesign spec": "4947f8a6-b372-4dcb-b1cb-c15dc84f3678",
+    "I6: close carry-forward 3 with one shared command queue": "c6d45f1a-48e4-4347-94d7-293d76c241af",
+    "I6: consume the attachment associate API": "f4338241-afc3-4ea4-9723-efec7c5a5a07",
+    "I6: expose note deletion in the knowledge workspace": "3ccb64df-f34f-4779-9a07-8a7983673ee2",
+    "I6: name the byte limit in the 413 upload copy": "fc8723d2-8fbc-491e-818b-0148407bd0ca",
+    "I6: split the remaining api mutation modules": "66762107-ea6d-4f86-b68f-290d232fae7c",
+    "I6: remove the project settings view diff duplication": "cad6adc7-2c98-4faf-9f66-3ff09ce4285d",
+    "I6: prove an agent job record without launching a runtime": "6121ee2f-86ff-4f8c-bbc3-857eca0dec71",
+    "I6: restore getdone-validate-project in this environment": "91ec7fb5-da32-42f5-9934-84cb31feaaa7",
+    "I6: review the gate 4 findings and record dispositions": "07b17fdd-f659-471d-aee5-76efb8693693",
+    "I6: add a first-class note to task relation": "0e90fe70-bf3c-45f9-a83d-35c30519a1e9",
+    "I5: document the Development feature kind title gap": "30c7d380-3675-4026-8ed1-ca71125892d5",
+    "I5: record the board keyboard move evidence": "413ba510-6df9-4086-b8d1-e9d6ed4724f6",
+    "Triage: capture I5 friction before the gate": "47600583-a031-4ca0-8296-a41532b1f982"
   },
   "milestoneIds": {
-    "M31 completion": "41539b10-9828-43d3-a338-47673c311788",
-    "Reference-client ready": "d6994d8a-73fd-4218-811c-d2cfaca987db"
+    "M31 completion": "15fbddb0-4e1d-4f8a-bc64-c2ceb410d1b3",
+    "Reference-client ready": "542ca9f3-fe63-46c4-9f93-104d702e0bc1"
   },
-  "workItemId": "1ce5d4bf-d612-48c6-937b-90793d55ab05",
+  "workItemId": "c0de0976-fb26-4b6b-aa91-3bfc20752c06",
   "notePath": "i5-dogfooding.md",
   "planning": {
     "capacityMinutes": 240,
-    "dayPlanRowsMissingEstimate": 3,
+    "dayPlanRowsSelected": 2,
     "window": {
       "date": "2026-10-27",
       "from": "13:00",
       "to": "16:00"
     },
-    "proposedSlots": 0,
-    "reviewDisabled": true,
-    "reviewDisabledReason": "There is nothing to review until the server places at least one task.",
-    "applied": false,
-    "blockedBecause": "No task can be given an estimate from the browser, so the server proposes no slots and the review/apply gate cannot be reached."
+    "proposedSlots": 1,
+    "reviewDisabledBeforeReview": false,
+    "receiptBlocks": [
+      "efdd2063-2a9f-4e93-84d3-ffd7eef373fe"
+    ],
+    "blocksBeforeReload": 1,
+    "blocksAfterReload": 1,
+    "applied": true,
+    "survivedReload": true,
+    "blockedBecause": null
   },
   "conflict": {
     "secondWriterStatus": 200,
     "refusal": "That change conflicted with a newer version on the server (stale server revision). Refresh and try again.",
-    "reloadControlsInDrawer": 0,
-    "recoveredBy": "full page reload, then reopen the drawer"
+    "reloadControlsInDrawer": 1,
+    "recoveredBy": "drawer reload action"
   },
   "boardMove": {
-    "taskId": "4e5e93d2-5740-44ff-8a46-13bc2a5465a9",
+    "taskId": "413ba510-6df9-4086-b8d1-e9d6ed4724f6",
     "title": "I5: record the board keyboard move evidence",
     "moves": [
       "In progress",
@@ -64,7 +69,7 @@
     "completedCardInDoneColumn": true,
     "boardTaskCount": 19
   },
-  "captureCommit": "fa6d653a6b8a90070b0fc74fc734d5df798faab4",
+  "captureCommit": "4a8f182d2fa13cd0bf3154dbb6779d0d780027dd",
   "invalidTransition": {
     "attempted": "inbox -> in_progress",
     "offeredByControl": true,
@@ -76,22 +81,26 @@
     "Task status changed to done",
     "Status Changed",
     "·",
-    "Another device",
+    "This device",
     "·",
     "just now",
     "Task status changed to in_progress",
     "Status Changed",
     "·",
-    "Another device",
+    "This device",
     "·",
     "just now",
-    "Attachment task-a-evidence.md added to task dac48ec8-8d23-4e16-aa41-f44747c09ad8",
+    "Attachment task-a-evidence.md added to task cc98eac2-0731-4231-ad4e-783d923e810f",
     "Attachment Added",
     "·",
-    "Another device",
+    "This device",
     "·",
     "just now"
   ],
+  "activityOrigins": {
+    "labelsThisDevice": true,
+    "labelsAnotherDevice": false
+  },
   "milestones": {
     "names": [
       "M31 completion",
@@ -127,12 +136,11 @@
       "Open projects"
     ]
   },
-  "finishedAt": "2026-10-25T23:42:30.987Z",
+  "finishedAt": "2026-10-26T01:10:49.658Z",
   "dbPath": "/tmp/orbit-i5/vault/db.sqlite3",
   "backups": [
     "/home/xliu/dev/orbit/web/evidence/i5/orbit-i5-db.sqlite3",
-    "/home/xliu/dev/orbit/web/evidence/i5/orbit-i5-db.sqlite3-wal",
-    "/home/xliu/dev/orbit/web/evidence/i5/orbit-i5-db.sqlite3-shm"
+    "/home/xliu/dev/orbit/web/evidence/i5/orbit-i5-db.sqlite3-wal"
   ],
   "evidenceDir": "/home/xliu/dev/orbit/web/evidence/i5",
   "httpErrors": [
@@ -149,17 +157,18 @@
   ],
   "steps": [
     "Home rendered signed in, before any project existed",
-    "A fresh server had no Development workflow; the New project dialog listed only the default. Published it with the setup API, reloaded so the cached list refreshed, then chose it in the form.",
-    "Created project Orbit Development (4939d23d-4f9c-437c-bf21-4aca00321e4f) with the Development workflow through the dialog",
+    "A fresh server published no Development workflow; the New project dialog installed the bundled Development workflow and offered it without a reload.",
+    "Created project Orbit Development (3df24a14-de94-4b30-b888-c7a3adddd8aa) with the Development workflow through the dialog",
     "Created 18 tasks through the New task dialog",
     "Created milestones M31 completion and Reference-client ready through the milestones view",
     "Set priorities, labels, initial statuses, Markdown descriptions, acceptance criteria and dependencies in the drawer",
-    "Created one Feature work item (1ce5d4bf-d612-48c6-937b-90793d55ab05); declared fields: Priority*\n(required) / Medium / Cancel / Create work item / ",
+    "Sized “I5: write the dogfooding findings summary” at 60 minutes with a deadline through the drawer's Planning group",
+    "Created one Feature work item (c0de0976-fb26-4b6b-aa91-3bfc20752c06); declared fields: Title*\n(required) /  / Priority*\n(required) / Medium / Cancel / Create work item / ",
     "Created knowledge note i5-dogfooding.md through the vault dialog",
     "Linked the note from the task description and verified the rendered link",
     "Triaged “Triage: capture I5 friction before the gate” from Home → Inbox into the project, priority High",
-    "Authored 240 minutes; the server returned 3 “missing an estimate” rows and 0 slots; review disabled=true",
-    "Completed “I5: write the dogfooding findings summary” (dac48ec8-8d23-4e16-aa41-f44747c09ad8) through description, criteria, attachment, Ready → In progress → Done; activity visible",
+    "Sized task selected in the day plan; reviewed, approved and applied 1 block(s); the applied block survived a reload",
+    "Completed “I5: write the dogfooding findings summary” (cc98eac2-0731-4231-ad4e-783d923e810f) through description, criteria, attachment, Ready → In progress → Done; activity visible",
     "Restarted the server between tasks; the session, the completed task and its board column survived a reload",
     "Completed “I5: record the board keyboard move evidence” from the board with two keyboard moves (Ready → In progress → Done, m → arrow → Enter, 9 ArrowDown presses, no pointer used for the move)",
     "Reviewed milestone progress; settings honestly reported no newer published workflow version"

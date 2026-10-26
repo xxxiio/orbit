@@ -269,6 +269,27 @@ async function setStatus(drawer, statusLabel) {
   await checkNoAlert(drawer)
 }
 
+/** Author an estimate and deadline through the drawer's Planning group. */
+async function setPlanning(drawer, { estimate, deadline }) {
+  const input = drawer.getByLabel('Task estimate in minutes')
+  await input.fill(String(estimate))
+  await input.press('Tab')
+  await waitUntil(async () => Number(await input.inputValue()) === estimate, {
+    label: `the estimate to read back ${estimate}`,
+    timeout: 10_000,
+  })
+  const deadlineInput = drawer.getByLabel('Task deadline')
+  await deadlineInput.fill(deadline)
+  // A `datetime-local` input has internal segments; Tab moves between them, so
+  // blur explicitly to commit the whole value.
+  await deadlineInput.blur()
+  await waitUntil(async () => (await deadlineInput.inputValue()) === deadline, {
+    label: `the deadline to read back ${deadline}`,
+    timeout: 10_000,
+  })
+  await checkNoAlert(drawer)
+}
+
 async function setLabels(drawer, labels) {
   await drawer.getByRole('button', { name: 'Edit task labels' }).click()
   const input = drawer.locator('#task-labels')
@@ -292,7 +313,7 @@ async function setDescription(drawer, description, expectSave = true) {
   await waitUntil(
     async () => {
       const footer = await drawer.locator('footer').innerText()
-      return /Description saved\.|Changes save when you leave a field\./.test(footer) &&
+      return /Description saved\.|Edits are sent when you leave a field\./.test(footer) &&
         !/Saving…/.test(footer)
     },
     { label: 'the description to be saved' },
@@ -382,8 +403,8 @@ const MILESTONE_REF = 'Reference-client ready'
 
 /**
  * Real remaining work for M31, drawn from the gate logs and carry-forwards.
- * Estimates and deadlines are intentionally absent: the browser has no
- * control for `set_planning`, which is the headline finding of this run.
+ * The first task is sized and given a deadline through the drawer's Planning
+ * group during the enrichment pass, so the planning gate has real input.
  */
 const TASKS = [
   {
@@ -418,7 +439,7 @@ const TASKS = [
     labels: ['i5', 'planning', 'e2e'],
     milestone: MILESTONE_M31,
     description:
-      'Once estimate authoring exists, run the full capacity → day plan → window → review → approve → apply path in a browser and assert that the accepted blocks survive reload.\n\nThis task carries the current run’s blocked outcome so the gate does not mistake the planning surface for verified.',
+      'Run the full capacity → day plan → window → review → approve → apply path in a browser and assert that the accepted blocks survive reload.\n\nThis run records the applied receipt ids and re-reads the schedule after a reload.',
     dependsOn: 'I5: wire estimate and deadline editing into the task drawer',
   },
   {
@@ -438,7 +459,7 @@ const TASKS = [
     milestone: MILESTONE_M31,
     status: 'Planned',
     description:
-      'The guide still describes the I2 surface. Add work items, knowledge, attachments, agents, the planning gate and the honest gaps (no project rename, no workflow editing, no estimate authoring until fixed).',
+      'The guide still describes the I2 surface. Add work items, knowledge, attachments, agents, the planning gate and the honest gaps (no project rename, no workflow editing).',
     dependsOn: 'I6: refine the surfaces flagged by dogfooding',
     criteria: [
       'Every route reachable in the product is described',
@@ -649,31 +670,16 @@ async function run() {
   await page.goto(`${BASE}/projects`)
   await page.getByRole('heading', { level: 1, name: 'Projects' }).waitFor()
   await page.getByRole('button', { name: 'New project' }).first().click()
-  let createProject = await dialog()
+  const createProject = await dialog()
   await createProject.waitFor()
-  await createProject.getByText('No other workflows are installed on this server yet.').waitFor()
-  await shot('01b-new-project-no-workflows')
-  await createProject.getByRole('button', { name: 'Cancel' }).click()
-  await createProject.waitFor({ state: 'detached' })
-
-  // Setup: the bundled Development workflow must be published before a project
-  // can pin it. There is no browser control for this (issue I5-02), so this is
-  // the one setup write outside the UI; the choice itself is made in the form.
-  const installed = await api('/v1/authoritative/blueprints/install', {
-    method: 'POST',
-    body: { id: 'development' },
-  })
-  if (installed.status !== 200) throw new Error(`workflow install failed: ${installed.status} ${installed.text}`)
-  log(`published Development v${installed.body?.version}`)
-  steps.push('A fresh server had no Development workflow; the New project dialog listed only the default. Published it with the setup API, reloaded so the cached list refreshed, then chose it in the form.')
-
-  // The workflow list is cached for 60s and the dialog has no refresh control;
-  // a full reload is the only way a freshly published workflow becomes visible.
-  await page.reload()
-  await page.getByRole('heading', { level: 1, name: 'Projects' }).waitFor()
-  await page.getByRole('button', { name: 'New project' }).first().click()
-  createProject = await dialog()
-  await createProject.waitFor()
+  // A clean server publishes no non-default workflow. The dialog installs the
+  // bundled one itself (I5-02) and refreshes its own list — no page reload and
+  // no setup API call.
+  await createProject.getByText('Bundled workflows').waitFor()
+  await shot('01b-new-project-bundled')
+  await createProject.getByRole('button', { name: 'Install Development' }).click()
+  await page.getByRole('radio', { name: /Development/ }).waitFor({ timeout: 15_000 })
+  steps.push('A fresh server published no Development workflow; the New project dialog installed the bundled Development workflow and offered it without a reload.')
   await page.getByRole('radio', { name: /Development/ }).check()
   await createProject.getByLabel('Project name').fill('Orbit Development')
   await shot('02-new-project-development')
@@ -742,6 +748,15 @@ async function run() {
   log('enriched priorities, labels, statuses, descriptions, criteria, dependencies')
   steps.push('Set priorities, labels, initial statuses, Markdown descriptions, acceptance criteria and dependencies in the drawer')
 
+  // Size the task the planning stage will schedule (I5-01). The deadline is
+  // far enough out that the server does not judge it past.
+  {
+    const { drawer } = await openTaskFromBoard(TASKS[0].title)
+    await setPlanning(drawer, { estimate: 60, deadline: '2030-01-15T12:30' })
+    await closeTaskDrawer()
+    steps.push(`Sized “${TASKS[0].title}” at 60 minutes with a deadline through the drawer's Planning group`)
+  }
+
   // Milestone attachment happened in the enrichment pass; verify one drawer
   // reads it back.
   {
@@ -761,6 +776,8 @@ async function run() {
   await itemDialog.waitFor()
   await shot('06-new-work-item-fields')
   const featureFields = await itemDialog.locator('label, [role="combobox"], input, button').allInnerTexts()
+  // I5-03: a Feature is named by its title, not by its priority.
+  await itemDialog.getByLabel('Title').fill('Real feature titles in the work-item list')
   await page.getByRole('button', { name: 'Create work item', exact: true }).click()
   await itemDialog.waitFor({ state: 'detached', timeout: 15_000 })
   const items = await api(`/v1/authoritative/blueprints/items?project_id=${state.projectId}`)
@@ -781,7 +798,7 @@ async function run() {
   await noteDialog
     .getByLabel('Markdown')
     .fill(
-      `This note is filed from the real browser cycle for task \`${taskAId}\` (**${TASKS[0].title}**).\n\n## Headline\n\n- The browser cannot author an estimate or a deadline, so the planning review/apply gate is unreachable.\n- A bundled workflow has no install control; the project dialog only lists what is already published.\n- The Development Feature kind declares no title field.\n- Two writers fence on one revision, but the drawer offers no reload action.\n\nEvidence lives in \`web/evidence/i5/\`.\n`,
+      `This note is filed from the real browser cycle for task \`${taskAId}\` (**${TASKS[0].title}**).\n\n## Headline\n\n- The drawer authors an estimate and a deadline; the planning review/apply gate was reached and the applied block survived a reload.\n- The New project dialog installs the bundled Development workflow without a reload.\n- A Feature is named by its own title field.\n- A stale revision offers a reload in the drawer.\n\nEvidence lives in \`web/evidence/i5/\`.\n`,
     )
   await page.getByRole('button', { name: 'Create note', exact: true }).click()
   await noteDialog.waitFor({ state: 'detached', timeout: 15_000 })
@@ -860,9 +877,10 @@ async function run() {
   await capacity.fill('240')
   await page.getByRole('button', { name: 'Build day plan' }).click()
   await page.getByText('Capacity', { exact: true }).first().waitFor()
-  await page.getByText('Missing an estimate').first().waitFor({ timeout: 15_000 })
+  const plannedRow = page.getByRole('button', { name: TASKS[0].title, exact: true }).first()
+  await plannedRow.waitFor({ timeout: 15_000 })
   await shot('13-planning-day-plan')
-  const dayPlanRows = await page.getByText('Missing an estimate').count()
+  const dayPlanRows = await page.getByText('Selected', { exact: true }).count()
 
   const date = page.getByLabel('Schedule window date')
   const from = page.getByLabel('Schedule window start time')
@@ -874,34 +892,57 @@ async function run() {
   await from.fill('13:00')
   await to.fill('16:00')
   await waitUntil(
-    async () =>
-      (await page.getByText('The server placed nothing in this window').count()) > 0 ||
-      (await page.locator('[data-schedule-slot]').count()) > 0,
+    async () => (await page.locator('[data-schedule-slot]').count()) > 0,
     { label: 'the schedule plan for the chosen window' },
   )
   const review = page.getByRole('button', { name: 'Review this plan' })
+  const reviewWasDisabled = await review.isDisabled()
+  await review.click()
+  await page.locator('[data-plan-review]').waitFor({ timeout: 15_000 })
+  await page.getByRole('checkbox', { name: 'Approve the reviewed schedule' }).check()
+  await page.getByRole('button', { name: 'Apply approved plan' }).click()
+  const receipt = page.locator('[data-plan-receipt]')
+  await receipt.waitFor({ timeout: 15_000 })
+  const receiptBlocks = await receipt
+    .locator('[data-receipt-block]')
+    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-receipt-block') ?? ''))
+  const beforeReload = await api('/v1/authoritative/schedule')
+  const blocksBeforeReload = beforeReload.body?.blocks ?? []
+  await shot('14-planning-applied')
+
+  // A reload proves the block is stored, not held in React state.
+  await page.reload()
+  await page.getByRole('heading', { name: 'Plan Orbit Development' }).waitFor()
+  const afterReload = await api('/v1/authoritative/schedule')
+  const blocksAfterReload = afterReload.body?.blocks ?? []
+  const survivedReload = blocksAfterReload.some(
+    (block) => block.title === TASKS[0].title && receiptBlocks.includes(block.id),
+  )
   state.planning = {
     capacityMinutes: 240,
-    dayPlanRowsMissingEstimate: dayPlanRows,
+    dayPlanRowsSelected: dayPlanRows,
     window: { date: dateValue, from: '13:00', to: '16:00' },
     proposedSlots: await page.locator('[data-schedule-slot]').count(),
-    reviewDisabled: await review.isDisabled(),
-    reviewDisabledReason: await page
-      .getByText('There is nothing to review until the server places at least one task.')
-      .innerText()
-      .catch(() => null),
-    applied: false,
-    blockedBecause: 'No task can be given an estimate from the browser, so the server proposes no slots and the review/apply gate cannot be reached.',
+    reviewDisabledBeforeReview: reviewWasDisabled,
+    receiptBlocks,
+    blocksBeforeReload: blocksBeforeReload.length,
+    blocksAfterReload: blocksAfterReload.length,
+    applied: true,
+    survivedReload,
+    blockedBecause: null,
   }
-  await shot('14-planning-window')
+  if (!survivedReload) {
+    throw new Error('the applied schedule block did not survive the reload')
+  }
+  await shot('14b-planning-after-reload')
   steps.push(
-    `Authored 240 minutes; the server returned ${dayPlanRows} “missing an estimate” rows and 0 slots; review disabled=${state.planning.reviewDisabled}`,
+    `Sized task selected in the day plan; reviewed, approved and applied ${blocksAfterReload.length} block(s); the applied block survived a reload`,
   )
   log(`planning: ${JSON.stringify(state.planning)}`)
 
-  // ---- Step 10: Task A end to end, opened from the day plan -------------
-  await page.getByRole('button', { name: TASKS[0].title, exact: true }).first().click()
-  const taskA = await dialog()
+  // ---- Step 10: Task A end to end, opened from the board ----------------
+  const reopenedA = await openTaskFromBoard(TASKS[0].title)
+  const taskA = reopenedA.drawer
   await taskA.getByLabel('Task description').waitFor()
   await shot('15-task-a-opened')
 
@@ -947,15 +988,27 @@ async function run() {
     label: 'the stale-revision refusal',
   })
   const conflictAlert = (await taskA.getByRole('alert').first().innerText()).trim()
-  const conflictReloadControls = await taskA.getByRole('button', { name: /^(Reload|Refresh|Retry)$/ }).count()
+  const reloadControl = taskA.getByRole('button', { name: 'Reload this task and try again' })
+  const conflictReloadControls = await reloadControl.count()
+  if (conflictReloadControls !== 1) {
+    throw new Error('the stale-revision refusal did not offer the drawer reload action')
+  }
   state.conflict = {
     secondWriterStatus: secondWriter.status,
     refusal: conflictAlert,
     reloadControlsInDrawer: conflictReloadControls,
-    recoveredBy: 'full page reload, then reopen the drawer',
+    recoveredBy: 'drawer reload action',
   }
   await shot('17-task-a-stale-revision')
   log(`conflict: ${conflictAlert}`)
+
+  // Recover in place: the drawer reloads the task and snapshot, then the next
+  // edit is fenced on the revision the second writer left behind.
+  await reloadControl.click()
+  await waitUntil(
+    async () => (await taskA.getByLabel('Task description').inputValue()).includes('Second writer:'),
+    { label: 'the second writer text after the drawer reload', timeout: 15_000 },
+  )
 
   // Recover the way a person can: reload the workspace, reopen, continue. The
   // drawer keeps its `?task=` in the address, so reload in place would reopen
@@ -971,11 +1024,9 @@ async function run() {
     await closeTaskDrawer()
   }
 
-  // Reopen from the plan, then attach evidence and complete.
-  await page.goto(`${BASE}/projects/${state.projectId}/planning?capacity=240`)
-  await page.getByText('Missing an estimate').first().waitFor({ timeout: 15_000 })
-  await page.getByRole('button', { name: TASKS[0].title, exact: true }).first().click()
-  const taskAFinal = await dialog()
+  // Reopen from the board, then attach evidence and complete.
+  const reopenedFinal = await openTaskFromBoard(TASKS[0].title)
+  const taskAFinal = reopenedFinal.drawer
   await taskAFinal.getByLabel('Task description').waitFor()
   const attachmentPath = path.join(OUT, 'task-a-evidence.md')
   await writeFile(
@@ -997,6 +1048,13 @@ async function run() {
   await shot('19-task-a-complete-activity')
   const activity = await taskAFinal.getByRole('region', { name: 'Activity' }).innerText()
   state.taskActivity = activity.split('\n').filter((line) => line.trim().length > 0).slice(0, 20)
+  state.activityOrigins = {
+    labelsThisDevice: activity.includes('This device'),
+    labelsAnotherDevice: activity.includes('Another device'),
+  }
+  if (!state.activityOrigins.labelsThisDevice) {
+    throw new Error('this browser’s own writes were not labelled “This device”')
+  }
   await closeTaskDrawer()
   steps.push(`Completed “${TASKS[0].title}” (${state.taskIds[TASKS[0].title]}) through description, criteria, attachment, Ready → In progress → Done; activity visible`)
 

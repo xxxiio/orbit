@@ -109,6 +109,11 @@ test.describe('tasks', () => {
     await expect(drawer).toBeVisible()
     await expect(drawer.getByRole('button', { name: 'Edit task title' })).toContainText(task.title)
 
+    // The control says the workflow, not the list of every state, decides.
+    await expect(
+      drawer.getByText(/Only the next states this task's workflow allows are accepted/),
+    ).toBeVisible()
+
     const status = drawer.getByLabel('Task status')
     await choose(page, status, /^done$/i)
 
@@ -118,6 +123,8 @@ test.describe('tasks', () => {
     await expect(alerts.first()).toBeVisible()
     // The drawer shows the server's message verbatim, with no generic fallback.
     await expect(alerts.first()).toHaveText('invalid task status transition: inbox -> done')
+    // The footer never promises that edits save while a refusal is visible.
+    await expect(drawer.locator('footer')).not.toContainText('Edits are sent when you leave a field.')
     await expect(status).toContainText(/inbox/i)
     await expect(drawer.getByRole('button', { name: 'Edit task title' })).toContainText(task.title)
 

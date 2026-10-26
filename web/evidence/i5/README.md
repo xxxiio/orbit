@@ -81,42 +81,42 @@ The two completed tasks are the two that survive the server restart in
 | Frame | What it proves |
 | --- | --- |
 | `01-home-empty.png` | Signed in through the real form; Home before any project existed |
-| `01b-new-project-no-workflows.png` | On a fresh server the New project dialog offers only the default workflow and says no other workflow is installed. There is no install control (I5-02) |
+| `01b-new-project-bundled.png` | On a fresh server the New project dialog lists the bundled workflows with an Install action (I5-02) |
 | `02-new-project-development.png` | Development v2 selected in the dialog; the project is named Orbit Development |
 | `03-project-overview.png` | Project created with the Development workflow; status reads “Proposed” (I5-08) |
-| `04-new-task-dialog-copy.png` | The dialog promises “a deadline … from the task itself”, which the task surface does not offer (I5-01/I5-09) |
+| `04-new-task-dialog-copy.png` | The dialog promises an estimate and a deadline; both are authored from the drawer's Planning group (I5-01/I5-09) |
 | `05-milestones-created.png` | Both milestones created through the milestones view |
-| `06-new-work-item-fields.png` | The Development **Feature** kind declares only Priority. There is no title field (I5-03) |
-| `07-work-item-created.png` | The created Feature renders as “Medium”, because a choice field becomes the fallback title (I5-03) |
-| `08-knowledge-note.png` | Note created in the vault; the tree header says “1 notes” (I5-14) |
+| `06-new-work-item-fields.png` | The Development **Feature** kind declares a required Title before Priority (I5-03) |
+| `07-work-item-created.png` | The created Feature renders by its own title; priority is a secondary row, not the name (I5-03) |
+| `08-knowledge-note.png` | Note created in the vault; the tree header says “1 note” (I5-14) |
 | `09-task-with-note-link.png` | The note is linked from Task A in a rendered description. The link is absolute and opens a new tab; a relative `/knowledge/...` link is not rendered (I5-04) |
 | `10-home-with-project.png` | Home after the project has ready work |
 | `11-inbox-before-triage.png` | One unassigned task in the Inbox |
-| `11b-invalid-status-refused.png` | The drawer’s status control offers `In progress` from `Inbox`; the server refuses it (`invalid task status transition`) (I5-11) |
+| `11b-invalid-status-refused.png` | The drawer offers `In progress` from `Inbox`; the server refuses it and the refusal is quoted under the control, beside the hint that only workflow-allowed next states are accepted (I5-11) |
 | `12-inbox-after-triage.png` | The task left the Inbox after project + priority were set inline |
-| `13-planning-day-plan.png` | Authored capacity 240 min; the server returns `missing_estimate` dispositions and warns that actionable tasks have no duration estimate |
-| `14-planning-window.png` | A custom 13:00–16:00 window is chosen; the server proposes 0 slots and Review is disabled. The time inputs also clip the hour in this locale (I5-07/I5-10) |
-| `15-task-a-opened.png` | Task A opened from the day plan. Details has status, priority, project, milestone, labels — **no estimate, earliest start or deadline** (I5-01) |
+| `13-planning-day-plan.png` | Authored capacity 240 min; the sized task is selected at minute 0 (I5-01) |
+| `14-planning-applied.png` | A custom 13:00–16:00 window is reviewed, approved and applied; the receipt names the stored block ids |
+| `14b-planning-after-reload.png` | After a full reload the same block is still in the stored schedule (I5-01) |
+| `15-task-a-opened.png` | Task A opened after planning; its Planning group reads back the 60-minute estimate and deadline (I5-01) |
 | `16-task-a-description-criteria.png` | Description edited and both acceptance criteria checked |
-| `17-task-a-stale-revision.png` | A second writer moved the revision; the drawer’s next edit is refused with the server’s stale-revision reason and offers no reload action (I5-05) |
+| `17-task-a-stale-revision.png` | A second writer moved the revision; the drawer quotes the refusal and offers “Reload this task and try again” (I5-05) |
 | `18-task-a-attachment.png` | `task-a-evidence.md` uploaded through the drawer; the accepted row and Activity entry are visible |
-| `19-task-a-complete-activity.png` | Task A is Done; Activity records statuses, description updates, criteria, milestone and attachment. Every origin says “Another device” (I5-06), and summaries expose task/milestone ULIDs (I5-07) |
+| `19-task-a-complete-activity.png` | Task A is Done; Activity labels this browser's writes “This device”, a second writer stays “Another device” (I5-06); summaries still expose task/milestone ULIDs (I5-07) |
 | `20-after-restart-board-done.png` | The server was stopped and restarted between tasks; the session survived, and Task A is still in the Done column |
 | `21-board-task-b-before.png` | Task B focused on the Board with the keyboard |
 | `22-board-task-b-done.png` | Task B completed with `m → arrows → Enter`; Done now holds two tasks |
-| `23-milestone-progress.png` | Milestone progress reads 2/12 and 0/6 tasks done; Schedule is empty because no plan was applied |
+| `23-milestone-progress.png` | Milestone progress reads 2/12 and 0/6 tasks done; Schedule lists the block applied in step 9 |
 | `24-settings-no-upgrade.png` | Settings reports that Development v2 is the newest published version — no upgrade was available (honest none) |
 | `25-agents-no-jobs.png` | No agent job can be created without an executor/CLI; the browser says so instead of offering a launch (honest gap) |
 | `26-home-final.png` | Home at the end: 17 open, 2 done, 0 unassigned, readiness-driven sections |
 
 ## What this run does **not** prove
 
-- **Planning review/approve/apply.** It could not be reached. The browser has no control
-  for `set_planning`, so no task in this project can carry an estimate; the day plan
-  reports `missing_estimate`, the schedule plan has zero slots, and “Review this plan”
-  is disabled. No calendar block exists (`schedule_blocks = 0`). This is recorded as
-  I5-01 in `../../../.slim/deepwork/m31-web-app/i5-issues.md`; the script completes and
-  reports the blocked outcome rather than inventing an estimate behind the UI.
+- **A default-duration schedule.** The day plan's explicit default duration plans
+  unsized work, but a calendar block still needs a stored estimate; the schedule panel
+  says so and links to the task instead of leaving Review silently disabled.
+- **Finding I5-07 (activity summaries embed raw ids).** That is a Rust summary layer and
+  was not changed in this pass; the frame still shows the ids.
 - **An upgrade.** None was published beyond Development v2.
 - **An agent job.** Creating one needs an executor or CLI; the browser deliberately has
   no launch path. The gap is recorded rather than simulated.
@@ -132,12 +132,13 @@ node node_modules/vite/bin/vite.js build
 node tests/e2e/i5/dogfood.mjs
 ```
 
-The script deletes `/tmp/orbit-i5`, enrols `orbit-development`, publishes the bundled
-Development workflow through the setup API (the UI has no install control), and then
-does every content change through the browser. It refuses to start if port 8790 is in
+The script deletes `/tmp/orbit-i5`, enrols `orbit-development`, and does every content
+change through the browser, including installing the bundled Development workflow from
+the New project dialog. It refuses to start if port 8790 is in
 use. It writes this directory and the database backup on success. A failure writes
 `failure.png`, `failure-page.html` and `failure-state.json` here for diagnosis; a green
 run deletes those at the start and leaves the numbered frames above.
 
-Green means “the cycle completed and recorded its outcomes”, including the blocked
-planning gate — not that every gate passed.
+Green means the cycle completed and the recorded outcomes are true of the built app —
+including an applied schedule block that survives a reload. Findings the pass did not
+fix stay in the issue log.

@@ -123,6 +123,26 @@ mod tests {
     }
 
     #[test]
+    fn development_features_have_a_readable_title_field() {
+        let blueprint = bundled_blueprint("development").unwrap();
+        let feature = blueprint
+            .work_items
+            .iter()
+            .find(|kind| kind.id == "feature")
+            .expect("Development declares the feature kind");
+        let title = feature
+            .fields
+            .iter()
+            .find(|field| field.id == "title")
+            .expect("a Feature is named by a title, not by its priority");
+        assert_eq!(title.kind, crate::FieldKind::Text);
+        assert!(title.required, "the server must refuse a nameless Feature");
+        // Priority remains a declared choice; it is no longer the only field
+        // the card can show as a name.
+        assert!(feature.fields.iter().any(|field| field.id == "priority"));
+    }
+
+    #[test]
     fn unknown_package_is_not_an_implicit_installation() {
         assert!(bundled_blueprint("unknown").is_err());
     }

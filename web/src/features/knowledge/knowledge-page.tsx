@@ -36,7 +36,7 @@ import { PageHeader } from '@/components/ui/page-header'
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel'
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
-import { noteHref, notePathFromSplat } from './knowledge-model'
+import { noteCountLabel, noteHref, notePathFromSplat } from './knowledge-model'
 import { NewNoteDialog } from './note-create-dialog'
 import { NoteView } from './note-view'
 
@@ -270,7 +270,7 @@ export function KnowledgePage() {
         >
           <PanelHeader
             title="Vault"
-            description={tree.data ? `${countNotes(tree.data)} notes` : 'Reading folders…'}
+            description={tree.data ? noteCountLabel(countNotes(tree.data)) : 'Reading folders…'}
             actions={
               <Button
                 variant="quiet"
