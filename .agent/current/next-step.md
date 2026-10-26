@@ -64,13 +64,13 @@ must be derived from that usage rather than assumed.
 
 ## Acceptance criteria
 
-- [ ] NS-001: No primary route overflows horizontally at 390px and every route is keyboard-operable.
-- [ ] NS-002: The measured route timings are recorded and any fix cites the measurement it improved.
-- [ ] NS-003: `docs/web-app.md` documents only shipped behaviour and every command in it was run.
-- [ ] NS-004: `docs/guides/tui-redesign-spec.md` classifies each pattern with evidence from I5.
-- [ ] NS-005: The full Playwright suite and the dogfood script pass on a frozen commit.
-- [ ] NS-006: Milestone exit criteria are marked only where demonstrated; the rest stay open with reasons.
-- [ ] NS-007: `getdone-validate-project --project-root . --skills-root /home/xliu/dev/getdone` exits 0.
+- [x] NS-001: No primary route overflows horizontally at 390px and every route is keyboard-operable.
+- [x] NS-002: The measured route timings are recorded and any fix cites the measurement it improved.
+- [x] NS-003: `docs/web-app.md` documents only shipped behaviour and every command in it was run.
+- [x] NS-004: `docs/guides/tui-redesign-spec.md` classifies each pattern with evidence from I5.
+- [x] NS-005: The full Playwright suite and the dogfood script pass on a frozen commit.
+- [x] NS-006: Milestone exit criteria are marked only where demonstrated; the rest stay open with reasons.
+- [x] NS-007: `getdone-validate-project --project-root . --skills-root /home/xliu/dev/getdone` exits 0.
 
 ## Validation
 
