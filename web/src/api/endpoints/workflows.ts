@@ -8,6 +8,7 @@ import type {
   BlueprintUpgradeApplied,
   BlueprintUpgradePreview,
   BlueprintWorkItemRecord,
+  BundledWorkflowDescriptor,
   CreateWorkItemBody,
   WorkItemPropertiesBody,
   WorkItemTransitionBody,
@@ -109,12 +110,12 @@ export function applyUpgrade(body: ApplyUpgradeBody): Promise<BlueprintUpgradeAp
 }
 
 /**
- * Bundled, trusted workflow ids this server can install. The list is static in
- * the binary until an install publishes a version; it is not the same list as
- * `fetchWorkflowVersions` (which only reports published versions).
+ * Trusted workflows this server can install, with the revision this binary
+ * ships. Not the same list as `fetchWorkflowVersions` (published revisions):
+ * an id may be present here at a newer version than the store holds.
  */
-export function fetchBundledWorkflows(signal?: AbortSignal): Promise<string[]> {
-  return api.get<string[]>(`${BASE}/bundled`, { signal })
+export function fetchBundledWorkflows(signal?: AbortSignal): Promise<BundledWorkflowDescriptor[]> {
+  return api.get<BundledWorkflowDescriptor[]>(`${BASE}/bundled`, { signal })
 }
 
 /** Publish one bundled workflow. Idempotent: a second install returns the same version. */

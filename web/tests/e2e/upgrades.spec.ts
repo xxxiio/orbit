@@ -3,7 +3,7 @@
  * report, applied only with the previewed fingerprint and an explicit
  * confirmation, and leave an honest receipt.
  *
- * Each test publishes a derived Development v3 through the public API (never a
+ * Each test publishes a derived Development v4 through the public API (never a
  * direct database write) so the isolated workspace has a real target version.
  */
 import { expect, test } from './harness/fixtures'
@@ -86,9 +86,9 @@ test.describe('workflow upgrades', () => {
   }) => {
     const { server } = workspace
     const projectId = 'p-orbit-development'
-    const base = await readManifest(page, server, 'development', 2)
+    const base = await readManifest(page, server, 'development', 3)
     const target: Manifest = structuredClone(base)
-    target.version = 3
+    target.version = 4
     target.work_items[0].fields.push({
       id: 'notes',
       kind: { type: 'text' },
@@ -117,13 +117,13 @@ test.describe('workflow upgrades', () => {
 
     // The default target is the newest published version of the same id.
     await expect(page.getByText(/A newer Development version is published/)).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByText('Development v2', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText('Development v3', { exact: true }).first()).toBeVisible()
     await expect(page.getByText(/^fingerprint /)).toBeVisible()
     await expect(page.getByText('Release notes').first()).toBeVisible()
     await expect(page.getByText('notes').first()).toBeVisible()
 
     // Nothing is applied by opening the preview.
-    expect(await bindingVersion(page, server, projectId)).toBe(2)
+    expect(await bindingVersion(page, server, projectId)).toBe(3)
 
     await page.getByRole('button', { name: 'Upgrade workflow…' }).click()
     const dialog = page.getByRole('dialog')
@@ -140,9 +140,9 @@ test.describe('workflow upgrades', () => {
     const receipt = page.locator('[data-upgrade-receipt]')
     await expect(receipt).toBeVisible({ timeout: 20_000 })
     await expect(receipt).toContainText('Workflow change applied')
-    await expect(receipt).toContainText('v2 → Development v3')
+    await expect(receipt).toContainText('v3 → Development v4')
     await expect(receipt).toContainText('fingerprint')
-    expect(await bindingVersion(page, server, projectId)).toBe(3)
+    expect(await bindingVersion(page, server, projectId)).toBe(4)
 
     // The new view is a tab immediately, and it survives a reload.
     const releaseTab = page.getByRole('link', { name: /^Release notes/ })
@@ -162,9 +162,9 @@ test.describe('workflow upgrades', () => {
   }) => {
     const { server } = workspace
     const projectId = 'p-orbit-development'
-    const base = await readManifest(page, server, 'development', 2)
+    const base = await readManifest(page, server, 'development', 3)
     const target: Manifest = structuredClone(base)
-    target.version = 3
+    target.version = 4
     target.work_items[0].fields.push({
       id: 'notes',
       kind: { type: 'text' },
@@ -201,7 +201,7 @@ test.describe('workflow upgrades', () => {
     await expect(
       dialog.getByText(/The preview changed on the server, so this apply was refused/),
     ).toBeVisible({ timeout: 20_000 })
-    expect(await bindingVersion(page, server, projectId)).toBe(2)
+    expect(await bindingVersion(page, server, projectId)).toBe(3)
 
     // The refreshed preview no longer matches what was reviewed; reopening the
     // confirmation reviews the new fingerprint and the apply then succeeds.
@@ -215,7 +215,7 @@ test.describe('workflow upgrades', () => {
     await retry.getByRole('button', { name: 'Apply upgrade' }).click()
 
     await expect(page.locator('[data-upgrade-receipt]')).toBeVisible({ timeout: 20_000 })
-    expect(await bindingVersion(page, server, projectId)).toBe(3)
+    expect(await bindingVersion(page, server, projectId)).toBe(4)
   })
 
   test('a blocked preview disables apply and lists every blocker with its subjects', async ({
@@ -224,9 +224,9 @@ test.describe('workflow upgrades', () => {
   }) => {
     const { server } = workspace
     const projectId = 'p-orbit-development'
-    const base = await readManifest(page, server, 'development', 2)
+    const base = await readManifest(page, server, 'development', 3)
     const target: Manifest = structuredClone(base)
-    target.version = 3
+    target.version = 4
     // Every seeded feature stores `priority`; removing the field is impossible
     // without a migration plan, and the server says so per item.
     target.work_items[0].fields = target.work_items[0].fields.filter(
@@ -253,11 +253,11 @@ test.describe('workflow upgrades', () => {
     await expect(
       page.getByText(/Apply is disabled until every blocker above is resolved/),
     ).toBeVisible()
-    expect(await bindingVersion(page, server, projectId)).toBe(2)
+    expect(await bindingVersion(page, server, projectId)).toBe(3)
 
     // A reload keeps the project on its pinned version: a preview is a read.
     await page.reload()
     await expect(page.locator('[data-upgrade-apply]')).toBeDisabled()
-    expect(await bindingVersion(page, server, projectId)).toBe(2)
+    expect(await bindingVersion(page, server, projectId)).toBe(3)
   })
 })

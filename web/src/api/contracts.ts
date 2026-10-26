@@ -555,6 +555,23 @@ export interface BlueprintBindingRecord {
   version: number
 }
 
+/**
+ * One trusted workflow this server can install. `version` is what an install
+ * publishes; the UI compares it with the newest published version to offer an
+ * upgrade instead of hiding an id that already exists at an older revision.
+ */
+export interface BundledWorkflowDescriptor {
+  id: string
+  version: number
+  name: string
+}
+
+/** The domain's accepted status edges from one canonical status. */
+export interface TaskTransitionsRecord {
+  status: TaskStatus
+  next: TaskStatus[]
+}
+
 export interface BlueprintWorkItemRecord {
   id: string
   project_id: string

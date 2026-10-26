@@ -38,14 +38,14 @@ test.describe('bundled workflow install', () => {
     await expect(page).toHaveURL(/\/projects\/[^/]+$/, { timeout: 20_000 })
     const projectId = new URL(page.url()).pathname.split('/').filter(Boolean)[1]
     await expect(page.getByRole('heading', { level: 1, name: 'Installed from the dialog' })).toBeVisible()
-    await expect(page.getByText('Development v2', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText('Development v3', { exact: true }).first()).toBeVisible()
 
     // The server, not the badge alone, holds the binding.
     const binding = await page.request.get(
       `${server.base}/v1/authoritative/blueprints/binding?project_id=${projectId}`,
     )
     expect(binding.status()).toBe(200)
-    expect(await binding.json()).toMatchObject({ blueprint_id: 'development', version: 2 })
+    expect(await binding.json()).toMatchObject({ blueprint_id: 'development', version: 3 })
 
     // The same explicit install control is in project settings, where the rest
     // of the pinned workflow is managed.

@@ -27,12 +27,14 @@ import {
   statusDots,
   statusLabel,
   statusOptions,
+  statusOptionsFor,
   statusTones,
   TaskControlError,
   TaskRowMeta,
   useTaskCommandState,
   useTaskDrawer,
 } from '@/features/tasks'
+import { useTaskTransitionEdges } from '@/hooks'
 import type { ViewRendererProps } from '../view-types'
 import {
   actionableFilterNote,
@@ -139,9 +141,23 @@ function BoardSurface({
   }, [tasks, filter, readinessFilter, component.limit, sortDescriptor])
 
   const columns = useMemo(() => buildColumns(boardTasks), [boardTasks])
+  // The Move menu offers only the edges the domain accepts from each card's
+  // stored status. A failed read falls back to every status; the server still
+  // refuses and the card quotes it.
+  const transitions = useTaskTransitionEdges(columns.map((column) => column.status))
   const keyboard = useBoardKeyboard<Task>(
     columns.map((column) => ({ key: column.status, rows: column.tasks })),
-    { onMove: (task) => setMoveFor(task.id) },
+    {
+      onMove: (task) => {
+        const options = statusOptionsFor(
+          task.status,
+          transitions.edges.get(task.status) ?? null,
+        ).filter((option) => option.value !== task.status)
+        // A terminal card has no legal target: do not open an empty menu.
+        if (options.length === 0 && !transitions.failed) return
+        setMoveFor(task.id)
+      },
+    },
   )
   const cardRefs = keyboard.cardRefs
 
@@ -204,6 +220,11 @@ function BoardSurface({
                     column.tasks.map((task) => {
                       const isPending = pending?.taskId === task.id
                       const rowError = errorTaskId === task.id ? error : null
+                      const moveOptions = statusOptionsFor(
+                        task.status,
+                        transitions.edges.get(task.status) ?? null,
+                      ).filter((option) => option.value !== task.status)
+                      const canMove = moveOptions.length > 0 || transitions.failed
                       return (
                         <li key={task.id}>
                           <BoardCard
@@ -244,7 +265,7 @@ function BoardSurface({
                                     variant="quiet"
                                     size="sm"
                                     className="h-6 px-1 text-2xs"
-                                    disabled={command.isPending}
+                                    disabled={command.isPending || !canMove}
                                     aria-label={`Move ${task.title} to another status`}
                                   >
                                     Move to…
@@ -254,11 +275,12 @@ function BoardSurface({
                                   <DropdownMenuLabel>Move to…</DropdownMenuLabel>
                                   <p className="px-2.5 pb-1 text-2xs leading-4 text-ink-faint">
                                     The server checks every move. Its answer is shown here.
+                                    {transitions.failed
+                                      ? ' The allowed moves could not be read, so every status is offered.'
+                                      : null}
                                   </p>
                                   <DropdownMenuSeparator />
-                                  {statusOptions
-                                    .filter((option) => option.value !== task.status)
-                                    .map((option) => (
+                                  {moveOptions.map((option) => (
                                       <DropdownMenuItem
                                         key={option.value}
                                         onSelect={() => {

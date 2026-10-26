@@ -317,6 +317,12 @@ impl AuthoritativeHost {
                     target_version,
                 )?;
             }
+            // A required field can only be added to a live kind when it has a
+            // default (the preview refuses otherwise). Fill that default into
+            // live items inside the same savepoint, so the project is valid
+            // under its new schema at once instead of waiting for the next
+            // unrelated edit. Nothing is overwritten and no item is created.
+            self.backfill_target_defaults(project_id, &inputs.target)?;
             let binding = self
                 .authority
                 .conn
@@ -346,6 +352,62 @@ impl AuthoritativeHost {
                 Err(error)
             }
         }
+    }
+
+    /// Fill target-schema defaults into live items that do not store a value
+    /// for a defaulted field. The item is re-normalized against the target, so
+    /// the upgrade can never leave an item the new schema would reject on its
+    /// next edit. Each changed item advances its own revision, which is visible
+    /// to optimistic-concurrency clients as a schema migration.
+    fn backfill_target_defaults(
+        &mut self,
+        project_id: &str,
+        target: &Blueprint,
+    ) -> Result<(), RepositoryError> {
+        let items = self
+            .authority
+            .conn
+            .blueprint_work_items_for_project(project_id)?;
+        for item in items {
+            let Some(kind) = target.work_items.iter().find(|kind| kind.id == item.kind) else {
+                continue;
+            };
+            let has_default_to_fill = kind
+                .fields
+                .iter()
+                .any(|field| field.default.is_some() && !item.properties.contains_key(&field.id));
+            if !has_default_to_fill {
+                continue;
+            }
+            let mut properties = item.properties.clone();
+            for field in &kind.fields {
+                if let Some(default) = &field.default
+                    && !properties.contains_key(&field.id)
+                {
+                    properties.insert(field.id.clone(), default.clone());
+                }
+            }
+            let properties = target
+                .normalize_properties(&item.kind, properties)
+                .map_err(|error| RepositoryError::Other(error.to_string()))?;
+            let serialized = serde_json::to_string(&properties)
+                .map_err(|_| RepositoryError::Other("invalid work-item properties".into()))?;
+            let revision = i64::try_from(item.revision)
+                .map_err(|_| RepositoryError::Other("work-item revision out of range".into()))?;
+            let updated = self
+                .authority
+                .conn
+                .execute(
+                    "UPDATE orbit_blueprint_work_items SET properties_json=?1, revision=revision+1 \
+                     WHERE id=?2 AND project_id=?3 AND revision=?4",
+                    rusqlite::params![serialized, item.id, project_id, revision],
+                )
+                .map_err(upgrade_error)?;
+            if updated != 1 {
+                return Err(RepositoryError::Conflict);
+            }
+        }
+        Ok(())
     }
 
     fn preview_inputs(
@@ -839,7 +901,7 @@ fn kind_diff(
                     warnings.push(notice(
                         codes::FIELD_ADDED,
                         format!(
-                            "required field {field_id} is added to {kind_id}; its default is applied on the next item edit"
+                            "required field {field_id} is added to {kind_id}; its default is applied to live items when the upgrade is applied"
                         ),
                         vec![kind_id.to_owned(), field_id.to_owned()],
                     ));

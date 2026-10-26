@@ -14,7 +14,7 @@ pub struct BundledBlueprintDescriptor {
 pub const BUNDLED_BLUEPRINTS: &[BundledBlueprintDescriptor] = &[
     BundledBlueprintDescriptor {
         id: "development",
-        version: 2,
+        version: 3,
         name: "Development",
         description: "Software-development work items",
     },
@@ -136,7 +136,15 @@ mod tests {
             .find(|field| field.id == "title")
             .expect("a Feature is named by a title, not by its priority");
         assert_eq!(title.kind, crate::FieldKind::Text);
-        assert!(title.required, "the server must refuse a nameless Feature");
+        assert!(
+            title.required,
+            "the field stays required so an edit cannot clear the name"
+        );
+        assert_eq!(
+            title.default,
+            Some(serde_json::json!("Untitled feature")),
+            "a required field needs a default so live v2 items can upgrade to v3"
+        );
         // Priority remains a declared choice; it is no longer the only field
         // the card can show as a name.
         assert!(feature.fields.iter().any(|field| field.id == "priority"));

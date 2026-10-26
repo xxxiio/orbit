@@ -2190,11 +2190,11 @@ mod m19_retired_sql_knowledge_contract {
             .unwrap();
         assert_eq!(
             store.latest_blueprint_version("development").unwrap(),
-            Some(2)
+            Some(development.version)
         );
         assert_eq!(store.latest_blueprint_version("missing").unwrap(), None);
         store
-            .replace_project_blueprint_binding(project.id(), "development", 2)
+            .replace_project_blueprint_binding(project.id(), "development", development.version)
             .unwrap();
         let binding = store
             .project_blueprint_binding("workflow-project")
@@ -2202,7 +2202,7 @@ mod m19_retired_sql_knowledge_contract {
             .unwrap();
         assert_eq!(
             (binding.blueprint_id.as_str(), binding.version),
-            ("development", 2)
+            ("development", development.version)
         );
         // Unknown manifest is rejected and leaves the previous binding intact.
         assert!(
@@ -2216,7 +2216,7 @@ mod m19_retired_sql_knowledge_contract {
             .unwrap();
         assert_eq!(
             (binding.blueprint_id.as_str(), binding.version),
-            ("development", 2)
+            ("development", development.version)
         );
     }
 }

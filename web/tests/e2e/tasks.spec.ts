@@ -94,12 +94,9 @@ test.describe('tasks', () => {
     await expect(reopened.getByLabel('Task status')).toContainText(/planned/i)
   })
 
-  test('a rejected status transition surfaces the server error and keeps the old status', async ({
-    page,
-    workspace,
-  }) => {
+  test('the drawer offers only the status edges the domain accepts', async ({ page, workspace }) => {
     const { server, fixture } = workspace
-    // `inbox → done` is not a legal transition: only the server may say so.
+    // `inbox → done` is not a legal transition; the control must not offer it.
     const taskId = fixture.ids.b.inbox[0]
     const task = fixture.tasks.find((candidate) => candidate.id === taskId)!
 
@@ -109,9 +106,41 @@ test.describe('tasks', () => {
     await expect(drawer).toBeVisible()
     await expect(drawer.getByRole('button', { name: 'Edit task title' })).toContainText(task.title)
 
-    // The control says the workflow, not the list of every state, decides.
     await expect(
-      drawer.getByText(/Only the next states this task's workflow allows are accepted/),
+      drawer.getByText(/Only the next states this task's workflow allows are offered/),
+    ).toBeVisible()
+
+    const status = drawer.getByLabel('Task status')
+    await status.click()
+    // The server's edge set for Inbox, and nothing else.
+    await expect(page.getByRole('option', { name: 'Planned', exact: true })).toBeVisible()
+    await expect(page.getByRole('option', { name: 'Done', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('option', { name: 'In progress', exact: true })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+
+    // Nothing changed by opening the control.
+    await expect(status).toContainText(/inbox/i)
+    await page.reload()
+    await expect(page.getByRole('dialog').getByLabel('Task status')).toContainText(/inbox/i)
+  })
+
+  test('a failed edge read falls back to every status and the server still refuses', async ({
+    page,
+    workspace,
+  }) => {
+    const { server, fixture } = workspace
+    const taskId = fixture.ids.b.inbox[0]
+
+    // The read is unavailable: the drawer must say so and keep the old
+    // offer-everything behaviour rather than inventing an edge set.
+    await page.route('**/authoritative/task-transitions*', (route) => route.abort())
+
+    await signInViaApi(page, server)
+    await page.goto(`${server.base}/inbox?task=${taskId}`)
+    const drawer = page.getByRole('dialog')
+    await expect(drawer).toBeVisible()
+    await expect(
+      drawer.getByText(/The allowed moves could not be read, so every status is offered/),
     ).toBeVisible()
 
     const status = drawer.getByLabel('Task status')
@@ -121,16 +150,13 @@ test.describe('tasks', () => {
     // drawer quotes the server's exact reason, not a generic "invalid".
     const alerts = drawer.getByRole('alert')
     await expect(alerts.first()).toBeVisible()
-    // The drawer shows the server's message verbatim, with no generic fallback.
     await expect(alerts.first()).toHaveText('invalid task status transition: inbox -> done')
     // The footer never promises that edits save while a refusal is visible.
     await expect(drawer.locator('footer')).not.toContainText('Edits are sent when you leave a field.')
     await expect(status).toContainText(/inbox/i)
-    await expect(drawer.getByRole('button', { name: 'Edit task title' })).toContainText(task.title)
-
-    // And the server still agrees after a refetch.
-    await page.reload()
-    await expect(page.getByRole('dialog').getByLabel('Task status')).toContainText(/inbox/i)
+    await expect(drawer.getByRole('button', { name: 'Edit task title' })).toContainText(
+      fixture.tasks.find((candidate) => candidate.id === taskId)!.title,
+    )
   })
 
   test('bulk status change applies to every selected task and survives a reload', async ({

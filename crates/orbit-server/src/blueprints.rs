@@ -153,19 +153,30 @@ pub(super) async fn install(
             .map_err(repo_error)?,
     ))
 }
+#[derive(Serialize)]
+pub(super) struct BundledWorkflow {
+    id: &'static str,
+    version: u32,
+    name: &'static str,
+}
 pub(super) async fn bundled(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<Vec<BundledWorkflow>>, ApiError> {
     device(&state, &headers)?;
-    // Serialize descriptions by public IDs without exposing internal provider types.
-    Ok(Json(serde_json::json!(
+    // Serialize only public identity: version-aware install UI must not guess
+    // which revision this binary ships.
+    Ok(Json(
         locked(&state)?
             .bundled_project_blueprints()
             .iter()
-            .map(|b| b.id)
-            .collect::<Vec<_>>()
-    )))
+            .map(|b| BundledWorkflow {
+                id: b.id,
+                version: b.version,
+                name: b.name,
+            })
+            .collect(),
+    ))
 }
 pub(super) async fn bind(
     State(state): State<AppState>,

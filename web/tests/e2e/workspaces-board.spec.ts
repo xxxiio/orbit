@@ -33,7 +33,9 @@ test.describe('board', () => {
     await page.keyboard.press('m')
     const menu = page.getByRole('menu')
     await expect(menu).toBeVisible()
-    await expect(menu.getByRole('menuitem')).toHaveCount(9)
+    // Inbox's domain edges only: planned, ready, deferred, cancelled.
+    await expect(menu.getByRole('menuitem')).toHaveCount(4)
+    await expect(menu.getByRole('menuitem', { name: 'Done', exact: true })).toHaveCount(0)
     await page.getByRole('menuitem', { name: 'Planned', exact: true }).click()
 
     // The card is in the new column because the server moved it, not because
@@ -49,7 +51,7 @@ test.describe('board', () => {
     ).toBeVisible()
   })
 
-  test('a rejected move keeps the card where it was and quotes the server', async ({ page, workspace }) => {
+  test('the Move menu does not offer an edge the domain refuses', async ({ page, workspace }) => {
     const { server, fixture } = workspace
     const task = fixture.tasks.find(
       (candidate) => candidate.projectId === 'p-basic' && candidate.status === 'inbox',
@@ -61,24 +63,18 @@ test.describe('board', () => {
     await inbox
       .getByRole('button', { name: `Move ${task!.title} to another status` })
       .click()
-    // `inbox → done` is not a legal transition; only the server may say so.
-    await page.getByRole('menuitem', { name: 'Done', exact: true }).click()
 
-    const alert = inbox.getByRole('alert')
-    await expect(alert).toBeVisible()
-    // The client frames the refusal; the quoted reason is exactly what the API
-    // sent, with no generic "invalid" fallback.
-    await expect(alert).toHaveText(
-      'The server did not allow that status change from Inbox. invalid task status transition: inbox -> done',
-    )
+    // `inbox → done` is refused by the domain, so the menu never offers it and
+    // there is no client-side rejection round trip to make.
+    const menu = page.getByRole('menu')
+    await expect(menu).toBeVisible()
+    await expect(menu.getByRole('menuitem', { name: 'Done', exact: true })).toHaveCount(0)
+    await expect(menu.getByRole('menuitem', { name: 'In progress', exact: true })).toHaveCount(0)
+    await expect(menu.getByRole('menuitem', { name: 'Planned', exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
 
     // The card never moved and nothing was written.
     await expect(inbox.getByRole('button', { name: task!.title, exact: true })).toBeVisible()
     expect((await taskDetail(page, server, task!.id)).status).toBe('inbox')
-
-    await page.reload()
-    await expect(
-      boardColumn(page, /^Inbox column/).getByRole('button', { name: task!.title, exact: true }),
-    ).toBeVisible()
   })
 })

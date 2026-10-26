@@ -687,7 +687,7 @@ async function run() {
   await page.waitForURL(/\/projects\/[^/]+$/, { timeout: 20_000 })
   state.projectId = new URL(page.url()).pathname.split('/').filter(Boolean)[1]
   await page.getByRole('heading', { level: 1, name: 'Orbit Development' }).waitFor()
-  await page.getByText('Development v2', { exact: true }).first().waitFor()
+  await page.getByText('Development v3', { exact: true }).first().waitFor()
   await shot('03-project-overview')
   log(`project ${state.projectId}`)
   steps.push(`Created project Orbit Development (${state.projectId}) with the Development workflow through the dialog`)
@@ -836,23 +836,24 @@ async function run() {
   await page.getByRole('heading', { level: 1, name: 'Inbox' }).waitFor()
   await shot('11-inbox-before-triage')
 
-  // The drawer offers every status, including edges the domain refuses. Record
-  // the refusal rather than hiding the friction: this is Inbox -> In progress.
+  // The drawer offers only the domain's edges. Inbox cannot go straight to In
+  // progress, so the control no longer offers it; record the proof.
   {
     await page.getByRole('button', { name: INBOX_TRIAGE_TITLE, exact: true }).click()
-    const refusedDrawer = await dialog()
-    await refusedDrawer.getByLabel('Task description').waitFor()
-    await refusedDrawer.getByLabel('Task status').click()
-    await page.getByRole('option', { name: 'In progress', exact: true }).click()
-    await waitUntil(async () => (await refusedDrawer.getByRole('alert').count()) > 0, {
-      label: 'the invalid status transition refusal',
+    const statusDrawer = await dialog()
+    await statusDrawer.getByLabel('Task description').waitFor()
+    await statusDrawer.getByLabel('Task status').click()
+    await waitUntil(async () => (await page.getByRole('option').count()) > 0, {
+      label: 'the status edge options',
     })
+    const offered = (await page.getByRole('option').allInnerTexts()).map((text) => text.trim())
+    await page.keyboard.press('Escape')
     state.invalidTransition = {
       attempted: 'inbox -> in_progress',
-      offeredByControl: true,
-      refusal: (await refusedDrawer.getByRole('alert').first().innerText()).trim(),
+      offeredByControl: offered.includes('In progress'),
+      offered,
     }
-    await shot('11b-invalid-status-refused')
+    await shot('11b-status-edges')
     await closeTaskDrawer()
   }
 

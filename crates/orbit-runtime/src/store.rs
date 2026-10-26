@@ -824,6 +824,9 @@ impl AuthorityStore {
                 crate::default_workflow::ensure_basic_workflow(&tx, &record.id)?;
             }
             Some(workflow_id) => {
+                // Bind the revision the registry reads back, not the bundled
+                // descriptor constant: a stale or conflicting publication must
+                // never be disguised as the manifest the bundle declares.
                 let version =
                     match crate::default_workflow::install_bundled_workflow(&tx, workflow_id) {
                         Ok(blueprint) => blueprint.version,

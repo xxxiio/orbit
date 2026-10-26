@@ -2160,6 +2160,41 @@ async fn authoritative_project_command(
         store.project_command(&actor, command).map_err(map_error)?,
     ))
 }
+#[derive(Deserialize)]
+struct TaskTransitionsQuery {
+    status: String,
+}
+#[derive(Serialize)]
+struct TaskTransitionsResponse {
+    status: &'static str,
+    next: Vec<&'static str>,
+}
+/// The status edges the domain actually accepts from one canonical status.
+/// This is a read of [`orbit_domain::TaskStatus::can_transition_to`], not a
+/// second transition table: the client offers exactly what the write path
+/// would accept, and a failure to read it falls back to the older
+/// offer-everything behaviour.
+async fn authoritative_task_transitions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<TaskTransitionsQuery>,
+) -> Result<Json<TaskTransitionsResponse>, ApiError> {
+    device(&state, &headers)?;
+    let requested = q.status.trim().to_ascii_lowercase();
+    let current = orbit_domain::TaskStatus::ALL
+        .into_iter()
+        .find(|status| status.as_str() == requested)
+        .ok_or_else(|| error(StatusCode::BAD_REQUEST, "unknown task status"))?;
+    let next = orbit_domain::TaskStatus::ALL
+        .into_iter()
+        .filter(|next| *next != current && current.can_transition_to(*next))
+        .map(|next| next.as_str())
+        .collect();
+    Ok(Json(TaskTransitionsResponse {
+        status: current.as_str(),
+        next,
+    }))
+}
 /// File-backed tree for folder navigation; kept separate from transitional SQL note bodies.
 async fn authoritative_knowledge_tree(
     State(state): State<AppState>,
@@ -3327,6 +3362,10 @@ fn routes(state: AppState) -> Router {
         )
         .route("/v1/authoritative/projects", get(authoritative_projects))
         .route(
+            "/v1/authoritative/task-transitions",
+            get(authoritative_task_transitions),
+        )
+        .route(
             "/v1/authoritative/project-commands",
             post(authoritative_project_command),
         )
@@ -4000,6 +4039,67 @@ mod tests {
             "{}",
             body_of(&raw)
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn task_transitions_read_returns_the_domain_edges_for_every_status() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        for status in orbit_domain::TaskStatus::ALL {
+            let (code, raw) = get(
+                &address,
+                &format!(
+                    "/v1/authoritative/task-transitions?status={}",
+                    status.as_str()
+                ),
+                &bearer,
+            );
+            assert_eq!(code, 200, "{}", body_of(&raw));
+            let body: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+            assert_eq!(body["status"], status.as_str());
+            let next: Vec<&str> = body["next"]
+                .as_array()
+                .expect("next is an array")
+                .iter()
+                .map(|value| value.as_str().expect("status is a string"))
+                .collect();
+            // The read is exactly the write path's rule, for every pair.
+            for other in orbit_domain::TaskStatus::ALL {
+                let allowed = other != status && status.can_transition_to(other);
+                assert_eq!(
+                    next.contains(&other.as_str()),
+                    allowed,
+                    "{} -> {} disagree with the domain",
+                    status.as_str(),
+                    other.as_str()
+                );
+            }
+            assert!(!next.contains(&status.as_str()), "self is not an edge");
+        }
+        // Terminal states offer nothing.
+        for status in [
+            orbit_domain::TaskStatus::Done,
+            orbit_domain::TaskStatus::Cancelled,
+        ] {
+            let (_, raw) = get(
+                &address,
+                &format!(
+                    "/v1/authoritative/task-transitions?status={}",
+                    status.as_str()
+                ),
+                &bearer,
+            );
+            let body: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+            assert_eq!(body["next"].as_array().map(Vec::len), Some(0));
+        }
+        let (code, _) = get(
+            &address,
+            "/v1/authoritative/task-transitions?status=not-a-status",
+            &bearer,
+        );
+        assert_eq!(code, 400);
     }
 
     #[test]

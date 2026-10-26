@@ -58,22 +58,11 @@ pub fn allowed_task_statuses(status: &str) -> Vec<String> {
     let Ok(current) = crate::facade_conversions::parse_task_status(status) else {
         return Vec::new();
     };
-    [
-        orbit_domain::TaskStatus::Inbox,
-        orbit_domain::TaskStatus::Planned,
-        orbit_domain::TaskStatus::Ready,
-        orbit_domain::TaskStatus::InProgress,
-        orbit_domain::TaskStatus::Waiting,
-        orbit_domain::TaskStatus::Blocked,
-        orbit_domain::TaskStatus::Review,
-        orbit_domain::TaskStatus::Deferred,
-        orbit_domain::TaskStatus::Done,
-        orbit_domain::TaskStatus::Cancelled,
-    ]
-    .into_iter()
-    .filter(|next| current.can_transition_to(*next) && *next != current)
-    .map(|next| next.as_str().to_owned())
-    .collect()
+    orbit_domain::TaskStatus::ALL
+        .into_iter()
+        .filter(|next| current.can_transition_to(*next) && *next != current)
+        .map(|next| next.as_str().to_owned())
+        .collect()
 }
 
 fn client_error(error: ClientError) -> ViewDataError {

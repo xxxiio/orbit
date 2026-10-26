@@ -46,6 +46,7 @@ export {
   priorityOptions,
   prioritySelectOptions,
   statusOptions,
+  statusOptionsFor,
   TaskControlError,
   TaskPriorityControl,
   TaskProjectControl,

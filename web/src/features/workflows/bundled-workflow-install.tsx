@@ -1,23 +1,56 @@
 /**
- * Install a workflow the server ships with.
+ * Install or update a workflow the server ships with.
  *
  * A clean server has published no non-default workflow, so the only way a
  * person can choose Development (or any other bundled workflow) is to publish
- * it first. This control lists the server's bundled ids that are not installed
- * yet and installs one on request. The install mutation invalidates the
+ * it first. This control compares the **version** the store holds with the
+ * version this binary ships: an id that exists at an older revision is offered
+ * again as an update, because a published version is immutable and the bundle
+ * may have gained fields or views. The install mutation invalidates the
  * available-workflow read, so the choice appears without a page reload.
  */
 import { useMemo, useState } from 'react'
 import { LoaderIcon } from '@/components/ui/icons'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
-import { humanizeIdentifier } from '@/lib/humanize'
 import {
   useAvailableWorkflows,
   useBundledWorkflows,
   useInstallBundledWorkflow,
   userMessage,
+  type AvailableWorkflow,
 } from '@/hooks'
+import type { BundledWorkflowDescriptor } from '@/api/contracts'
+
+export interface InstallableBundledWorkflow {
+  workflow: BundledWorkflowDescriptor
+  /** The revision the store holds, or `null` when the id is not published. */
+  storedVersion: number | null
+}
+
+/**
+ * The bundled workflows this server still needs to publish. An id is only
+ * hidden when the store already holds the same or a newer revision; an older
+ * stored version is offered as an update because published revisions are
+ * immutable and the bundle may have gained fields or views.
+ */
+export function installableBundledWorkflows(
+  bundled: readonly BundledWorkflowDescriptor[] | undefined,
+  available: readonly AvailableWorkflow[] | undefined,
+): InstallableBundledWorkflow[] {
+  const stored = new Map<string, number>()
+  for (const workflow of available ?? []) stored.set(workflow.id, workflow.version)
+  return (bundled ?? [])
+    .map((workflow) => ({
+      workflow,
+      storedVersion: stored.get(workflow.id) ?? null,
+    }))
+    .filter(
+      ({ workflow, storedVersion }) =>
+        storedVersion === null || storedVersion < workflow.version,
+    )
+    .sort((left, right) => left.workflow.name.localeCompare(right.workflow.name))
+}
 
 export function BundledWorkflowInstall({ compact = false }: { compact?: boolean }) {
   const available = useAvailableWorkflows()
@@ -26,13 +59,9 @@ export function BundledWorkflowInstall({ compact = false }: { compact?: boolean 
   const { toast } = useToast()
   const [installing, setInstalling] = useState<string | null>(null)
 
-  const installed = useMemo(
-    () => new Set((available.data ?? []).map((workflow) => workflow.id)),
-    [available.data],
-  )
   const candidates = useMemo(
-    () => (bundled.data ?? []).filter((id) => !installed.has(id)).sort((a, b) => a.localeCompare(b)),
-    [bundled.data, installed],
+    () => installableBundledWorkflows(bundled.data, available.data),
+    [bundled.data, available.data],
   )
 
   const run = async (id: string) => {
@@ -82,31 +111,43 @@ export function BundledWorkflowInstall({ compact = false }: { compact?: boolean 
       ) : (
         <>
           <p className="text-xs leading-5 text-ink-muted">
-            These ship with the server but are not installed yet. Install one to make it available
-            in this list; nothing is chosen until you select it.
+            These ship with the server but are not installed yet, or the server holds an older
+            revision. Install one to make it available in this list; nothing is chosen until you
+            select it.
           </p>
           <ul className="flex flex-col gap-1.5">
-            {candidates.map((id) => {
-              const name = humanizeIdentifier(id)
+            {candidates.map(({ workflow, storedVersion }) => {
+              const name = workflow.name
+              const updating = storedVersion !== null
               return (
                 <li
-                  key={id}
+                  key={workflow.id}
                   className={
                     compact
                       ? 'flex items-center justify-between gap-2'
                       : 'flex items-center justify-between gap-2 rounded-md border border-line bg-surface px-3 py-2'
                   }
                 >
-                  <span className="min-w-0 truncate text-sm text-ink">{name}</span>
+                  <span className="min-w-0 truncate text-sm text-ink">
+                    {name}
+                    <span className="ml-1.5 font-mono text-2xs text-ink-muted">
+                      v{workflow.version}
+                    </span>
+                    {updating ? (
+                      <span className="ml-1.5 text-2xs text-ink-muted">
+                        (installed v{storedVersion})
+                      </span>
+                    ) : null}
+                  </span>
                   <Button
                     variant="quiet"
                     size="sm"
-                    loading={installing === id}
-                    disabled={install.isPending && installing !== id}
-                    aria-label={`Install ${name}`}
-                    onClick={() => void run(id)}
+                    loading={installing === workflow.id}
+                    disabled={install.isPending && installing !== workflow.id}
+                    aria-label={`${updating ? 'Update' : 'Install'} ${name}`}
+                    onClick={() => void run(workflow.id)}
                   >
-                    Install
+                    {updating ? 'Update' : 'Install'}
                   </Button>
                 </li>
               )

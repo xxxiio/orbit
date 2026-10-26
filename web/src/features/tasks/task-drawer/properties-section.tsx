@@ -1,9 +1,9 @@
 import type { Task } from '@/api/adapters'
 import type { TaskPriority, TaskStatus } from '@/api/contracts'
 import { PropertySelect } from '@/components/forms'
-import { userMessage } from '@/hooks'
+import { useTaskTransitions, userMessage } from '@/hooks'
 import type { ApiError } from '@/api/errors'
-import { NO_PRIORITY, prioritySelectOptions, statusOptions } from '../task-controls'
+import { NO_PRIORITY, prioritySelectOptions, statusOptionsFor } from '../task-controls'
 import { LabelsEditor } from './labels-editor'
 import { FieldError, SavingNote, Section } from './section'
 import type { TaskCommand } from './task-command'
@@ -50,6 +50,11 @@ export function PropertiesSection({
       ? error
       : null
 
+  const transitions = useTaskTransitions(task.status)
+  const allowedNext = transitions.edges.get(task.status) ?? null
+  const options = statusOptionsFor(task.status, allowedNext)
+  const statusLocked = allowedNext !== null && allowedNext.length === 0
+
   const projectOptions = [
     { value: NONE, label: 'No project (Inbox)' },
     ...projects.map((project) => ({ value: project.id, label: project.name })),
@@ -75,13 +80,16 @@ export function PropertiesSection({
           ariaLabel="Task status"
           value={task.status}
           onValueChange={(value) => onChangeStatus(value as TaskStatus)}
-          options={statusOptions}
+          options={options}
           pending={pendingField('status')}
-          disabled={command.isPending}
+          disabled={command.isPending || statusLocked}
           hint={
             <span className="text-2xs leading-4 text-ink-muted">
-              Only the next states this task&apos;s workflow allows are accepted. A refusal keeps
+              Only the next states this task&apos;s workflow allows are offered. A refusal keeps
               the stored value and quotes the server&apos;s reason below.
+              {transitions.failed
+                ? ' The allowed moves could not be read, so every status is offered; the server still refuses invalid changes.'
+                : null}
             </span>
           }
         />

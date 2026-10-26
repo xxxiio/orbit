@@ -1,6 +1,6 @@
 {
   "id": "development",
-  "version": 2,
+  "version": 3,
   "name": "Development",
   "description": "Development project with overview, workflow board, milestones and agent monitoring.",
   "required_capabilities": [],
@@ -22,7 +22,8 @@
           "kind": {
             "type": "text"
           },
-          "required": true
+          "required": true,
+          "default": "Untitled feature"
         },
         {
           "id": "priority",

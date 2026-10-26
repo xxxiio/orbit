@@ -7,8 +7,8 @@ const preview: WorkflowUpgradePreview = {
   schema: 'orbit.blueprint-upgrade-preview.v1',
   projectId: 'p-orbit-development',
   projectRevision: 42,
-  current: { workflowId: 'development', version: 2 },
-  target: { workflowId: 'development', version: 3 },
+  current: { workflowId: 'development', version: 3 },
+  target: { workflowId: 'development', version: 4 },
   kinds: [
     {
       kind: 'feature',
@@ -172,8 +172,8 @@ describe('upgrade receipt', () => {
   it('states an already-applied receipt honestly', () => {
     const applied: WorkflowUpgradeApplied = {
       ...preview,
-      binding: { projectId: preview.projectId, workflowId: 'development', version: 3 },
-      previous: { workflowId: 'development', version: 2 },
+      binding: { projectId: preview.projectId, workflowId: 'development', version: 4 },
+      previous: { workflowId: 'development', version: 3 },
       alreadyApplied: true,
     }
     render(<UpgradeReceipt applied={applied} viewTitle={viewTitle} />)

@@ -75,6 +75,22 @@ pub enum TaskStatus {
 }
 
 impl TaskStatus {
+    /// Every built-in status in canonical display order. Callers filter this
+    /// list through [`Self::can_transition_to`]; the transition table itself is
+    /// never duplicated outside this module.
+    pub const ALL: [Self; 10] = [
+        Self::Inbox,
+        Self::Planned,
+        Self::Ready,
+        Self::InProgress,
+        Self::Waiting,
+        Self::Blocked,
+        Self::Review,
+        Self::Deferred,
+        Self::Done,
+        Self::Cancelled,
+    ];
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Inbox => "inbox",

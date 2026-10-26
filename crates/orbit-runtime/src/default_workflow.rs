@@ -7,7 +7,7 @@
 use crate::store::AuthorityError;
 use orbit_blueprint::Blueprint;
 use orbit_blueprint::bundled;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::BTreeSet;
 
 /// Version declared by a trusted bundled descriptor, if the id is bundled.
@@ -18,9 +18,15 @@ pub(crate) fn bundled_version(id: &str) -> Option<u32> {
         .map(|descriptor| descriptor.version)
 }
 
-/// Install one bundled manifest without binding any project. `INSERT OR IGNORE`
-/// keeps published revisions immutable: an already-present identical (or even
-/// conflicting) row is never rewritten by this convenience path.
+/// Install one bundled manifest without binding any project and return the
+/// revision the registry actually holds.
+///
+/// `INSERT OR IGNORE` keeps published revisions immutable, so a registry that
+/// already has a *different* manifest at the bundled version keeps it. Binding
+/// the bundle constant would then pin a schema the store never accepted, so the
+/// stored manifest is read back and compared: an identical revision is returned
+/// (its version is what callers bind), a conflicting one is refused. This is
+/// what makes `development@2` impossible to confuse with the v3 bundle.
 pub(crate) fn install_bundled_workflow(
     conn: &Connection,
     id: &str,
@@ -37,7 +43,22 @@ pub(crate) fn install_bundled_workflow(
         "INSERT OR IGNORE INTO orbit_blueprints(id,version,manifest_json) VALUES(?1,?2,?3)",
         params![blueprint.id, blueprint.version, serialized],
     )?;
-    Ok(blueprint)
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT manifest_json FROM orbit_blueprints WHERE id=?1 AND version=?2",
+            params![blueprint.id, blueprint.version],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let stored = stored.ok_or(AuthorityError::Invalid("invalid bundled workflow"))?;
+    let stored: Blueprint = serde_json::from_str(&stored)
+        .map_err(|_| AuthorityError::Invalid("invalid bundled workflow"))?;
+    if stored != blueprint {
+        return Err(AuthorityError::Invalid(
+            "bundled workflow version is immutable",
+        ));
+    }
+    Ok(stored)
 }
 
 /// Ensure a newly-created project is bound to the bundled `basic` workflow.
@@ -150,7 +171,7 @@ mod tests {
         };
         let result = host.project_command("device", command).unwrap();
         assert_eq!(result.revision, 1);
-        assert_eq!(binding(&host, "explicit"), ("development".to_owned(), 2));
+        assert_eq!(binding(&host, "explicit"), ("development".to_owned(), 3));
         let basic_bindings: i64 = host
             .authority
             .conn
@@ -200,10 +221,10 @@ mod tests {
             .unwrap();
         host.authority
             .conn
-            .replace_project_blueprint_binding(&ProjectId::new("p").unwrap(), "development", 2)
+            .replace_project_blueprint_binding(&ProjectId::new("p").unwrap(), "development", 3)
             .unwrap();
         ensure_basic_workflow(&host.authority.conn, "p").unwrap();
-        assert_eq!(binding(&host, "p"), ("development".to_owned(), 2));
+        assert_eq!(binding(&host, "p"), ("development".to_owned(), 3));
     }
 
     #[test]
@@ -223,7 +244,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!((revision, duplicate, result.as_str()), (2, false, "p"));
-        assert_eq!(binding(&host, "p"), ("development".to_owned(), 2));
+        assert_eq!(binding(&host, "p"), ("development".to_owned(), 3));
         let (revision, duplicate, _) = host
             .set_project_workflow_accepted(
                 "user",
@@ -236,7 +257,7 @@ mod tests {
             .unwrap();
         assert_eq!(revision, 2);
         assert!(duplicate);
-        assert_eq!(binding(&host, "p"), ("development".to_owned(), 2));
+        assert_eq!(binding(&host, "p"), ("development".to_owned(), 3));
         assert!(matches!(
             host.set_project_workflow_accepted(
                 "user",
@@ -255,7 +276,7 @@ mod tests {
                 2,
                 ProjectId::new("absent").unwrap(),
                 "development".into(),
-                Some(2),
+                Some(3),
             ),
             Err(AuthorityError::Invalid("unknown project"))
         ));

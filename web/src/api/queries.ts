@@ -9,7 +9,13 @@
  * - any 401 on any read signs this browser out of the session store, once.
  */
 import { useCallback, useEffect } from 'react'
-import { useQuery, useQueryClient, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
+import {
+  useQueries,
+  useQuery,
+  useQueryClient,
+  type QueryKey,
+  type UseQueryResult,
+} from '@tanstack/react-query'
 import { handleUnauthorized } from './session-store'
 import { sessionQueryKey } from './session'
 import { ApiError, ClientStateError, classifyError } from './errors'
@@ -47,7 +53,7 @@ import {
 } from './endpoints/knowledge'
 import { fetchMilestones } from './endpoints/milestones'
 import { fetchSnapshot } from './endpoints/snapshot'
-import { fetchAcceptanceCriteria, fetchTaskActivity, fetchTaskDetail } from './endpoints/tasks'
+import { fetchAcceptanceCriteria, fetchTaskActivity, fetchTaskDetail, fetchTaskTransitions } from './endpoints/tasks'
 import {
   fetchBundledWorkflows,
   fetchProjectBinding,
@@ -110,9 +116,11 @@ import type { Attachment } from './adapters'
 import { toAttachment } from './adapters'
 import type {
   AttachmentOwnerKind,
+  BundledWorkflowDescriptor,
   KnowledgeDocumentInfo,
   KnowledgeNode,
   MilestoneSnapshot,
+  TaskStatus,
 } from './contracts'
 
 /** The snapshot is the shared basis for almost every screen: keep it warm for 5s. */
@@ -125,6 +133,7 @@ export const queryKeys = {
   task: (id: string) => ['task', id] as const,
   taskAcceptanceCriteria: (id: string) => ['task', id, 'acceptance-criteria'] as const,
   taskActivity: (id: string) => ['task', id, 'activity'] as const,
+  taskTransitions: (status: TaskStatus) => ['task-transitions', status] as const,
   taskDependencies: () => ['task-dependencies'] as const,
   milestones: () => ['milestones'] as const,
   taskReadiness: (nowMs: number) => ['task-readiness', nowMs] as const,
@@ -254,6 +263,51 @@ export function useTaskRecord(id: string | undefined): UseQueryResult<Task, ApiE
     enabled: Boolean(id),
     select: toTaskDetail,
   })
+}
+
+export interface TaskTransitionEdges {
+  /**
+   * The domain's allowed targets per status. `null` means this status could
+   * not be read (pending or failed); callers fall back to offering every
+   * status and keep the server's refusal as the honest answer.
+   */
+  edges: Map<TaskStatus, TaskStatus[] | null>
+  pending: boolean
+  failed: boolean
+}
+
+/**
+ * Read the accepted status edges for each status on screen. One request per
+ * distinct status, deduplicated by the query cache; no transition table lives
+ * in the client.
+ */
+export function useTaskTransitionEdges(
+  statuses: readonly TaskStatus[],
+): TaskTransitionEdges {
+  const unique: TaskStatus[] = Array.from(new Set(statuses))
+  const results = useQueries({
+    queries: unique.map((status) => ({
+      queryKey: queryKeys.taskTransitions(status),
+      queryFn: ({ signal }: { signal: AbortSignal }) => fetchTaskTransitions(status, signal),
+      staleTime: 5 * 60_000,
+      retry: retryUnlessClientError,
+    })),
+  })
+  const edges = new Map<TaskStatus, TaskStatus[] | null>()
+  unique.forEach((status, index) => {
+    const result = results[index]
+    edges.set(status, result.data ? result.data.next : null)
+  })
+  return {
+    edges,
+    pending: results.some((result) => result.isPending),
+    failed: results.some((result) => result.isError),
+  }
+}
+
+/** One status' accepted edges, for a single control (the drawer). */
+export function useTaskTransitions(status: TaskStatus): TaskTransitionEdges {
+  return useTaskTransitionEdges([status])
 }
 
 export function useAcceptanceCriteria(
@@ -707,11 +761,12 @@ export function useAgentResumeContext(
 /* ------------------------------------------------------------------ */
 
 /**
- * The ids the server can install from its own package. Short-lived so a
- * just-installed workflow drops off the list; the install mutation also
- * invalidates both this read and `useAvailableWorkflows`.
+ * The workflows the server can install from its own package, with the revision
+ * this binary ships. Short-lived so a just-installed workflow drops off the
+ * list; the install mutation also invalidates both this read and
+ * `useAvailableWorkflows`.
  */
-export function useBundledWorkflows(): UseQueryResult<string[], ApiError> {
+export function useBundledWorkflows(): UseQueryResult<BundledWorkflowDescriptor[], ApiError> {
   return useApiQuery({
     queryKey: queryKeys.bundledWorkflows(),
     queryFn: ({ signal }) => fetchBundledWorkflows(signal),

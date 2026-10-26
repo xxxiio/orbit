@@ -648,3 +648,73 @@ fn unbound_project_previews_and_applies_as_a_first_binding() {
     assert!(applied.previous.is_none());
     assert_eq!(binding_version(&host, "project-1"), Some(1));
 }
+
+/// B2 regression: an old bundled Development v2 (Feature had no `title`) with
+/// a live untitled Feature must upgrade to the shipped v3, because v3 declares
+/// a default for the now-required field. The item survives and takes it.
+#[test]
+fn development_v2_feature_without_a_title_upgrades_to_v3_with_the_default() {
+    let mut host = open_host();
+    let v3 = orbit_blueprint::bundled::bundled_blueprint("development").unwrap();
+    assert_eq!(v3.version, 3, "the bundle was published as a new version");
+    let mut v2 = v3.clone();
+    v2.version = 2;
+    let feature = v2
+        .work_items
+        .iter_mut()
+        .find(|kind| kind.id == "feature")
+        .expect("development declares a feature kind");
+    feature.fields.retain(|field| field.id != "title");
+
+    // An old database: v2 published and pinned, a Feature created with the
+    // only field that v2 declared.
+    publish(&mut host, &v2);
+    host.activate_project_blueprint("project-1", "development", 2)
+        .unwrap();
+    let item = host
+        .create_project_work_item(
+            "feature-1",
+            "project-1",
+            "feature",
+            BTreeMap::from([("priority".to_owned(), json!("high"))]),
+        )
+        .unwrap();
+    assert!(!item.properties.contains_key("title"));
+
+    // Install the shipped v3 without touching the binding.
+    host.install_bundled_project_blueprint("development")
+        .unwrap();
+    assert_eq!(binding_version(&host, "project-1"), Some(2));
+
+    let report = host
+        .preview_blueprint_upgrade("project-1", "development", 3)
+        .unwrap();
+    assert!(
+        report.blockers.is_empty(),
+        "a defaulted required field must not block: {:?}",
+        report.blockers
+    );
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|notice| notice.code == codes::FIELD_ADDED),
+        "{:?}",
+        report.warnings
+    );
+    let applied = host
+        .apply_blueprint_upgrade("project-1", "development", 3, &report.fingerprint, true)
+        .unwrap();
+    assert_eq!(applied.binding.version, 3);
+
+    let survived = host.project_work_item("feature-1").unwrap().unwrap();
+    assert_eq!(survived.kind, "feature");
+    assert_eq!(survived.state, "backlog");
+    assert_eq!(survived.properties.get("priority"), Some(&json!("high")));
+    assert_eq!(
+        survived.properties.get("title"),
+        Some(&json!("Untitled feature")),
+        "the upgrade fills the new field's declared default"
+    );
+    assert_eq!(survived.revision, 1, "the default is a schema migration");
+}

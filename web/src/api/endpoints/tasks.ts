@@ -1,10 +1,13 @@
 import { api } from '../client'
+import { withQuery } from '../http'
 import type {
   AcceptanceCriterionResponse,
   ActivityResponse,
   TaskCommand,
   TaskDetailResponse,
   TaskResult,
+  TaskStatus,
+  TaskTransitionsRecord,
 } from '../contracts'
 
 const BASE = '/authoritative'
@@ -30,4 +33,18 @@ export function fetchTaskActivity(id: string, signal?: AbortSignal): Promise<Act
 
 export function sendTaskCommand(command: TaskCommand): Promise<TaskResult> {
   return api.post<TaskResult>(`${BASE}/task-commands`, command)
+}
+
+/**
+ * The status edges the domain accepts from one canonical status. A read, not a
+ * client-side table: the drawer and the board offer exactly these targets.
+ */
+export function fetchTaskTransitions(
+  status: TaskStatus,
+  signal?: AbortSignal,
+): Promise<TaskTransitionsRecord> {
+  return api.get<TaskTransitionsRecord>(
+    withQuery(`${BASE}/task-transitions`, { status }),
+    { signal },
+  )
 }

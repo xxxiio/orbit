@@ -12,6 +12,22 @@ export const statusOptions: CompactOption[] = (TASK_STATUSES as readonly TaskSta
   label: statusLabels[status],
 }))
 
+/**
+ * The options a status control may offer. `allowedNext` is the server's edge
+ * set for `current`; `null` means that read failed or has not resolved, so the
+ * control keeps offering every status and the server remains the only refusal.
+ * The current status is always present so the control can show the stored
+ * value.
+ */
+export function statusOptionsFor(
+  current: TaskStatus,
+  allowedNext: readonly TaskStatus[] | null,
+): CompactOption[] {
+  if (allowedNext === null) return statusOptions
+  const offered = new Set<TaskStatus>([current, ...allowedNext])
+  return statusOptions.filter((option) => offered.has(option.value as TaskStatus))
+}
+
 /** The one priority option list; the empty value means "no priority". */
 export const priorityOptions: CompactOption[] = [
   { value: '', label: 'No priority' },

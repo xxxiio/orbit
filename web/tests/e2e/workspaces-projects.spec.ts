@@ -93,7 +93,7 @@ test.describe('project settings', () => {
     await goto(page, server, '/projects/p-development/settings')
     await expect(page.getByRole('heading', { name: 'Development', level: 1 })).toBeVisible()
     await expect(page.getByText(/Not supported by the API yet/).first()).toBeVisible()
-    await expect(page.getByText('Development v2', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText('Development v3', { exact: true }).first()).toBeVisible()
     await expect(page.getByRole('link', { name: /^Milestones/ })).toBeVisible()
 
     // Pick the Basic workflow; the preview is a read, so the tabs are unchanged.
