@@ -8,12 +8,17 @@
  * -------------------
  * A headless Playwright run against a *persistent, isolated authoritative
  * database* on a dedicated port (8790), serving the built SPA from
- * `web/dist`. The only direct HTTP calls are setup (enrol one device, install
- * the bundled Development workflow, open a browser session) and one deliberate
- * "second writer" used to prove revision fencing. Projects, tasks, milestones,
- * work items, notes, attachments and every task change in the cycle are typed
- * through the real browser UI.
+ * `web/dist`. The only direct HTTP calls are setup (enrol two devices, install
+ * the bundled Development workflow, open a browser session), deliberate refusal
+ * probes, and reads used to assert what the UI showed. Projects, tasks,
+ * milestones, work items, notes, attachments and every task change in the cycle
+ * are typed through the real browser UI. The second device has its own browser
+ * context and writes the conflict through its own drawer, so “Another device”
+ * attribution is exercised end-to-end.
  *
+ * The script refuses to start on a dirty git tree, records the commit, the
+ * `web/dist` content hash, the server binary hash and the project's workflow
+ * version, and writes both `run.json` and a `README.md` generated from it.
  * State lives in `/tmp/orbit-i5/vault/db.sqlite3` so the run is reproducible
  * from a clean `/tmp` state; the script deletes that directory first. At the
  * end it stops the server and copies the SQLite database (and WAL, when one
@@ -24,8 +29,8 @@
  * Node script, so `node tests/e2e/i5/dogfood.mjs` is the whole command.
  */
 import { spawn, execFileSync } from 'node:child_process'
-import { randomBytes, randomUUID } from 'node:crypto'
-import { copyFile, mkdir, readFile, rm, writeFile, access } from 'node:fs/promises'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { copyFile, mkdir, readFile, readdir, rm, writeFile, access } from 'node:fs/promises'
 import { createConnection } from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -43,7 +48,22 @@ const PORT = 8790
 const BASE = `http://127.0.0.1:${PORT}`
 const DEVICE_ID = 'orbit-development'
 const DEVICE_TOKEN = randomBytes(32).toString('hex')
+const SECOND_DEVICE_ID = 'orbit-development-2'
+const SECOND_DEVICE_TOKEN = randomBytes(32).toString('hex')
 const ADMIN_KEY = randomBytes(32).toString('hex')
+const SERVER_BINARY = path.join(REPO, 'target', 'debug', 'orbit-server')
+const STATUS_BY_LABEL = {
+  Inbox: 'inbox',
+  Planned: 'planned',
+  Ready: 'ready',
+  'In progress': 'in_progress',
+  Waiting: 'waiting',
+  Blocked: 'blocked',
+  'In review': 'review',
+  Deferred: 'deferred',
+  Done: 'done',
+  Cancelled: 'cancelled',
+}
 
 // Chromium on this machine needs the local bundle of system libraries.
 for (const candidate of [
@@ -95,12 +115,89 @@ async function portIsFree() {
   })
 }
 
-async function api(pathname, { method = 'GET', body, admin = false } = {}) {
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+async function hashFile(file) {
+  const bytes = await readFile(file)
+  return { path: path.relative(REPO, file), sha256: sha256(bytes), bytes: bytes.length }
+}
+
+/** A content hash over the built SPA, independent of mtimes and inode order. */
+async function hashDirectory(directory) {
+  const files = []
+  const walk = async (current, prefix = '') => {
+    const entries = await readdir(current, { withFileTypes: true })
+    entries.sort((left, right) => left.name.localeCompare(right.name))
+    for (const entry of entries) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+      const absolute = path.join(current, entry.name)
+      if (entry.isDirectory()) await walk(absolute, relative)
+      else if (entry.isFile()) {
+        const bytes = await readFile(absolute)
+        files.push({ path: relative, sha256: sha256(bytes), bytes: bytes.length })
+      }
+    }
+  }
+  await walk(directory)
+  const content = files.map((file) => `${file.path}\u0000${file.sha256}`).join('\n')
+  return {
+    path: path.relative(REPO, directory),
+    sha256: sha256(content),
+    files,
+    fileCount: files.length,
+    totalBytes: files.reduce((total, file) => total + file.bytes, 0),
+  }
+}
+
+function gitOutput(args) {
+  return execFileSync('git', args, { cwd: REPO }).toString()
+}
+
+/**
+ * The evidence is only meaningful if it names the tree it was captured from.
+ * A dirty tree means the product code may not be the commit in `HEAD`, so the
+ * run refuses rather than producing another hybrid capture.
+ */
+function requireCleanTree() {
+  const commit = gitOutput(['rev-parse', 'HEAD']).trim()
+  const status = gitOutput(['status', '--porcelain'])
+  if (status.trim().length > 0) {
+    throw new Error(
+      `refusing to capture evidence from a dirty tree at ${commit}. Commit or restore these paths first:\n${status.trim()}`,
+    )
+  }
+  return commit
+}
+
+async function resetEvidence() {
+  await mkdir(OUT, { recursive: true })
+  for (const entry of await readdir(OUT, { withFileTypes: true })) {
+    // A deliberately kept pre-fix set may live in `before/`; everything else is
+    // this run's output and must not survive beside it.
+    if (entry.name === 'before') continue
+    await rm(path.join(OUT, entry.name), { recursive: true, force: true })
+  }
+}
+
+/** The exact invocation, relative to the directory it was run from. */
+function invokedCommand() {
+  const script = path.relative(process.cwd(), fileURLToPath(import.meta.url))
+  return {
+    cwd: process.cwd(),
+    invocation: `node ${script.split(path.sep).join('/')}`,
+    argv: process.argv,
+  }
+}
+
+async function api(pathname, { method = 'GET', body, admin = false, device } = {}) {
   const headers = { 'content-type': 'application/json' }
   if (admin) headers.authorization = `Bearer ${ADMIN_KEY}`
   else {
-    headers.authorization = `Bearer ${DEVICE_TOKEN}`
-    headers['x-orbit-device-id'] = DEVICE_ID
+    const credentials = device ?? { id: DEVICE_ID, token: DEVICE_TOKEN }
+    headers.authorization = `Bearer ${credentials.token}`
+    headers['x-orbit-device-id'] = credentials.id
   }
   const response = await fetch(`${BASE}${pathname}`, {
     method,
@@ -117,6 +214,14 @@ async function api(pathname, { method = 'GET', body, admin = false } = {}) {
   return { status: response.status, body: parsed, text }
 }
 
+async function readTask(taskId, device) {
+  const response = await api(`/v1/authoritative/tasks/${encodeURIComponent(taskId)}`, { device })
+  if (response.status !== 200) {
+    throw new Error(`could not read task ${taskId}: ${response.status} ${response.text}`)
+  }
+  return response.body
+}
+
 /* ------------------------------------------------------------------ */
 /* Server lifecycle                                                    */
 /* ------------------------------------------------------------------ */
@@ -129,7 +234,7 @@ async function startServer() {
   for (const [key, value] of Object.entries(process.env)) {
     if (!key.startsWith('ORBIT_')) clean[key] = value
   }
-  const child = spawn(path.join(REPO, 'target', 'debug', 'orbit-server'), [], {
+  const child = spawn(SERVER_BINARY, [], {
     cwd: REPO,
     env: {
       ...clean,
@@ -153,7 +258,7 @@ async function startServer() {
       const response = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(1_500) })
       if (response.ok) {
         log(`server healthy on ${BASE} (pid ${child.pid})`)
-        return
+        return child.pid
       }
     } catch {
       // not up yet
@@ -188,18 +293,56 @@ async function stopServer() {
 let browser = null
 let context = null
 let page = null
-const httpErrors = []
+let secondContext = null
+let secondPage = null
+const httpErrorRecords = []
 const steps = []
+
+/**
+ * Every 4xx/5xx from the API is a recorded fact, not white noise. The page
+ * listener keeps the body so the final assertion can name the refusal instead
+ * of only its status code.
+ */
+function trackHttpErrors(target, source) {
+  target.on('response', (response) => {
+    if (response.status() < 400 || !response.url().includes('/v1/')) return
+    const record = {
+      status: response.status(),
+      method: response.request().method(),
+      url: response.url(),
+      source,
+      body: '',
+      textPromise: response.text().catch(() => ''),
+    }
+    httpErrorRecords.push(record)
+  })
+}
+
+function recordProbeFailure({ status, method, url, body, source }) {
+  httpErrorRecords.push({
+    status,
+    method,
+    url,
+    source,
+    body,
+    textPromise: Promise.resolve(body),
+  })
+}
 
 function shotPath(name) {
   return path.join(OUT, `${name}.png`)
 }
 
-async function shot(name) {
-  await page.evaluate(() => document.fonts.ready).catch(() => undefined)
+async function shotOn(target, name) {
+  await target.evaluate(() => document.fonts.ready).catch(() => undefined)
   await sleep(300)
-  await page.screenshot({ path: shotPath(name) })
+  await target.screenshot({ path: shotPath(name) })
+  state.captures.push(name)
   log(`capture ${name}.png`)
+}
+
+async function shot(name) {
+  await shotOn(page, name)
 }
 
 async function dialog() {
@@ -221,19 +364,23 @@ async function checkNoAlert(where) {
 async function openTaskFromBoard(title) {
   await page.goto(`${BASE}/projects/${state.projectId}/board`)
   await page.getByRole('navigation', { name: 'Project sections' }).waitFor()
-  const card = page.getByRole('button', { name: title, exact: true })
+  return openTaskOnPage(page, title)
+}
+
+async function openTaskOnPage(target, title) {
+  const card = target.getByRole('button', { name: title, exact: true })
   await card.waitFor({ timeout: 15_000 })
   await card.click()
-  const drawer = await dialog()
+  const drawer = target.getByRole('dialog')
   await drawer.waitFor()
   await drawer.getByLabel('Task description').waitFor({ timeout: 15_000 })
-  const taskId = new URL(page.url()).searchParams.get('task')
+  const taskId = new URL(target.url()).searchParams.get('task')
   if (!taskId) throw new Error('the task drawer did not put the task id in the URL')
   return { drawer, taskId }
 }
 
-async function closeTaskDrawer() {
-  const drawer = await dialog()
+async function closeTaskDrawerOn(target) {
+  const drawer = target.getByRole('dialog')
   if (!(await drawer.isVisible().catch(() => false))) return
   const close = drawer.getByRole('button', { name: 'Close task details' })
   await close.click()
@@ -245,6 +392,10 @@ async function closeTaskDrawer() {
     await drawer.waitFor({ state: 'hidden', timeout: 6_000 })
   }
   await sleep(150)
+}
+
+async function closeTaskDrawer() {
+  return closeTaskDrawerOn(page)
 }
 
 /** Radix select: click the trigger, click the named option. */
@@ -264,9 +415,25 @@ async function setPriority(drawer, priority) {
   await checkNoAlert(drawer)
 }
 
-async function setStatus(drawer, statusLabel) {
+/**
+ * Change status through the drawer, then assert the server's stored value.
+ * The move is recorded only after the read confirms it, so `run.json` never
+ * claims a transition the server did not accept.
+ */
+async function setStatus(drawer, statusLabel, taskId, surface) {
+  const expected = STATUS_BY_LABEL[statusLabel]
+  if (!expected) throw new Error(`unknown status label “${statusLabel}”`)
+  const before = (await readTask(taskId)).status
   await chooseOption(drawer.getByLabel('Task status'), statusLabel, 'status')
+  await waitUntil(async () => (await readTask(taskId)).status === expected, {
+    label: `task ${taskId} to be stored as ${expected}`,
+    timeout: 15_000,
+  })
   await checkNoAlert(drawer)
+  if (before !== expected) {
+    state.moves.push({ taskId, from: before, to: expected, surface })
+  }
+  return { from: before, to: expected }
 }
 
 /** Author an estimate and deadline through the drawer's Planning group. */
@@ -599,47 +766,73 @@ const INBOX_TRIAGE_TITLE = 'Triage: capture I5 friction before the gate'
 
 const state = {
   startedAt: new Date().toISOString(),
-  projectId: null,
+  command: null,
+  identity: {},
+  project: {},
   taskIds: {},
+  moves: [],
+  triage: null,
   milestoneIds: {},
-  workItemId: null,
-  notePath: null,
+  milestones: {},
+  workItem: null,
+  note: null,
+  attachment: null,
   planning: {},
   conflict: {},
+  invalidTransition: null,
   boardMove: {},
   restart: {},
-  captureCommit: null,
+  activity: {},
+  captures: [],
 }
 
 async function run() {
   if (!(await portIsFree())) {
     throw new Error(`port ${PORT} is already in use; stop the other server first`)
   }
-  await rm(RUN_DIR, { recursive: true, force: true })
-  await mkdir(path.dirname(DB), { recursive: true })
+
+  state.command = invokedCommand()
+
+  // Stale failure diagnostics are this script's own output, not source. Clear
+  // them before the clean-tree check so a failed attempt can be re-run.
   await mkdir(OUT, { recursive: true })
   for (const stale of ['failure.png', 'failure-page.html', 'failure-state.json']) {
     await rm(path.join(OUT, stale), { force: true })
   }
 
-  try {
-    state.captureCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO })
-      .toString()
-      .trim()
-  } catch {
-    state.captureCommit = 'unknown'
+  const commit = requireCleanTree()
+  state.identity = {
+    commit,
+    tree: 'clean',
+    dist: await hashDirectory(DIST),
+    serverBinary: await hashFile(SERVER_BINARY),
+    workflow: null,
   }
+  log(`capturing ${commit} (clean tree); dist ${state.identity.dist.sha256.slice(0, 12)}`)
+
+  await resetEvidence()
+  await rm(RUN_DIR, { recursive: true, force: true })
+  await mkdir(path.dirname(DB), { recursive: true })
 
   await startServer()
 
-  // Setup: one device for the whole cycle.
-  const enrolled = await api('/v1/devices', {
-    method: 'POST',
-    admin: true,
-    body: { device_id: DEVICE_ID, token: DEVICE_TOKEN },
-  })
-  if (enrolled.status !== 201) throw new Error(`device enrolment failed: ${enrolled.status} ${enrolled.text}`)
-  log(`enrolled ${DEVICE_ID}`)
+  // Setup: two enrolled devices. The second one writes the deliberate conflict
+  // through its own browser session, so the activity origin is genuinely
+  // another device rather than the same credential with a new revision.
+  for (const device of [
+    { device_id: DEVICE_ID, token: DEVICE_TOKEN },
+    { device_id: SECOND_DEVICE_ID, token: SECOND_DEVICE_TOKEN },
+  ]) {
+    const enrolled = await api('/v1/devices', {
+      method: 'POST',
+      admin: true,
+      body: device,
+    })
+    if (enrolled.status !== 201) {
+      throw new Error(`device enrolment failed for ${device.device_id}: ${enrolled.status} ${enrolled.text}`)
+    }
+    log(`enrolled ${device.device_id}`)
+  }
 
   browser = await chromium.launch({ headless: true })
   context = await browser.newContext({
@@ -648,12 +841,14 @@ async function run() {
     baseURL: BASE,
   })
   page = await context.newPage()
-  await page.addInitScript(() => window.localStorage.setItem('orbit.theme', 'light'))
-  page.on('response', (response) => {
-    if (response.status() >= 400 && response.url().includes('/v1/')) {
-      httpErrors.push({ status: response.status(), method: response.request().method(), url: response.url() })
-    }
+  await page.addInitScript(() => {
+    window.localStorage.setItem('orbit.theme', 'light')
+    window.__orbitPointerDowns = 0
+    window.addEventListener('pointerdown', () => {
+      window.__orbitPointerDowns = (window.__orbitPointerDowns ?? 0) + 1
+    }, true)
   })
+  trackHttpErrors(page, 'primary browser')
 
   // ---- Step 1: Home and sign-in through the real form -------------------
   await page.goto(`${BASE}/login`)
@@ -688,9 +883,29 @@ async function run() {
   state.projectId = new URL(page.url()).pathname.split('/').filter(Boolean)[1]
   await page.getByRole('heading', { level: 1, name: 'Orbit Development' }).waitFor()
   await page.getByText('Development v3', { exact: true }).first().waitFor()
+  const projects = await api('/v1/authoritative/projects')
+  const projectRecord = (projects.body?.projects ?? []).find((entry) => entry.id === state.projectId)
+  const binding = await api(`/v1/authoritative/blueprints/binding?project_id=${state.projectId}`)
+  if (binding.status !== 200 || !binding.body) {
+    throw new Error(`the project binding could not be read: ${binding.status} ${binding.text}`)
+  }
+  state.project = {
+    id: state.projectId,
+    name: projectRecord?.name ?? 'Orbit Development',
+    status: projectRecord?.status ?? null,
+    workflow: { id: binding.body.blueprint_id, version: binding.body.version },
+  }
+  state.identity.workflow = {
+    label: 'Development v3',
+    id: binding.body.blueprint_id,
+    version: binding.body.version,
+  }
+  if (binding.body.version !== 3) {
+    throw new Error(`expected the seeded project to bind Development v3, got v${binding.body.version}`)
+  }
   await shot('03-project-overview')
-  log(`project ${state.projectId}`)
-  steps.push(`Created project Orbit Development (${state.projectId}) with the Development workflow through the dialog`)
+  log(`project ${state.projectId} (${state.project.name}) on ${binding.body.blueprint_id} v${binding.body.version}`)
+  steps.push(`Created project Orbit Development (${state.projectId}) with the Development v${binding.body.version} workflow through the dialog`)
 
   // ---- Step 3: 18 real tasks through the new-task dialog -----------------
   await page.goto(`${BASE}/projects/${state.projectId}/board`)
@@ -737,7 +952,7 @@ async function run() {
     await setLabels(drawer, task.labels)
     if (task.status) {
       const path = Array.isArray(task.status) ? task.status : [task.status]
-      for (const status of path) await setStatus(drawer, status)
+      for (const status of path) await setStatus(drawer, status, taskId, 'task drawer (setup)')
     }
     if (task.description) await setDescription(drawer, task.description)
     if (task.criteria) for (const text of task.criteria) await addCriterion(drawer, text)
@@ -781,11 +996,21 @@ async function run() {
   await page.getByRole('button', { name: 'Create work item', exact: true }).click()
   await itemDialog.waitFor({ state: 'detached', timeout: 15_000 })
   const items = await api(`/v1/authoritative/blueprints/items?project_id=${state.projectId}`)
-  state.workItemId = items.body?.[0]?.id ?? null
-  if (!state.workItemId) throw new Error('the created work item could not be read back')
-  await page.locator(`[data-work-item-key="${state.workItemId}"]`).waitFor({ timeout: 15_000 })
+  const workItem =
+    (items.body ?? []).find((entry) => entry.properties?.title === 'Real feature titles in the work-item list') ??
+    (items.body ?? [])[0] ??
+    null
+  if (!workItem) throw new Error('the created work item could not be read back')
+  state.workItem = {
+    id: workItem.id,
+    kind: workItem.kind,
+    state: workItem.state,
+    properties: workItem.properties,
+    declaredFields: featureFields,
+  }
+  await page.locator(`[data-work-item-key="${workItem.id}"]`).waitFor({ timeout: 15_000 })
   await shot('07-work-item-created')
-  steps.push(`Created one Feature work item (${state.workItemId}); declared fields: ${featureFields.join(' / ').slice(0, 180)}`)
+  steps.push(`Created one ${workItem.kind} work item (${workItem.id}) titled “${String(workItem.properties?.title ?? '')}”`)
 
   // ---- Step 7: knowledge note, then link it from Task A ------------------
   await page.goto(`${BASE}/knowledge`)
@@ -804,8 +1029,17 @@ async function run() {
   await noteDialog.waitFor({ state: 'detached', timeout: 15_000 })
   await page.getByText('I5 dogfooding findings', { exact: true }).first().waitFor()
   state.notePath = new URL(page.url()).pathname.replace(/^\/knowledge\//, '')
+  const inventory = await api('/v1/authoritative/markdown-inventory')
+  const note = (inventory.body ?? []).find((entry) => entry.path === state.notePath) ?? null
+  state.note = {
+    path: state.notePath,
+    id: note?.id ?? null,
+    title: note?.title ?? 'I5 dogfooding findings',
+    linkedFromTaskId: taskAId,
+  }
+  if (!state.note.id) throw new Error(`the created note ${state.notePath} was not in the markdown inventory`)
   await shot('08-knowledge-note')
-  steps.push(`Created knowledge note ${state.notePath} through the vault dialog`)
+  steps.push(`Created knowledge note ${state.notePath} (${state.note.id}) through the vault dialog`)
 
   {
     const { drawer, taskId } = await openTaskFromBoard(TASKS[0].title)
@@ -837,7 +1071,11 @@ async function run() {
   await shot('11-inbox-before-triage')
 
   // The drawer offers only the domain's edges. Inbox cannot go straight to In
-  // progress, so the control no longer offers it; record the proof.
+  // progress, so the control must not offer it. The 400 allowlist needs a real
+  // invalid-transition refusal too, so the same task is asked directly for an
+  // edge the domain rejects; that response is recorded as a deliberate probe.
+  const triageTaskId = state.taskIds[INBOX_TRIAGE_TITLE]
+  const triageBefore = await readTask(triageTaskId)
   {
     await page.getByRole('button', { name: INBOX_TRIAGE_TITLE, exact: true }).click()
     const statusDrawer = await dialog()
@@ -848,10 +1086,35 @@ async function run() {
     })
     const offered = (await page.getByRole('option').allInnerTexts()).map((text) => text.trim())
     await page.keyboard.press('Escape')
+    const offeredByControl = offered.includes('In progress')
+    if (offeredByControl) {
+      throw new Error('the status control offered In progress from Inbox even though the domain refuses it')
+    }
+    const revision = (await api('/v1/authoritative/tasks')).body?.revision
+    const invalid = await api('/v1/authoritative/task-commands', {
+      method: 'POST',
+      body: {
+        command_id: `invalid-edge-${randomUUID()}`,
+        expected_revision: revision,
+        action: { type: 'change_status', task_id: triageTaskId, status: 'done' },
+      },
+    })
+    if (invalid.status !== 400 || !/invalid task status transition: inbox -> done/.test(invalid.text)) {
+      throw new Error(`the deliberate invalid transition was not refused as expected: ${invalid.status} ${invalid.text}`)
+    }
+    recordProbeFailure({
+      status: invalid.status,
+      method: 'POST',
+      url: `${BASE}/v1/authoritative/task-commands`,
+      body: invalid.text,
+      source: 'deliberate invalid-transition probe',
+    })
     state.invalidTransition = {
-      attempted: 'inbox -> in_progress',
-      offeredByControl: offered.includes('In progress'),
+      attempted: 'inbox -> done',
+      offeredByControl,
       offered,
+      status: invalid.status,
+      refusal: invalid.body?.error ?? invalid.text,
     }
     await shot('11b-status-edges')
     await closeTaskDrawer()
@@ -868,6 +1131,24 @@ async function run() {
     label: 'the triaged task to leave the Inbox',
   })
   await page.getByRole('heading', { level: 1, name: 'Inbox' }).waitFor()
+  const triageAfter = await readTask(triageTaskId)
+  state.triage = {
+    taskId: triageTaskId,
+    before: {
+      status: triageBefore.status,
+      projectId: triageBefore.project_id ?? null,
+      priority: triageBefore.priority ?? null,
+    },
+    after: {
+      status: triageAfter.status,
+      projectId: triageAfter.project_id ?? null,
+      priority: triageAfter.priority ?? null,
+    },
+    surface: 'Inbox inline project and priority controls',
+  }
+  if (state.triage.after.projectId !== state.projectId || state.triage.after.priority !== 'high') {
+    throw new Error(`the Inbox triage did not store the project and priority: ${JSON.stringify(state.triage)}`)
+  }
   await shot('12-inbox-after-triage')
   steps.push(`Triaged “${INBOX_TRIAGE_TITLE}” from Home → Inbox into the project, priority High`)
 
@@ -897,18 +1178,35 @@ async function run() {
     { label: 'the schedule plan for the chosen window' },
   )
   const review = page.getByRole('button', { name: 'Review this plan' })
+  // Read the proposal before review: the run may not claim slots it only saw
+  // after the applied plan was rendered again on reload.
+  const proposedSlots = await page.locator('[data-schedule-slot]').count()
   const reviewWasDisabled = await review.isDisabled()
+  if (proposedSlots < 1) throw new Error('the schedule plan proposed no slots before review')
+  if (reviewWasDisabled) throw new Error('Review was disabled even though the plan proposed slots')
   await review.click()
   await page.locator('[data-plan-review]').waitFor({ timeout: 15_000 })
+  const reviewFingerprint = (await page.locator('[data-review-fingerprint]').innerText()).trim()
+  const reviewCommand = (await page.locator('[data-review-command]').innerText()).trim()
   await page.getByRole('checkbox', { name: 'Approve the reviewed schedule' }).check()
   await page.getByRole('button', { name: 'Apply approved plan' }).click()
   const receipt = page.locator('[data-plan-receipt]')
   await receipt.waitFor({ timeout: 15_000 })
+  const receiptVisible = await receipt.isVisible()
   const receiptBlocks = await receipt
     .locator('[data-receipt-block]')
     .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-receipt-block') ?? ''))
   const beforeReload = await api('/v1/authoritative/schedule')
   const blocksBeforeReload = beforeReload.body?.blocks ?? []
+  const applied =
+    receiptVisible &&
+    receiptBlocks.length > 0 &&
+    blocksBeforeReload.some(
+      (block) => block.title === TASKS[0].title && receiptBlocks.includes(block.id),
+    )
+  if (!applied) {
+    throw new Error(`the apply receipt did not match a stored schedule block: ${JSON.stringify({ receiptBlocks, blocksBeforeReload })}`)
+  }
   await shot('14-planning-applied')
 
   // A reload proves the block is stored, not held in React state.
@@ -923,21 +1221,23 @@ async function run() {
     capacityMinutes: 240,
     dayPlanRowsSelected: dayPlanRows,
     window: { date: dateValue, from: '13:00', to: '16:00' },
-    proposedSlots: await page.locator('[data-schedule-slot]').count(),
+    proposedSlotsBeforeReview: proposedSlots,
     reviewDisabledBeforeReview: reviewWasDisabled,
+    reviewFingerprint,
+    reviewCommandId: reviewCommand,
     receiptBlocks,
     blocksBeforeReload: blocksBeforeReload.length,
     blocksAfterReload: blocksAfterReload.length,
-    applied: true,
+    applied,
     survivedReload,
-    blockedBecause: null,
+    blockedBecause: applied ? null : 'the apply receipt did not match a stored block',
   }
   if (!survivedReload) {
     throw new Error('the applied schedule block did not survive the reload')
   }
   await shot('14b-planning-after-reload')
   steps.push(
-    `Sized task selected in the day plan; reviewed, approved and applied ${blocksAfterReload.length} block(s); the applied block survived a reload`,
+    `Sized task selected in the day plan (${proposedSlots} proposed slot before review); reviewed, approved and applied ${blocksAfterReload.length} block(s); the applied block survived a reload`,
   )
   log(`planning: ${JSON.stringify(state.planning)}`)
 
@@ -960,27 +1260,48 @@ async function run() {
   await shot('16-task-a-description-criteria')
 
   // ---- Deliberate second writer: prove the revision fence ---------------
-  const before = await api(`/v1/authoritative/tasks/${state.taskIds[TASKS[0].title]}`)
-  const secondWriterText = `${before.body?.description ?? ''}\n\nSecond writer: this sentence was written by another session at ${new Date().toISOString()}.`
-  const secondWriter = await api('/v1/authoritative/task-commands', {
-    method: 'POST',
-    body: {
-      command_id: `second-writer-${randomUUID()}`,
-      expected_revision: (await api('/v1/authoritative/tasks')).body.revision,
-      action: {
-        type: 'set_details',
-        task_id: state.taskIds[TASKS[0].title],
-        description: secondWriterText,
-        priority: (before.body?.priority ?? null),
-        labels: before.body?.labels ?? [],
-      },
-    },
+  // The second writer is a second enrolled device with its own browser
+  // context, session and drawer. Its accepted description edit advances the
+  // revision while the primary drawer still holds the old one; the primary's
+  // next edit must be refused, offer recovery, and must not overwrite it.
+  const taskAIdForConflict = state.taskIds[TASKS[0].title]
+  const beforeSecondWrite = await readTask(taskAIdForConflict)
+  const secondWriterMarker = `Second device note: this sentence was typed in another browser session at ${new Date().toISOString()}.`
+  const secondWriterText = `${beforeSecondWrite.description}\n\n${secondWriterMarker}`
+
+  secondContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    colorScheme: 'light',
+    baseURL: BASE,
   })
-  if (secondWriter.status !== 200) {
-    throw new Error(`second writer failed: ${secondWriter.status} ${secondWriter.text}`)
+  secondPage = await secondContext.newPage()
+  await secondPage.addInitScript(() => window.localStorage.setItem('orbit.theme', 'light'))
+  trackHttpErrors(secondPage, 'second-device browser')
+  await secondPage.goto(`${BASE}/login`)
+  await secondPage.getByRole('heading', { name: 'Sign in to Orbit' }).waitFor()
+  await secondPage.getByLabel('Device ID').fill(SECOND_DEVICE_ID)
+  await secondPage.getByLabel('Device token').fill(SECOND_DEVICE_TOKEN)
+  await secondPage.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await secondPage.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 15_000 })
+  await secondPage.goto(`${BASE}/projects/${state.projectId}/board`)
+  await secondPage.getByRole('navigation', { name: 'Project sections' }).waitFor()
+  const secondOpened = await openTaskOnPage(secondPage, TASKS[0].title)
+  const secondArea = secondOpened.drawer.getByLabel('Task description')
+  await secondArea.fill(secondWriterText)
+  await secondArea.press('Tab')
+  await waitUntil(
+    async () => (await readTask(taskAIdForConflict, { id: SECOND_DEVICE_ID, token: SECOND_DEVICE_TOKEN })).description.includes(secondWriterMarker),
+    { label: 'the second device description to be stored', timeout: 20_000 },
+  )
+  const afterSecondWrite = await readTask(taskAIdForConflict)
+  if (!afterSecondWrite.description.includes(secondWriterMarker)) {
+    throw new Error('the second device write was accepted in its own drawer but is not stored')
   }
-  // The drawer still holds the pre-second-writer revision. Its next edit must
-  // be refused and say so.
+  await shotOn(secondPage, '17a-second-device-write')
+  log(`second device ${SECOND_DEVICE_ID} stored “${secondWriterMarker}”`)
+
+  // The primary drawer still holds the pre-second-writer revision. Its next
+  // edit must be refused and say so exactly once, beside the field.
   const conflictText = `${editedDescription}\n\nA third sentence typed after the second writer.`
   const textarea = taskA.getByLabel('Task description')
   await textarea.fill(conflictText)
@@ -988,28 +1309,56 @@ async function run() {
   await waitUntil(async () => (await taskA.getByRole('alert').count()) > 0, {
     label: 'the stale-revision refusal',
   })
+  const alertsInDrawer = await taskA.getByRole('alert').count()
   const conflictAlert = (await taskA.getByRole('alert').first().innerText()).trim()
+  if (alertsInDrawer !== 1) {
+    throw new Error(`expected exactly one in-drawer refusal surface, found ${alertsInDrawer}`)
+  }
+  if (!/conflicted with a newer version/i.test(conflictAlert)) {
+    throw new Error(`the refusal did not name the stale revision: ${conflictAlert}`)
+  }
   const reloadControl = taskA.getByRole('button', { name: 'Reload this task and try again' })
   const conflictReloadControls = await reloadControl.count()
   if (conflictReloadControls !== 1) {
     throw new Error('the stale-revision refusal did not offer the drawer reload action')
   }
   state.conflict = {
-    secondWriterStatus: secondWriter.status,
+    secondDeviceId: SECOND_DEVICE_ID,
+    secondWrite: {
+      taskId: taskAIdForConflict,
+      surface: 'second browser context → board → task drawer',
+      marker: secondWriterMarker,
+      storedDescriptionIncludesMarker: afterSecondWrite.description.includes(secondWriterMarker),
+    },
+    secondWriterAccepted: afterSecondWrite.description.includes(secondWriterMarker),
     refusal: conflictAlert,
+    alertsInDrawer,
     reloadControlsInDrawer: conflictReloadControls,
     recoveredBy: 'drawer reload action',
+    recovered: false,
+    noSilentOverwrite: null,
   }
   await shot('17-task-a-stale-revision')
   log(`conflict: ${conflictAlert}`)
 
-  // Recover in place: the drawer reloads the task and snapshot, then the next
-  // edit is fenced on the revision the second writer left behind.
+  // Recover in place: the drawer reloads the task and snapshot, then the stored
+  // text is the second device's, not the refused draft.
   await reloadControl.click()
   await waitUntil(
-    async () => (await taskA.getByLabel('Task description').inputValue()).includes('Second writer:'),
+    async () => (await taskA.getByLabel('Task description').inputValue()).includes(secondWriterMarker),
     { label: 'the second writer text after the drawer reload', timeout: 15_000 },
   )
+  const afterRecovery = await readTask(taskAIdForConflict)
+  state.conflict.recovered = true
+  state.conflict.noSilentOverwrite =
+    afterRecovery.description.includes(secondWriterMarker) && !afterRecovery.description.includes('A third sentence typed after the second writer.')
+  if (!state.conflict.noSilentOverwrite) {
+    throw new Error('the refused primary draft overwrote the second device’s accepted description')
+  }
+  await closeTaskDrawerOn(secondPage)
+  await secondContext.close()
+  secondContext = null
+  secondPage = null
 
   // Recover the way a person can: reload the workspace, reopen, continue. The
   // drawer keeps its `?task=` in the address, so reload in place would reopen
@@ -1019,7 +1368,7 @@ async function run() {
   {
     const reopened = await openTaskFromBoard(TASKS[0].title)
     const value = await reopened.drawer.getByLabel('Task description').inputValue()
-    if (!value.includes('Second writer:')) {
+    if (!value.includes(secondWriterMarker)) {
       throw new Error('the second writer’s accepted text did not survive the reload')
     }
     await closeTaskDrawer()
@@ -1039,12 +1388,26 @@ async function run() {
     async () => (await taskAFinal.getByRole('region', { name: 'Attachments' }).getByText('task-a-evidence.md').count()) > 0,
     { label: 'the attachment to be listed', timeout: 25_000 },
   )
+  const attachmentList = await api(
+    `/v1/authoritative/attachments?owner_kind=task&owner_id=${encodeURIComponent(state.taskIds[TASKS[0].title])}`,
+  )
+  const storedAttachment =
+    (attachmentList.body?.attachments ?? []).find((entry) => entry.filename === 'task-a-evidence.md') ?? null
+  if (!storedAttachment) throw new Error('the uploaded attachment was not readable from the API')
+  state.attachment = {
+    id: storedAttachment.id,
+    filename: storedAttachment.filename,
+    contentType: storedAttachment.content_type,
+    sizeBytes: storedAttachment.size_bytes,
+    checksum: storedAttachment.checksum,
+    ownerTaskId: storedAttachment.owner_id,
+  }
   await taskAFinal.getByRole('region', { name: 'Attachments' }).scrollIntoViewIfNeeded()
   await shot('18-task-a-attachment')
 
-  await setStatus(taskAFinal, 'Ready')
-  await setStatus(taskAFinal, 'In progress')
-  await setStatus(taskAFinal, 'Done')
+  await setStatus(taskAFinal, 'Ready', taskAId, 'task drawer (completion)')
+  await setStatus(taskAFinal, 'In progress', taskAId, 'task drawer (completion)')
+  await setStatus(taskAFinal, 'Done', taskAId, 'task drawer (completion)')
   await taskAFinal.getByRole('region', { name: 'Activity' }).scrollIntoViewIfNeeded()
   await shot('19-task-a-complete-activity')
   const activity = await taskAFinal.getByRole('region', { name: 'Activity' }).innerText()
@@ -1056,14 +1419,21 @@ async function run() {
   if (!state.activityOrigins.labelsThisDevice) {
     throw new Error('this browser’s own writes were not labelled “This device”')
   }
+  if (!state.activityOrigins.labelsAnotherDevice) {
+    throw new Error('the second device’s write was not labelled “Another device”')
+  }
   await closeTaskDrawer()
   steps.push(`Completed “${TASKS[0].title}” (${state.taskIds[TASKS[0].title]}) through description, criteria, attachment, Ready → In progress → Done; activity visible`)
 
   // ---- Step 11: persistent state across a real server restart -----------
   log('stopping the server for the persistence proof')
+  const firstPid = server?.pid ?? null
   await stopServer()
-  await startServer()
+  const secondPid = await startServer()
   await page.reload()
+  const afterRestartPath = new URL(page.url()).pathname
+  const sessionSurvived = !afterRestartPath.startsWith('/login')
+  if (!sessionSurvived) throw new Error('the browser session did not survive the server restart')
   await page.getByRole('navigation', { name: 'Project sections' }).waitFor()
   await page.goto(`${BASE}/projects/${state.projectId}/board`)
   await page.getByRole('navigation', { name: 'Project sections' }).waitFor()
@@ -1071,43 +1441,64 @@ async function run() {
     .getByRole('listitem')
     .filter({ has: page.getByRole('button', { name: TASKS[0].title, exact: true }) })
   await completedCard.getByText('Done', { exact: true }).waitFor({ timeout: 15_000 })
+  const completedCardInDoneColumn = await completedCard.getByText('Done', { exact: true }).isVisible()
   const doneColumn = page.getByRole('region', { name: /^Done column, \d+ task/ })
   await doneColumn.scrollIntoViewIfNeeded()
   await sleep(300)
   state.restart = {
-    serverRestarted: true,
-    sessionSurvived: true,
-    completedCardInDoneColumn: true,
+    firstPid,
+    secondPid,
+    serverRestarted: firstPid !== null && secondPid !== null && firstPid !== secondPid,
+    sessionSurvived,
+    completedCardInDoneColumn,
     boardTaskCount: await page.locator('[data-board-action]').count(),
   }
+  if (!state.restart.serverRestarted) throw new Error('the server pid did not change across the restart proof')
+  if (!completedCardInDoneColumn) throw new Error('the completed card was not visible in the Done column after restart')
   await shot('20-after-restart-board-done')
   steps.push('Restarted the server between tasks; the session, the completed task and its board column survived a reload')
 
   // ---- Step 12: Task B completed from the board with the keyboard --------
   const taskBTitle = TASKS[TASKS.length - 1].title
+  const taskBId = state.taskIds[taskBTitle]
   await page.goto(`${BASE}/projects/${state.projectId}/board`)
   await page.getByRole('navigation', { name: 'Project sections' }).waitFor()
   const cardB = page.getByRole('button', { name: taskBTitle, exact: true })
   await cardB.waitFor()
+  await page.evaluate(() => {
+    window.__orbitPointerDowns = 0
+  })
   await cardB.focus()
   await shot('21-board-task-b-before')
-  // Ready -> In progress is the domain's allowed edge; the board offers every
-  // status and lets the server refuse the ones the lifecycle does not allow.
+  const beforeMoveB = await readTask(taskBId)
   const firstArrows = await boardKeyboardMove(taskBTitle, 'In progress')
   await page.getByRole('status').first().waitFor({ timeout: 5_000 }).catch(() => undefined)
+  const afterFirstMoveB = await readTask(taskBId)
   const secondArrows = await boardKeyboardMove(taskBTitle, 'Done')
+  const afterSecondMoveB = await readTask(taskBId)
+  const pointerDowns = await page.evaluate(() => window.__orbitPointerDowns ?? 0)
+  const usedMouse = pointerDowns > 0
+  if (usedMouse) throw new Error(`the board move observed ${pointerDowns} pointer press(es)`)
+  if (afterSecondMoveB.status !== 'done') {
+    throw new Error(`the board keyboard move did not store Done (stored: ${afterSecondMoveB.status})`)
+  }
+  state.moves.push(
+    { taskId: taskBId, from: beforeMoveB.status, to: afterFirstMoveB.status, surface: 'board keyboard (m, arrows, Enter)' },
+    { taskId: taskBId, from: afterFirstMoveB.status, to: afterSecondMoveB.status, surface: 'board keyboard (m, arrows, Enter)' },
+  )
   state.boardMove = {
-    taskId: state.taskIds[taskBTitle],
+    taskId: taskBId,
     title: taskBTitle,
     moves: ['In progress', 'Done'],
     arrowPresses: firstArrows + secondArrows,
-    usedMouse: false,
+    pointerDownsDuringMove: pointerDowns,
+    usedMouse,
   }
   await page.getByRole('region', { name: /^Done column, \d+ task/ }).scrollIntoViewIfNeeded()
   await sleep(300)
   await shot('22-board-task-b-done')
   steps.push(
-    `Completed “${taskBTitle}” from the board with two keyboard moves (Ready → In progress → Done, m → arrow → Enter, ${firstArrows + secondArrows} ArrowDown presses, no pointer used for the move)`,
+    `Completed “${taskBTitle}” from the board with two keyboard moves (Ready → In progress → Done, m → arrow → Enter, ${firstArrows + secondArrows} ArrowDown presses, ${pointerDowns} pointer presses)`,
   )
 
   // ---- Step 13: milestone progress + honest upgrade check ----------------
@@ -1115,18 +1506,64 @@ async function run() {
   await page.getByRole('navigation', { name: 'Project sections' }).waitFor()
   await page.getByText(MILESTONE_M31, { exact: true }).first().waitFor()
   await page.getByText(MILESTONE_REF, { exact: true }).first().waitFor()
-  await shot('23-milestone-progress')
-  const milestonePage = await page.locator('main').innerText()
-  state.milestones = {
-    names: [MILESTONE_M31, MILESTONE_REF],
-    progressCopy: milestonePage.split('\n').filter((line) => /task|done|progress|%|\d+\/\d+/i.test(line)).slice(0, 12),
+  const finalTasksResponse = await api('/v1/authoritative/tasks')
+  const finalTasks = finalTasksResponse.body?.tasks ?? []
+  const expectedMilestones = [
+    { name: MILESTONE_M31, assigned: 12, done: 2 },
+    { name: MILESTONE_REF, assigned: 6, done: 0 },
+  ]
+  const milestoneRows = page.locator('[data-milestone-row]')
+  if ((await milestoneRows.count()) !== expectedMilestones.length) {
+    throw new Error(`expected ${expectedMilestones.length} milestone rows, found ${await milestoneRows.count()}`)
   }
+  const milestoneState = {}
+  for (const expected of expectedMilestones) {
+    const milestoneId = state.milestoneIds[expected.name]
+    if (!milestoneId) throw new Error(`milestone ${expected.name} has no id`)
+    const assigned = finalTasks.filter((task) => task.milestone_id === milestoneId)
+    const done = assigned.filter((task) => task.status === 'done').length
+    const copy = `${done} of ${assigned.length} tasks done`
+    if (assigned.length !== expected.assigned || done !== expected.done) {
+      throw new Error(
+        `milestone ${expected.name} is ${copy}, expected ${expected.done} of ${expected.assigned}`,
+      )
+    }
+    const row = page.locator(`[data-milestone-row="${milestoneId}"]`)
+    await waitUntil(async () => (await row.innerText()).includes(copy), {
+      label: `milestone ${expected.name} to read “${copy}”`,
+    })
+    milestoneState[expected.name] = {
+      id: milestoneId,
+      assigned: assigned.length,
+      done,
+      copy,
+      taskIds: assigned.map((task) => task.id),
+    }
+  }
+  state.milestones = milestoneState
+  await shot('23-milestone-progress')
+  steps.push('Milestone progress read exactly 2 of 12 and 0 of 6 tasks done against the seeded plan')
 
   await page.goto(`${BASE}/projects/${state.projectId}/settings`)
   await page.getByRole('navigation', { name: 'Project sections' }).waitFor()
   await page.getByText('This project is on the newest published version of Development. No upgrade is pending.').waitFor()
   const upgradeOffered = await page.locator('[data-upgrade-available]').count()
-  state.upgrade = { offered: upgradeOffered > 0, copy: 'This project is on the newest published version of Development. No upgrade is pending.' }
+  const versions = await api('/v1/authoritative/blueprints')
+  const currentBinding = await api(`/v1/authoritative/blueprints/binding?project_id=${state.projectId}`)
+  const publishedForWorkflow = (versions.body ?? [])
+    .filter((entry) => entry[0] === currentBinding.body?.blueprint_id)
+    .map((entry) => entry[1])
+  const newestPublished = publishedForWorkflow.length > 0 ? Math.max(...publishedForWorkflow) : null
+  if (upgradeOffered > 0) throw new Error('settings offered an upgrade that does not exist')
+  if (newestPublished !== null && currentBinding.body.version !== newestPublished) {
+    throw new Error(`an upgrade to v${newestPublished} exists but was not offered`)
+  }
+  state.upgrade = {
+    offered: upgradeOffered > 0,
+    currentVersion: currentBinding.body?.version ?? null,
+    newestPublished,
+    copy: 'This project is on the newest published version of Development. No upgrade is pending.',
+  }
   await shot('24-settings-no-upgrade')
   steps.push('Reviewed milestone progress; settings honestly reported no newer published workflow version')
 
@@ -1135,6 +1572,7 @@ async function run() {
   await page.getByRole('heading', { level: 1, name: 'Agents' }).waitFor()
   await shot('25-agents-no-jobs')
   const agentsText = await page.locator('main').innerText()
+  const agentOverview = await api('/v1/authoritative/agent-jobs/overview')
 
   await page.goto(`${BASE}/`)
   await page.locator('main h1').first().waitFor()
@@ -1142,8 +1580,36 @@ async function run() {
 
   state.agentJobs = {
     created: false,
+    visibleJobs: Array.isArray(agentOverview.body) ? agentOverview.body.length : null,
     reason: 'The web app exposes no launch or create control for agent jobs; the overview was empty and says so.',
     overviewCopy: agentsText.split('\n').filter((line) => line.trim().length > 0).slice(0, 10),
+  }
+  if (state.agentJobs.visibleJobs !== 0) {
+    throw new Error(`expected no agent jobs for this device, found ${state.agentJobs.visibleJobs}`)
+  }
+
+  // ---- Final reads before the database is stopped -----------------------
+  const finalTasksNowResponse = await api('/v1/authoritative/tasks')
+  const finalTasksNow = finalTasksNowResponse.body?.tasks ?? []
+  const finalMilestonesResponse = await api('/v1/authoritative/milestones')
+  const finalMilestones = finalMilestonesResponse.body?.milestones ?? []
+  const finalSchedule = await api('/v1/authoritative/schedule')
+  const finalInventory = await api('/v1/authoritative/markdown-inventory')
+  const finalItems = await api(`/v1/authoritative/blueprints/items?project_id=${state.projectId}`)
+  const tasksByStatus = {}
+  for (const task of finalTasksNow) tasksByStatus[task.status] = (tasksByStatus[task.status] ?? 0) + 1
+  state.counts = {
+    tasks: finalTasksNow.length,
+    tasksByStatus,
+    tasksWithMilestone: finalTasksNow.filter((task) => task.milestone_id).length,
+    milestones: finalMilestones.filter((milestone) => milestone.project_id === state.projectId).length,
+    scheduleBlocks: (finalSchedule.body?.blocks ?? []).length,
+    notes: (finalInventory.body ?? []).length,
+    workItems: (finalItems.body ?? []).length,
+    attachments: state.attachment ? 1 : 0,
+  }
+  if (state.counts.tasks !== TASKS.length + 1) {
+    throw new Error(`expected ${TASKS.length + 1} tasks (seeded plus the Inbox triage capture), found ${state.counts.tasks}`)
   }
 
   // ---- Close and back up the database -----------------------------------
@@ -1166,29 +1632,309 @@ async function run() {
     }
   }
 
-  // Final state read from the stopped database's sibling vault is not possible
-  // through HTTP; the run recorded the ids as the UI minted them.
+  // Every 4xx/5xx must belong to the two deliberate refusals this run is
+  // allowed to provoke. A new error anywhere else fails the run rather than
+  // hiding in a list nobody reads.
+  const httpErrors = await Promise.all(
+    httpErrorRecords.map(async (record) => {
+      const { textPromise, ...rest } = record
+      return { ...rest, body: await textPromise }
+    }),
+  )
+  const isAllowed = (error) =>
+    (error.status === 400 && /invalid task status transition: inbox -> done/.test(error.body)) ||
+    (error.status === 409 && /conflicted with a newer version|stale server revision/i.test(error.body))
+  const unexpectedErrors = httpErrors.filter((error) => !isAllowed(error))
+  if (unexpectedErrors.length > 0) {
+    throw new Error(`unexpected HTTP errors outside the allowlist:\n${JSON.stringify(unexpectedErrors, null, 2)}`)
+  }
+  const hasInvalidTransition = httpErrors.some(
+    (error) => error.status === 400 && /invalid task status transition/.test(error.body),
+  )
+  const hasStaleRevision = httpErrors.some(
+    (error) => error.status === 409 && /conflicted with a newer version|stale server revision/i.test(error.body),
+  )
+  if (!hasInvalidTransition || !hasStaleRevision || httpErrors.length !== 2) {
+    throw new Error(
+      `expected exactly one 400 invalid-transition and one 409 stale-revision refusal, got ${JSON.stringify(
+        httpErrors.map((error) => ({ status: error.status, source: error.source, body: error.body })),
+        null,
+        2,
+      )}`,
+    )
+  }
+
+  const finishedAt = new Date().toISOString()
   const summary = {
     ...state,
-    finishedAt: new Date().toISOString(),
+    finishedAt,
     dbPath: DB,
     backups,
     evidenceDir: OUT,
     httpErrors,
+    httpErrorAllowlist: [
+      '400 invalid task status transition: inbox -> done (deliberate probe)',
+      '409 stale server revision (deliberate second-device conflict)',
+    ],
     steps,
     environment: {
       port: PORT,
-      device: DEVICE_ID,
+      base: BASE,
+      devices: [DEVICE_ID, SECOND_DEVICE_ID],
       dist: DIST,
       vault: path.join(RUN_DIR, 'vault', 'db.knowledge'),
-      serverBinary: path.join(REPO, 'target', 'debug', 'orbit-server'),
+      attachmentStore: path.join(RUN_DIR, 'vault', 'attachments', 'objects'),
+      serverBinary: SERVER_BINARY,
+      browser: 'Chromium 1440x900, light theme, headless',
     },
   }
   await writeFile(path.join(OUT, 'run.json'), `${JSON.stringify(summary, null, 2)}\n`)
+  await writeFile(path.join(OUT, 'README.md'), renderReadme(summary))
   log(`wrote ${path.join(OUT, 'run.json')}`)
+  log(`wrote ${path.join(OUT, 'README.md')}`)
   log(`database backup ${backup}`)
   log('I5 cycle finished')
   return summary
+}
+
+/* ------------------------------------------------------------------ */
+/* Generated evidence README                                           */
+/* ------------------------------------------------------------------ */
+
+function mdCell(value) {
+  const text = value === null || value === undefined ? '—' : String(value)
+  return text.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+}
+
+function mdTable(headers, rows) {
+  const lines = [
+    `| ${headers.map(mdCell).join(' | ')} |`,
+    `| ${headers.map(() => '---').join(' | ')} |`,
+    ...rows.map((row) => `| ${row.map(mdCell).join(' | ')} |`),
+  ]
+  return lines.join('\n')
+}
+
+/**
+ * Everything below is read from `run.json`/the recorded state. There are no
+ * separately maintained claims to drift: change the run, and this file changes.
+ */
+function renderReadme(summary) {
+  const identity = summary.identity
+  const titles = new Map(Object.entries(summary.taskIds).map(([title, id]) => [id, title]))
+  const moveRows = summary.moves.map((move) => [
+    titles.get(move.taskId) ?? move.taskId,
+    move.taskId,
+    `${move.from} → ${move.to}`,
+    move.surface,
+  ])
+  if (summary.triage) {
+    moveRows.push([
+      titles.get(summary.triage.taskId) ?? 'Inbox triage capture',
+      summary.triage.taskId,
+      `${summary.triage.before.status} (status unchanged)`,
+      `${summary.triage.surface}: project ${summary.triage.before.projectId ?? 'none'} → ${summary.triage.after.projectId}, priority ${summary.triage.before.priority ?? 'none'} → ${summary.triage.after.priority}`,
+    ])
+  }
+  const milestoneRows = Object.entries(summary.milestones).map(([name, milestone]) => [
+    name,
+    milestone.id,
+    milestone.assigned,
+    milestone.done,
+    milestone.copy,
+  ])
+  const planning = summary.planning
+  const conflict = summary.conflict
+  const board = summary.boardMove
+  const restart = summary.restart
+  const upgrade = summary.upgrade
+  const counts = summary.counts
+  const errorRows = summary.httpErrors.map((error) => [
+    error.status,
+    error.method,
+    error.source,
+    error.body,
+  ])
+
+  return `# I5 — real dogfooding cycle, evidence
+
+This directory is generated by \`web/tests/e2e/i5/dogfood.mjs\`. The numbers and
+identities below come from \`run.json\`; do not edit them by hand.
+
+## Capture identity
+
+${mdTable(
+  ['Item', 'Value'],
+  [
+    ['Application commit', `\`${identity.commit}\``],
+    ['Tree at capture', identity.tree],
+    ['Built SPA', `\`${identity.dist.sha256}\` (${identity.dist.fileCount} files, ${identity.dist.totalBytes} bytes)`],
+    ['Server binary', `\`${identity.serverBinary.sha256}\` (${identity.serverBinary.bytes} bytes)`],
+    ['Workflow manifest', `${identity.workflow.label} (\`${identity.workflow.id}\` v${identity.workflow.version})`],
+    ['Origin', summary.environment.base],
+    ['Database', summary.dbPath],
+    ['Knowledge vault', summary.environment.vault],
+    ['Attachment store', summary.environment.attachmentStore],
+    ['Enrolled devices', summary.environment.devices.join(', ')],
+    ['Browser', summary.environment.browser],
+    ['Capture window', `${summary.startedAt} → ${summary.finishedAt}`],
+    ['Exact command', `\`${summary.command.invocation}\` from \`${summary.command.cwd}\``],
+    ['Machine-readable run', '[`run.json`](run.json)'],
+  ],
+)}
+
+## Project and final content
+
+${mdTable(
+  ['Item', 'Value'],
+  [
+    ['Project', `${summary.project.name} (\`${summary.project.id}\`), status ${summary.project.status}`],
+    ['Workflow binding', `\`${summary.project.workflow.id}\` v${summary.project.workflow.version}`],
+    ['Tasks (including the Inbox capture)', counts.tasks],
+    ['Tasks by status', Object.entries(counts.tasksByStatus).map(([status, count]) => `${status}: ${count}`).join(', ')],
+    ['Tasks with a milestone', counts.tasksWithMilestone],
+    ['Milestones', counts.milestones],
+    ['Schedule blocks', counts.scheduleBlocks],
+    ['Knowledge notes', counts.notes],
+    ['Work items', counts.workItems],
+    ['Attachments', counts.attachments],
+    ['Feature work item', `${summary.workItem.id} — title “${summary.workItem.properties?.title ?? ''}”, kind ${summary.workItem.kind}, state ${summary.workItem.state}`],
+    ['Knowledge note', `${summary.note.id} — \`${summary.note.path}\` (“${summary.note.title}”)`],
+    ['Attachment', `${summary.attachment.id} — \`${summary.attachment.filename}\`, ${summary.attachment.sizeBytes} bytes, checksum \`${summary.attachment.checksum}\``],
+  ],
+)}
+
+## Task ids that actually moved
+
+${mdTable(['Task', 'Id', 'Stored change', 'Surface'], moveRows)}
+
+## Milestone progress against the seeded plan
+
+${mdTable(['Milestone', 'Id', 'Assigned', 'Done', 'Observed copy'], milestoneRows)}
+
+The run refused to finish unless the milestone rows read exactly these counts.
+
+## Planning outcome
+
+${mdTable(
+  ['Fact', 'Value'],
+  [
+    ['Capacity authored', `${planning.capacityMinutes} minutes`],
+    ['Day-plan rows selected', planning.dayPlanRowsSelected],
+    ['Proposed slots read before review', planning.proposedSlotsBeforeReview],
+    ['Review disabled before review', planning.reviewDisabledBeforeReview],
+    ['Window', `${planning.window.date} ${planning.window.from}–${planning.window.to}`],
+    ['Review fingerprint', `\`${planning.reviewFingerprint}\``],
+    ['Review command id', `\`${planning.reviewCommandId}\``],
+    ['Receipt block ids', planning.receiptBlocks.map((id) => `\`${id}\``).join(', ')],
+    ['Blocks before reload', planning.blocksBeforeReload],
+    ['Blocks after reload', planning.blocksAfterReload],
+    ['Applied', planning.applied],
+    ['Survived reload', planning.survivedReload],
+    ['Blocked because', planning.blockedBecause],
+  ],
+)}
+
+## Conflict recovery
+
+${mdTable(
+  ['Fact', 'Value'],
+  [
+    ['Second enrolled device', conflict.secondDeviceId],
+    ['Second write', `${conflict.secondWrite.surface} on task \`${conflict.secondWrite.taskId}\``],
+    ['Second write stored', conflict.secondWrite.storedDescriptionIncludesMarker],
+    ['Primary refusal', conflict.refusal],
+    ['In-drawer alerts', conflict.alertsInDrawer],
+    ['Reload controls in drawer', conflict.reloadControlsInDrawer],
+    ['Recovered by', conflict.recoveredBy],
+    ['Recovered', conflict.recovered],
+    ['Second device text kept, refused draft absent', conflict.noSilentOverwrite],
+  ],
+)}
+
+## Activity attribution
+
+${mdTable(
+  ['Fact', 'Value'],
+  [
+    ['Labels this browser’s writes “This device”', summary.activityOrigins.labelsThisDevice],
+    ['Labels the second device’s write “Another device”', summary.activityOrigins.labelsAnotherDevice],
+  ],
+)}
+
+## Board keyboard move
+
+${mdTable(
+  ['Fact', 'Value'],
+  [
+    ['Task', `${board.title} (\`${board.taskId}\`)`],
+    ['Moves', board.moves.join(' → ')],
+    ['ArrowDown presses', board.arrowPresses],
+    ['Pointer presses during the move', board.pointerDownsDuringMove],
+    ['Used mouse', board.usedMouse],
+  ],
+)}
+
+## Server restart
+
+${mdTable(
+  ['Fact', 'Value'],
+  [
+    ['Server pid before', restart.firstPid],
+    ['Server pid after', restart.secondPid],
+    ['Server restarted', restart.serverRestarted],
+    ['Session survived', restart.sessionSurvived],
+    ['Completed card in Done column', restart.completedCardInDoneColumn],
+    ['Board task buttons after restart', restart.boardTaskCount],
+  ],
+)}
+
+## HTTP errors
+
+Only these refusals are allowed; any other 4xx/5xx fails the run.
+
+${mdTable(['Status', 'Method', 'Source', 'Body'], errorRows)}
+
+## Honest non-claims recorded by the run
+
+${mdTable(
+  ['Surface', 'Fact', 'Value'],
+  [
+    ['Upgrade', 'Current / newest published version', `${upgrade.currentVersion} / ${upgrade.newestPublished}`],
+    ['Upgrade', 'Upgrade offered', upgrade.offered],
+    ['Agent jobs', 'Visible jobs for this device', summary.agentJobs.visibleJobs],
+    ['Agent jobs', 'Created through the browser', summary.agentJobs.created],
+    ['Agent jobs', 'Reason', summary.agentJobs.reason],
+    ['Invalid transition', 'Attempted', `${summary.invalidTransition.attempted} (offered by control: ${summary.invalidTransition.offeredByControl})`],
+    ['Invalid transition', 'Refusal', summary.invalidTransition.refusal],
+  ],
+)}
+
+## Captures
+
+${summary.captures.map((name, index) => `${index + 1}. [\`${name}.png\`](${name}.png)`).join('\n')}
+
+## Database backup
+
+${summary.backups
+  .map((file) => `- [\`${path.basename(file)}\`](${path.basename(file)})`)
+  .join('\n')}
+
+The attachment source file is committed as
+[\`task-a-evidence.md\`](task-a-evidence.md). Attachment bytes live in the server's
+object store, not in SQLite.
+
+## How to reproduce
+
+\`\`\`bash
+cd ${summary.command.cwd}
+node ${path.relative(summary.command.cwd, fileURLToPath(import.meta.url)).split(path.sep).join('/')}
+\`\`\`
+
+The script refuses to start on a dirty tree, wipes \`/tmp/orbit-i5\`, enrols both
+devices, and performs every content change through the browser. It rewrites this
+directory and the database backup on success.
+`
 }
 
 try {
@@ -1202,12 +1948,13 @@ try {
       await writeFile(path.join(OUT, 'failure-page.html'), await page.content()).catch(() => undefined)
       await writeFile(
         path.join(OUT, 'failure-state.json'),
-        JSON.stringify({ state, httpErrors, steps, url: page.url() }, null, 2),
+        JSON.stringify({ state, httpErrors: httpErrorRecords, steps, url: page.url() }, null, 2),
       )
     }
   } catch {
     // best effort
   }
+  if (secondContext) await secondContext.close().catch(() => undefined)
   if (browser) await browser.close().catch(() => undefined)
   await stopServer().catch(() => undefined)
   process.exitCode = 1
