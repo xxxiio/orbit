@@ -1,13 +1,20 @@
 /**
  * I4 acceptance: the Agents workspace reads jobs this device owns.
  *
- * A review writes a decision and never moves the Orbit task. A missing/foreign
- * id answers 403 and is reported as "not visible", not as "does not exist".
- * There is no launch control anywhere.
+ * A review writes a decision and never moves the Orbit task. A missing or
+ * foreign id answers 403 and is reported as "not visible", not as "does not
+ * exist" — including for a job another enrolled device really started. Resuming
+ * an interrupted job queues a successor; it does not launch one.
+ *
+ * Launching itself (the task drawer and Agents page dialogs, the executor
+ * roster) is covered by `agents-launch.spec.ts`. Nothing on the job page starts
+ * a model: the controls here are explicit review and resume only.
  */
 import { expect, test } from './harness/fixtures'
-import type { E2EServer } from './harness/server'
-import { goto } from './harness/session'
+import { readOverview, readJob, startJob } from './harness/agents'
+import { getAuthority } from './harness/authority'
+import { enrollDeviceWithAdminKey, type E2EServer } from './harness/server'
+import { goto, signInViaApi } from './harness/session'
 
 async function taskStatus(
   page: import('@playwright/test').Page,
@@ -152,13 +159,51 @@ test.describe('agent jobs', () => {
 
   test('a foreign job id is reported as not visible, never as missing', async ({
     page,
+    context,
     workspace,
   }) => {
-    const { server } = workspace
+    const { server, fixture } = workspace
+    // An id that was never created: the ownership check answers before the lookup.
     await goto(page, server, '/agents/not-my-job-9f4c')
     await expect(page.getByText('This job is not visible to this device')).toBeVisible()
     await expect(page.getByText(/does not exist|no longer exists/i)).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Back to Agents' })).toBeVisible()
+
+    // A job that really exists, owned by another enrolled device. Jobs belong to
+    // the device that started them, so "not visible" must not be a polite
+    // spelling of "not found".
+    const other = {
+      deviceId: 'e2e-foreign-executor',
+      token: 'e2e-foreign-executor-token-0123456789abcdef',
+    }
+    await enrollDeviceWithAdminKey(server, other)
+    const second = await context.browser()!.newContext({ baseURL: server.base })
+    const otherPage = await second.newPage()
+    try {
+      await signInViaApi(otherPage, server, other)
+      const started = await startJob(otherPage, server, {
+        jobId: 'job-foreign-device',
+        taskId: fixture.ids.orbitTask,
+        machineRef: other.deviceId,
+        repositoryRef: 'orbit',
+        atMs: fixture.nowMs,
+      })
+      // The owner reads the job it queued...
+      expect((await readJob(otherPage, server, started.job_id)).machine_ref).toBe(other.deviceId)
+      // ...and this device is refused, without being told whether it exists.
+      const foreign = await getAuthority(page, server, `agent-jobs?id=${started.job_id}`)
+      expect(foreign.status).toBe(403)
+      expect(JSON.stringify(foreign.body)).toContain('device identity mismatch')
+      expect((await readOverview(page, server)).map((row) => row.job_id)).not.toContain(
+        started.job_id,
+      )
+
+      await goto(page, server, `/agents/${started.job_id}`)
+      await expect(page.getByText('This job is not visible to this device')).toBeVisible()
+      await expect(page.getByText(/does not exist|no longer exists/i)).toHaveCount(0)
+    } finally {
+      await second.close()
+    }
   })
 
   test('Home lists the agent jobs that need attention', async ({ page, workspace }) => {

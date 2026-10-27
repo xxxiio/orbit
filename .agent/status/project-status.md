@@ -39,14 +39,16 @@ projects, tasks and knowledge in one server query, save and restore personal
 task/board views, and show authoritative task Created/Updated times with an
 explicit unknown state. Since I2 it manages knowledge as a working surface:
 folders, note locations, links, project/task references and project-context
-knowledge. M32 I3–I6 remain: browser agent execution, connected capability
-execution, extended dogfooding and final acceptance. Per-device project ACLs, server attachment GC and live Herdr
+knowledge, and since I3 it can launch an authorized agent job against a real
+executor and review the result without the job ever completing the task. M32
+I4–I6 remain: connected capability execution, extended dogfooding and final
+acceptance. Per-device project ACLs, server attachment GC and live Herdr
 acceptance remain documented follow-ups.
 
 ## Current milestone
 
 MILESTONE-0032 — M32 Web Product Completeness, Agent Workflows & Extended
-Dogfooding, active (I1–I2 complete). MILESTONE-0031 is complete (I1–I6). M31
+Dogfooding, active (I1–I3 complete). MILESTONE-0031 is complete (I1–I6). M31
 shipped the React client served by `orbit-server` with session authentication,
 Home, Inbox, project management, workflow-driven workspaces and a task inspector
 against the authoritative domain. MILESTONE-0030 is complete (I1–I4), and
@@ -54,6 +56,19 @@ MILESTONE-0025 EC-001..EC-007 remain satisfied. M27 remains blocked externally.
 
 ## Recently completed
 
+- M32 I3 browser agent execution: the Agents page reads a real executor roster,
+  a task can launch an authorized job with an executor and an optional objective,
+  and the job page distinguishes *waiting for an executor*, *claimed*, *launch
+  confirmed* and *ambiguous* (which never offers a relaunch). Start refuses an
+  unknown or revoked executor before any job exists, 40+ storage refusals now reach
+  the browser in the server's own words instead of one opaque 400, and an unclaimed
+  queued job is grouped as **Awaiting an executor** rather than "nothing to do". A
+  device that has never claimed a job is flagged in the panel, the picker and the
+  confirmation, and the confirmation says the roster cannot show whether a runner
+  is alive. Acceptance drives the production machine routes with the fixture's own
+  device credential through a full launch → claim → observe → handoff → review
+  cycle, proves the task status never changes, and survives a real server restart.
+  1,781 workspace tests, 342 client unit tests and 131 browser checks pass.
 - M32 I2 knowledge workflows: folders are real destinations with create, rename
   and move (server-side a rename is a move), notes are created, renamed and moved
   through a folder picker, and a folder rename carries its notes. Notes link to

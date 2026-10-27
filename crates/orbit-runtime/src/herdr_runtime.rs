@@ -81,6 +81,18 @@ impl<R: HerdrCommandRunner> HerdrRuntime<R> {
         self.runner.run(&command)
     }
 }
+/// Read the optional objective out of the frozen task brief. A brief without an
+/// objective (or with a blank one) yields `None`, so the launch prompt stays
+/// byte-identical for every pre-objective caller.
+fn objective_paragraph(brief_json: &str) -> Option<String> {
+    let brief: Value = serde_json::from_str(brief_json).ok()?;
+    let objective = brief.get("objective")?.as_str()?.trim();
+    if objective.is_empty() {
+        return None;
+    }
+    Some(objective.to_owned())
+}
+
 fn agent_name(job_id: &str) -> String {
     // Deterministic, name-safe, collision-resistant for normal job ids. Names
     // are NOT the durable identity; Orbit retains the launch claim and pane.
@@ -168,10 +180,17 @@ impl<R: HerdrCommandRunner> AgentRuntime for HerdrRuntime<R> {
             });
         }
         // Prompt submission may have happened even if acknowledgment is lost.
-        let prompt = format!(
+        let mut prompt = format!(
             "Orbit job {}. Implement the following authority-captured task brief. Report changes and validation; do not assume task completion.\n{}",
             request.job_id, request.brief_json
         );
+        // The objective is an optional, additive part of the frozen brief. When it
+        // is absent the prompt must stay byte-identical to the pre-objective
+        // shape; when present it is a separate paragraph, never shell argv.
+        if let Some(objective) = objective_paragraph(&request.brief_json) {
+            prompt.push_str("\n\nObjective: ");
+            prompt.push_str(&objective);
+        }
         if let Err(e) = self.invoke(&request.machine_ref, &["agent", "prompt", &name, &prompt]) {
             return Ok(AgentLaunchOutcome::Ambiguous {
                 diagnostic: format!("prompt delivery uncertain: {e}"),
@@ -325,6 +344,58 @@ mod tests {
             AgentLaunchOutcome::Rejected { .. }
         ));
         assert!(runtime.runner.calls.is_empty());
+    }
+    /// The prompt is the last call's final argument; tests quote it verbatim.
+    fn prompt_of(call: &[String]) -> String {
+        call.last().cloned().unwrap_or_default()
+    }
+    fn launch_prompt(brief_json: &str) -> String {
+        let mock = Mock {
+            calls: vec![],
+            responses: vec![
+                Ok(serde_json::json!({"result":{"root_pane":{"pane_id":"w1:p1"}}})),
+                Ok(serde_json::json!({"result":{}})),
+                Ok(serde_json::json!({"result":{}})),
+            ],
+        };
+        let mut runtime = HerdrRuntime::new(mock);
+        let mut r = request();
+        r.brief_json = brief_json.into();
+        assert!(matches!(
+            runtime.launch(&r).unwrap(),
+            AgentLaunchOutcome::Confirmed { .. }
+        ));
+        prompt_of(&runtime.runner.calls[2])
+    }
+    #[test]
+    fn prompt_is_unchanged_without_an_objective() {
+        let prompt = launch_prompt("{\"title\":\"ship\"}");
+        assert_eq!(
+            prompt,
+            "Orbit job task-1. Implement the following authority-captured task brief. \
+             Report changes and validation; do not assume task completion.\n{\"title\":\"ship\"}"
+        );
+        // A blank objective is the same as an absent one: no paragraph is added,
+        // and the brief text is passed through unchanged.
+        let blank = launch_prompt("{\"title\":\"ship\",\"objective\":\"   \"}");
+        assert_eq!(
+            blank,
+            "Orbit job task-1. Implement the following authority-captured task brief. \
+             Report changes and validation; do not assume task completion.\n\
+             {\"title\":\"ship\",\"objective\":\"   \"}"
+        );
+        assert!(!blank.contains("Objective:"));
+    }
+    #[test]
+    fn prompt_appends_the_objective_as_its_own_paragraph() {
+        let prompt = launch_prompt(
+            "{\"title\":\"ship\",\"objective\":\"Fix the login redirect and add a regression test.\"}",
+        );
+        assert!(
+            prompt.ends_with("\n\nObjective: Fix the login redirect and add a regression test.")
+        );
+        // The brief paragraph itself is untouched.
+        assert!(prompt.contains("\n{\"title\":\"ship\",\"objective\":\"Fix the login"));
     }
     #[test]
     fn continuation_routes_to_named_remote_machine_without_new_session() {

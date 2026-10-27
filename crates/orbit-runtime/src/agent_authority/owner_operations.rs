@@ -42,11 +42,12 @@ impl AuthoritativeHost {
             last_seen_at_ms: None,
             runtime_session_ref: None,
         };
-        self.authority
+        let reserved = self
+            .authority
             .conn
             .reserve_agent_job_for_device(owner, &job)
-            .map(Into::into)
-            .map_err(|_| bad_input())
+            .map_err(storage_refusal)?;
+        self.agent_job_view(reserved)
     }
     /// Only explicitly supported authority-local transitions are exposed.
     /// Agent completion never updates task status.
@@ -65,7 +66,8 @@ impl AuthoritativeHost {
             .conn
             .require_agent_job_owner(owner, &command.job_id)
             .map_err(|_| AuthorityError::Unauthorized)?;
-        self.authority
+        let accepted = self
+            .authority
             .conn
             .accept_agent_job_command(
                 &command.command_id,
@@ -74,8 +76,8 @@ impl AuthoritativeHost {
                 &command.action,
                 command.at_ms,
             )
-            .map(Into::into)
-            .map_err(|_| bad_input())
+            .map_err(storage_refusal)?;
+        self.agent_job_view(accepted)
     }
     pub fn agent_job_authoritative(
         &self,
@@ -88,11 +90,15 @@ impl AuthoritativeHost {
             .conn
             .require_agent_job_owner(owner, id)
             .map_err(|_| AuthorityError::Unauthorized)?;
-        self.authority
+        match self
+            .authority
             .conn
             .get_agent_job(id)
-            .map(|j| j.map(Into::into))
-            .map_err(|_| bad_input())
+            .map_err(storage_refusal)?
+        {
+            Some(job) => self.agent_job_view(job).map(Some),
+            None => Ok(None),
+        }
     }
     /// Connected clients see only the handoffs of jobs owned by their device.
     pub fn agent_handoffs_authoritatively(
@@ -109,7 +115,7 @@ impl AuthoritativeHost {
         self.authority
             .conn
             .list_agent_job_handoffs(id)
-            .map_err(|_| bad_input())
+            .map_err(storage_refusal)
     }
     pub fn submit_agent_handoff_authoritatively(
         &mut self,
@@ -134,11 +140,11 @@ impl AuthoritativeHost {
                 &command.payload,
                 command.at_ms,
             )
-            .map_err(|_| bad_input())?;
+            .map_err(storage_refusal)?;
         self.authority
             .conn
             .list_agent_job_handoffs(&command.job_id)
-            .map_err(|_| bad_input())
+            .map_err(storage_refusal)
     }
     /// The authenticated owner is the reviewer identity; callers cannot forge it.
     pub fn review_agent_handoff_authoritatively(
@@ -166,7 +172,7 @@ impl AuthoritativeHost {
                 &command.reason,
                 command.at_ms,
             )
-            .map_err(|_| bad_input())
+            .map_err(storage_refusal)
     }
     pub fn agent_review_authoritatively(
         &self,
@@ -182,7 +188,7 @@ impl AuthoritativeHost {
         self.authority
             .conn
             .agent_job_review(id)
-            .map_err(|_| bad_input())
+            .map_err(storage_refusal)
     }
     pub fn agent_overview_authoritatively(
         &self,
@@ -214,23 +220,22 @@ impl AuthoritativeHost {
         owner: &str,
     ) -> Result<Vec<AgentJobView>, AuthorityError> {
         validate_ref(owner)?;
-        self.authority
+        let jobs = self
+            .authority
             .conn
             .list_agent_jobs_needing_attention()
-            .map(|jobs| {
-                let mut visible = Vec::new();
-                for job in jobs {
-                    if self
-                        .authority
-                        .conn
-                        .require_agent_job_owner(owner, &job.id)
-                        .is_ok()
-                    {
-                        visible.push(job.into());
-                    }
-                }
-                visible
-            })
-            .map_err(|_| bad_input())
+            .map_err(storage_refusal)?;
+        let mut visible = Vec::new();
+        for job in jobs {
+            if self
+                .authority
+                .conn
+                .require_agent_job_owner(owner, &job.id)
+                .is_ok()
+            {
+                visible.push(job);
+            }
+        }
+        self.agent_job_views(visible)
     }
 }

@@ -1,10 +1,12 @@
 /**
- * The Agents workspace: jobs this device can see, attention first, then by state.
+ * The Agents workspace: executors, jobs this device can see, attention first,
+ * then by state.
  *
- * Nothing here launches an agent. The overview is a read model; detail pages
- * offer explicit review and resume actions only.
+ * Queueing a job happens here and in the task drawer; neither starts a model. The
+ * detail page offers explicit review and resume actions only, and a queued job
+ * with no claim is shown as waiting for an executor instead of "nothing to do".
  */
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { AgentJobOverview } from '@/api/adapters'
 import {
@@ -36,6 +38,9 @@ import {
   nextActionLabel,
   shortAgentId,
 } from './agent-model'
+import { AgentExecutorsPanel } from './launch/executors-panel'
+import { LaunchAgentJobDialog } from './launch/launch-agent-job-dialog'
+import { useExecutorState } from './launch/use-executor-state'
 
 function OverviewSkeleton() {
   return (
@@ -135,6 +140,8 @@ export function AgentsOverviewPage() {
   useDocumentTitle('Agents')
   const overview = useAgentOverview()
   const snapshot = useWorkspaceSnapshot()
+  const executors = useExecutorState()
+  const [launchOpen, setLaunchOpen] = useState(false)
 
   const projects = useMemo(
     () => new Map((snapshot.data?.projects ?? []).map((project) => [project.id, project.name])),
@@ -149,11 +156,22 @@ export function AgentsOverviewPage() {
     () => (overview.data ?? []).filter((job) => job.needsAttention),
     [overview.data],
   )
-  const attentionIds = useMemo(() => new Set(attention.map((job) => job.jobId)), [attention])
+  /** Queued or preparing with no claim: visible, but not a person's problem yet. */
+  const awaiting = useMemo(
+    () =>
+      (overview.data ?? []).filter(
+        (job) => job.nextAction === 'await_executor' && !job.needsAttention,
+      ),
+    [overview.data],
+  )
+  const claimedIds = useMemo(
+    () => new Set([...attention, ...awaiting].map((job) => job.jobId)),
+    [attention, awaiting],
+  )
   const byState = useMemo(() => {
     const groups = new Map<string, AgentJobOverview[]>()
     for (const job of overview.data ?? []) {
-      if (attentionIds.has(job.jobId)) continue
+      if (claimedIds.has(job.jobId)) continue
       const list = groups.get(job.state) ?? []
       list.push(job)
       groups.set(job.state, list)
@@ -167,7 +185,7 @@ export function AgentsOverviewPage() {
       state,
       jobs: groups.get(state) ?? [],
     }))
-  }, [overview.data, attentionIds])
+  }, [overview.data, claimedIds])
 
   const running = (overview.data ?? []).filter((job) => job.state === 'running').length
 
@@ -176,7 +194,7 @@ export function AgentsOverviewPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Agents"
-        description="Jobs this device can see. Reviewing a handoff records a decision; it never completes the Orbit task, and this browser never launches an agent."
+        description="Queue a job for an enrolled executor, then read what comes back. Queueing does not start a model, reviewing a handoff never completes the Orbit task, and this browser cannot claim a job itself."
         actions={
           <Button
             variant="secondary"
@@ -185,6 +203,7 @@ export function AgentsOverviewPage() {
             onClick={() => {
               void overview.refetch()
               void snapshot.refetch()
+              executors.refetch()
             }}
             loading={overview.isFetching}
           >
@@ -192,6 +211,12 @@ export function AgentsOverviewPage() {
           </Button>
         }
       />
+
+      <AgentExecutorsPanel executors={executors} onLaunch={() => setLaunchOpen(true)} />
+
+      {launchOpen ? (
+        <LaunchAgentJobDialog onClose={() => setLaunchOpen(false)} />
+      ) : null}
 
       {overview.isPending && !overview.data ? (
         <OverviewSkeleton />
@@ -208,8 +233,8 @@ export function AgentsOverviewPage() {
         <Panel>
           <EmptyState
             icon={<AgentsIcon size={21} />}
-            title="No agent jobs are visible to this device"
-            description="Jobs are owned by the device that started them. An executor or the command line starts one; this browser never launches an agent."
+            title="No agent job is queued or running for this device"
+            description="Queue one from a task or from the Executors panel above. The job waits until an enrolled executor claims it; this browser never starts a model."
             action={
               <Button asChild variant="secondary" size="sm">
                 <Link to="/projects">Open projects</Link>
@@ -220,7 +245,7 @@ export function AgentsOverviewPage() {
         </Panel>
       ) : (
         <>
-          <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-3">
+          <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-4">
             <div className="bg-surface px-4 py-3">
               <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">Visible jobs</dt>
               <dd className="mt-1 font-display text-2xl tabular-nums leading-none text-ink">
@@ -231,6 +256,14 @@ export function AgentsOverviewPage() {
               <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">Need attention</dt>
               <dd className="mt-1 font-display text-2xl tabular-nums leading-none text-warning-ink">
                 {attention.length}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">
+                Awaiting executor
+              </dt>
+              <dd className="mt-1 font-display text-2xl tabular-nums leading-none text-info-ink">
+                {awaiting.length}
               </dd>
             </div>
             <div className="bg-surface px-4 py-3">
@@ -258,16 +291,31 @@ export function AgentsOverviewPage() {
                 <p className="text-xs leading-5 text-ink-muted">
                   Reviews and resumes are explicit actions; a job that is running does not need a
                   click here.
+                  {awaiting.length > 0
+                    ? ' The jobs below are waiting for an executor, not for you.'
+                    : ''}
                 </p>
               </PanelBody>
             </Panel>
           )}
 
+          {awaiting.length > 0 ? (
+            <div data-awaiting-executor="">
+              <JobSection
+                title="Awaiting an executor"
+                description="Queued with no claim yet. Nothing is running; an enrolled executor has to claim each job."
+                jobs={awaiting}
+                projectName={(id) => projects.get(id) ?? null}
+                taskTitle={(id) => tasks.get(id) ?? null}
+              />
+            </div>
+          ) : null}
+
           {byState.map((group) => (
             <JobSection
               key={group.state}
               title={agentStateLabel(group.state)}
-              description="Jobs in this state that are not in the attention list."
+              description="Jobs in this state that are not in the attention or awaiting-executor lists."
               jobs={group.jobs}
               projectName={(id) => projects.get(id) ?? null}
               taskTitle={(id) => tasks.get(id) ?? null}

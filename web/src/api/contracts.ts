@@ -1038,6 +1038,13 @@ export interface AttachmentImportMetadata {
 /* Agent jobs                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * `claim_state` (C13) is the machine claim, not the job state: `null` means no
+ * executor has claimed the job. Optional here because a server older than C13
+ * omits the key entirely, and "not reported" must not be read as "no claim".
+ */
+export type AgentClaimState = 'claimed' | 'confirmed' | 'ambiguous'
+
 /** Every field is always present; `runtime_session_ref` may be null. */
 export interface AgentJobView {
   id: string
@@ -1053,6 +1060,28 @@ export interface AgentJobView {
   runtime_session_ref: string | null
   created_at_ms: number
   updated_at_ms: number
+  claim_state?: AgentClaimState | null
+}
+
+/**
+ * One enrolled device that can claim a queued job (C10). The list is not
+ * paginated: this is a single-user deployment and the device count is small, so
+ * the client asks once and never caps the answer.
+ */
+export interface AgentExecutor {
+  device_id: string
+  active: boolean
+  /** Most recent claim by that device, or null when it has never claimed. */
+  last_claim_at_ms: number | null
+  /** Non-terminal jobs assigned to it that it has claimed. */
+  claimed_jobs: number
+  /** `preparing` jobs assigned to it that no one has claimed yet. */
+  preparing_jobs: number
+}
+
+/** An empty `executors` list is a valid answer: no executor is configured. */
+export interface AgentExecutorListResponse {
+  executors: AgentExecutor[]
 }
 
 export interface AgentJobOverviewItem {
@@ -1103,6 +1132,11 @@ export interface StartAgentJobRequest {
   repository_ref: string
   worktree: boolean
   at_ms: number
+  /**
+   * C14: optional. Trimmed by the server, empty treated as absent, over 4000
+   * characters refused. Omitted here when the form left it blank.
+   */
+  objective?: string
 }
 
 export interface ReserveAgentJobRequest {

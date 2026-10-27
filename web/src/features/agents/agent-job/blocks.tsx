@@ -8,6 +8,7 @@
  */
 import { Link } from 'react-router-dom'
 import type { AgentHandoff } from '@/api/adapters'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { AgentsIcon, ClockIcon } from '@/components/ui/icons'
@@ -15,6 +16,7 @@ import { Panel } from '@/components/ui/panel'
 import { SkeletonText } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
 import { formatMoment } from '@/domain'
+import type { ClaimStateCopy } from '../agent-model'
 
 export function JobSkeleton() {
   return (
@@ -30,7 +32,39 @@ export function JobSkeleton() {
   )
 }
 
-export function NotVisiblePanel({ id }: { id: string }) {
+export function NotVisiblePanel({
+  id,
+  unconfirmedLaunch = false,
+}: {
+  id: string
+  /** The dialog navigated here after an unconfirmed launch; say what that means. */
+  unconfirmedLaunch?: boolean
+}) {
+  if (unconfirmedLaunch) {
+    return (
+      <Panel>
+        <EmptyState
+          icon={<AgentsIcon size={21} />}
+          title="The launch was not confirmed"
+          description={
+            <>
+              Orbit did not get an answer when this browser queued a job, so it opened the id it
+              sent (<span className="font-mono text-ink-soft">{id}</span>) instead of sending the
+              request again. No job with that id is visible to this device: the launch was probably
+              not stored, and nothing was started from here. Queue the task again only after
+              checking that no job is listed for it.
+            </>
+          }
+          action={
+            <Button asChild variant="secondary" size="sm">
+              <Link to="/agents">Back to Agents</Link>
+            </Button>
+          }
+          className="min-h-[20rem]"
+        />
+      </Panel>
+    )
+  }
   return (
     <Panel>
       <EmptyState
@@ -51,6 +85,41 @@ export function NotVisiblePanel({ id }: { id: string }) {
         className="min-h-[20rem]"
       />
     </Panel>
+  )
+}
+
+/**
+ * What the machine claim means (C13). It is deliberately not a progress bar:
+ * until the executor reports, there is no progress to draw.
+ */
+export function ClaimStateNote({ copy }: { copy: ClaimStateCopy }) {
+  return (
+    <div
+      data-claim-state={copy.kind}
+      className={cn(
+        'rounded-md border px-3 py-2.5',
+        copy.blocksRelaunch
+          ? 'border-danger/30 bg-danger-soft'
+          : 'border-line bg-surface-sunken/40',
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={copy.tone} dot>
+          {copy.label}
+        </Badge>
+        <span className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+          Machine claim
+        </span>
+      </div>
+      <p
+        className={cn(
+          'mt-1 text-xs leading-5',
+          copy.blocksRelaunch ? 'text-danger-ink' : 'text-ink-soft',
+        )}
+      >
+        {copy.detail}
+      </p>
+    </div>
   )
 }
 

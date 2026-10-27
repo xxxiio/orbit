@@ -9,7 +9,7 @@
  * `agent-job/review-section`; this module owns the reads, the job header and
  * the resume command.
  */
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   isApiError,
   newCommandId,
@@ -48,13 +48,14 @@ import {
   agentKindLabel,
   agentStateLabel,
   agentStateTone,
+  claimStateCopy,
   isAgentJobTerminal,
   nextActionExplanation,
   nextActionLabel,
   reviewDecisionLabel,
   shortAgentId,
 } from './agent-model'
-import { Fact, HandoffList, JobSkeleton, JsonBlock, NotVisiblePanel } from './agent-job/blocks'
+import { ClaimStateNote, Fact, HandoffList, JobSkeleton, JsonBlock, NotVisiblePanel } from './agent-job/blocks'
 import { ReviewSection } from './agent-job/review-section'
 
 interface ResumeAttempt {
@@ -67,6 +68,7 @@ interface ResumeAttempt {
 export function AgentJobPage() {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const job = useAgentJob(jobId)
   const handoffs = useAgentHandoffs(jobId)
   const review = useAgentReview(jobId)
@@ -82,6 +84,10 @@ export function AgentJobPage() {
   }))
   const task = snapshot.data?.tasks.find((candidate) => candidate.id === job.data?.taskId)
   const project = snapshot.data?.projects.find((candidate) => candidate.id === job.data?.projectId)
+  // Set by the launch dialog when the start request never got an answer. The id
+  // in the URL is the one that was sent, so "not visible" means "not stored".
+  const unconfirmedLaunch =
+    (location.state as { launchUnconfirmed?: boolean } | null)?.launchUnconfirmed === true
 
   useDocumentTitle(job.data ? `Agent job ${shortAgentId(job.data.id)}` : 'Agent job')
 
@@ -92,7 +98,9 @@ export function AgentJobPage() {
   if (job.isPending && !job.data) return <JobSkeleton />
 
   if (job.error && !job.data) {
-    if (isApiError(job.error) && job.error.status === 403) return <NotVisiblePanel id={jobId} />
+    if (isApiError(job.error) && job.error.status === 403) {
+      return <NotVisiblePanel id={jobId} unconfirmedLaunch={unconfirmedLaunch} />
+    }
     return (
       <Panel>
         <ErrorState
@@ -108,13 +116,19 @@ export function AgentJobPage() {
   if (!job.data) {
     // The ownership check ran before the lookup; a successful read that returns
     // null still means the job is not visible to this device.
-    return <NotVisiblePanel id={jobId} />
+    return <NotVisiblePanel id={jobId} unconfirmedLaunch={unconfirmedLaunch} />
   }
 
   const current = job.data
   const overviewItem = overview.data?.find((item) => item.jobId === current.id) ?? null
   const latestHandoff = handoffs.data?.[handoffs.data.length - 1] ?? null
-  const canResume = isAgentJobTerminal(current.state)
+  const claim = claimStateCopy({
+    reported: current.claimStateReported,
+    claimState: current.claimState,
+  })
+  // An ambiguous launch is never relaunched, so no successor is offered for it
+  // even when the state itself is terminal for a resume.
+  const canResume = isAgentJobTerminal(current.state) && !claim.blocksRelaunch
   const refreshAll = async (): Promise<{ ok: boolean; review: AgentReview | null }> => {
     // `throwOnError` for the review read: a failed refetch resolves with the
     // cached value in React Query v5, and acting on that stale value could
@@ -235,6 +249,8 @@ export function AgentJobPage() {
           </dd>
         </div>
       </dl>
+
+      <ClaimStateNote copy={claim} />
 
       <Panel className="overflow-hidden">
         <PanelHeader
@@ -407,9 +423,9 @@ export function AgentJobPage() {
                   </div>
                 ) : (
                   <p className="rounded-md border border-line bg-surface-sunken/40 px-3 py-2 text-xs leading-5 text-ink-muted">
-                    This job is {agentStateLabel(current.state)}. The server resumes only a
-                    completed, failed or interrupted job, so no successor can be queued while it is
-                    still {agentStateLabel(current.state).toLowerCase()}.
+                    {claim.blocksRelaunch
+                      ? 'This job’s launch outcome is unknown, so no successor is offered: relaunching it could start a second agent. An executor has to reconcile the claim first.'
+                      : `This job is ${agentStateLabel(current.state)}. The server resumes only a completed, failed or interrupted job, so no successor can be queued while it is still ${agentStateLabel(current.state).toLowerCase()}.`}
                   </p>
                 )}
                 <p role="status" aria-live="polite" className="min-h-4 text-2xs text-ink-muted">
@@ -436,7 +452,7 @@ export function AgentJobPage() {
                 ? 'review_handoff'
                 : 'none'),
         )}{' '}
-        No launch control exists in this browser.
+        A job is queued from its task or from the Agents page; this page never starts one.
       </p>
     </div>
   )

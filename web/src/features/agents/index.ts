@@ -6,9 +6,11 @@ export {
   agentKindLabel,
   agentStateLabel,
   agentStateTone,
+  claimStateCopy,
   isAgentJobTerminal,
   nextActionExplanation,
   nextActionLabel,
   reviewDecisionLabel,
   shortAgentId,
 } from './agent-model'
+export type { ClaimStateCopy } from './agent-model'

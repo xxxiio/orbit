@@ -37,6 +37,7 @@ import {
 } from './endpoints/planning'
 import {
   fetchAgentAttention,
+  fetchAgentExecutors,
   fetchAgentHandoffs,
   fetchAgentJob,
   fetchAgentOverview,
@@ -70,6 +71,7 @@ import {
 import {
   toAcceptanceCriterion,
   toActivityEntry,
+  toAgentExecutor,
   toAgentHandoff,
   toAgentJob,
   toAgentJobOverview,
@@ -97,6 +99,7 @@ import {
   toWorkspaceSnapshot,
   type AcceptanceCriterion,
   type ActivityEntry,
+  type AgentExecutor,
   type AgentHandoff,
   type AgentJob,
   type AgentJobOverview,
@@ -199,6 +202,12 @@ export const queryKeys = {
   agentAll: () => ['agent-jobs'] as const,
   agentOverview: () => ['agent-jobs', 'overview'] as const,
   agentAttention: () => ['agent-jobs', 'attention'] as const,
+  /**
+   * The enrolled-executor read is its own projection (`agent-executors`), not a
+   * view over this device's jobs, so it gets its own key and is invalidated by a
+   * launch (the counts change) rather than by a job's state change.
+   */
+  agentExecutors: () => ['agent-executors'] as const,
   agentJob: (id: string) => ['agent-jobs', 'job', id] as const,
   agentHandoffs: (id: string) => ['agent-jobs', 'handoffs', id] as const,
   agentReview: (id: string) => ['agent-jobs', 'review', id] as const,
@@ -829,6 +838,23 @@ export function useAgentAttention(): UseQueryResult<AgentJob[], ApiError> {
     queryKey: queryKeys.agentAttention(),
     queryFn: ({ signal }) => fetchAgentAttention(signal),
     select: (jobs) => jobs.map(toAgentJob),
+  })
+}
+
+/**
+ * The enrolled executors, in one read (C10).
+ *
+ * The answer is the whole list: no pagination, no cap. An empty list is a
+ * successful read that means "no executor is configured", and the UI says that
+ * — it must never be turned into a spinner or an error. A 404 is kept as an
+ * error so the caller can name the server gap instead of showing an empty list.
+ */
+export function useAgentExecutors(): UseQueryResult<AgentExecutor[], ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.agentExecutors(),
+    queryFn: ({ signal }) => fetchAgentExecutors(signal),
+    staleTime: 5_000,
+    select: (response) => response.executors.map(toAgentExecutor),
   })
 }
 

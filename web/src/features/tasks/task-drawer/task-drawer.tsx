@@ -27,6 +27,7 @@ import { ErrorState } from '@/components/ui/error-state'
 import { AlertCircleIcon, CheckCircleIcon, LoaderIcon } from '@/components/ui/icons'
 import { Section } from '@/components/ui/section'
 import { AttachmentList } from '@/features/attachments'
+import { TaskAgentJobSection } from '@/features/agents/launch/task-agent-job-section'
 import { priorityLabels, priorityTones, statusLabel, statusTones } from '../task-meta'
 import { useTaskDrawer } from '../use-task-drawer'
 import { writeAcceptedTask } from '../task-cache'
@@ -462,6 +463,8 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                       )
                     }
                   />
+
+                  <TaskAgentJobSection task={task} />
 
                   <Section
                     title="Attachments"

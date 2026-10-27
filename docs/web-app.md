@@ -3,11 +3,12 @@
 The Orbit web app is an optional browser client for a self-hosted `orbit-server`. It reads and
 writes the same authoritative state as the CLI and the terminal workspace, over the server's
 HTTP API, and adds no second data model and no local database. This page documents the build
-shipped in M32 I2: the app shell and sign-in, Home, Inbox, Projects, one search across projects,
+shipped in M32 I3: the app shell and sign-in, Home, Inbox, Projects, one search across projects,
 tasks and knowledge, workflow-driven project workspaces (task list, board, milestones, timeline,
 and the panels a workflow declares), saved views, Work Items, planning with an explicit approval
-gate, a knowledge vault with folders, note links and project/task references, attachments, agent
-jobs, editable project settings and workflow upgrades. Anything listed as missing below really is missing in this
+gate, a knowledge vault with folders, note links and project/task references, attachments,
+browser-authorized agent jobs with a real executor read and review, editable project settings and
+workflow upgrades. Anything listed as missing below really is missing in this
 build. For a one-page setup path aimed at a new internal tester, start with the
 [web quickstart](guides/web-quickstart.md).
 
@@ -577,31 +578,55 @@ note or agent job is a valid owner in the API but has no attachment screen here.
 ## Agents
 
 The Agents page shows the agent jobs this device can see. Jobs are owned by the device that
-started them, and this browser never starts one: an executor or the command line creates the
-job and claims it. The page is a read model plus two explicit writes, review and resume.
+started them; an **enrolled executor device** — never the browser — claims and runs them. The
+browser starts a job, watches it, records a review and can resume a finished one; it never runs
+a command and never claims work on behalf of an executor.
 
+- **Executors** — the page lists every enrolled device with whether it is active, when it last
+  claimed work and how many jobs it is holding, from `GET /authoritative/agent-executors`. This
+  is the honest answer to "is anything able to run this?". A device that has **never claimed a
+  job** is flagged as such, and choosing it repeats the warning at the confirmation step: the job
+  waits at *Preparing* until something on that device claims it, and *Preparing* does not mean
+  work has started. Launching stays enabled because a roster cannot prove that no runner exists —
+  refusing would be as dishonest as pretending. Revoked executors are listed as inactive, no
+  active executor is a named disabled state, and a server without the route says launching is
+  unavailable instead of guessing.
+- **Starting a job** — from an eligible task in the task drawer, or from the Agents page after
+  choosing a task. Eligible means the task is **Ready**, **In progress** or **Review** and has no
+  active job; the server is still the judge. The form takes the executor, an optional
+  **Objective**, the agent kind and the repository, and an explicit choice about running in a
+  separate worktree. A second step confirms it, and the copy states plainly that this **queues**
+  a job for an executor, that the browser does not start a model, and that approval will not
+  complete the task. On acceptance you land on the job page and see the real state.
+- **Claim state** — the job page distinguishes **Waiting for an executor** (nobody has claimed
+  it), **Claimed** (an executor took it and has not confirmed), **Launch confirmed** (the
+  executor reported a session) and **Ambiguous** — a launch whose outcome could not be confirmed.
+  An ambiguous job warns **Do not relaunch** and does not offer resume: a second attempt could
+  start a second agent. A job the server started for a foreign device is reported as **not
+  visible**, never as missing.
+- **Retries** — one launch is one `job_id` and one timestamp. A refusal keeps the confirmation
+  open and **Retry the same launch** re-sends exactly that identity; editing the form starts a new
+  attempt. An unconfirmed answer navigates to the job and reads it instead of re-sending blindly.
 - **Overview** — **Needs attention** groups jobs whose server-side attention flag is set (a
-  handoff needs review, a review asked for changes, or the job is waiting), then the remaining
-  jobs grouped by state. Each row carries the task (or a short job id), project, state, handoff
-  count and next action. The empty state says no job is visible and that an executor or the
-  command line starts one.
-- **Job detail** — state and revision, runtime references (labels, not a live connection),
-  timestamps, the task link (opens the task drawer), handoffs reported verbatim by the executor,
-  the recorded review, and the resume context.
+  handoff needs review, a review asked for changes, or the job is waiting). Jobs that are queued
+  or preparing with nobody claiming them are grouped separately as **Awaiting an executor**: they
+  are not a person's problem yet, but they are not "nothing to do" either. Remaining jobs are
+  grouped by state, each row carrying the task (or a short job id), project, state, handoff count
+  and next action.
+- **Job detail** — state and revision, claim state, runtime references (labels, not a live
+  connection), timestamps, the task link (opens the task drawer), handoffs reported verbatim by
+  the executor, the recorded review, and the resume context.
 - **Review** — choose **Approve** or **Request changes**, add a short reason, and record one
   decision against the latest persisted handoff. The page states on screen that **approving
   records a review; it does not complete the Orbit task**, and the recorded review shows
   **Task not completed**. A job with no handoff cannot be reviewed. The server refuses a
-  conflicting second decision; this page does not offer one. If the outcome is unconfirmed, the
-  form offers **Refresh**; if the server still has no review, the pinned attempt is discarded so
-  a different decision can be recorded, and if a review exists it replaces the form.
-- **Resume** — only for a terminal job. Resume queues a new job in the same project with the
-  same brief; it does not launch an executor, and a machine executor must claim the queued job
-  before it runs. A page allows one resume, reusing its command id on an unconfirmed retry. An
-  unconfirmed resume warns that a new job may already exist and to check the overview before
-  retrying.
+  conflicting second decision; this page does not offer one.
+- **Resume** — only for a terminal job with a durable handoff. Resume queues a new job in the same
+  project with the same frozen brief (including any objective); it does not launch an executor,
+  and an executor must claim the new job before it runs. An unconfirmed resume warns that a new
+  job may already exist and to check the overview before retrying.
 
-## Workflow upgrades
+## Workflow upgrades## Workflow upgrades
 
 A project follows one published workflow version. **Settings → Workflow** compares the pinned
 version with a target and applies a change only through a reviewed, confirmed preview.
@@ -762,9 +787,9 @@ supports much of it:
   projects and tasks only.
 - **Relative in-app Markdown links.** Only absolute `http(s)` links and the two reference forms
   above are rendered; a relative `[text](notes/other.md)` link is plain text.
-- **Starting an agent job.** An executor or the command line starts one; the browser reviews a
-  handoff, records a decision and resumes a finished job into the queue, and none of those
-  actions completes the task.
+- **Enrolling or revoking an executor from the browser.** Devices are enrolled with the
+  operator's admin key; the Agents page can only report what is already enrolled. Nothing in the
+  product UI runs a job, and no action here completes a task.
 - **Capability execution from the browser.** Workflow Actions are declared and listed, but the
   local Orbit authority owns execution and this server exposes no execution route or status.
 - Drag-and-drop on the board. Moving a task is the keyboard/`m` menu or the status control.

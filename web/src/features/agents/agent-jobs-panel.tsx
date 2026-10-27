@@ -3,7 +3,8 @@
  *
  * The read is the device-wide overview: the server has already filtered it to
  * jobs this device owns. Rows link to the job detail; this panel never offers a
- * start or launch control, because starting a job is an executor-side action.
+ * launch control — jobs are queued from a task's drawer or from the Agents page,
+ * and an executor claims one before anything runs.
  *
  * Chrome comes from the shared surface kit (`@/components/ui`), so the read
  * ladder (loading → refused → error → rows) is the same one every source uses.
@@ -242,7 +243,8 @@ export function AgentJobsPanel({ component }: { component: WorkflowViewComponent
           icon={<AgentsIcon size={18} />}
           title="No agent jobs are visible to this device"
           description={
-            emptyText ?? 'Jobs are started by an executor or the command line, not by this panel.'
+            emptyText ??
+            'Jobs are queued from a task or from the Agents page; an executor claims one before anything runs. This panel only reads them.'
           }
           action={
             <Button asChild variant="secondary" size="sm">

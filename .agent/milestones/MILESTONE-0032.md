@@ -147,7 +147,7 @@ workflows instead of speculation. The TUI stays unchanged in M32.
 - [x] EC-005: Knowledge folders and documents can be created, moved, renamed
   and browsed; documents can be linked with navigable back-references and
   broken-link indication; knowledge is reachable from project context.
-- [ ] EC-006: An authorized agent job can be launched from an eligible task in
+- [x] EC-006: An authorized agent job can be launched from an eligible task in
   the browser, monitored, its evidence and handoff reviewed, and approved or
   rejected, with restart persistence, authorization failures surfaced and no
   automatic task completion.
@@ -207,7 +207,19 @@ workflows instead of speculation. The TUI stays unchanged in M32.
   references with broken-target display, the project knowledge panel and the task
   Notes section all ship; note/folder deletion and work-item references are stated
   as absent.
-- EC-006..EC-008 and EC-010..EC-012 stay open until their iteration lands.
+- EC-006: `GET agent-executors` with executor validation at start, preserved
+  refusal text, `AgentJobView.claim_state`, `next_action: await_executor`, and an
+  optional objective frozen into the brief (`crates/orbit-runtime/src/
+  agent_authority.rs`, `crates/orbit-storage/src/agent_jobs.rs`, `crates/orbit-
+  runtime/src/herdr_runtime.rs`); client launch surface with a real executor
+  roster, never-claimed warning, pinned launch identity and claim-state honesty.
+  `web/tests/e2e/agents-launch.spec.ts` (6) proves launch → claim → launch-result
+  → observe → handoff → review, the objective in the frozen brief, the task status
+  unchanged in the record and on screen, an unknown executor refused with no job
+  row, one `job_id` across a retry, awaiting-executor visibility, and persistence
+  across a real server restart. `agents.spec.ts` now proves a foreign job is
+  invisible (403) for a genuinely second device.
+- EC-007, EC-008 and EC-010..EC-012 stay open until their iteration lands.
 
 ## Remaining work
 

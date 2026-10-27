@@ -154,6 +154,40 @@ pub enum AgentRuntimeObservation {
     AbsentConfirmed,
 }
 
+/// One enrolled device as an agent executor, derived purely from persisted
+/// records. A browser needs this to answer "who could claim this job?" without
+/// guessing from the machine reference stored on a job.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentExecutorRecord {
+    pub device_id: String,
+    /// Enrolled and not revoked. A revoked device row is still reported so a
+    /// stale `machine_ref` is visible instead of silently disappearing.
+    pub active: bool,
+    /// Most recent claim by that machine, regardless of which device owns the job.
+    pub last_claim_at_ms: Option<i64>,
+    /// Non-terminal jobs in flight on that machine.
+    pub claimed_jobs: i64,
+    /// `preparing` jobs on that machine that no executor has claimed yet.
+    pub preparing_jobs: i64,
+}
+
+/// The authority's own provenance credential. It is seeded revoked so it can
+/// never authenticate, and nobody enrolled it as an executor, so it is excluded
+/// from the roster instead of appearing as a phantom inactive device.
+const AUTHORITY_IDENTITY: &str = "orbit-server";
+
+/// The `devices` table belongs to the authority schema, which standalone
+/// storage tests do not install. A missing table means "no executor configured".
+fn table_exists(conn: &rusqlite::Connection, table: &str) -> Result<bool, RepositoryError> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+        [table],
+        |r| r.get::<_, i64>(0),
+    )
+    .map(|count| count != 0)
+    .map_err(repo_error)
+}
+
 impl SqliteStore {
     /// Enqueue a prompt only for an already-confirmed active session. A repeated
     /// command ID must contain exactly the same immutable request body.
@@ -517,6 +551,145 @@ impl SqliteStore {
         Ok(enabled.unwrap_or(0) != 0)
     }
 
+    /// Whether an enrolled device exists and may still act as an executor.
+    /// `None` means no such device; `Some(false)` means revoked. Start uses this
+    /// before its job transaction so a bad `machine_ref` cannot create a
+    /// `preparing` job that nothing will ever claim.
+    pub fn agent_executor_active(&self, device: &str) -> Result<Option<bool>, RepositoryError> {
+        if !nonempty(device) {
+            return Ok(None);
+        }
+        if !table_exists(&self.connection, "devices")? {
+            return Ok(None);
+        }
+        let revoked: Option<i64> = self
+            .connection
+            .query_row("SELECT revoked FROM devices WHERE id=?1", [device], |r| {
+                r.get(0)
+            })
+            .optional()
+            .map_err(repo_error)?;
+        Ok(revoked.map(|value| value == 0))
+    }
+
+    /// Every enrolled device with its durable claim and job counters. This is
+    /// three plain passes (devices, claims, jobs) merged in memory: one query per
+    /// table, never one query per device. The deployment is single-user and
+    /// self-hosted, so the device count is small and no pagination is offered.
+    pub fn agent_executors(&self) -> Result<Vec<AgentExecutorRecord>, RepositoryError> {
+        if !table_exists(&self.connection, "devices")? {
+            return Ok(Vec::new());
+        }
+        let mut devices = self
+            .connection
+            .prepare("SELECT id,revoked FROM devices WHERE id<>?1 ORDER BY id")
+            .map_err(repo_error)?;
+        let devices = devices
+            .query_map([AUTHORITY_IDENTITY], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+            })
+            .map_err(repo_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(repo_error)?;
+
+        let mut last_claim: std::collections::HashMap<String, i64> = Default::default();
+        let mut claims = self
+            .connection
+            .prepare(
+                "SELECT j.machine_ref,MAX(c.claimed_at_ms) FROM agent_job_launch_claims c \
+                 JOIN agent_jobs j ON j.id=c.job_id GROUP BY j.machine_ref",
+            )
+            .map_err(repo_error)?;
+        for row in claims
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .map_err(repo_error)?
+        {
+            let (machine, at_ms) = row.map_err(repo_error)?;
+            last_claim.insert(machine, at_ms);
+        }
+
+        let mut counts: std::collections::HashMap<String, (i64, i64)> = Default::default();
+        let mut jobs = self
+            .connection
+            .prepare(
+                "SELECT j.machine_ref, \
+                 SUM(CASE WHEN j.state IN ('launching','running','waiting_input','blocked','unreachable') \
+                     THEN 1 ELSE 0 END), \
+                 SUM(CASE WHEN j.state='preparing' AND NOT EXISTS \
+                     (SELECT 1 FROM agent_job_launch_claims c WHERE c.job_id=j.id) \
+                     THEN 1 ELSE 0 END) \
+                 FROM agent_jobs j GROUP BY j.machine_ref",
+            )
+            .map_err(repo_error)?;
+        for row in jobs
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(repo_error)?
+        {
+            let (machine, claimed, preparing) = row.map_err(repo_error)?;
+            counts.insert(machine, (claimed, preparing));
+        }
+
+        Ok(devices
+            .into_iter()
+            .map(|(device_id, revoked)| {
+                let (claimed_jobs, preparing_jobs) =
+                    counts.get(&device_id).copied().unwrap_or((0, 0));
+                AgentExecutorRecord {
+                    last_claim_at_ms: last_claim.get(&device_id).copied(),
+                    active: revoked == 0,
+                    claimed_jobs,
+                    preparing_jobs,
+                    device_id,
+                }
+            })
+            .collect())
+    }
+
+    /// Durable launch-claim state for one job. `None` means no machine has
+    /// claimed it, which is what lets a client say "waiting for an executor"
+    /// instead of implying server-side progress.
+    pub fn agent_job_claim_state(&self, id: &str) -> Result<Option<String>, RepositoryError> {
+        self.connection
+            .query_row(
+                "SELECT dispatch_state FROM agent_job_launch_claims WHERE job_id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(repo_error)
+    }
+
+    /// Claim states for a bounded job list in one statement, so a job list never
+    /// becomes one claim query per row.
+    pub fn agent_claim_states(
+        &self,
+        ids: &[&str],
+    ) -> Result<Vec<(String, String)>, RepositoryError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = vec!["?"; ids.len()].join(",");
+        let mut statement = self
+            .connection
+            .prepare(&format!(
+                "SELECT job_id,dispatch_state FROM agent_job_launch_claims WHERE job_id IN ({placeholders})"
+            ))
+            .map_err(repo_error)?;
+        statement
+            .query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(repo_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(repo_error)
+    }
+
     /// No subprocess is started here. A caller must persist this before dispatch.
     pub fn reserve_agent_job(&mut self, job: &AgentJob) -> Result<AgentJob, RepositoryError> {
         self.reserve_agent_job_inner(job, None)
@@ -650,11 +823,15 @@ impl SqliteStore {
     /// A connected start is one durable authority transaction. A failure in
     /// worktree-policy or preparation rolls back the reservation as well.
     /// The machine worker only sees committed `preparing` jobs.
+    ///
+    /// The optional objective is frozen into the same brief as the task snapshot
+    /// so a resumed job inherits it and `resume-context` can replay it verbatim.
     pub fn start_agent_job_for_device(
         &mut self,
         owner: &str,
         job: &AgentJob,
         worktree: bool,
+        objective: Option<&str>,
     ) -> Result<AgentJob, RepositoryError> {
         if !nonempty(owner)
             || owner.len() > 256
@@ -730,7 +907,12 @@ impl SqliteStore {
             return Err(invalid("task already has active agent"));
         }
         tx.execute("INSERT INTO agent_jobs (id,request_id,project_id,task_id,launch_revision,agent_kind,machine_ref,runtime_kind,repository_ref,state,revision,created_at_ms,updated_at_ms,last_seen_at_ms,runtime_session_ref) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'preparing',1,?10,?10,NULL,NULL)",params![job.id,job.request_id,job.project_id.as_str(),job.task_id.as_str(),job.launch_revision,job.agent_kind,job.machine_ref,job.runtime_kind,job.repository_ref,job.created_at_ms]).map_err(repo_error)?;
-        let brief = serde_json::json!({"task_id":job.task_id.as_str(),"project_id":job.project_id.as_str(),"title":title,"status_at_reservation":status,"launch_revision":job.launch_revision});
+        let mut brief = serde_json::json!({"task_id":job.task_id.as_str(),"project_id":job.project_id.as_str(),"title":title,"status_at_reservation":status,"launch_revision":job.launch_revision});
+        // Additive: an absent or blank objective leaves the brief byte-identical
+        // to the pre-objective shape, so existing callers keep working.
+        if let Some(objective) = objective.map(str::trim).filter(|text| !text.is_empty()) {
+            brief["objective"] = serde_json::json!(objective);
+        }
         tx.execute("INSERT INTO agent_job_briefs(job_id,task_title,task_status,brief_json,recorded_at_ms) VALUES (?1,?2,?3,?4,?5)",params![job.id,title,status,brief.to_string(),job.created_at_ms]).map_err(repo_error)?;
         tx.execute(
             "INSERT INTO agent_job_owners(job_id,owner_device_id) VALUES (?1,?2)",
@@ -1413,7 +1595,8 @@ impl SqliteStore {
             .prepare(
                 "SELECT j.id,j.project_id,j.task_id,j.state,j.updated_at_ms, \
              (SELECT COUNT(*) FROM agent_job_handoffs h WHERE h.job_id=j.id), \
-             (SELECT decision FROM agent_job_reviews r WHERE r.job_id=j.id) \
+             (SELECT decision FROM agent_job_reviews r WHERE r.job_id=j.id), \
+             (SELECT dispatch_state FROM agent_job_launch_claims c WHERE c.job_id=j.id) \
              FROM agent_jobs j ORDER BY j.updated_at_ms DESC,j.id DESC",
             )
             .map_err(repo_error)?;
@@ -1427,12 +1610,13 @@ impl SqliteStore {
                     r.get::<_, i64>(4)?,
                     r.get::<_, i64>(5)?,
                     r.get::<_, Option<String>>(6)?,
+                    r.get::<_, Option<String>>(7)?,
                 ))
             })
             .map_err(repo_error)?;
         let mut items = Vec::new();
         for row in rows {
-            let (id, project_id, task_id, state, updated_at_ms, handoff_count, review) =
+            let (id, project_id, task_id, state, updated_at_ms, handoff_count, review, claim) =
                 row.map_err(repo_error)?;
             let needs_review = handoff_count > 0 && review.is_none();
             let needs_attention = matches!(
@@ -1446,6 +1630,10 @@ impl SqliteStore {
                 "review_handoff"
             } else {
                 match state.as_str() {
+                    // A job nobody claimed is waiting for its executor. That is
+                    // not a person's problem yet, so it must not be reported as
+                    // attention, but "none / nothing to do" would be a lie.
+                    "queued" | "preparing" if claim.is_none() => "await_executor",
                     "waiting_input" | "blocked" => "respond_to_agent",
                     "unreachable" | "launching" => "inspect_runtime",
                     // Completion without a handoff is allowed, but it is not
@@ -1690,7 +1878,7 @@ fn read_job(conn: &rusqlite::Connection, id: &str) -> Result<Option<AgentJob>, R
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn job(id: &str, task: &str) -> AgentJob {
+    pub(super) fn job(id: &str, task: &str) -> AgentJob {
         AgentJob {
             id: id.into(),
             request_id: format!("req-{id}"),
@@ -1709,7 +1897,7 @@ mod tests {
             runtime_session_ref: None,
         }
     }
-    fn ready_task(store: &SqliteStore, task: &str) {
+    pub(super) fn ready_task(store: &SqliteStore, task: &str) {
         store.connection.execute("INSERT INTO projects(id,name,status) VALUES ('project','Project','active') ON CONFLICT(id) DO NOTHING",[]).unwrap();
         store.connection.execute("INSERT INTO tasks(id,title,status,project_id) VALUES (?1,'Task','ready','project')",[task]).unwrap();
     }
@@ -1719,7 +1907,7 @@ mod tests {
         ready_task(&store, "task");
         let request = job("connected", "task");
         let started = store
-            .start_agent_job_for_device("device-a", &request, true)
+            .start_agent_job_for_device("device-a", &request, true, None)
             .unwrap();
         assert_eq!(started.state, AgentJobState::Preparing);
         assert_eq!(started.revision, 1);
@@ -1730,19 +1918,19 @@ mod tests {
         );
         assert_eq!(
             store
-                .start_agent_job_for_device("device-a", &request, true)
+                .start_agent_job_for_device("device-a", &request, true, None)
                 .unwrap()
                 .revision,
             1
         );
         assert!(
             store
-                .start_agent_job_for_device("device-b", &request, true)
+                .start_agent_job_for_device("device-b", &request, true, None)
                 .is_err()
         );
         assert!(
             store
-                .start_agent_job_for_device("device-a", &request, false)
+                .start_agent_job_for_device("device-a", &request, false, None)
                 .is_err()
         );
         let counts: i64 = store
@@ -1761,7 +1949,7 @@ mod tests {
         let other = job("new", "task");
         assert!(
             store
-                .start_agent_job_for_device("device-a", &other, false)
+                .start_agent_job_for_device("device-a", &other, false, None)
                 .is_err()
         );
         assert!(store.get_agent_job("new").unwrap().is_none());
@@ -1771,7 +1959,7 @@ mod tests {
         let mut store = SqliteStore::in_memory().unwrap();
         ready_task(&store, "task");
         store
-            .start_agent_job_for_device("device-a", &job("first", "task"), true)
+            .start_agent_job_for_device("device-a", &job("first", "task"), true, None)
             .unwrap();
         store
             .transition_agent_job("first", 1, AgentJobState::Interrupted, 101, "stopped")
@@ -1873,7 +2061,7 @@ mod tests {
         let mut store = SqliteStore::in_memory().unwrap();
         ready_task(&store, "task");
         store
-            .start_agent_job_for_device("device-a", &job("first", "task"), false)
+            .start_agent_job_for_device("device-a", &job("first", "task"), false, None)
             .unwrap();
         assert!(
             store
@@ -2404,5 +2592,265 @@ mod m23_polling_tests {
             store.get_agent_job("finished").unwrap().unwrap().state,
             AgentJobState::Completed
         );
+    }
+}
+
+#[cfg(test)]
+mod m32_executor_read_tests {
+    use super::tests::{job, ready_task};
+    use super::*;
+
+    /// The shared fixture targets `local`; executor reads are keyed by the
+    /// `machine_ref` stored on the job, so tests bind it explicitly.
+    fn job_on(machine: &str, id: &str, task: &str) -> AgentJob {
+        AgentJob {
+            machine_ref: machine.into(),
+            ..job(id, task)
+        }
+    }
+
+    /// The authority schema owns `devices`; standalone storage tests install the
+    /// same columns so the read model is exercised against real SQL.
+    fn enroll(store: &SqliteStore, id: &str, revoked: i64) {
+        store
+            .connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY NOT NULL, \
+                 token_hash BLOB NOT NULL, revoked INTEGER NOT NULL DEFAULT 0)",
+            )
+            .unwrap();
+        store
+            .connection
+            .execute(
+                "INSERT INTO devices(id,token_hash,revoked) VALUES (?1,zeroblob(32),?2)",
+                rusqlite::params![id, revoked],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn executor_read_is_empty_without_any_enrolled_device() {
+        let store = SqliteStore::in_memory().unwrap();
+        assert!(store.agent_executors().unwrap().is_empty());
+        assert_eq!(store.agent_executor_active("ghost").unwrap(), None);
+    }
+
+    #[test]
+    fn executor_read_reports_active_revoked_claims_and_counts() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        // Inserted out of order: the read must order by device id, not by insert.
+        enroll(&store, "device-b", 0);
+        enroll(&store, "device-a", 0);
+        enroll(&store, "device-c", 1);
+        for task in ["t1", "t2", "t3"] {
+            ready_task(&store, task);
+        }
+        store
+            .start_agent_job_for_device(
+                "device-a",
+                &job_on("device-a", "unclaimed", "t1"),
+                false,
+                None,
+            )
+            .unwrap();
+        store
+            .start_agent_job_for_device(
+                "device-a",
+                &job_on("device-a", "claimed", "t2"),
+                false,
+                None,
+            )
+            .unwrap();
+        store
+            .claim_agent_launch_for_machine("device-a", "claimed", 1, "token-a", 110)
+            .unwrap();
+        store
+            .start_agent_job_for_device("device-b", &job_on("device-b", "other", "t3"), false, None)
+            .unwrap();
+
+        let executors = store.agent_executors().unwrap();
+        assert_eq!(
+            executors
+                .iter()
+                .map(|e| e.device_id.as_str())
+                .collect::<Vec<_>>(),
+            ["device-a", "device-b", "device-c"]
+        );
+        let a = &executors[0];
+        assert!(a.active);
+        assert_eq!(a.last_claim_at_ms, Some(110));
+        // `claimed` is in launching; `unclaimed` is still preparing.
+        assert_eq!(a.claimed_jobs, 1);
+        assert_eq!(a.preparing_jobs, 1);
+        let b = &executors[1];
+        assert!(b.active);
+        assert_eq!(b.last_claim_at_ms, None);
+        assert_eq!((b.claimed_jobs, b.preparing_jobs), (0, 1));
+        let c = &executors[2];
+        assert!(!c.active, "a revoked device must be reported inactive");
+        assert_eq!((c.claimed_jobs, c.preparing_jobs), (0, 0));
+
+        assert_eq!(store.agent_executor_active("device-a").unwrap(), Some(true));
+        assert_eq!(
+            store.agent_executor_active("device-c").unwrap(),
+            Some(false)
+        );
+        assert_eq!(store.agent_executor_active("ghost").unwrap(), None);
+        assert_eq!(store.agent_executor_active("").unwrap(), None);
+    }
+
+    #[test]
+    fn claim_state_is_null_until_claimed_then_confirmed() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        ready_task(&store, "task");
+        ready_task(&store, "other");
+        store
+            .start_agent_job_for_device("device-a", &job_on("device-a", "a", "task"), false, None)
+            .unwrap();
+        store
+            .start_agent_job_for_device("device-a", &job_on("device-a", "b", "other"), false, None)
+            .unwrap();
+        assert_eq!(store.agent_job_claim_state("a").unwrap(), None);
+        assert_eq!(
+            store.agent_claim_states(&["a", "b", "missing"]).unwrap(),
+            []
+        );
+
+        store
+            .claim_agent_launch_for_machine("device-a", "a", 1, "token-a", 110)
+            .unwrap();
+        assert_eq!(
+            store.agent_job_claim_state("a").unwrap().as_deref(),
+            Some("claimed")
+        );
+        store
+            .record_launch_result("a", "token-a", Some("pane-1"), 111)
+            .unwrap();
+        assert_eq!(
+            store.agent_job_claim_state("a").unwrap().as_deref(),
+            Some("confirmed")
+        );
+        // The unclaimed job is untouched by another job's claim.
+        assert_eq!(store.agent_job_claim_state("b").unwrap(), None);
+        assert_eq!(
+            store.agent_claim_states(&["a", "b"]).unwrap(),
+            [("a".to_owned(), "confirmed".to_owned())]
+        );
+        assert!(store.agent_claim_states(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn unclaimed_preparing_job_awaits_an_executor_without_attention() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        ready_task(&store, "task");
+        store
+            .start_agent_job_for_device(
+                "device-a",
+                &job_on("device-a", "waiting", "task"),
+                false,
+                None,
+            )
+            .unwrap();
+        let overview = store.agent_job_overview().unwrap();
+        assert_eq!(overview[0]["next_action"], "await_executor");
+        assert_eq!(overview[0]["needs_attention"], false);
+
+        // A queued job that already carries a claim is not waiting for anyone.
+        store
+            .connection
+            .execute_batch(
+                "INSERT INTO agent_jobs(id,request_id,project_id,task_id,launch_revision,\
+                 agent_kind,machine_ref,runtime_kind,repository_ref,state,revision,\
+                 created_at_ms,updated_at_ms) VALUES ('queued','rq','project','t-q',0,\
+                 'codex','device-a','herdr','repo','queued',0,1,2);\
+                 INSERT INTO agent_job_launch_claims(job_id,claim_token,claimed_at_ms,dispatch_state)\
+                 VALUES ('queued','token-q',2,'claimed');",
+            )
+            .unwrap();
+        let overview = store.agent_job_overview().unwrap();
+        let queued = overview
+            .iter()
+            .find(|item| item["job_id"] == "queued")
+            .expect("the queued job is listed");
+        assert_eq!(queued["next_action"], "none");
+    }
+
+    #[test]
+    fn objective_is_trimmed_stored_and_absent_when_blank() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        for task in ["with-objective", "blank", "absent"] {
+            ready_task(&store, task);
+        }
+        let read = |store: &SqliteStore, id: &str| -> serde_json::Value {
+            serde_json::from_str(&store.agent_job_brief(id).unwrap().unwrap()).unwrap()
+        };
+        store
+            .start_agent_job_for_device(
+                "device-a",
+                &job_on("device-a", "with-objective", "with-objective"),
+                false,
+                Some("  Fix the login redirect  "),
+            )
+            .unwrap();
+        assert_eq!(
+            read(&store, "with-objective")["objective"],
+            "Fix the login redirect"
+        );
+
+        store
+            .start_agent_job_for_device(
+                "device-a",
+                &job_on("device-a", "blank", "blank"),
+                false,
+                Some("   \n\t "),
+            )
+            .unwrap();
+        assert!(read(&store, "blank").get("objective").is_none());
+
+        store
+            .start_agent_job_for_device(
+                "device-a",
+                &job_on("device-a", "absent", "absent"),
+                false,
+                None,
+            )
+            .unwrap();
+        assert!(read(&store, "absent").get("objective").is_none());
+    }
+
+    #[test]
+    fn resumed_job_inherits_the_predecessor_objective() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        ready_task(&store, "task");
+        store
+            .start_agent_job_for_device(
+                "device-a",
+                &job_on("device-a", "first", "task"),
+                false,
+                Some("Keep the objective across resume"),
+            )
+            .unwrap();
+        store
+            .transition_agent_job("first", 1, AgentJobState::Interrupted, 110, "stopped")
+            .unwrap();
+        store
+            .record_agent_job_handoff(
+                "first",
+                "handoff-one",
+                &serde_json::json!({"summary":"continue","validation":{},"next_steps":[]}),
+                111,
+            )
+            .unwrap();
+        store
+            .resume_agent_job_for_device("device-a", "first", "second", 112)
+            .unwrap();
+        let brief: serde_json::Value =
+            serde_json::from_str(&store.agent_job_brief("second").unwrap().unwrap()).unwrap();
+        assert_eq!(brief["objective"], "Keep the objective across resume");
+        assert_eq!(brief["resume"]["prior_job_id"], "first");
+        // The predecessor brief is immutable, so the objective did not move.
+        let prior: serde_json::Value =
+            serde_json::from_str(&store.agent_job_brief("first").unwrap().unwrap()).unwrap();
+        assert_eq!(prior["objective"], "Keep the objective across resume");
     }
 }

@@ -47,6 +47,14 @@ export interface E2EServer {
   dataDir: string
   /** Last lines of `server.log`; safe to call after exit. */
   logTail(lines?: number): Promise<string>
+  /**
+   * Stop the process and start a new one against the *same* database, on the
+   * same origin, with the same enrolled credentials. Durable state must survive;
+   * nothing else does — the server keeps web sessions in memory, so callers
+   * sign in again afterwards. Returns this handle, which now owns the new
+   * process (the fixture's teardown still deletes the temp directory).
+   */
+  restart(): Promise<E2EServer>
   /** Terminate and reap the process, then delete the temp directory. */
   stop(): Promise<void>
 }
@@ -87,11 +95,6 @@ export async function startServer(options: StartServerOptions = {}): Promise<E2E
   })
 
   const log = createWriteStream(logPath, { flags: 'a' })
-  const child: ServerProcess = spawn(binary, [], {
-    env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    cwd: REPO_ROOT,
-  })
   // Keep a small in-memory tail as well as the file: a process that dies before
   // startup has flushed its stdio would otherwise produce an empty log exactly
   // when the reason matters most.
@@ -102,10 +105,41 @@ export async function startServer(options: StartServerOptions = {}): Promise<E2E
     if (tail.length > 200) tail.shift()
     log.write(text)
   }
-  child.stdout.on('data', record)
-  child.stderr.on('data', record)
 
+  let child: ServerProcess
   let stopping = false
+  let restarting = false
+
+  /**
+   * A crash after startup must not be silent: it surfaces as a connection error
+   * in the next call, so print the reason while it is still fresh. Attached to
+   * every spawned process, including one a restart created.
+   */
+  const exitGuard = () => {
+    if (stopping || restarting) return
+    void server.logTail(40).then((excerpt) => {
+      if (excerpt.trim().length > 0) {
+        console.warn(`orbit-server exited unexpectedly:\n${excerpt}`)
+      }
+    })
+  }
+
+  /** Spawn one server process on this harness's env and pipe its output. */
+  const spawnChild = (): ServerProcess => {
+    const next: ServerProcess = spawn(binary, [], {
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: REPO_ROOT,
+    })
+    next.stdout.on('data', record)
+    next.stderr.on('data', record)
+    next.once('exit', exitGuard)
+    child = next
+    return next
+  }
+
+  const healthTimeoutMs = options.healthTimeoutMs ?? 30_000
+
   const server: E2EServer = {
     base,
     deviceId: `e2e-${randomUUID().slice(0, 8)}-browser`,
@@ -117,6 +151,22 @@ export async function startServer(options: StartServerOptions = {}): Promise<E2E
       if (buffered.trim().length > 0) return lastLines(buffered, lines)
       return readLogTail(logPath, lines)
     },
+    restart: async () => {
+      if (stopping) throw new Error('cannot restart a stopped harness server')
+      restarting = true
+      try {
+        // The database, its vault and the enrolled credentials stay on disk.
+        await stopProcess(child)
+        const next = spawnChild()
+        await waitForHealth(base, healthTimeoutMs, next, () => server.logTail(80))
+      } catch (error) {
+        await server.stop()
+        throw error
+      } finally {
+        restarting = false
+      }
+      return server
+    },
     stop: async () => {
       if (stopping) return
       stopping = true
@@ -125,25 +175,15 @@ export async function startServer(options: StartServerOptions = {}): Promise<E2E
     },
   }
 
+  child = spawnChild()
+
   try {
-    await waitForHealth(base, options.healthTimeoutMs ?? 30_000, child, () => server.logTail(80))
+    await waitForHealth(base, healthTimeoutMs, child, () => server.logTail(80))
     await enrollDeviceWithAdminKey(server, { deviceId: server.deviceId, token: server.token })
   } catch (error) {
     await server.stop()
     throw error
   }
-
-  const exitGuard = () => {
-    if (stopping) return
-    // A crash after startup must not be silent: it surfaces as a connection
-    // error in the next call, so print the reason while it is still fresh.
-    void server.logTail(40).then((excerpt) => {
-      if (excerpt.trim().length > 0) {
-        console.warn(`orbit-server exited unexpectedly:\n${excerpt}`)
-      }
-    })
-  }
-  child.once('exit', exitGuard)
 
   return server
 }
@@ -263,6 +303,12 @@ async function stopChild(
   child: ServerProcess,
   log: WriteStream,
 ): Promise<void> {
+  await stopProcess(child)
+  await new Promise<void>((resolve) => log.end(resolve))
+}
+
+/** Terminate and reap one process, leaving the harness's files and log alone. */
+async function stopProcess(child: ServerProcess): Promise<void> {
   if (child.exitCode === null && child.signalCode === null) {
     child.kill('SIGTERM')
     const exited = await waitForExit(child, 5_000)
@@ -271,7 +317,6 @@ async function stopChild(
       await waitForExit(child, 2_000)
     }
   }
-  await new Promise<void>((resolve) => log.end(resolve))
 }
 
 function waitForExit(child: ServerProcess, deadlineMs: number): Promise<boolean> {

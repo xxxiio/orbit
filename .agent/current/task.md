@@ -5,100 +5,96 @@ template_digest: "179af91e65608fbfd07b28126ed729856e6524410956892a698b3f40e902e6
 project_owned: true
 record_contract: current-task
 record_schema_version: 1
-id: TASK-0011
+id: TASK-0012
 status: completed
 milestone_id: MILESTONE-0032
 ---
 
-# Task: M32 I2 — knowledge workflows
+# Task: M32 I3 — browser-authorized agent execution
 
 ## Objective
 
-Make knowledge usable as a working part of Orbit rather than a read-only
-Markdown browser: manage folders and document locations, connect notes to each
-other and to project entities, and reach relevant notes from the project and task
-that need them.
+Let a person start an authorized agent job for a task from the browser, watch it,
+read its evidence, review its handoff, and get back to the task — without making
+an external agent mandatory and without the server running anything on the
+browser's behalf.
 
 ## Current behaviour
 
-The vault and the authority already support folder create/move (a rename is a
-move) and note create/edit/move with receipts, crash replay and symlink
-rejection, and the note view shows `[[id]]` outgoing links, backlinks and
-unresolved targets. But no browser surface calls the folder endpoints, a note
-cannot be renamed without using "Move", there is no way to create a link, typed
-references to projects/tasks exist only in the CLI, and the declared
-`knowledge_refs` panel renders the global inventory on a project tab.
+The browser can inspect jobs, overview, attention, handoffs, review and resume
+context, and can already submit a review or resume a finished job. It cannot start
+one: `startAgentJob` exists in the API layer with no caller, there is no executor
+read, no objective field, and a job whose executor never claims it is invisible —
+`overview.next_action` reports `none` for `queued`/`preparing`, so a stuck launch
+looks like "nothing to do". Every start refusal is also collapsed into one opaque
+400, and an unknown `machine_ref` silently creates a job nothing will claim.
 
 ## Desired behaviour
 
-A person can create a folder, create a note inside it, rename or move either,
-see where a note lives, and recover from an invalid destination with the
-server's explanation. Notes can be linked and unlinked from a searchable id
-picker, project and task references can be added and removed from a note, and a
-reference to a deleted entity is shown as broken rather than dropped. A project
-shows the notes that reference it or its tasks, and a task drawer shows the notes
-that reference it, with a link action that uses the same reference grammar.
+An eligible task offers **Start agent job**: the person picks a real enrolled
+executor, writes an objective, confirms that this queues work for an executor,
+and lands on the job page showing `preparing` and whether anyone has claimed it.
+No executor configured is a named disabled state, not a failure. The job page
+distinguishes not-claimed, claimed, confirmed and ambiguous, refuses to offer a
+retry on an ambiguous launch, and never claims that approval completes the task.
+Refusals quote the server.
 
 ## Scope
 
-- Shared typed-reference grammar in `orbit-runtime`, with `orbit-cli` delegating
-  to it and its behaviour unchanged.
-- `POST markdown-reference-commands` (add/remove, entity existence, receipt and
-  revision through the existing Markdown command path).
-- `GET markdown-references?target=` and `GET project-knowledge?project_id=`, one
-  vault scan each.
-- Web: folder lifecycle UI with pickers and breadcrumb, note rename, link/unlink
-  authoring, typed-reference chips with broken-target state, project-aware
-  `knowledge_refs`, and a Notes section in the task drawer.
-- Unit tests, Playwright acceptance and documentation.
+- `GET agent-executors` (owner-scoped, honest empty list) and start validation of
+  an unknown or inactive executor.
+- Preserved refusal text for start/reserve/resume and the machine routes.
+- `claim_state` on the job view and `next_action: await_executor`.
+- Optional launch objective, stored in the brief, inherited by resume, threaded
+  into the Herdr prompt only when present.
+- Client launch surface, executor state, pinned attempt, job/overview honesty,
+  unit tests.
+- Playwright acceptance with a deterministic in-process fake executor.
 
 ## Out of scope
 
-- Note or folder deletion, note kinds/statuses, note attachments in the view,
-  and work-item references: the existing contracts do not support them and this
-  iteration does not invent them.
-- Any second content store, a body column, or reviving the retired SQL knowledge
-  tables.
-- Agent execution (I3), connected capabilities (I4), dogfooding (I5), final
-  acceptance and the TUI specification (I6). No TUI change.
+- A machine registry, leases or grants that let one device dispatch to a device it
+  does not authenticate as; a real model/Herdr run in the browser path.
+- Changing the state machine, owner scoping, machine fencing, review/resume
+  semantics or the "no task writes" invariant.
+- Connected capability execution (I4), dogfooding (I5), final acceptance (I6),
+  any TUI change.
 
 ## Dependencies
 
-- M31/M32 I1 knowledge routes, vault, `[[id]]` relations and the shared mutation
-  frame.
-- `orbit_reference_work_item_notes` is unrelated free text and is not reused.
+- Existing agent storage/runtime lifecycle, owner and machine principals.
+- The e2e fixture's machine driver recipe (`machine_ref == device id`).
 
 ## Risks
 
-- A folder rename changes every path under it; the client must invalidate the
-  whole knowledge query family and follow or report the open note.
-- A malformed `.md` fails every knowledge read closed with 409; reads must not
-  degrade to "no notes".
-- Reimplementing the reference grammar in the server would drift from the CLI;
-  the parser moves to the runtime and the CLI delegates.
-- A reference command must reuse the Markdown command path, not add a second
-  write path with its own receipt rules.
+- An unknown executor that silently creates a `preparing` job is indistinguishable
+  from a slow one; validation must happen before the job transaction.
+- Preserving storage refusal text must not leak SQL or paths.
+- The objective must not enter shell argv.
+- The browser must never call `agent-machines/*` from product code, and an
+  ambiguous claim must never be relaunched.
 
 ## Acceptance criteria
 
-- [x] AC-001: Folders can be created, renamed and moved from the browser, notes
-  can be created in, renamed and moved between them, location and hierarchy are
-  visible, and invalid operations are refused with the server's message.
-- [x] AC-002: Two notes can be linked and unlinked, a link navigates, the
-  back-reference is visible, and a broken target is indicated.
-- [x] AC-003: A note can reference a project or task, the reference is shown and
-  navigable, a reference to a deleted entity is shown as broken, and removes work.
-- [x] AC-004: A project shows the notes referencing it or its tasks, and a task
-  drawer shows and can add the notes referencing that task.
-- [x] AC-005: Rust, client typecheck, vitest, terminology, build and Playwright
-  acceptance pass against a real server.
+- [x] AC-001: An eligible task can launch an authorized job from the browser with
+  a real executor and an objective, and the resulting job is visible with its
+  state and claim state.
+- [x] AC-002: No executor configured is a named disabled state; an unknown or
+  inactive executor is refused before any job exists.
+- [x] AC-003: Refusals are the server's own words, and a retry reuses the same
+  launch identity.
+- [x] AC-004: The job page distinguishes claim states, never offers a retry on an
+  ambiguous launch, and a completed job never marks the task done.
+- [x] AC-005: Rust, client and Playwright gates pass against a real server,
+  including a full launch → observe → handoff → review cycle with a deterministic
+  fake executor.
 
 ## Validation
 
 ```sh
 cargo fmt --all -- --check
-cargo test -p orbit-runtime -p orbit-server -p orbit-cli --offline
-cargo clippy -p orbit-runtime -p orbit-server -p orbit-cli --all-targets --offline -- -D warnings
+cargo test -p orbit-runtime -p orbit-server -p orbit-storage --offline
+cargo clippy -p orbit-runtime -p orbit-server -p orbit-storage --all-targets --offline -- -D warnings
 cd web && node node_modules/typescript/bin/tsc --noEmit
 cd web && node node_modules/vitest/vitest.mjs run
 cd web && node scripts/check-terminology.mjs

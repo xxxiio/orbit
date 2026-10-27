@@ -4,6 +4,8 @@ use crate::{AuthoritativeHost, AuthorityError};
 use orbit_domain::{AgentJob, ProjectId, TaskId};
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+mod authority_tests;
 mod local_operations;
 mod machine_operations;
 mod owner_operations;
@@ -35,6 +37,10 @@ pub struct StartAgentJob {
     pub repository_ref: String,
     pub worktree: bool,
     pub at_ms: i64,
+    /// Optional launch objective. Additive: existing payloads omit it and keep
+    /// working, and the task brief captured at reservation stays authoritative.
+    #[serde(default)]
+    pub objective: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -156,34 +162,221 @@ pub struct AgentJobView {
     pub runtime_session_ref: Option<String>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+    /// Durable launch-claim state: `claimed`, `confirmed`, `ambiguous`, or null
+    /// when no machine has claimed the job. A client needs this to say "waiting
+    /// for an executor" honestly and to never retry an ambiguous launch.
+    pub claim_state: Option<String>,
 }
-impl From<AgentJob> for AgentJobView {
-    fn from(j: AgentJob) -> Self {
+
+impl AgentJobView {
+    /// Claim state is always supplied by the caller from the durable claim table;
+    /// there is deliberately no `From<AgentJob>` because guessing `None` would
+    /// misreport an in-flight launch.
+    fn new(job: AgentJob, claim_state: Option<String>) -> Self {
         Self {
-            id: j.id,
-            request_id: j.request_id,
-            project_id: j.project_id.as_str().into(),
-            task_id: j.task_id.as_str().into(),
-            state: j.state.as_str().into(),
-            revision: j.revision,
-            agent_kind: j.agent_kind,
-            machine_ref: j.machine_ref,
-            runtime_kind: j.runtime_kind,
-            repository_ref: j.repository_ref,
-            runtime_session_ref: j.runtime_session_ref,
-            created_at_ms: j.created_at_ms,
-            updated_at_ms: j.updated_at_ms,
+            id: job.id,
+            request_id: job.request_id,
+            project_id: job.project_id.as_str().into(),
+            task_id: job.task_id.as_str().into(),
+            state: job.state.as_str().into(),
+            revision: job.revision,
+            agent_kind: job.agent_kind,
+            machine_ref: job.machine_ref,
+            runtime_kind: job.runtime_kind,
+            repository_ref: job.repository_ref,
+            runtime_session_ref: job.runtime_session_ref,
+            created_at_ms: job.created_at_ms,
+            updated_at_ms: job.updated_at_ms,
+            claim_state,
         }
     }
 }
+
+/// One enrolled device as a candidate agent executor.
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentExecutorView {
+    pub device_id: String,
+    /// Enrolled and not revoked.
+    pub active: bool,
+    pub last_claim_at_ms: Option<i64>,
+    /// Non-terminal jobs already in flight on that machine.
+    pub claimed_jobs: i64,
+    /// `preparing` jobs on that machine that nobody has claimed yet.
+    pub preparing_jobs: i64,
+}
+
+/// An empty list is the honest answer for "no executor is configured"; the
+/// client must present that as a state, not as an error.
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentExecutorList {
+    pub executors: Vec<AgentExecutorView>,
+}
+
 fn bad_input() -> AuthorityError {
     AuthorityError::Invalid("invalid agent job request")
 }
+
+/// Fixed refusal texts a person can act on. Transport mapping is an allowlist,
+/// never `error.to_string()`: arbitrary storage errors can carry SQL, schema or
+/// filesystem detail. Entries are constant and never interpolate ids or paths.
+const AGENT_REFUSALS: &[&str] = &[
+    // start
+    "invalid connected agent start",
+    "conflicting connected start replay",
+    "task not eligible for connected start",
+    "agent task not found",
+    "task already has active agent",
+    "agent task has unfinished prerequisites",
+    // reserve
+    "invalid initial agent job",
+    "idempotency key already belongs to another job",
+    "idempotency key reused with different launch payload",
+    "reservation owner mismatch",
+    "task project mismatch",
+    "task must be ready, in progress, or in review",
+    "task has an active agent reservation",
+    // resume
+    "invalid resume request",
+    "predecessor missing",
+    "predecessor owner mismatch",
+    "conflicting resume replay",
+    "predecessor still active",
+    "predecessor launch is unconfirmed; reconcile or sweep the runtime before resuming",
+    "resume requires handoff",
+    "task context changed before resume",
+    "resume requires a durable handoff",
+    "resume must target the predecessor's task and project",
+    "resume requires a queued successor and terminal predecessor",
+    "conflicting resume context",
+    // commands
+    "invalid agent command",
+    "unsupported agent command",
+    "command identity reused with different arguments",
+    "unknown agent job",
+    "task context changed before prepare",
+    "stale agent command revision",
+    "invalid agent command transition",
+    "command timestamp regression",
+    // machine claim / launch result / observe / command ownership
+    "empty executor identity",
+    "executor machine mismatch",
+    "empty launch token",
+    "job already has a different launch claim",
+    "task context changed before launch",
+    "launch precondition failed",
+    "empty session reference",
+    "launch result not expected",
+    "launch token mismatch or already confirmed",
+    "empty reconciliation token",
+    "missing launch claim",
+    "reconciliation token mismatch",
+    "stale reconciliation revision",
+    "terminal agent cannot be reconciled",
+    "stale runtime observation",
+    "empty runtime session",
+    "runtime session identity changed",
+    "invalid runtime observation transition",
+    // reviews and handoffs owned by the browser
+    "review already recorded; conflicting decision",
+    "invalid review request",
+    "review requires a persisted handoff",
+    "handoff ID reused with different contents",
+];
+
+/// Map a storage refusal to the transport error, preserving only allowlisted
+/// fixed text. Everything else (including every SQL failure) keeps the generic
+/// `invalid agent job request` body. The returned text is always a `'static`
+/// entry from the allowlist, never the storage message itself.
+fn storage_refusal(error: orbit_application::RepositoryError) -> AuthorityError {
+    match error {
+        orbit_application::RepositoryError::Other(message) => {
+            match AGENT_REFUSALS.iter().find(|known| **known == message) {
+                Some(known) => AuthorityError::Invalid(known),
+                None => bad_input(),
+            }
+        }
+        _ => bad_input(),
+    }
+}
+
 fn validate_ref(value: &str) -> Result<(), AuthorityError> {
     if value.is_empty() || value.len() > 256 || value.chars().any(|c| c.is_control()) {
         return Err(bad_input());
     }
     Ok(())
+}
+
+/// Trimmed objective, or `None` when it is blank. The cap is a character count
+/// so a long multi-byte objective is refused honestly rather than truncated.
+fn validate_objective(objective: Option<String>) -> Result<Option<String>, AuthorityError> {
+    let Some(objective) = objective else {
+        return Ok(None);
+    };
+    let objective = objective.trim();
+    if objective.is_empty() {
+        return Ok(None);
+    }
+    if objective.chars().count() > 4000 {
+        return Err(AuthorityError::Invalid("objective is too long"));
+    }
+    Ok(Some(objective.to_owned()))
+}
+
+impl AuthoritativeHost {
+    /// One job view. The claim read is a single primary-key lookup.
+    fn agent_job_view(&self, job: AgentJob) -> Result<AgentJobView, AuthorityError> {
+        let claim = self
+            .authority
+            .conn
+            .agent_job_claim_state(&job.id)
+            .map_err(storage_refusal)?;
+        Ok(AgentJobView::new(job, claim))
+    }
+
+    /// Job list views sharing one bounded claim query, so a list is never one
+    /// claim lookup per row.
+    fn agent_job_views(&self, jobs: Vec<AgentJob>) -> Result<Vec<AgentJobView>, AuthorityError> {
+        let ids = jobs.iter().map(|job| job.id.as_str()).collect::<Vec<_>>();
+        let claims: std::collections::HashMap<String, String> = self
+            .authority
+            .conn
+            .agent_claim_states(&ids)
+            .map_err(storage_refusal)?
+            .into_iter()
+            .collect();
+        Ok(jobs
+            .into_iter()
+            .map(|job| {
+                let claim = claims.get(&job.id).cloned();
+                AgentJobView::new(job, claim)
+            })
+            .collect())
+    }
+
+    /// Owner-scoped executor roster. Any authenticated device may read it: it is
+    /// derived from enrollment and durable jobs, and it is how the browser knows
+    /// whether a launch is possible at all.
+    pub fn agent_executors_authoritatively(
+        &self,
+        owner: &str,
+    ) -> Result<AgentExecutorList, AuthorityError> {
+        validate_ref(owner)?;
+        let executors = self
+            .authority
+            .conn
+            .agent_executors()
+            .map_err(storage_refusal)?
+            .into_iter()
+            .map(|row| AgentExecutorView {
+                device_id: row.device_id,
+                active: row.active,
+                last_claim_at_ms: row.last_claim_at_ms,
+                claimed_jobs: row.claimed_jobs,
+                preparing_jobs: row.preparing_jobs,
+            })
+            .collect();
+        Ok(AgentExecutorList { executors })
+    }
 }
 impl AuthoritativeHost {
     /// Read-only, durable resume context; never infers task acceptance from a runtime state.
@@ -224,7 +417,7 @@ impl AuthoritativeHost {
             .agent_job_worktree(id)
             .map_err(|_| bad_input())?;
         Ok(
-            serde_json::json!({"job":AgentJobView::from(job),"original_brief":brief,
+            serde_json::json!({"job":self.agent_job_view(job)?,"original_brief":brief,
             "latest_handoff":latest,"handoff_count":handoffs.len(),
             "review":review,"worktree":worktree,
             "task_completion_inferred":false,"runtime_launch_authorized":false}),
@@ -266,6 +459,19 @@ impl AuthoritativeHost {
         if request.at_ms < 0 || !matches!(request.agent_kind.as_str(), "codex" | "opencode") {
             return Err(bad_input());
         }
+        let objective = validate_objective(request.objective)?;
+        // Executor validation happens before the job transaction: a job assigned
+        // to a device nobody will ever poll must not be created at all.
+        match self
+            .authority
+            .conn
+            .agent_executor_active(&request.machine_ref)
+            .map_err(storage_refusal)?
+        {
+            Some(true) => {}
+            Some(false) => return Err(AuthorityError::Invalid("inactive agent executor")),
+            None => return Err(AuthorityError::Invalid("unknown agent executor")),
+        }
         use rusqlite::OptionalExtension;
         let project: Option<String> = self
             .authority
@@ -296,11 +502,12 @@ impl AuthoritativeHost {
             last_seen_at_ms: None,
             runtime_session_ref: None,
         };
-        self.authority
+        let started = self
+            .authority
             .conn
-            .start_agent_job_for_device(owner, &job, request.worktree)
-            .map(Into::into)
-            .map_err(|_| bad_input())
+            .start_agent_job_for_device(owner, &job, request.worktree, objective.as_deref())
+            .map_err(storage_refusal)?;
+        self.agent_job_view(started)
     }
 
     /// Connected resume is authority-only: the executor polls the newly queued
@@ -328,13 +535,14 @@ impl AuthoritativeHost {
                 &request.new_job_id,
                 request.at_ms,
             )
-            .map_err(|_| bad_input())?;
-        self.authority
+            .map_err(storage_refusal)?;
+        let job = self
+            .authority
             .conn
             .get_agent_job(&request.new_job_id)
-            .map_err(|_| bad_input())?
-            .map(Into::into)
-            .ok_or_else(bad_input)
+            .map_err(storage_refusal)?
+            .ok_or_else(bad_input)?;
+        self.agent_job_view(job)
     }
 }
 

@@ -38,9 +38,18 @@ export interface WebSession {
   expires_at_ms: number
 }
 
-export async function signInViaApi(page: Page, server: E2EServer): Promise<WebSession> {
+/**
+ * Exchange device credentials for a cookie. Defaults to the harness device; a
+ * spec that needs a second (or deliberately different) enrolled device passes
+ * its own credentials.
+ */
+export async function signInViaApi(
+  page: Page,
+  server: E2EServer,
+  credentials: { deviceId: string; token: string } = server,
+): Promise<WebSession> {
   const response = await page.request.post(`${server.base}/v1/web/session`, {
-    data: { device_id: server.deviceId, token: server.token },
+    data: { device_id: credentials.deviceId, token: credentials.token },
     headers: { 'content-type': 'application/json' },
   })
   expect(response.status(), 'POST /v1/web/session should create a session').toBe(201)
@@ -59,8 +68,9 @@ export async function goto(
   page: Page,
   server: E2EServer,
   path = '/',
+  credentials?: { deviceId: string; token: string },
 ): Promise<void> {
-  await signInViaApi(page, server)
+  await signInViaApi(page, server, credentials)
   await page.goto(`${server.base}${path}`)
 }
 

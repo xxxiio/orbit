@@ -424,20 +424,30 @@ impl AuthoritativeHost {
             .list_agent_job_handoffs(job_id)
             .map_err(|e| e.to_string())
     }
+    /// Local operator read of one job, annotated with its durable claim state so
+    /// a watching operator sees "waiting for an executor" instead of guessing.
     pub fn local_agent_job(&self, job_id: &str) -> Result<Option<AgentJobView>, String> {
-        self.authority
+        let job = self
+            .authority
             .conn
             .get_agent_job(job_id)
-            .map(|j| j.map(Into::into))
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        match job {
+            Some(job) => self
+                .agent_job_view(job)
+                .map(Some)
+                .map_err(|e| format!("{e:?}")),
+            None => Ok(None),
+        }
     }
     /// Agent polling is explicit and never launches any new sessions.
     pub fn local_agent_poll_candidates(&self) -> Result<Vec<AgentJobView>, String> {
-        self.authority
+        let jobs = self
+            .authority
             .conn
             .agent_job_poll_candidates()
-            .map(|jobs| jobs.into_iter().map(Into::into).collect())
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        self.agent_job_views(jobs).map_err(|e| format!("{e:?}"))
     }
     /// Record a stable automatic snapshot after a runtime becomes reviewable.
     /// The snapshot is repository evidence, never an assertion of agent authorship.
@@ -459,11 +469,12 @@ impl AuthoritativeHost {
             .map_err(|e| e.to_string())
     }
     pub fn local_agent_attention(&self) -> Result<Vec<AgentJobView>, String> {
-        self.authority
+        let jobs = self
+            .authority
             .conn
             .list_agent_jobs_needing_attention()
-            .map(|v| v.into_iter().map(Into::into).collect())
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        self.agent_job_views(jobs).map_err(|e| format!("{e:?}"))
     }
     pub fn inspect_local_agent_job<R: orbit_application::agent_runtime::AgentInspector>(
         &mut self,
@@ -479,7 +490,8 @@ impl AuthoritativeHost {
             revision,
             at_ms,
         )
-        .map(Into::into)
+        .map_err(|e| e.to_string())
+        .and_then(|job| self.agent_job_view(job).map_err(|e| format!("{e:?}")))
     }
 }
 

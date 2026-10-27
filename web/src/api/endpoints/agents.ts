@@ -1,6 +1,7 @@
 import { api } from '../client'
 import { withQuery } from '../http'
 import type {
+  AgentExecutorListResponse,
   AgentHandoffEntry,
   AgentJobCommandRequest,
   AgentJobOverviewItem,
@@ -16,6 +17,17 @@ import type {
 } from '../contracts'
 
 const BASE = '/authoritative/agent-jobs'
+
+/**
+ * Devices that can claim a queued job (C10). Owner-scoped and not paginated:
+ * one authenticated device sees every enrolled device, and the count is small.
+ * An empty list is a valid, honest answer — no executor is configured — not an
+ * error. A server older than C10 answers 404; the caller must say so by name
+ * instead of showing an empty list.
+ */
+export function fetchAgentExecutors(signal?: AbortSignal): Promise<AgentExecutorListResponse> {
+  return api.get<AgentExecutorListResponse>('/authoritative/agent-executors', { signal })
+}
 
 /**
  * A missing or foreign job id answers 403 (`device identity mismatch`), never

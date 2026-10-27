@@ -1380,6 +1380,20 @@ async fn authoritative_agent_resume_context(
             .map_err(map_error)?,
     ))
 }
+async fn authoritative_agent_executors(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<orbit_runtime::agent_authority::AgentExecutorList>, ApiError> {
+    let actor = device(&state, &headers)?;
+    let host = state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
+    Ok(Json(
+        host.agent_executors_authoritatively(&actor)
+            .map_err(map_error)?,
+    ))
+}
 async fn authoritative_agent_overview(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3933,6 +3947,10 @@ fn routes(state: AppState) -> Router {
             get(authoritative_agent_overview),
         )
         .route(
+            "/v1/authoritative/agent-executors",
+            get(authoritative_agent_executors),
+        )
+        .route(
             "/v1/authoritative/agent-jobs/resume-context",
             get(authoritative_agent_resume_context),
         )
@@ -5183,5 +5201,193 @@ mod tests {
             &bearer,
             "/v1/authoritative/projects"
         ));
+    }
+
+    /// The browser needs an honest executor roster before it can offer a launch,
+    /// and the two start refusals are wire contracts the client quotes verbatim.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn agent_executor_read_and_start_refusals_over_http() {
+        let dist = TempDist::built();
+        let state = test_state(&dist);
+        {
+            let mut store = state.store.lock().unwrap();
+            store
+                .enroll_device("executor-1", "executor-secret-0123456789abcdefgh")
+                .unwrap();
+            store
+                .enroll_device("executor-2", "executor-secret-9876543210abcdefgh")
+                .unwrap();
+            store.revoke_device("executor-2").unwrap();
+        }
+        let address = spawn(routes(state)).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+
+        let (status, raw) = get(&address, "/v1/authoritative/agent-executors", &bearer);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let body: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        let executors = body["executors"]
+            .as_array()
+            .expect("executors is always an array");
+        let ids: Vec<&str> = executors
+            .iter()
+            .map(|executor| executor["device_id"].as_str().unwrap_or_default())
+            .collect();
+        assert_eq!(
+            ids,
+            ["device-1", "executor-1", "executor-2"],
+            "ordered by device id, including revoked but not the authority identity"
+        );
+        let enrolled = &executors[1];
+        assert_eq!(enrolled["active"], true);
+        assert_eq!(enrolled["last_claim_at_ms"], serde_json::Value::Null);
+        assert_eq!(enrolled["claimed_jobs"], 0);
+        assert_eq!(enrolled["preparing_jobs"], 0);
+        // A revoked executor is reported, so the client can explain why it is
+        // unavailable instead of the device silently vanishing.
+        assert_eq!(executors[2]["active"], false);
+
+        // An unknown executor is refused before any job is created.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/agent-jobs/start",
+            &bearer,
+            r#"{"job_id":"job-1","task_id":"task-1","agent_kind":"codex",
+                "machine_ref":"ghost","repository_ref":"/srv/repo",
+                "worktree":false,"at_ms":1000}"#,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert_eq!(
+            body_of(&raw),
+            r#"{"error":"unknown agent executor"}"#,
+            "{}",
+            body_of(&raw)
+        );
+        let (status, raw) = get(&address, "/v1/authoritative/agent-jobs?id=job-1", &bearer);
+        assert_eq!(status, 403, "{}", body_of(&raw));
+        assert!(body_of(&raw).contains("device identity mismatch"));
+
+        // The revoked executor is refused with its own fixed text.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/agent-jobs/start",
+            &bearer,
+            r#"{"job_id":"job-2","task_id":"task-1","agent_kind":"codex",
+                "machine_ref":"executor-2","repository_ref":"/srv/repo",
+                "worktree":false,"at_ms":1000}"#,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert_eq!(body_of(&raw), r#"{"error":"inactive agent executor"}"#);
+
+        // A real project and a task that is still in the inbox: the storage
+        // refusal must survive to the wire instead of the generic body.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &bearer,
+            r#"{"command_id":"p-create","expected_revision":0,"project_id":"orbit","name":"Orbit"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/task-commands",
+            &bearer,
+            r#"{"command_id":"t-create","expected_revision":1,"action":{"type":"create","task_id":"task-1","title":"Fix the login","project_id":"orbit"}}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/agent-jobs/start",
+            &bearer,
+            r#"{"job_id":"job-3","task_id":"task-1","agent_kind":"codex",
+                "machine_ref":"executor-1","repository_ref":"/srv/repo",
+                "worktree":false,"at_ms":1000,
+                "objective":"Fix the login redirect"}"#,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert_eq!(
+            body_of(&raw),
+            r#"{"error":"task not eligible for connected start"}"#,
+            "{}",
+            body_of(&raw)
+        );
+        // No job was created by any refusal.
+        let (status, raw) = get(&address, "/v1/authoritative/agent-jobs/overview", &bearer);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let overview: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(overview.as_array().map(Vec::len), Some(0));
+    }
+
+    /// An objective longer than the cap is refused with a fixed message, and the
+    /// additive field keeps old payloads (no objective) working.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn agent_start_accepts_an_objective_and_refuses_an_oversized_one() {
+        let dist = TempDist::built();
+        let state = test_state(&dist);
+        state
+            .store
+            .lock()
+            .unwrap()
+            .enroll_device("executor-1", "executor-secret-0123456789abcdefgh")
+            .unwrap();
+        let address = spawn(routes(state)).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &bearer,
+            r#"{"command_id":"p-create","expected_revision":0,"project_id":"orbit","name":"Orbit"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/task-commands",
+            &bearer,
+            r#"{"command_id":"t-create","expected_revision":1,"action":{"type":"create","task_id":"task-1","title":"Fix the login","project_id":"orbit"}}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/task-commands",
+            &bearer,
+            r#"{"command_id":"t-ready","expected_revision":2,"action":{"type":"change_status","task_id":"task-1","status":"ready"}}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+
+        let objective = "o".repeat(4001);
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/agent-jobs/start",
+            &bearer,
+            &format!(
+                r#"{{"job_id":"job-long","task_id":"task-1","agent_kind":"codex",
+                    "machine_ref":"executor-1","repository_ref":"/srv/repo",
+                    "worktree":false,"at_ms":1000,"objective":"{objective}"}}"#
+            ),
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert_eq!(body_of(&raw), r#"{"error":"objective is too long"}"#);
+
+        // Without an objective the same payload shape still works, and the
+        // response reports the claim state the browser must display.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/agent-jobs/start",
+            &bearer,
+            r#"{"job_id":"job-1","task_id":"task-1","agent_kind":"codex",
+                "machine_ref":"executor-1","repository_ref":"/srv/repo",
+                "worktree":false,"at_ms":1000}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let job: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(job["state"], "preparing");
+        assert_eq!(job["claim_state"], serde_json::Value::Null);
+
+        let (status, raw) = get(&address, "/v1/authoritative/agent-jobs/overview", &bearer);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let overview: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(overview[0]["next_action"], "await_executor");
+        assert_eq!(overview[0]["needs_attention"], false);
     }
 }

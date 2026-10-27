@@ -71,11 +71,12 @@ impl AuthoritativeHost {
         machine: &str,
     ) -> Result<Vec<AgentJobView>, AuthorityError> {
         validate_ref(machine)?;
-        self.authority
+        let jobs = self
+            .authority
             .conn
             .pending_agent_jobs_for_machine(machine)
-            .map(|items| items.into_iter().map(Into::into).collect())
-            .map_err(|_| bad_input())
+            .map_err(storage_refusal)?;
+        self.agent_job_views(jobs)
     }
     /// Work instructions for the assigned executor; owner clients may not impersonate machines.
     pub fn machine_agent_brief_authoritatively(
@@ -106,7 +107,7 @@ impl AuthoritativeHost {
             .conn
             .agent_job_worktree(job_id)
             .map_err(|_| bad_input())?;
-        Ok(serde_json::json!({"job":AgentJobView::from(job),"brief":context,"worktree":worktree}))
+        Ok(serde_json::json!({"job":self.agent_job_view(job)?,"brief":context,"worktree":worktree}))
     }
     pub fn machine_agent_claim_authoritatively(
         &mut self,
@@ -129,15 +130,15 @@ impl AuthoritativeHost {
                 &command.claim_token,
                 command.at_ms,
             )
-            .map_err(|_| bad_input())?;
+            .map_err(storage_refusal)?;
         let job = self
             .authority
             .conn
             .get_agent_job(&command.job_id)
-            .map_err(|_| bad_input())?
+            .map_err(storage_refusal)?
             .ok_or_else(bad_input)?;
         Ok(MachineLaunchClaimReceipt {
-            job: job.into(),
+            job: self.agent_job_view(job)?,
             claimed,
         })
     }
@@ -164,13 +165,14 @@ impl AuthoritativeHost {
                 command.session_ref.as_deref(),
                 command.at_ms,
             )
-            .map_err(|_| bad_input())?;
-        self.authority
+            .map_err(storage_refusal)?;
+        let job = self
+            .authority
             .conn
             .get_agent_job(&command.job_id)
-            .map_err(|_| bad_input())?
-            .map(Into::into)
-            .ok_or_else(bad_input)
+            .map_err(storage_refusal)?
+            .ok_or_else(bad_input)?;
+        self.agent_job_view(job)
     }
     pub fn machine_agent_observe_authoritatively(
         &mut self,
@@ -203,7 +205,8 @@ impl AuthoritativeHost {
             }
             _ => return Err(bad_input()),
         };
-        self.authority
+        let observed = self
+            .authority
             .conn
             .observe_agent_for_machine(
                 machine,
@@ -213,8 +216,8 @@ impl AuthoritativeHost {
                 observation,
                 command.at_ms,
             )
-            .map(Into::into)
-            .map_err(|_| bad_input())
+            .map_err(storage_refusal)?;
+        self.agent_job_view(observed)
     }
 
     /// Only the assigned machine with the persisted launch token may submit

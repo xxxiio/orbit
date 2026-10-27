@@ -12,7 +12,6 @@
  */
 import type { Locator, Page } from '@playwright/test'
 import { expect, test } from './harness/fixtures'
-import type { E2EServer } from './harness/server'
 import { goto, openSecondBrowser } from './harness/session'
 import {
   authorityRevision,

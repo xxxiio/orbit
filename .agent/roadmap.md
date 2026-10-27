@@ -571,7 +571,7 @@ none
 - [x] EC-003: Saved views persist across browser restart and never modify a workflow definition.
 - [x] EC-004: Task created/updated timestamps from recorded history, with explicit unknown state.
 - [x] EC-005: Knowledge folders and documents can be created, moved, renamed and browsed; links have back-references and broken-link indication; knowledge is reachable from project context.
-- [ ] EC-006: An authorized agent job can be launched and reviewed from the browser, with restart persistence and no automatic task completion.
+- [x] EC-006: An authorized agent job can be launched and reviewed from the browser, with restart persistence and no automatic task completion.
 - [ ] EC-007: Trusted Workflow Capabilities execute through the authoritative server with grants, claims, durable receipts, retry safety and reconciliation.
 - [ ] EC-008: Extended browser dogfooding with recorded findings and layer-correct fixes.
 - [ ] EC-009: Real-browser acceptance for every new operation against an isolated authoritative server.
@@ -586,7 +586,7 @@ none
 - EC-003: I1 — saved-view commands, storage and browser-restart persistence; Playwright `saved-views.spec.ts`.
 - EC-004: I1 — task-detail timestamps derived from recorded activity; Rust and Playwright `task-metadata.spec.ts`.
 - EC-005: I2 — shared typed-reference grammar, reference/project-knowledge routes, a folder-command queue fix, and `knowledge-folders`/`knowledge-links`/`project-knowledge` browser specs.
-- EC-006: I3 — browser agent launch, monitoring, handoff and review (open).
+- EC-006: I3 — executor roster, launch validation, claim-state honesty, objective, and an `agents-launch` spec covering the full cycle with a deterministic executor.
 - EC-007: I4 — connected Workflow Capability execution through the server (open).
 - EC-008: I5 — extended dogfooding record and layer-correct fixes (open).
 - EC-009: I6 — full real-browser acceptance against an isolated server (open).

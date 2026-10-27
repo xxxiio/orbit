@@ -6,6 +6,7 @@
  * infers that a review completed a task.
  */
 import type {
+  AgentExecutor as AgentExecutorRecord,
   AgentHandoffEntry,
   AgentJobOverviewItem,
   AgentJobView,
@@ -27,6 +28,13 @@ export interface AgentJob {
   runtimeSessionRef: string | null
   createdAtMs: number
   updatedAtMs: number
+  /**
+   * The machine claim (C13), or `null` when no executor has claimed the job.
+   * Always read `claimStateReported` with it: an older server omits the field,
+   * and "not reported" is not the same answer as "not claimed".
+   */
+  claimState: string | null
+  claimStateReported: boolean
 }
 
 export function toAgentJob(view: AgentJobView): AgentJob {
@@ -44,8 +52,30 @@ export function toAgentJob(view: AgentJobView): AgentJob {
     runtimeSessionRef: view.runtime_session_ref,
     createdAtMs: view.created_at_ms,
     updatedAtMs: view.updated_at_ms,
+    claimState: view.claim_state ?? null,
+    claimStateReported: 'claim_state' in view,
   }
 }
+
+/** One enrolled executor device (C10). Counts are the server's, never derived. */
+export interface AgentExecutor {
+  deviceId: string
+  active: boolean
+  lastClaimAtMs: number | null
+  claimedJobs: number
+  preparingJobs: number
+}
+
+export function toAgentExecutor(record: AgentExecutorRecord): AgentExecutor {
+  return {
+    deviceId: record.device_id,
+    active: record.active,
+    lastClaimAtMs: record.last_claim_at_ms,
+    claimedJobs: record.claimed_jobs,
+    preparingJobs: record.preparing_jobs,
+  }
+}
+
 
 export interface AgentJobOverview {
   jobId: string

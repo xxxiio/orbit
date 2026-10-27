@@ -67,11 +67,16 @@ evidence on every pass).
 ## Layout
 
 ```
-tests/e2e/harness/server.ts    spawn/health-wait/enroll/teardown, log tail on failure
-tests/e2e/harness/session.ts   form sign-in, API sign-in, signed-out assertions
+tests/e2e/harness/server.ts    spawn/health-wait/enroll/teardown, restart (same DB and
+                               credentials, same origin), log tail on failure
+tests/e2e/harness/session.ts   form sign-in, API sign-in (any enrolled device), signed-out
+                               assertions
 tests/e2e/harness/seed.ts      fixture wiring for one harness server
 tests/e2e/harness/authority.ts authoritative reads/writes for the I1 specs
 tests/e2e/harness/fixtures.ts  `server` and `workspace` Playwright fixtures
+tests/e2e/harness/agents.ts    the deterministic fake executor: start, claim,
+                               launch-result, observe, handoff, interrupt, review, plus
+                               the job/overview/executor/handoff/review reads
 tests/e2e/harness/knowledge.ts server reads (tree, inventory, document, relations,
                                references, project knowledge) and the knowledge
                                dialogs/pickers the I2 specs drive
@@ -132,6 +137,8 @@ against the shipped build, and a failure is a product regression.
 | `tasks.spec.ts` | capture → rename → description → priority → labels → status survives a reload (drawer deep-links via `?task=`); an illegal transition shows the server's refusal and keeps the stored status; a bulk status change applies to every selected task and both persist after reload. |
 | `conflict.spec.ts` | a stale-revision command is refused with the server's explanation, the UI keeps the stored value, and a refresh makes the next attempt succeed. |
 | `fixture.spec.ts` | the fixture is replayable: a second seed over the same database duplicates no rows and does not advance the authority revision. |
+| `agents.spec.ts` | the Agents workspace reads only jobs this device owns: overview → job → review, and the task is unchanged; an unconfirmed review is discarded by an explicit refresh; an interrupted job resumes into a new queued job; a foreign job id — including one another enrolled device really started — is "not visible", never "missing". |
+| `agents-launch.spec.ts` | the launch path end to end with a deterministic fake executor (the fixture's own device credential posting `agent-machines/*`): drawer → dialog → queued `preparing` job → claim → launch result → observe `running` → handoff → review, with the objective frozen into the brief and the Orbit task unchanged; the confirmation names a chosen device that has never claimed a job and still queues the job; the "every enrolled executor is revoked" state disables both launch triggers with the server's own explanation and posts nothing; an unknown `machine_ref` is refused `400 unknown agent executor` before a job exists; a refused launch retries the *same* `job_id` and leaves exactly one job row; an unclaimed job is "Awaiting an executor", not attention; and the job, its claim state, handoff and review all survive a real server restart. |
 | `terminology.spec.ts` | user-facing copy never shows the legacy internal feature name. |
 
 ## Rules the specs follow

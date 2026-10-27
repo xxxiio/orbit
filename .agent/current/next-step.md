@@ -5,7 +5,7 @@ template_digest: "b88835ce70ef09490ad55db0e910dc05ff721384d6ccad8d45eafedd7654aa
 project_owned: true
 record_contract: next-step
 record_schema_version: 1
-id: NEXT-0016
+id: NEXT-0017
 status: completed
 milestone_id: MILESTONE-0032
 advances_exit_criteria: [EC-001, EC-002, EC-003, EC-004, EC-009, EC-011]
@@ -15,62 +15,59 @@ advances_exit_criteria: [EC-001, EC-002, EC-003, EC-004, EC-009, EC-011]
 
 ## Objective
 
-Land M32 iteration I2: knowledge folders and document locations, note links with
-back-references, and project/task-contextual knowledge — each proven by
-real-browser acceptance against an isolated server.
+Land M32 iteration I3: an authorized agent job can be launched from an eligible
+task in the browser with a real executor and an objective, watched through its
+claim states, and reviewed — proven by a full launch → observe → handoff → review
+cycle against a real server with a deterministic executor.
 
 ## Why this is next
 
-I1 closed the everyday project-management gaps. Knowledge is the next daily
-surface that still needs the CLI: the vault and the server already support folder
-and note moves with receipts, but the browser offers no folder control, no way to
-create a link, and no project-scoped knowledge. Until those exist, notes cannot be
-used as part of project work, and I5 dogfooding cannot evaluate a knowledge
-workflow.
+Projects, tasks, search, views and knowledge are now complete enough to work in.
+The remaining daily gap is agent work: the browser can review a job it did not
+start, and the only way to start one is the CLI. Until launch exists, the Agents
+surface is read-only, and I5 dogfooding cannot evaluate an agent-assisted
+development cycle.
 
 ## Preconditions
 
-- M32 I1 committed (`1c27354`); knowledge vault, folder commands, note commands
-  and `[[id]]` relations ship and are tested.
-- Frozen I2 contracts in `.slim/deepwork/m32-web-completeness/i2-plan.md`.
+- M32 I2 committed (`b571d97`); the agent lifecycle, owner scoping, machine
+  fencing, handoffs, reviews and resume already ship and are tested.
+- Frozen I3 contracts in `.slim/deepwork/m32-web-completeness/i3-plan.md`.
 
 ## Inputs
 
-- `web/src/features/knowledge/**`, `web/src/api/{endpoints,mutations,queries}.ts`.
-- `crates/orbit-runtime/src/{references.rs,markdown_commands.rs,lib.rs}`,
-  `crates/orbit-server/src/main.rs`, `crates/orbit-cli/src/{markdown_metadata,
-  markdown_discovery}.rs`.
-- `.slim/deepwork/m32-web-completeness/i2-plan.md`.
+- `crates/orbit-runtime/src/agent_authority*`, `crates/orbit-storage/src/agent_jobs.rs`,
+  `crates/orbit-runtime/src/herdr_runtime.rs`, `crates/orbit-server/src/main.rs`.
+- `web/src/features/agents/**`, `web/src/api/**` agent modules.
+- `.slim/deepwork/m32-web-completeness/i3-plan.md`.
 
 ## Ordered actions
 
-1. Runtime lane: shared reference grammar, reference command through the Markdown
-   command path, reference read and project-knowledge read, with tests.
-2. Client lane: folder lifecycle with pickers and breadcrumb, note rename,
-   link/unlink authoring, typed references with broken-target state,
-   project-aware `knowledge_refs`, task-drawer Notes section.
-3. Browser acceptance lane: folder, link and project-knowledge specs; fix
-   integration defects in the owning layer.
+1. Runtime lane: executor read, machine validation, preserved refusal text, claim
+   state, `await_executor`, optional objective, tests.
+2. Client lane: launch surface with executor and objective, pinned attempt, job and
+   overview honesty, no-executor state, unit tests.
+3. Browser acceptance lane: `harness/agents.ts` deterministic executor and
+   `agents-launch.spec.ts` covering the full cycle, refusals and restart.
 4. Run the gates, record evidence, update milestone criteria and journal, then
-   start I3.
+   start I4.
 
 ## Expected outputs
 
-- Working folder create/rename/move and document move/rename from the browser.
-- A link picker with back-references, and project/task references that navigate.
-- A project knowledge panel and a task Notes section backed by one server scan.
-- Rust, unit and browser evidence.
+- A working launch flow with a real executor and an objective.
+- A job page that distinguishes not-claimed, claimed, confirmed and ambiguous.
+- Refusals in the server's words, and no job created for an invalid executor.
+- Rust, unit and browser evidence for the whole cycle.
 
 ## Acceptance criteria
 
-- [x] NS-001: Folder create/rename/move and note create/rename/move persist and
-  refuse invalid destinations with the server's message.
-- [x] NS-002: A note link can be created and removed and its back-reference is
-  visible; a broken target is indicated.
-- [x] NS-003: Project/task references can be added and removed and appear in the
-  project knowledge read; a reference to a deleted entity is shown as broken.
-- [x] NS-004: The reference grammar is shared with the CLI and CLI behaviour is
-  unchanged.
+- [x] NS-001: An eligible task launches a job from the browser and the job page
+  shows its state and claim state.
+- [x] NS-002: An unknown or inactive executor is refused before a job exists, and
+  an empty executor list is a named disabled state.
+- [x] NS-003: Retry reuses one launch identity; an ambiguous claim offers no retry.
+- [x] NS-004: A full launch → observe → handoff → review cycle runs deterministically
+  in a browser spec and leaves the task status unchanged.
 - [x] NS-005: Full Rust tests, clippy, typecheck, vitest, terminology, build and
   Playwright pass on the frozen tree.
 - [x] NS-006: `getdone-validate-project` exits 0.
@@ -78,7 +75,7 @@ workflow.
 ## Validation
 
 ```sh
-cargo test -p orbit-runtime -p orbit-server -p orbit-cli --offline
+cargo test -p orbit-runtime -p orbit-server -p orbit-storage --offline
 cd web && node node_modules/typescript/bin/tsc --noEmit
 cd web && node node_modules/vitest/vitest.mjs run
 cd web && node scripts/check-terminology.mjs
@@ -89,13 +86,12 @@ getdone-validate-project
 
 ## Stop conditions
 
-- A second content store, a body column, or a revived SQL knowledge table would be
-  needed.
-- A reference write would bypass the Markdown command receipt or revision.
-- The client would have to reimplement the reference grammar.
-- Project scoping would have to be faked by filtering the global inventory.
+- A launch would require the server to run a command or a model itself.
+- An unknown executor could still create a job.
+- The browser would have to call an executor-only route from product code.
+- Approval could be presented as task completion.
 
 ## Out of scope
 
-- Note/folder deletion, note kinds/statuses, work-item references, I3–I6 work, and
-  any TUI change.
+- Machine registry/leases, connected capability execution (I4), dogfooding (I5),
+  final acceptance and TUI work (I6).
