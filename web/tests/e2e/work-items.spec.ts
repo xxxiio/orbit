@@ -112,11 +112,19 @@ test.describe('work items', () => {
       panel.getByRole('region', { name: 'Moves' }).getByText('Move to Implementing').first(),
     ).toBeVisible()
 
-    // Capability execution is not offered here, and the panel says why.
+    // A state that declares no capability action offers none, and the panel
+    // says why instead of exposing a control. Capability status is read from the
+    // server, so it is only listed for the capabilities this state declares —
+    // here, none.
     const actions = panel.getByRole('region', { name: 'Actions' })
-    await expect(actions.getByText('Execution requires the local Orbit authority.')).toBeVisible()
-    await expect(actions.getByText('Capability status is not exposed by this server.')).toBeVisible()
-    await expect(actions.getByText(/This state declares no actions/)).toBeVisible()
+    await expect(
+      actions.getByText('This state declares no actions. The workflow declares no move out of Ready, so the server offers no capability action here.'),
+    ).toBeVisible()
+    await expect(
+      actions.getByText(
+        'No capability request has been recorded for this item. Asking for an action records a request; an executor claims and runs it.',
+      ),
+    ).toBeVisible()
     await expect(actions.getByRole('button')).toHaveCount(0)
 
     await page.reload()

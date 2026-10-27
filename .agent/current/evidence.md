@@ -6,44 +6,43 @@ project_owned: true
 record_contract: evidence-manifest
 record_schema_version: 1
 status: final
-task_id: TASK-0012
+task_id: TASK-0013
 ---
 
 # Evidence Manifest
 
 ## Task
 
-TASK-0012 — M32 I3: browser-authorized agent execution.
+TASK-0013 — M32 I4: connected Workflow Capability execution.
 
 ## Acceptance evidence
 
 | Criterion ID | Status | Evidence |
 |---|---|---|
-| AC-001: Launch with executor and objective | pass | `agent_authority.rs` + `agent_jobs.rs` + `herdr_runtime.rs`; client `features/agents/launch/**`, `api/{endpoints,adapters,mutations,queries}/agents`; `agents-launch.spec.ts` full cycle; `web/tests/unit/features/{agent-launch-model,launch-agent-job-dialog,task-agent-job-section,agents-overview-page}.spec.*`. |
-| AC-002: Executor states and refusals | pass | `GET agent-executors`, start validation, allowlisted refusal text; browser proofs for unknown and revoked executors and the never-claimed warning. |
-| AC-003: Server words and launch identity | pass | `AGENT_REFUSALS` allowlist; `agents-launch.spec.ts` pinned-retry spec (one job row) and server-quoted refusal in the dialog. |
-| AC-004: Claim-state honesty | pass | `claim_state` on `AgentJobView`, `await_executor` next action, four client claim states, no retry on ambiguous; task status asserted unchanged in the record and on screen. |
-| AC-005: Quality gates | pass | See the gate table below. |
+| AC-001: Install, grant, publish | pass | `capability_server.rs` install/authorize/revoke + `blueprints.rs` publication against the durable installed set; server HTTP tests; `capability-execution.spec.ts` spec 2. |
+| AC-002: Browser offers, inputs, states, receipt | pass | `web/src/features/workflows/{capability-panel,capability-request-form,capability-request-history}.tsx` + `capability-model.ts`; unit tests; specs 1 and 4. |
+| AC-003: Executor claim and execution outside the server | pass | `capability_server.rs` claim/result fences, `crates/orbit-cli/src/capability_serve.rs`; grep evidence; specs 1 and 3. |
+| AC-004: Reconciliation and idempotent replay | pass | `reconcile` route + `capability-model.reconcileCopy`; specs 3 and 4 (`recovered_from: uncertain` and `claimed`). |
+| AC-005: Full cycle gates | pass | Commands above; spec 5 (restart durability, second run idle, one note). |
 
 ## Quality gate evidence
 
 | Gate | Status | Command or artefact | Result |
 |---|---|---|---|
-| Workspace tests | pass | `cargo test --workspace --offline` | 1,781 passed, 0 failed, 31 binaries |
-| Lints | pass | `cargo clippy … --all-targets -- -D warnings` | clean |
+| Workspace tests | pass | `cargo test --workspace --offline` | 1,837 passed, 0 failed |
+| Lints | pass | `cargo clippy … -D warnings` | clean |
 | Formatting | pass | `cargo fmt --all -- --check` | clean |
-| Client typecheck | pass | `tsc --noEmit` | exit 0 |
-| Client unit tests | pass | `vitest run` | 56 files, 342 tests |
-| Terminology guard | pass | `check-terminology.mjs` | 249 files, clean |
+| Client typecheck / unit tests | pass | `tsc`, `vitest` | 0 / 383 tests |
+| Terminology guard | pass | `check-terminology.mjs` | 256 files |
 | Production build | pass | `vite build` | built |
-| Browser acceptance (I3) | pass | `playwright test agents-launch agents` | 11 passed |
-| Browser acceptance (full) | pass | `playwright test` | 131 passed, 4 skipped, 0 failed |
-| Acceptance record | pass | `.agent/evidence/m32-i3-acceptance.md` | written from the runs above |
+| Browser acceptance (I4) | pass | `playwright test capability-execution` | 5 passed |
+| Browser acceptance (full) | pass | `playwright test` | 136 passed, 4 skipped, 0 failed |
+| Acceptance record | pass | `.agent/evidence/m32-i4-acceptance.md` | written from the runs above |
 
 ## Checks not run
 
-- M15 full release profile and M27 publication verification.
-- Live Herdr/model acceptance (the acceptance executor is deterministic, not a model).
+- M15 release profile and M27 publication verification.
+- Live Herdr/model acceptance.
 
 ## Waivers
 
@@ -51,6 +50,5 @@ TASK-0012 — M32 I3: browser-authorized agent execution.
 
 ## Residual risk
 
-- Enrolled-but-dormant executors look available; the confirmation states the roster
-  cannot show liveness.
-- The empty-roster branch is unreachable for a signed-in browser here.
+- Operator-only administration and no uninstall route.
+- An action does not move the work item.

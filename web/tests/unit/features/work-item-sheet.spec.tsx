@@ -68,6 +68,16 @@ function renderSheet(item: WorkItem, onRefresh?: () => void) {
   // The sheet mounts the shared attachment list. Seed an empty list so these
   // sheet-focused tests do not spend their mocked responses on its read.
   client.setQueryData(queryKeys.attachments('work_item', item.id), { attachments: [] })
+  // The capability panel is a separate read of its own; seed it too so these
+  // tests stay about the sheet's properties and moves. The panel's own
+  // behaviour is covered by capability-panel.spec.tsx.
+  client.setQueryData(queryKeys.capabilityStatus(item.projectId), [])
+  client.setQueryData(queryKeys.capabilityOffers(item.id, item.revision), {
+    itemId: item.id,
+    itemRevision: item.revision,
+    offers: [],
+  })
+  client.setQueryData(queryKeys.capabilityRequests(item.id), [])
   render(
     <QueryClientProvider client={client}>
       <WorkItemSheet item={item} workflow={workflow} onClose={onClose} onRefresh={onRefresh} />
@@ -107,7 +117,7 @@ describe('work-item sheet declarations', () => {
     ).toBeInTheDocument()
   })
 
-  it('lists declared actions with capability and parameters, and no run control', () => {
+  it('lists declared actions with capability and parameters, without offering a control the server has not offered', () => {
     renderSheet(openTicket)
     const actions = screen.getByRole('region', { name: 'Actions' })
 
@@ -121,14 +131,14 @@ describe('work-item sheet declarations', () => {
     expect(within(actions).getByText('note')).toBeInTheDocument()
     expect(within(actions).getByText('string')).toBeInTheDocument()
     expect(within(actions).getByText('boolean')).toBeInTheDocument()
+    // The server offered no action for this state, so the panel says so and
+    // renders no control: an unavailable action is never a disabled button.
     expect(
-      within(actions).getByText('Execution requires the local Orbit authority.'),
+      within(actions).getByText('Not offered for this state'),
     ).toBeInTheDocument()
     expect(
-      within(actions).getByText('Capability status is not exposed by this server.'),
+      within(actions).getByText('The server does not offer this action for the item’s current state.'),
     ).toBeInTheDocument()
-    // The only buttons on the sheet are the declared move and the close control;
-    // there is no "run" affordance that would pretend to execute a capability.
     expect(within(actions).queryByRole('button')).toBeNull()
     expect(screen.queryByRole('button', { name: /run|execute/i })).toBeNull()
   })
@@ -138,7 +148,7 @@ describe('work-item sheet declarations', () => {
     const actions = screen.getByRole('region', { name: 'Actions' })
     expect(within(actions).getByText(/This state declares no actions/)).toBeInTheDocument()
     expect(
-      within(actions).getByText('Capability status is not exposed by this server.'),
+      within(actions).getByText(/No capability request has been recorded for this item/),
     ).toBeInTheDocument()
   })
 

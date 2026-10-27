@@ -35,10 +35,9 @@ You do not need the server to use Orbit locally: the CLI and TUI run against a l
 The web app holds no database, cannot work offline and has no outbox, and must be served by
 the same `orbit-server` that answers its API (there is no CORS layer). Device enrollment,
 revocation, automations and proposals are operator actions on the server, not buttons in the
-product UI. Workflow Actions are listed where a workflow declares them, but the browser never
-executes a capability: execution belongs to the local Orbit authority, and this server exposes
-no execution route or capability status. An agent job is likewise started by an executor or
-the command line, never by this browser.
+product UI. Workflow Actions can be requested from the browser, but nothing here executes a
+capability: the server stores the authorized intent and an enrolled executor process claims and
+runs it. An agent job works the same way — the browser queues it and an executor claims it.
 
 ## Build and run
 
@@ -446,17 +445,34 @@ Back closes it, and a link can point at one item. It contains:
   judged in the browser and is left to the server. The button is never disabled by a guard:
   the server re-checks the move, and a refusal is quoted beside the row with the item left in
   place. A kind with no outgoing transition says so.
-- **Actions** — the Workflow Actions the workflow declares on transitions leaving the current
-  state. Each action shows its id as words, its description, the edge it is declared on, its
-  **Requires capability …** chip, and its declared parameters with their types.
+- **Actions and capabilities** — the Workflow Actions the workflow declares on transitions
+  leaving the current state, plus the capability facts the server owns. Each capability shows
+  whether it is **installed**, whether this project is **granted** it, whether an executor has
+  **announced** it, what it requires, and its permission. Each offered action shows its
+  availability: either it can be requested, or it carries the server's own code and reason
+  (`not_authorized`, `capability_not_installed`, `executor_missing`, `requirement_missing`, …).
+  `executor_missing` means no enrolled executor has announced the capability; it is not an
+  authorization problem, and the panel says so separately.
 
-**Why Actions cannot be run here.** Capability execution belongs to the local Orbit authority.
-This server exposes no capability execution route and no capability status, and browser sessions
-are granted no capabilities. The sheet therefore lists what the workflow declares, labels each
-action **Not executable here**, and explains that execution requires the local authority. It
-never offers a run button that would fail. The bundled workflows currently declare no Workflow
-Actions, so a bundled Work Item shows an empty Actions section with the same explanation; a
-workflow published with actions shows them in full.
+**How a Workflow Action runs.** An available action opens a form generated from the capability's
+declared inputs. An effectful or mutating action asks for confirmation in a separate step that
+states the request waits for an **executor** and that this browser does not run it. The request
+is then one fenced command with a pinned command id; the history shows `Waiting for an executor
+to claim it`, then `An executor has taken it; no result yet`, then the outcome. The executed
+result is reported by the executor as an immutable receipt with a reporter and a time, and the
+panel shows it verbatim. An `uncertain` outcome is never retried: the panel offers an explicit
+**Record what happened** decision (confirm succeeded or confirm failed with a reason) and nothing
+else. Nothing in the panel claims the item moved — only the item read can say that.
+
+**Executors.** Execution happens in a separate enrolled process, never in `orbit-server` and
+never in the browser: an executor device announces the capabilities it can run and is the only
+party that can claim or report them. Run `orbit capability serve --once` on such a device. The
+server stores the authorized intent, the single claim, the receipt and the **declared effect**
+the capability produces: the effect is validated against the capability's own contract and
+written in the same transaction as the receipt, so a receipt can never claim an effect that is
+not stored, and one command id can never produce two. The server holds no provider code.
+The bundled workflows declare no Workflow Actions, so a bundled Work Item shows an empty Actions
+section and an honest empty state.
 
 ## Planning
 
@@ -790,8 +806,9 @@ supports much of it:
 - **Enrolling or revoking an executor from the browser.** Devices are enrolled with the
   operator's admin key; the Agents page can only report what is already enrolled. Nothing in the
   product UI runs a job, and no action here completes a task.
-- **Capability execution from the browser.** Workflow Actions are declared and listed, but the
-  local Orbit authority owns execution and this server exposes no execution route or status.
+- **Installing or granting a capability from the product UI.** `capabilities/install`,
+  `authorize` and `revoke` are operator routes (bearer credential); the browser can request and
+  reconcile, not administer. Provider code runs only in an executor process.
 - Drag-and-drop on the board. Moving a task is the keyboard/`m` menu or the status control.
 - Workload, portfolio-capacity and scenario screens; planning focus, action menus and handoff
   previews. Their API reads exist but have no screen here.

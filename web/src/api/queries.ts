@@ -69,6 +69,12 @@ import {
   fetchWorkflowVersions,
 } from './endpoints/workflows'
 import {
+  fetchCapabilityOffers,
+  fetchCapabilityRequest,
+  fetchCapabilityRequests,
+  fetchCapabilityStatus,
+} from './endpoints/capabilities'
+import {
   toAcceptanceCriterion,
   toActivityEntry,
   toAgentExecutor,
@@ -91,6 +97,10 @@ import {
   toTaskGraph,
   toTaskReadiness,
   toWorkBrief,
+  toCapabilityOffer,
+  toCapabilityReceipt,
+  toCapabilityRequest,
+  toCapabilityStatus,
   toWorkItem,
   toWorkflow,
   toWorkflowBinding,
@@ -105,6 +115,10 @@ import {
   type AgentJobOverview,
   type AgentResumeContext,
   type AgentReview,
+  type CapabilityRequest,
+  type CapabilityOffers,
+  type CapabilityRequestShow,
+  type CapabilityStatus,
   type DayPlanView,
   type Dependency,
   type Milestone,
@@ -186,6 +200,20 @@ export const queryKeys = {
   upgradePreview: (projectId: string, id: string, version: number) =>
     ['workflow-upgrade-preview', projectId, id, version] as const,
   upgradePreviewAll: () => ['workflow-upgrade-preview'] as const,
+  /**
+   * Capability state lives under one prefix so a single invalidation refreshes
+   * everything a request can change. `offers` is keyed by the item revision the
+   * sheet is showing: an offer is only meaningful for the state it was computed
+   * against, and a moved item must read its offers again rather than reuse them.
+   */
+  capabilityStatus: (projectId?: string | null) =>
+    ['capabilities', 'status', projectId ?? ''] as const,
+  capabilityOffers: (itemId: string, revision: number) =>
+    ['capabilities', 'offers', itemId, revision] as const,
+  capabilityOffersAll: (itemId: string) => ['capabilities', 'offers', itemId] as const,
+  capabilityRequest: (commandId: string) =>
+    ['capabilities', 'requests', 'command', commandId] as const,
+  capabilityRequests: (itemId: string) => ['capabilities', 'requests', 'item', itemId] as const,
   knowledge: (path: string) => ['knowledge', path] as const,
   knowledgeAll: () => ['knowledge'] as const,
   knowledgeTree: () => ['knowledge', 'tree'] as const,
@@ -229,6 +257,12 @@ export interface ApiQueryOptions<TData, TSelected = TData> {
   enabled?: boolean
   staleTime?: number
   select?: (data: TData) => TSelected
+  /**
+   * Re-read on a timer. The callback form receives the cached data, so a caller
+   * can poll only while an answer is genuinely outstanding and stop on the very
+   * next tick once it is not.
+   */
+  refetchInterval?: number | false | ((data: TData | undefined) => number | false)
 }
 
 /**
@@ -241,6 +275,7 @@ export function useApiQuery<TData, TSelected = TData>({
   enabled,
   staleTime,
   select,
+  refetchInterval,
 }: ApiQueryOptions<TData, TSelected>): UseQueryResult<TSelected, ApiError> {
   const queryClient = useQueryClient()
   const query = useQuery<TData, ApiError, TSelected>({
@@ -250,6 +285,12 @@ export function useApiQuery<TData, TSelected = TData>({
     staleTime,
     select,
     retry: retryUnlessClientError,
+    refetchInterval:
+      refetchInterval === undefined
+        ? undefined
+        : typeof refetchInterval === 'function'
+          ? (current) => refetchInterval(current.state.data)
+          : refetchInterval,
   })
 
   useEffect(() => {
@@ -918,5 +959,116 @@ export function useBundledWorkflows(): UseQueryResult<BundledWorkflowDescriptor[
     queryKey: queryKeys.bundledWorkflows(),
     queryFn: ({ signal }) => fetchBundledWorkflows(signal),
     staleTime: 60_000,
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Capability actions (connected execution)                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The durable status of every catalog capability: installed, granted for the
+ * project, and which enrolled devices announced it. A failed read is kept as an
+ * error: the panel says it could not read status rather than showing a
+ * capability as uninstalled.
+ */
+export function useCapabilityStatus(
+  projectId: string | undefined,
+  enabled = true,
+): UseQueryResult<CapabilityStatus[], ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.capabilityStatus(projectId),
+    queryFn: ({ signal }) => fetchCapabilityStatus(projectId, signal),
+    enabled,
+    staleTime: 5_000,
+    select: (response) => response.capabilities.map(toCapabilityStatus),
+  })
+}
+
+/**
+ * The actions the bound workflow offers from one state. Keyed by the item
+ * revision the sheet is showing: offers are only meaningful for the state they
+ * were computed against, so a moved item reads again instead of reusing them.
+ */
+export function useCapabilityOffers(
+  itemId: string | undefined,
+  revision: number | undefined,
+  enabled = true,
+): UseQueryResult<CapabilityOffers, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.capabilityOffers(itemId ?? '', revision ?? 0),
+    queryFn: async ({ signal }): Promise<CapabilityOffers> => {
+      const response = await fetchCapabilityOffers(itemId as string, signal)
+      return {
+        itemId: response.item_id,
+        itemRevision: response.item_revision,
+        offers: response.offers.map(toCapabilityOffer),
+      }
+    },
+    enabled: enabled && Boolean(itemId) && typeof revision === 'number',
+    staleTime: 5_000,
+  })
+}
+
+/** A request nothing has settled yet: the two states worth re-reading. */
+function hasUnsettledRequest(request: CapabilityRequest): boolean {
+  return request.state === 'pending' || request.state === 'claimed'
+}
+
+export interface CapabilityRequestsOptions {
+  /** Re-read while any request is unsettled; 0 disables polling. */
+  pollIntervalMs?: number
+}
+
+/**
+ * The item's durable requests, oldest first as the server orders them.
+ *
+ * Polling is deliberately narrow: it runs only while some request is still
+ * `pending` or `claimed`, and the interval callback stops it on the first answer
+ * that settles the last one. Nothing here re-sends a request.
+ */
+export function useCapabilityRequests(
+  itemId: string | undefined,
+  { pollIntervalMs = 5_000 }: CapabilityRequestsOptions = {},
+): UseQueryResult<CapabilityRequest[], ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.capabilityRequests(itemId ?? ''),
+    queryFn: async ({ signal }) => {
+      const response = await fetchCapabilityRequests({ itemId: itemId as string }, signal)
+      return response.requests.map(toCapabilityRequest)
+    },
+    enabled: Boolean(itemId),
+    // Short-lived like the other capability reads: a panel that opens twice in a
+    // few seconds reads once, and every command invalidates it anyway.
+    staleTime: 5_000,
+    refetchInterval:
+      pollIntervalMs > 0
+        ? (requests) => (requests?.some(hasUnsettledRequest) ? pollIntervalMs : false)
+        : false,
+  })
+}
+
+/**
+ * One request and its receipt. Enabled only for a settled request: while the
+ * outcome is outstanding there is nothing to read, and the item's request list
+ * already reports the state.
+ */
+export function useCapabilityRequestShow(
+  commandId: string | undefined,
+  enabled: boolean,
+): UseQueryResult<CapabilityRequestShow, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.capabilityRequest(commandId ?? ''),
+    queryFn: async ({ signal }) => {
+      const response = await fetchCapabilityRequest(commandId as string, signal)
+      return {
+        request: toCapabilityRequest(response.request),
+        receipt: response.receipt ? toCapabilityReceipt(response.receipt) : null,
+      }
+    },
+    enabled: enabled && Boolean(commandId),
+    // A settled receipt is durable; a reconcile writes the replacement into this
+    // same cache entry, so there is nothing to re-read.
+    staleTime: Number.POSITIVE_INFINITY,
   })
 }

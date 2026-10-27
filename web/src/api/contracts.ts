@@ -835,6 +835,148 @@ export interface ApplyUpgradeBody {
 }
 
 /* ------------------------------------------------------------------ */
+/* Capability actions (connected execution)                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The durable facts a connected request is decided from. Nothing here is
+ * inferred from a provider being loaded in the server process: `installed` and
+ * `granted` are stored rows and `executors` is the enrollment announcement.
+ */
+export interface CapabilityExecutorRecord {
+  device_id: string
+  announced_at_ms: number
+}
+
+/** `read` | `mutate` | `external_effect`; the durable install vocabulary. */
+export type CapabilityPermission = 'read' | 'mutate' | 'external_effect'
+
+/** One action of a contract, as the status document exposes it. */
+export interface CapabilityActionContractRecord {
+  id: string
+  description: string
+  /** JSON-schema subset: `{type:"object",properties:{…},required:[…]}`. */
+  input_schema: Record<string, unknown>
+  external_effect: boolean
+  requires: string[]
+}
+
+export interface CapabilityStatusRecord {
+  capability_id: string
+  name: string
+  permission: string
+  requires: string[]
+  installed: boolean
+  granted: boolean
+  executors: CapabilityExecutorRecord[]
+  actions: CapabilityActionContractRecord[]
+}
+
+/** `GET /authoritative/capabilities?project_id=`. */
+export interface CapabilityStatusResponse {
+  capabilities: CapabilityStatusRecord[]
+}
+
+/**
+ * The single availability vocabulary and its order. A client that receives
+ * `capability_not_installed` must never be told to authorize first, and
+ * `executor_missing` means "no executor announced it", never "not authorized".
+ */
+export type CapabilityAvailabilityCode =
+  | 'capability_missing'
+  | 'capability_disabled'
+  | 'capability_not_installed'
+  | 'executor_missing'
+  | 'requirement_missing'
+  | 'not_authorized'
+
+/** One action offered for the item's current state. Code/reason are null when available. */
+export interface CapabilityOfferRecord {
+  action_id: string
+  capability_id: string
+  from: string
+  to: string
+  description: string
+  input_schema: Record<string, unknown>
+  external_effect: boolean
+  available: boolean
+  /** A stable code from `CapabilityAvailabilityCode`, or a newer server's code. */
+  code: string | null
+  reason: string | null
+}
+
+export interface CapabilityOffersResponse {
+  item_id: string
+  item_revision: number
+  offers: CapabilityOfferRecord[]
+}
+
+/** `pending` → `claimed` → `succeeded` | `failed` | `uncertain`. Never reset. */
+export type CapabilityRequestState =
+  | 'pending'
+  | 'claimed'
+  | 'succeeded'
+  | 'failed'
+  | 'uncertain'
+
+/**
+ * One persisted intent. `claim_token` is deliberately absent: it is an executor's
+ * evidence, and a browser that held it could impersonate a claim.
+ */
+export interface CapabilityActionRequestRecord {
+  command_id: string
+  item_id: string
+  item_revision: number
+  action_id: string
+  capability_id: string
+  from: string
+  to: string
+  state: string
+  inputs: Record<string, unknown>
+  created_at_ms: number
+  executor_device_id: string | null
+}
+
+/** As reported by an executor, or by an operator's reconcile. `detail` is verbatim. */
+export interface CapabilityReceiptRecord {
+  outcome: string
+  detail: unknown
+  reported_at_ms: number
+  reported_by: string
+}
+
+export interface CapabilityRequestResponse {
+  request: CapabilityActionRequestRecord
+}
+
+export interface CapabilityShowResponse {
+  request: CapabilityActionRequestRecord
+  receipt: CapabilityReceiptRecord | null
+}
+
+export interface CapabilityListResponse {
+  requests: CapabilityActionRequestRecord[]
+}
+
+export interface CapabilityRequestBody {
+  command_id: string
+  item_id: string
+  expected_revision: number
+  action_id: string
+  inputs: Record<string, unknown>
+  confirm: boolean
+}
+
+export type CapabilityReconcileDecision = 'confirm_succeeded' | 'confirm_failed'
+
+export interface CapabilityReconcileBody {
+  command_id: string
+  decision: CapabilityReconcileDecision
+  /** Capped by the server at 1000 characters. */
+  detail: string
+}
+
+/* ------------------------------------------------------------------ */
 /* Knowledge (file-authoritative Markdown)                             */
 /* ------------------------------------------------------------------ */
 

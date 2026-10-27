@@ -151,7 +151,7 @@ workflows instead of speculation. The TUI stays unchanged in M32.
   the browser, monitored, its evidence and handoff reviewed, and approved or
   rejected, with restart persistence, authorization failures surfaced and no
   automatic task completion.
-- [ ] EC-007: A trusted Workflow Capability provider can be registered,
+- [x] EC-007: A trusted Workflow Capability provider can be registered,
   installed, granted, discovered, requested with typed inputs and executed
   through the authoritative server, with durable receipts, retry-safe
   idempotency and explicit uncertain-outcome reconciliation.
@@ -219,7 +219,21 @@ workflows instead of speculation. The TUI stays unchanged in M32.
   row, one `job_id` across a retry, awaiting-executor visibility, and persistence
   across a real server restart. `agents.spec.ts` now proves a foreign job is
   invisible (403) for a genuinely second device.
-- EC-007, EC-008 and EC-010..EC-012 stay open until their iteration lands.
+- EC-007: A contract-only capability catalog (`crates/orbit-runtime/src/
+  capability_contracts.rs`), durable executor enrollment, the capability routes
+  (status, offers, request, claim, result, show/list, reconcile, install/authorize/
+  revoke) in `capability_server.rs` and `orbit-server/src/main.rs`, one-savepoint
+  state+receipt+**declared-effect** settlement, the C25 publication fix against
+  durable installs, and `orbit capability serve --once` as the only process that
+  runs provider code. `grep` finds no `TrustedComposition`, executor registry or
+  `provider.execute` in `orbit-server`; a runtime test asserts the provider effect
+  never happens in-process. `web/tests/e2e/capability-execution.spec.ts` (5) drives
+  the real CLI executor through install → publish → item → authorize → announce →
+  offer → typed request → claim → execute → receipt → durable effect note →
+  restart → idle, plus uninstalled/unauthorized/invalid-input/stale-revision/
+  forged-body refusals, single claim, replay, and reconcile of `uncertain` and
+  `claimed`.
+- EC-008 and EC-010..EC-012 stay open until their iteration lands.
 
 ## Remaining work
 

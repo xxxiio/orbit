@@ -41,14 +41,14 @@ explicit unknown state. Since I2 it manages knowledge as a working surface:
 folders, note locations, links, project/task references and project-context
 knowledge, and since I3 it can launch an authorized agent job against a real
 executor and review the result without the job ever completing the task. M32
-I4–I6 remain: connected capability execution, extended dogfooding and final
-acceptance. Per-device project ACLs, server attachment GC and live Herdr
+I5–I6 remain: extended dogfooding and final acceptance (including the TUI redesign
+specification). Per-device project ACLs, server attachment GC and live Herdr
 acceptance remain documented follow-ups.
 
 ## Current milestone
 
 MILESTONE-0032 — M32 Web Product Completeness, Agent Workflows & Extended
-Dogfooding, active (I1–I3 complete). MILESTONE-0031 is complete (I1–I6). M31
+Dogfooding, active (I1–I4 complete). MILESTONE-0031 is complete (I1–I6). M31
 shipped the React client served by `orbit-server` with session authentication,
 Home, Inbox, project management, workflow-driven workspaces and a task inspector
 against the authoritative domain. MILESTONE-0030 is complete (I1–I4), and
@@ -56,6 +56,19 @@ MILESTONE-0025 EC-001..EC-007 remain satisfied. M27 remains blocked externally.
 
 ## Recently completed
 
+- M32 I4 connected Workflow Capability execution: a contract-only capability
+  catalog (no executors in the server), durable executor enrollment, and the full
+  capability surface — status, offers with the durable availability vocabulary,
+  fenced request, single claim with owner and token, one-savepoint settlement of
+  state + receipt + declared effect, show/list, reconcile, and operator-only
+  install/authorize/revoke. A capability-bearing workflow now publishes against the
+  durable installed set. `orbit capability serve --once` is the only process that
+  runs provider code: it announces, claims one pending intent, executes the frozen
+  plan locally and reports one outcome, and the server persists the validated
+  effect keyed by command id. The browser requests, watches and reconciles but
+  cannot claim, execute or administer. 1,837 workspace tests, 383 client unit tests
+  and 136 browser checks pass; a real install → publish → request → execute →
+  receipt → restart cycle is proven with the CLI executor.
 - M32 I3 browser agent execution: the Agents page reads a real executor roster,
   a task can launch an authorized job with an executor and an optional objective,
   and the job page distinguishes *waiting for an executor*, *claimed*, *launch

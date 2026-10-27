@@ -1,6 +1,7 @@
 import { forwardRef, useId, type ReactNode } from 'react'
 import * as CheckboxPrimitive from '@radix-ui/react-checkbox'
 import { CheckIcon } from './icons'
+import { useFieldControl } from './field'
 import { cn } from './utils'
 
 const controlClasses = cn(
@@ -20,15 +21,20 @@ export interface CheckboxProps
 
 export const Checkbox = forwardRef<React.ElementRef<typeof CheckboxPrimitive.Root>, CheckboxProps>(
   function Checkbox({ className, label, description, id, ...props }, ref) {
+    // Inside a `Field` the label, hint and error already point at the control
+    // that `Field` named; a bare checkbox uses them instead of inventing a
+    // second, unlabelled id.
+    const field = useFieldControl()
     const generatedId = useId()
-    const controlId = id ?? generatedId
+    const controlId = id ?? field?.controlId ?? generatedId
     const descriptionId = label && description ? `${controlId}-description` : undefined
 
     const control = (
       <CheckboxPrimitive.Root
         ref={ref}
         id={controlId}
-        aria-describedby={descriptionId}
+        aria-describedby={descriptionId ?? field?.describedBy}
+        aria-invalid={field?.invalid || undefined}
         className={cn(controlClasses, !label && className)}
         {...props}
       >

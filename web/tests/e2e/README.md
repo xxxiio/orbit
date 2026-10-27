@@ -61,6 +61,7 @@ evidence on every pass).
 | `knowledge-links.spec.ts` | link two notes by id (outliner picker), follow the link, back-references, unlink removes token + backlink, an unknown `[[id]]` is named as unresolved, and an external writer between the read and the send is refused with no retry |
 | `project-knowledge.spec.ts` | project and task references from a note land in the project's `knowledge_refs` panel and the task drawer's Notes, add/remove follows the server read, a reference to a missing task is broken and not project knowledge, and the panel never claims unavailability on a server that serves the route |
 | `evidence-i2.spec.ts` | opt-in evidence capture into `web/evidence/i2/` |
+| `capability-execution.spec.ts` | connected capability execution: install → publish → grant → announce, the panel's availability codes (`executor_missing`, `not_authorized`) and the refusals with no request control, a request through the form → real `orbit capability serve` → settled receipt + exactly one durable note with the item unchanged, single-claim/idempotency across two devices, an `uncertain` outcome settled by an explicit operator decision, and a real server restart keeping the claim, receipt and note |
 | `terminology.spec.ts` | no legacy feature name in rendered primary routes |
 | `fixture.spec.ts` | the fixture is deterministic and replayable |
 
@@ -77,6 +78,11 @@ tests/e2e/harness/fixtures.ts  `server` and `workspace` Playwright fixtures
 tests/e2e/harness/agents.ts    the deterministic fake executor: start, claim,
                                launch-result, observe, handoff, interrupt, review, plus
                                the job/overview/executor/handoff/review reads
+tests/e2e/harness/capability.ts connected capability cycle: operator (bearer) install and
+                               grant, executor (bearer) announce/claim/result, the
+                               browser-legal reads and writes, and `runExecutor` — the real
+                               `orbit capability serve --once --json` against the harness
+                               server, awaited with a deadline
 tests/e2e/harness/knowledge.ts server reads (tree, inventory, document, relations,
                                references, project knowledge) and the knowledge
                                dialogs/pickers the I2 specs drive
@@ -140,6 +146,7 @@ against the shipped build, and a failure is a product regression.
 | `agents.spec.ts` | the Agents workspace reads only jobs this device owns: overview → job → review, and the task is unchanged; an unconfirmed review is discarded by an explicit refresh; an interrupted job resumes into a new queued job; a foreign job id — including one another enrolled device really started — is "not visible", never "missing". |
 | `agents-launch.spec.ts` | the launch path end to end with a deterministic fake executor (the fixture's own device credential posting `agent-machines/*`): drawer → dialog → queued `preparing` job → claim → launch result → observe `running` → handoff → review, with the objective frozen into the brief and the Orbit task unchanged; the confirmation names a chosen device that has never claimed a job and still queues the job; the "every enrolled executor is revoked" state disables both launch triggers with the server's own explanation and posts nothing; an unknown `machine_ref` is refused `400 unknown agent executor` before a job exists; a refused launch retries the *same* `job_id` and leaves exactly one job row; an unclaimed job is "Awaiting an executor", not attention; and the job, its claim state, handoff and review all survive a real server restart. |
 | `terminology.spec.ts` | user-facing copy never shows the legacy internal feature name. |
+| `capability-execution.spec.ts` | the panel reads durable install/grant/executor facts; availability names exactly one code (`executor_missing` before an announcement, `not_authorized` after one but before a grant) and an unavailable action has no request control; the form refuses an empty required note without posting; a stale `expected_revision` is `409 capability request conflict` and a forged body is `422`; a request through the form reaches `pending`, the real executor reports `succeeded`, the row and receipt settle, exactly one note with the typed text is stored, and the item's state and revision never move; one command id takes one claim (a second device's bearer is `409 capability action already claimed`, its result refused) and a repeated result returns the original receipt; an `uncertain` report offers no retry and is settled only by "Confirm it succeeded", with `reconciled_by` recorded as the operator device and no effect invented; a real server restart keeps the claim, receipt and note, and the next executor run is `idle`. |
 
 ## Rules the specs follow
 

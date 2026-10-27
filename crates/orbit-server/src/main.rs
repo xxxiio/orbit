@@ -29,6 +29,7 @@ use orbit_runtime::authority_milestones::{MilestoneCommand, MilestoneResult, Mil
 use orbit_runtime::authority_routines::{RoutineCommand, RoutineResult, RoutineSnapshot};
 use orbit_runtime::authority_schedule::{ScheduleCommand, ScheduleResult, ScheduleSnapshot};
 use orbit_runtime::authority_strategy::{StrategyCommand, StrategyResult, StrategySnapshot};
+use orbit_runtime::capability_server::CapabilityServerError;
 use proposals::{Audit, NewProposal, Proposal, ProposalError, ProposalStore};
 use serde::{Deserialize, Serialize};
 use session::{Authenticated, LoginThrottle, SessionError, SessionStore};
@@ -3566,6 +3567,432 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Connected workflow capability surface (M32 I4).
+//
+// These handlers are transport only. They authenticate, shape the wire contract
+// and delegate every decision to `orbit_runtime::capability_server`, which has
+// no executor registry and no `TrustedComposition`: the server persists an
+// authorized, fenced intent, and a separately enrolled executor claims and runs
+// it. No handler here can call a provider, and none of them may learn one from a
+// request body.
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityProjectQuery {
+    project_id: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityItemQuery {
+    item_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityShowQuery {
+    command_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityListQuery {
+    item_id: Option<String>,
+    state: Option<String>,
+}
+/// Announcement names only capabilities. Unknown field names (a provider, an
+/// action list, a status) are refused by the extractor, not ignored.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityAnnounceBody {
+    capability_ids: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityInstallBody {
+    command_id: String,
+    capability_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityAuthorizeBody {
+    command_id: String,
+    capability_id: String,
+    project_id: String,
+    #[serde(default)]
+    confirm: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityRevokeBody {
+    command_id: String,
+    capability_id: String,
+    project_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityRequestBody {
+    command_id: String,
+    item_id: String,
+    expected_revision: u64,
+    action_id: String,
+    #[serde(default)]
+    inputs: std::collections::BTreeMap<String, serde_json::Value>,
+    #[serde(default)]
+    confirm: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityClaimBody {
+    command_id: String,
+    claim_token: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityResultBody {
+    command_id: String,
+    claim_token: String,
+    outcome: orbit_runtime::capability_server::CapabilityOutcome,
+    #[serde(default)]
+    detail: String,
+    /// The declared effect the executor produced, if it produced one. It is
+    /// validated against the capability's compile-time declaration: a body can
+    /// name no kind, target, path or table that the contract does not already
+    /// describe.
+    #[serde(default)]
+    effect: Option<serde_json::Value>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityReconcileBody {
+    command_id: String,
+    decision: orbit_runtime::capability_composition::CapabilityReconcileDecision,
+    #[serde(default)]
+    detail: String,
+}
+
+/// Operator writes are naturally idempotent on their natural key (the contract,
+/// the grant, the revocation), so the envelope `command_id` is not a fence here.
+/// It is still validated: an empty or unbounded id is a malformed envelope, not
+/// a permission to install anything.
+fn capability_command_envelope(command_id: &str) -> Result<(), ApiError> {
+    if orbit_runtime::capability_contracts::valid_command_id(command_id) {
+        Ok(())
+    } else {
+        Err(error(StatusCode::BAD_REQUEST, "invalid capability command"))
+    }
+}
+
+/// Map a capability refusal onto the transport status without collapsing it.
+/// Availability codes, input reasons and the mixed-case prose that explains them
+/// reach the client verbatim so a browser never has to parse a generic message.
+fn capability_error(failure: CapabilityServerError) -> ApiError {
+    use orbit_application::RepositoryError;
+    use orbit_runtime::capability_server::CapabilityServerError as Failure;
+    match failure {
+        Failure::BadRequest(message) => error(StatusCode::BAD_REQUEST, message),
+        Failure::InvalidInput { reason } => error(
+            StatusCode::BAD_REQUEST,
+            format!("invalid capability action input: {reason}"),
+        ),
+        Failure::Unavailable { code, reason } => error(
+            StatusCode::BAD_REQUEST,
+            format!("capability action unavailable: {code}: {reason}"),
+        ),
+        Failure::Forbidden(message) => error(StatusCode::FORBIDDEN, message),
+        Failure::NotFound(message) => error(StatusCode::NOT_FOUND, message),
+        Failure::Conflict(message) => error(StatusCode::CONFLICT, message),
+        Failure::Storage(RepositoryError::Unavailable) => error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "capability storage unavailable",
+        ),
+        Failure::Storage(RepositoryError::Conflict) => {
+            error(StatusCode::CONFLICT, "capability operation conflict")
+        }
+        Failure::Storage(failure) => {
+            // Never expose SQL, a local path or a debug dump in a response body.
+            eprintln!("orbit-server capability error: {failure:?}");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "capability storage error",
+            )
+        }
+    }
+}
+
+fn capability_host(
+    state: &AppState,
+) -> Result<std::sync::MutexGuard<'_, AuthoritativeHost>, ApiError> {
+    state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))
+}
+
+/// Executor routes require a bearer credential plus an active enrolled device.
+/// A browser cookie session is explicitly refused: being logged in never makes a
+/// browser an executor, and provider code must not run behind a cookie.
+fn executor_device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
+    if headers.contains_key(header::AUTHORIZATION) {
+        return bearer_device(state, headers);
+    }
+    if session_cookie(headers).is_some() {
+        return Err(error(StatusCode::FORBIDDEN, "executor credential required"));
+    }
+    Err(error(StatusCode::UNAUTHORIZED, "unauthorized"))
+}
+
+/// Installation/authorization/revocation change what the workspace may execute at
+/// all, so they are operator writes: bearer plus device id, never a cookie.
+fn operator_device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
+    if headers.contains_key(header::AUTHORIZATION) {
+        return bearer_device(state, headers);
+    }
+    if session_cookie(headers).is_some() {
+        return Err(error(StatusCode::FORBIDDEN, "operator credential required"));
+    }
+    Err(error(StatusCode::UNAUTHORIZED, "unauthorized"))
+}
+
+async fn authoritative_capabilities(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<CapabilityProjectQuery>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityStatusResponse>, ApiError> {
+    device(&state, &headers)?;
+    let host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::status(&host, query.project_id.as_deref())
+            .map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_executors(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityExecutorRosterResponse>, ApiError> {
+    device(&state, &headers)?;
+    let host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::executor_roster(&host).map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_announce(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CapabilityAnnounceBody>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityAnnounceResponse>, ApiError> {
+    let device_id = executor_device(&state, &headers)?;
+    let at_ms = now_ms()?;
+    let mut host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::announce_executors(
+            &mut host,
+            &device_id,
+            &body.capability_ids,
+            at_ms,
+        )
+        .map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_actions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<CapabilityItemQuery>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityOffersResponse>, ApiError> {
+    device(&state, &headers)?;
+    let host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::offers(&host, &query.item_id)
+            .map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CapabilityRequestBody>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityRequestResponse>, ApiError> {
+    device(&state, &headers)?;
+    let mut host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::request(
+            &mut host,
+            orbit_runtime::capability_server::ServerCapabilityRequest {
+                command_id: body.command_id,
+                item_id: body.item_id,
+                expected_revision: body.expected_revision,
+                action_id: body.action_id,
+                inputs: body.inputs,
+                confirm: body.confirm,
+            },
+        )
+        .map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_claim(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CapabilityClaimBody>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityClaimResponse>, ApiError> {
+    let device_id = executor_device(&state, &headers)?;
+    let mut host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::claim(
+            &mut host,
+            &device_id,
+            &body.command_id,
+            &body.claim_token,
+        )
+        .map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_result(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CapabilityResultBody>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityResultResponse>, ApiError> {
+    let device_id = executor_device(&state, &headers)?;
+    let at_ms = now_ms()?;
+    let mut host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::result(
+            &mut host,
+            &device_id,
+            &body.command_id,
+            &body.claim_token,
+            body.outcome,
+            &body.detail,
+            body.effect.as_ref(),
+            at_ms,
+        )
+        .map_err(capability_error)?,
+    ))
+}
+
+/// The durable effects recorded for one work item. This is a read of rows the
+/// authority already committed, so a browser or an acceptance test can prove the
+/// result of an executor's action without reading the database.
+async fn authoritative_capability_effects(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<CapabilityItemQuery>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityEffectsResponse>, ApiError> {
+    device(&state, &headers)?;
+    let host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::effects(&host, &query.item_id)
+            .map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_show(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<CapabilityShowQuery>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityShowResponse>, ApiError> {
+    device(&state, &headers)?;
+    let host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::show(&host, &query.command_id)
+            .map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<CapabilityListQuery>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityListResponse>, ApiError> {
+    device(&state, &headers)?;
+    let host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::list(
+            &host,
+            query.item_id.as_deref(),
+            query.state.as_deref(),
+        )
+        .map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_reconcile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CapabilityReconcileBody>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityShowResponse>, ApiError> {
+    // Reconciliation is an operator decision, not an executor one: the
+    // authenticated device is recorded as the actor who decided.
+    let device_id = device(&state, &headers)?;
+    let at_ms = now_ms()?;
+    let mut host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::reconcile(
+            &mut host,
+            &device_id,
+            &body.command_id,
+            body.decision,
+            &body.detail,
+            at_ms,
+        )
+        .map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_install(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CapabilityInstallBody>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityInstallResponse>, ApiError> {
+    operator_device(&state, &headers)?;
+    capability_command_envelope(&body.command_id)?;
+    let at_ms = now_ms()?;
+    let mut host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::install(&mut host, &body.capability_id, at_ms)
+            .map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_authorize(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CapabilityAuthorizeBody>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityGrantResponse>, ApiError> {
+    let actor = operator_device(&state, &headers)?;
+    capability_command_envelope(&body.command_id)?;
+    let at_ms = now_ms()?;
+    let mut host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::authorize(
+            &mut host,
+            &body.capability_id,
+            &body.project_id,
+            &actor,
+            body.confirm,
+            at_ms,
+        )
+        .map_err(capability_error)?,
+    ))
+}
+
+async fn authoritative_capability_revoke(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CapabilityRevokeBody>,
+) -> Result<Json<orbit_runtime::capability_server::CapabilityRevokeResponse>, ApiError> {
+    operator_device(&state, &headers)?;
+    capability_command_envelope(&body.command_id)?;
+    let mut host = capability_host(&state)?;
+    Ok(Json(
+        orbit_runtime::capability_server::revoke(&mut host, &body.capability_id, &body.project_id)
+            .map_err(capability_error)?,
+    ))
+}
+
 fn routes(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -3872,6 +4299,62 @@ fn routes(state: AppState) -> Router {
             post(authoritative_machine_agent_handoff),
         )
         .route(
+            "/v1/authoritative/capabilities",
+            get(authoritative_capabilities),
+        )
+        .route(
+            "/v1/authoritative/capabilities/install",
+            post(authoritative_capability_install),
+        )
+        .route(
+            "/v1/authoritative/capabilities/authorize",
+            post(authoritative_capability_authorize),
+        )
+        .route(
+            "/v1/authoritative/capabilities/revoke",
+            post(authoritative_capability_revoke),
+        )
+        .route(
+            "/v1/authoritative/capability-executors",
+            get(authoritative_capability_executors),
+        )
+        .route(
+            "/v1/authoritative/capability-executors/announce",
+            post(authoritative_capability_announce),
+        )
+        .route(
+            "/v1/authoritative/capability-actions",
+            get(authoritative_capability_actions),
+        )
+        .route(
+            "/v1/authoritative/capability-actions/request",
+            post(authoritative_capability_request),
+        )
+        .route(
+            "/v1/authoritative/capability-actions/claim",
+            post(authoritative_capability_claim),
+        )
+        .route(
+            "/v1/authoritative/capability-actions/result",
+            post(authoritative_capability_result),
+        )
+        .route(
+            "/v1/authoritative/capability-actions/show",
+            get(authoritative_capability_show),
+        )
+        .route(
+            "/v1/authoritative/capability-actions/list",
+            get(authoritative_capability_list),
+        )
+        .route(
+            "/v1/authoritative/capability-actions/reconcile",
+            post(authoritative_capability_reconcile),
+        )
+        .route(
+            "/v1/authoritative/capability-effects",
+            get(authoritative_capability_effects),
+        )
+        .route(
             "/v1/authoritative/blueprints/commands",
             post(blueprints::accept_command),
         )
@@ -4137,6 +4620,892 @@ mod tests {
                 "GET {path} HTTP/1.1\r\nHost: orbit.test\r\nConnection: close\r\n{headers}\r\n"
             ),
         )
+    }
+
+    const CAPABILITY_MANIFEST: &str =
+        include_str!("../../../blueprints/examples/capability-reference.json");
+    const REFERENCE_CAPABILITY: &str = "orbit.reference.work-item-note";
+    const EXECUTOR_TOKEN: &str = "executor-secret-0123456789abcdefghij";
+    const SECOND_EXECUTOR_TOKEN: &str = "executor-two-secret-0123456789abcdefghij";
+
+    fn capability_bearer(device_id: &str, token: &str) -> String {
+        format!("Authorization: Bearer {token}\r\nx-orbit-device-id: {device_id}\r\n")
+    }
+    fn json_of(raw: &str) -> serde_json::Value {
+        serde_json::from_str(body_of(raw))
+            .unwrap_or_else(|error| panic!("invalid JSON body {error}: {}", body_of(raw)))
+    }
+    fn capability_status_of<'a>(
+        document: &'a serde_json::Value,
+        capability: &str,
+    ) -> &'a serde_json::Value {
+        document["capabilities"]
+            .as_array()
+            .expect("capabilities array")
+            .iter()
+            .find(|row| row["capability_id"] == capability)
+            .unwrap_or_else(|| panic!("capability row for {capability}: {document}"))
+    }
+
+    /// A workspace with one installed capability, a bound capability-bearing
+    /// workflow and two enrolled capabilities devices, created entirely over HTTP
+    /// except for the device enrollment the admin surface owns.
+    struct CapabilityFixture {
+        address: String,
+        state: AppState,
+        operator: String,
+        executor: String,
+        _dist: TempDist,
+    }
+
+    impl CapabilityFixture {
+        async fn new() -> Self {
+            let dist = TempDist::built();
+            let state = test_state(&dist);
+            {
+                let mut host = state.store.lock().unwrap();
+                host.enroll_device("executor-1", EXECUTOR_TOKEN).unwrap();
+                host.enroll_device("executor-2", SECOND_EXECUTOR_TOKEN)
+                    .unwrap();
+            }
+            let address = spawn(routes(state.clone())).await;
+            let operator = capability_bearer("device-1", DEVICE_TOKEN);
+            // C25: an uninstalled capability is still refused, with the message
+            // this transport already used for a manifest validation refusal.
+            let (status, raw) = post(
+                &address,
+                "/v1/authoritative/blueprints",
+                &operator,
+                &format!(r#"{{"definition":{CAPABILITY_MANIFEST}}}"#),
+            );
+            assert_eq!(status, 400, "{}", body_of(&raw));
+            assert!(
+                body_of(&raw).contains("blueprint operation rejected"),
+                "{}",
+                body_of(&raw)
+            );
+            let (status, raw) = post(
+                &address,
+                "/v1/authoritative/capabilities/install",
+                &operator,
+                &format!(
+                    r#"{{"command_id":"install-1","capability_id":"{REFERENCE_CAPABILITY}"}}"#
+                ),
+            );
+            assert_eq!(status, 200, "{}", body_of(&raw));
+            // C25: the durable installed set now makes the same manifest publishable.
+            let (status, raw) = post(
+                &address,
+                "/v1/authoritative/blueprints",
+                &operator,
+                &format!(r#"{{"definition":{CAPABILITY_MANIFEST}}}"#),
+            );
+            assert_eq!(status, 200, "{}", body_of(&raw));
+            // The project is created already bound to this workflow: the first
+            // binding wins, so a create is the one chance to pin it.
+            let (status, raw) = post(
+                &address,
+                "/v1/authoritative/project-commands",
+                &operator,
+                r#"{"command_id":"project-create-1","expected_revision":0,"project_id":"project-1","name":"Reference","workflow_id":"capability-reference"}"#,
+            );
+            assert_eq!(status, 200, "{}", body_of(&raw));
+            let (status, raw) = get(
+                &address,
+                "/v1/authoritative/blueprints/binding?project_id=project-1",
+                &operator,
+            );
+            assert_eq!(status, 200, "{}", body_of(&raw));
+            assert_eq!(json_of(&raw)["blueprint_id"], "capability-reference");
+            for item in ["item-1", "item-2"] {
+                let (status, raw) = post(
+                    &address,
+                    "/v1/authoritative/blueprints/items",
+                    &operator,
+                    &format!(r#"{{"id":"{item}","project_id":"project-1","kind":"note-task"}}"#),
+                );
+                assert_eq!(status, 200, "{}", body_of(&raw));
+            }
+            let executor = capability_bearer("executor-1", EXECUTOR_TOKEN);
+            Self {
+                address,
+                state,
+                operator,
+                executor,
+                _dist: dist,
+            }
+        }
+
+        fn announce(&self, headers: &str) -> (u16, String) {
+            post(
+                &self.address,
+                "/v1/authoritative/capability-executors/announce",
+                headers,
+                &format!(r#"{{"capability_ids":["{REFERENCE_CAPABILITY}"]}}"#),
+            )
+        }
+
+        fn authorize(&self) -> (u16, String) {
+            post(
+                &self.address,
+                "/v1/authoritative/capabilities/authorize",
+                &self.operator,
+                &format!(
+                    r#"{{"command_id":"authorize-1","capability_id":"{REFERENCE_CAPABILITY}","project_id":"project-1","confirm":true}}"#
+                ),
+            )
+        }
+
+        fn claim(&self, headers: &str, command_id: &str, token: &str) -> (u16, String) {
+            post(
+                &self.address,
+                "/v1/authoritative/capability-actions/claim",
+                headers,
+                &format!(r#"{{"command_id":"{command_id}","claim_token":"{token}"}}"#),
+            )
+        }
+
+        fn result(
+            &self,
+            headers: &str,
+            command_id: &str,
+            token: &str,
+            outcome: &str,
+        ) -> (u16, String) {
+            self.result_with_effect(
+                headers,
+                command_id,
+                token,
+                outcome,
+                &serde_json::json!({
+                    "kind": "work_item_note",
+                    "item_id": "item-1",
+                    "note": "hello",
+                    "tag": "demo",
+                }),
+            )
+        }
+
+        /// The same report, with whatever effect document the caller wants (or
+        /// none at all), so every refusal can be exercised over real HTTP.
+        fn result_with_effect(
+            &self,
+            headers: &str,
+            command_id: &str,
+            token: &str,
+            outcome: &str,
+            effect: &serde_json::Value,
+        ) -> (u16, String) {
+            post(
+                &self.address,
+                "/v1/authoritative/capability-actions/result",
+                headers,
+                &serde_json::json!({
+                    "command_id": command_id,
+                    "claim_token": token,
+                    "outcome": outcome,
+                    "detail": "ran it",
+                    "effect": effect,
+                })
+                .to_string(),
+            )
+        }
+
+        /// A report that declares no effect at all, which is always allowed.
+        fn result_without_effect(
+            &self,
+            headers: &str,
+            command_id: &str,
+            token: &str,
+            outcome: &str,
+        ) -> (u16, String) {
+            post(
+                &self.address,
+                "/v1/authoritative/capability-actions/result",
+                headers,
+                &format!(
+                    r#"{{"command_id":"{command_id}","claim_token":"{token}","outcome":"{outcome}","detail":"ran it"}}"#
+                ),
+            )
+        }
+
+        fn effects(&self, item_id: &str, headers: &str) -> (u16, String) {
+            get(
+                &self.address,
+                &format!("/v1/authoritative/capability-effects?item_id={item_id}"),
+                headers,
+            )
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn capability_flow_is_fenced_durable_and_reported_by_the_executor() {
+        let fixture = CapabilityFixture::new().await;
+        let address = &fixture.address;
+        let (status, raw) = fixture.announce(&fixture.executor);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let announced = json_of(&raw);
+        assert_eq!(announced["device_id"], "executor-1");
+        assert_eq!(
+            announced["capabilities"][0]["capability_id"],
+            REFERENCE_CAPABILITY
+        );
+
+        let (status, raw) = get(
+            address,
+            "/v1/authoritative/capability-executors",
+            &fixture.operator,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(json_of(&raw)["executors"][0]["device_id"], "executor-1");
+
+        let (status, raw) = get(
+            address,
+            "/v1/authoritative/capabilities?project_id=project-1",
+            &fixture.operator,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let status_document = json_of(&raw);
+        let reference = capability_status_of(&status_document, REFERENCE_CAPABILITY);
+        assert_eq!(reference["installed"], true);
+        assert_eq!(reference["granted"], false, "{status_document}");
+        assert_eq!(reference["executors"][0]["device_id"], "executor-1");
+        assert_eq!(reference["actions"][0]["id"], "append_note");
+
+        // Unauthorized: the offer is listed with its code and human reason.
+        let (status, raw) = get(
+            address,
+            "/v1/authoritative/capability-actions?item_id=item-1",
+            &fixture.operator,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let offers = json_of(&raw);
+        assert_eq!(offers["item_revision"], 0);
+        assert_eq!(offers["offers"][0]["action_id"], "append_note");
+        assert_eq!(offers["offers"][0]["capability_id"], REFERENCE_CAPABILITY);
+        assert_eq!(offers["offers"][0]["from"], "open");
+        assert_eq!(offers["offers"][0]["available"], false);
+        assert_eq!(offers["offers"][0]["code"], "not_authorized");
+        assert!(
+            offers["offers"][0]["reason"]
+                .as_str()
+                .expect("reason")
+                .contains("is not authorized for project project-1"),
+            "{}",
+            body_of(&raw)
+        );
+        let unauthorized = r#"{"command_id":"cap-unauthorized","item_id":"item-1","expected_revision":0,"action_id":"append_note","inputs":{"note":"hello"}}"#;
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            unauthorized,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("capability action unavailable: not_authorized:"),
+            "{}",
+            body_of(&raw)
+        );
+
+        let (status, raw) = fixture.authorize();
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let grant = json_of(&raw);
+        assert_eq!(grant["project_id"], "project-1");
+        assert_eq!(grant["granted_by"], "device-1");
+
+        let (status, raw) = get(
+            address,
+            "/v1/authoritative/capability-actions?item_id=item-1",
+            &fixture.operator,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let offers = json_of(&raw);
+        assert_eq!(offers["offers"][0]["available"], true, "{}", body_of(&raw));
+        assert_eq!(offers["offers"][0]["code"], serde_json::Value::Null);
+
+        // A request persists an authorized, fenced intent.
+        let request_body = r#"{"command_id":"cap-1","item_id":"item-1","expected_revision":0,"action_id":"append_note","inputs":{"note":"hello"}}"#;
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            request_body,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let request = json_of(&raw)["request"].clone();
+        assert_eq!(request["command_id"], "cap-1");
+        assert_eq!(request["state"], "pending");
+        assert_eq!(request["from"], "open");
+        assert_eq!(request["to"], "closed");
+        assert_eq!(request["capability_id"], REFERENCE_CAPABILITY);
+        assert_eq!(request["inputs"]["note"], "hello");
+        assert_eq!(request["executor_device_id"], serde_json::Value::Null);
+        assert_eq!(request["claim_token"], serde_json::Value::Null);
+        // Replaying the identical request is idempotent, not a second intent.
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            request_body,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(json_of(&raw)["request"], request);
+
+        // A browser session is not an executor, even with a valid cookie.
+        let login = format!(r#"{{"device_id":"device-1","token":"{DEVICE_TOKEN}"}}"#);
+        let (status, raw) = post(address, "/v1/web/session", "", &login);
+        assert_eq!(status, 201);
+        let cookie = format!(
+            "Cookie: orbit_session={}\r\nx-orbit-csrf: 1\r\n",
+            session_token(&raw)
+        );
+        let (status, raw) = fixture.claim(&cookie, "cap-1", "claim-1");
+        assert_eq!(status, 403, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("executor credential required"),
+            "{}",
+            body_of(&raw)
+        );
+        // An authenticated device that never announced cannot claim either.
+        let (status, raw) = fixture.claim(&fixture.operator, "cap-1", "claim-1");
+        assert_eq!(status, 403, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("capability not announced"),
+            "{}",
+            body_of(&raw)
+        );
+
+        // The enrolled executor claims and replays the same claim.
+        let (status, raw) = fixture.claim(&fixture.executor, "cap-1", "claim-1");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let claim = json_of(&raw);
+        assert_eq!(claim["request"]["state"], "claimed");
+        assert_eq!(claim["request"]["executor_device_id"], "executor-1");
+        assert_eq!(claim["request"]["claim_token"], "claim-1");
+        assert_eq!(claim["execution_plan"]["capability"], REFERENCE_CAPABILITY);
+        assert_eq!(claim["execution_plan"]["action_id"], "append_note");
+        assert_eq!(claim["execution_plan"]["parameters"]["note"], "hello");
+        assert_eq!(claim["execution_plan"]["command_id"], "cap-1");
+        let (status, raw) = fixture.claim(&fixture.executor, "cap-1", "claim-1");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(json_of(&raw), claim);
+
+        // A second enrolled executor cannot take the same intent.
+        let second = capability_bearer("executor-2", SECOND_EXECUTOR_TOKEN);
+        let (status, raw) = fixture.announce(&second);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = fixture.claim(&second, "cap-1", "claim-2");
+        assert_eq!(status, 409, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("capability action already claimed"),
+            "{}",
+            body_of(&raw)
+        );
+
+        // The result is recorded from the executor's report, in one savepoint.
+        let (status, raw) = fixture.result(&second, "cap-1", "claim-2", "succeeded");
+        assert_eq!(status, 409, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("capability action already claimed"),
+            "{}",
+            body_of(&raw)
+        );
+        let (status, raw) = fixture.result(&fixture.executor, "cap-1", "claim-1", "succeeded");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let settled = json_of(&raw);
+        assert_eq!(settled["request"]["state"], "succeeded");
+        assert_eq!(settled["receipt"]["outcome"], "succeeded");
+        assert_eq!(settled["receipt"]["reported_by"], "executor-1");
+        assert_eq!(settled["receipt"]["detail"]["detail"], "ran it");
+        // The authority persisted the declared effect in the same settlement, and
+        // the receipt says so with the kind and the persisted identity.
+        assert_eq!(
+            settled["receipt"]["detail"]["effect"],
+            serde_json::json!({
+                "applied": true,
+                "kind": "work_item_note",
+                "item_id": "item-1",
+                "command_id": "cap-1",
+            })
+        );
+        // …and it is readable as a durable result, without reading the database.
+        let (status, raw) = fixture.effects("item-1", &fixture.operator);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let effects = json_of(&raw);
+        assert_eq!(effects["item_id"], "item-1");
+        assert_eq!(effects["notes"].as_array().expect("notes").len(), 1);
+        assert_eq!(effects["notes"][0]["command_id"], "cap-1");
+        assert_eq!(effects["notes"][0]["note"], "hello");
+        assert_eq!(effects["notes"][0]["tag"], "demo");
+        assert!(
+            effects["notes"][0]["created_at_ms"]
+                .as_i64()
+                .is_some_and(|at| at > 0),
+            "{effects}"
+        );
+        assert!(
+            json_of(&fixture.effects("item-2", &fixture.operator).1)["notes"]
+                .as_array()
+                .expect("notes")
+                .is_empty(),
+            "another item is untouched"
+        );
+        // Replaying the same outcome returns the original receipt.
+        let (status, raw) = fixture.result(&fixture.executor, "cap-1", "claim-1", "succeeded");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(json_of(&raw)["receipt"], settled["receipt"]);
+        // A different outcome on a settled intent is refused.
+        let (status, raw) = fixture.result(&fixture.executor, "cap-1", "claim-1", "failed");
+        assert_eq!(status, 409, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("capability action already settled"),
+            "{}",
+            body_of(&raw)
+        );
+
+        let (status, raw) = get(
+            address,
+            "/v1/authoritative/capability-actions/show?command_id=cap-1",
+            &fixture.operator,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let shown = json_of(&raw);
+        assert_eq!(shown["request"]["state"], "succeeded");
+        assert_eq!(shown["receipt"]["reported_by"], "executor-1");
+        let (status, raw) = get(
+            address,
+            "/v1/authoritative/capability-actions/list?item_id=item-1",
+            &fixture.operator,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(json_of(&raw)["requests"][0]["command_id"], "cap-1");
+
+        // A pending intent cannot be reconciled: it never executed.
+        let second_request = r#"{"command_id":"cap-2","item_id":"item-2","expected_revision":0,"action_id":"append_note","inputs":{"note":"second"}}"#;
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            second_request,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/reconcile",
+            &fixture.operator,
+            r#"{"command_id":"cap-2","decision":"confirm_failed","detail":"nothing ran"}"#,
+        );
+        assert_eq!(status, 409, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("capability action cannot be reconciled"),
+            "{}",
+            body_of(&raw)
+        );
+        // A claimed intent is reconcilable, and the actor is recorded.
+        let (status, raw) = fixture.claim(&fixture.executor, "cap-2", "claim-3");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/reconcile",
+            &fixture.operator,
+            r#"{"command_id":"cap-2","decision":"confirm_failed","detail":"nothing ran"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let reconciled = json_of(&raw);
+        assert_eq!(reconciled["request"]["state"], "failed");
+        assert_eq!(reconciled["receipt"]["reported_by"], "device-1");
+        assert_eq!(reconciled["receipt"]["detail"]["note"], "nothing ran");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn capability_effects_are_validated_persisted_once_and_read_back() {
+        let fixture = CapabilityFixture::new().await;
+        let address = &fixture.address;
+        let (status, raw) = fixture.announce(&fixture.executor);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = fixture.authorize();
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            r#"{"command_id":"cap-e","item_id":"item-1","expected_revision":0,"action_id":"append_note","inputs":{"note":"hello"}}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = fixture.claim(&fixture.executor, "cap-e", "claim-e");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+
+        // Every schema violation is a 400 with its own fixed text, and none of
+        // them settles the intent or writes anything.
+        let violations = [
+            (
+                serde_json::json!({"kind": "work_item_note", "item_id": "item-1"}),
+                "invalid capability effect",
+            ),
+            (
+                serde_json::json!({"kind": "work_item_note", "item_id": "item-1", "note": 7}),
+                "invalid capability effect",
+            ),
+            // The target must be this request's own item.
+            (
+                serde_json::json!({"kind": "work_item_note", "item_id": "item-2", "note": "x"}),
+                "invalid capability effect",
+            ),
+            // Neither the kind nor an invented key may be supplied by a body.
+            (
+                serde_json::json!({"kind": "file_write", "item_id": "item-1", "note": "x"}),
+                "invalid capability effect",
+            ),
+            (
+                serde_json::json!({"kind": "work_item_note", "item_id": "item-1", "note": "x", "table": "devices"}),
+                "invalid capability effect",
+            ),
+            (
+                serde_json::json!({"kind": "work_item_note", "item_id": "item-1", "note": "x".repeat(2_001)}),
+                "capability effect exceeds its declared length",
+            ),
+            (
+                serde_json::json!({"kind": "work_item_note", "item_id": "item-1", "note": "x", "tag": "t".repeat(65)}),
+                "capability effect exceeds its declared length",
+            ),
+        ];
+        for (payload, message) in violations {
+            let (status, raw) = fixture.result_with_effect(
+                &fixture.executor,
+                "cap-e",
+                "claim-e",
+                "succeeded",
+                &payload,
+            );
+            assert_eq!(status, 400, "{}: {}", payload, body_of(&raw));
+            assert!(
+                body_of(&raw).contains(message),
+                "expected {message:?} for {payload}: {}",
+                body_of(&raw)
+            );
+            assert!(
+                !body_of(&raw).contains("capability storage error"),
+                "a refusal is never an internal failure: {}",
+                body_of(&raw)
+            );
+        }
+        let (status, raw) = get(
+            address,
+            "/v1/authoritative/capability-actions/show?command_id=cap-e",
+            &fixture.operator,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let shown = json_of(&raw);
+        assert_eq!(shown["request"]["state"], "claimed", "{shown}");
+        assert_eq!(shown["receipt"], serde_json::Value::Null, "{shown}");
+        assert!(
+            json_of(&fixture.effects("item-1", &fixture.operator).1)["notes"]
+                .as_array()
+                .expect("notes")
+                .is_empty(),
+            "a refused effect writes nothing"
+        );
+
+        // A valid effect settles the request and is persisted with it.
+        let (status, raw) = fixture.result_with_effect(
+            &fixture.executor,
+            "cap-e",
+            "claim-e",
+            "succeeded",
+            &serde_json::json!({
+                "kind": "work_item_note",
+                "item_id": "item-1",
+                "note": "hello",
+                "tag": "demo",
+            }),
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let settled = json_of(&raw);
+        assert_eq!(settled["request"]["state"], "succeeded");
+        assert_eq!(settled["receipt"]["detail"]["effect"]["applied"], true);
+        // Replaying the identical report is idempotent, including the effect.
+        let (status, raw) = fixture.result_with_effect(
+            &fixture.executor,
+            "cap-e",
+            "claim-e",
+            "succeeded",
+            &serde_json::json!({
+                "kind": "work_item_note",
+                "item_id": "item-1",
+                "note": "hello",
+                "tag": "demo",
+            }),
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(json_of(&raw)["receipt"], settled["receipt"]);
+        // A different effect for a settled command id is refused, and the stored
+        // note is untouched.
+        let (status, raw) = fixture.result_with_effect(
+            &fixture.executor,
+            "cap-e",
+            "claim-e",
+            "succeeded",
+            &serde_json::json!({
+                "kind": "work_item_note",
+                "item_id": "item-1",
+                "note": "a second note for the same command",
+            }),
+        );
+        assert_eq!(status, 409, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("capability action already settled"),
+            "{}",
+            body_of(&raw)
+        );
+        let notes = json_of(&fixture.effects("item-1", &fixture.operator).1);
+        assert_eq!(
+            notes["notes"].as_array().expect("notes").len(),
+            1,
+            "{notes}"
+        );
+        assert_eq!(notes["notes"][0]["note"], "hello");
+        assert_eq!(notes["notes"][0]["tag"], "demo");
+
+        // An absent effect is allowed and recorded honestly.
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            r#"{"command_id":"cap-f","item_id":"item-2","expected_revision":0,"action_id":"append_note","inputs":{"note":"second"}}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = fixture.claim(&fixture.executor, "cap-f", "claim-f");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) =
+            fixture.result_without_effect(&fixture.executor, "cap-f", "claim-f", "succeeded");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(
+            json_of(&raw)["receipt"]["detail"]["effect"],
+            serde_json::json!({"applied": false, "reason": "no effect declared by the executor"})
+        );
+        assert!(
+            json_of(&fixture.effects("item-2", &fixture.operator).1)["notes"]
+                .as_array()
+                .expect("notes")
+                .is_empty(),
+            "an absent effect never becomes a row"
+        );
+
+        // The read is authenticated like every other read, and an unknown item is
+        // a 404 rather than an empty list.
+        let (status, _) = fixture.effects("item-1", "");
+        assert_eq!(status, 401);
+        let login = format!(r#"{{"device_id":"device-1","token":"{DEVICE_TOKEN}"}}"#);
+        let (status, raw) = post(address, "/v1/web/session", "", &login);
+        assert_eq!(status, 201);
+        let cookie = format!("Cookie: orbit_session={}\r\n", session_token(&raw));
+        let (status, raw) = fixture.effects("item-1", &cookie);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(json_of(&raw)["notes"].as_array().expect("notes").len(), 1);
+        let (status, raw) = fixture.effects("missing", &fixture.operator);
+        assert_eq!(status, 404, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("work item not found"),
+            "{}",
+            body_of(&raw)
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn capability_refusals_keep_their_codes_and_credentials() {
+        let fixture = CapabilityFixture::new().await;
+        let address = &fixture.address;
+        let executor = &fixture.executor;
+
+        // Executor and operator routes refuse a cookie session explicitly.
+        let login = format!(r#"{{"device_id":"device-1","token":"{DEVICE_TOKEN}"}}"#);
+        let (status, raw) = post(address, "/v1/web/session", "", &login);
+        assert_eq!(status, 201);
+        let cookie = format!(
+            "Cookie: orbit_session={}\r\nx-orbit-csrf: 1\r\n",
+            session_token(&raw)
+        );
+        let (status, raw) = fixture.announce(&cookie);
+        assert_eq!(status, 403, "{}", body_of(&raw));
+        assert!(body_of(&raw).contains("executor credential required"));
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capabilities/install",
+            &cookie,
+            &format!(
+                r#"{{"command_id":"install-cookie","capability_id":"{REFERENCE_CAPABILITY}"}}"#
+            ),
+        );
+        assert_eq!(status, 403, "{}", body_of(&raw));
+        assert!(body_of(&raw).contains("operator credential required"));
+
+        // Unknown capabilities are named as such.
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-executors/announce",
+            executor,
+            r#"{"capability_ids":["orbit.not.a.capability"]}"#,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert!(body_of(&raw).contains("unknown capability"));
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capabilities/install",
+            &fixture.operator,
+            r#"{"command_id":"install-unknown","capability_id":"orbit.not.a.capability"}"#,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert!(body_of(&raw).contains("unknown capability"));
+
+        // A body can never supply a provider, a target state or a status.
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            r#"{"command_id":"cap-forged","item_id":"item-1","expected_revision":0,"action_id":"append_note","to":"closed","provider":"evil","inputs":{"note":"x"}}"#,
+        );
+        assert_eq!(status, 422, "{}", body_of(&raw));
+
+        // No announced executor: the offer says exactly that.
+        let (status, raw) = get(
+            address,
+            "/v1/authoritative/capability-actions?item_id=item-1",
+            &fixture.operator,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let offers = json_of(&raw);
+        assert_eq!(offers["offers"][0]["code"], "executor_missing");
+        assert!(
+            offers["offers"][0]["reason"]
+                .as_str()
+                .expect("reason")
+                .contains("no active enrolled executor announced"),
+            "{offers}"
+        );
+
+        let (status, raw) = fixture.announce(executor);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = fixture.authorize();
+        assert_eq!(status, 200, "{}", body_of(&raw));
+
+        // Invalid input: a declared key with an invalid value, and an invented key.
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            r#"{"command_id":"cap-blank","item_id":"item-1","expected_revision":0,"action_id":"append_note","inputs":{"note":""}}"#,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("invalid capability action input: invalid value for note"),
+            "{}",
+            body_of(&raw)
+        );
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            r#"{"command_id":"cap-injected","item_id":"item-1","expected_revision":0,"action_id":"append_note","inputs":{"note":"x","shell":"rm -rf /"}}"#,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("invalid capability action input: undeclared input: shell"),
+            "{}",
+            body_of(&raw)
+        );
+
+        // A mixed-case action id is not case-folded onto the real action.
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            r#"{"command_id":"cap-case","item_id":"item-1","expected_revision":0,"action_id":"Append_Note","inputs":{"note":"x"}}"#,
+        );
+        assert_eq!(status, 409, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("capability request conflict"),
+            "{}",
+            body_of(&raw)
+        );
+
+        // Stale revision and duplicate intent both keep the request conflict.
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            r#"{"command_id":"cap-stale","item_id":"item-1","expected_revision":7,"action_id":"append_note","inputs":{"note":"x"}}"#,
+        );
+        assert_eq!(status, 409, "{}", body_of(&raw));
+        assert!(body_of(&raw).contains("capability request conflict"));
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            r#"{"command_id":"cap-ok","item_id":"item-1","expected_revision":0,"action_id":"append_note","inputs":{"note":"x"}}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            r#"{"command_id":"cap-dup","item_id":"item-1","expected_revision":0,"action_id":"append_note","inputs":{"note":"x"}}"#,
+        );
+        assert_eq!(status, 409, "{}", body_of(&raw));
+        assert!(body_of(&raw).contains("capability request conflict"));
+
+        // An uninstalled capability is reported as such, even for a bound item.
+        fixture
+            .state
+            .store
+            .lock()
+            .unwrap()
+            .uninstall_trusted_capability(REFERENCE_CAPABILITY)
+            .unwrap();
+        let (status, raw) = get(
+            address,
+            "/v1/authoritative/capability-actions?item_id=item-1",
+            &fixture.operator,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let offers = json_of(&raw);
+        assert_eq!(offers["offers"][0]["available"], false);
+        assert_eq!(offers["offers"][0]["code"], "capability_not_installed");
+        assert!(
+            offers["offers"][0]["reason"]
+                .as_str()
+                .expect("reason")
+                .contains("is not installed"),
+            "{offers}"
+        );
+        let (status, raw) = post(
+            address,
+            "/v1/authoritative/capability-actions/request",
+            &fixture.operator,
+            r#"{"command_id":"cap-gone","item_id":"item-1","expected_revision":0,"action_id":"append_note","inputs":{"note":"x"}}"#,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("capability action unavailable: capability_not_installed:"),
+            "{}",
+            body_of(&raw)
+        );
+
+        // Reads still need an authenticated device.
+        let (status, _) = get(
+            address,
+            "/v1/authoritative/capability-actions?item_id=item-1",
+            "",
+        );
+        assert_eq!(status, 401);
+        // Claim/result need a bearer credential at all, not just a device header.
+        let (status, _) = post(
+            address,
+            "/v1/authoritative/capability-actions/claim",
+            "",
+            r#"{"command_id":"cap-ok","claim_token":"t"}"#,
+        );
+        assert_eq!(status, 401);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

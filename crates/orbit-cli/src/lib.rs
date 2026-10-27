@@ -2,8 +2,11 @@ mod agent_commands;
 mod attachment_commands;
 mod authority_http;
 mod blueprint_commands;
+mod capability_serve;
 mod connected_agent;
 mod connected_blueprint;
+#[cfg(test)]
+mod connected_test_authority;
 mod doctor_command;
 mod habit_routine_commands;
 mod init_command;
@@ -171,6 +174,15 @@ pub fn run(cli: Cli) -> Result<String, CliError> {
                             Ok(response.to_string())
                         };
                     }
+                    if let Command::Capability(capability) = command {
+                        let response = capability_serve::run(&server, capability)?;
+                        return if json {
+                            serde_json::to_string_pretty(&response)
+                                .map_err(|e| CliError::Serialization(e.to_string()))
+                        } else {
+                            Ok(response.human())
+                        };
+                    }
                     if let Command::Agent(agent) = command {
                         let response = connected_agent::run(
                             &server,
@@ -191,6 +203,15 @@ pub fn run(cli: Cli) -> Result<String, CliError> {
                 }
                 orbit_client::deployment::Deployment::Local { .. } => {}
             }
+            // A local workspace executes capabilities in-process; there is no
+            // separate executor to run. Refusing before any database is opened
+            // keeps the two modes honest instead of pretending the runner has a
+            // job here.
+            if let Command::Capability(_) = command {
+                return Err(CliError::Usage(
+                    "capability serve is the connected deployment's executor; a local workspace executes in-process with `orbit blueprint action execute`".into(),
+                ));
+            }
             ensure_parent(&db_path)?;
             let mut host = orbit_runtime::AuthoritativeHost::open(&db_path).map_err(|error| {
                 CliError::Serialization(format!("authority unavailable: {error:?}"))
@@ -210,6 +231,11 @@ pub fn run(cli: Cli) -> Result<String, CliError> {
                     }
                     blueprint_commands::run_blueprint(&mut host, blueprint.command)?
                 }
+            } else if let Command::Capability(_) = command {
+                // Unreachable: refused before a local authority is opened.
+                return Err(CliError::Usage(
+                    "capability serve requires a connected deployment".into(),
+                ));
             } else if let Command::Agent(agent) = command {
                 agent_commands::run_agent(
                     &mut host,

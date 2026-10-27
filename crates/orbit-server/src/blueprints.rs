@@ -135,9 +135,15 @@ pub(super) async fn publish(
     Json(body): Json<PublishBody>,
 ) -> Result<Json<orbit_blueprint::Blueprint>, ApiError> {
     device(&state, &headers)?;
-    // Remote manifests cannot declare themselves authorized or install capabilities.
-    locked(&state)?
-        .publish_project_blueprint(&body.definition, &BTreeSet::new())
+    // Remote manifests can still neither declare themselves authorized nor
+    // install capabilities. The set a manifest is validated against is the
+    // *durable* installation set, read from storage — never the request body —
+    // so a workflow that requires an installed capability can be published
+    // while an uninstalled one keeps its existing refusal.
+    let mut host = locked(&state)?;
+    let installed =
+        orbit_runtime::capability_server::installed_capability_ids(&host).map_err(repo_error)?;
+    host.publish_project_blueprint(&body.definition, &installed)
         .map_err(repo_error)?;
     Ok(Json(body.definition))
 }

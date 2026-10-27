@@ -4,9 +4,8 @@
  * A work item has no title row of its own: its readable content is the property
  * set its kind declares. The sheet therefore shows the manifest's fields as
  * typed controls, offers exactly the declared transitions for the current
- * state, and lists the actions declared on those transitions without a run
- * control — capability execution is a local-authority feature in this product,
- * and this server exposes neither status nor an execution route.
+ * state, and hands the declared actions to the capability panel, which reads the
+ * server's availability, records a request and shows the executor's receipt.
  *
  * Every command reads the item's revision at mutate time and writes the
  * accepted response back into the list cache inside the hook, so two quick
@@ -39,17 +38,15 @@ import {
   useDirtyGuard,
   type EditorHandle,
 } from '@/components/forms'
-import { capabilityLabel, humanizeIdentifier } from '@/lib/humanize'
-import { workflowText } from '@/domain'
+import { capabilityLabel } from '@/lib/humanize'
 import { INTEGER_PATTERN, PropertyEditor } from './work-item-fields'
+import { CapabilityPanel } from './capability-panel'
 import {
   actionsForState,
   fieldLabel,
   fieldValueText,
   guardSentence,
   kindLabel,
-  parameterNames,
-  parameterType,
   shortWorkItemId,
   stateLabel,
   transitionsFromState,
@@ -655,80 +652,10 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
 
               <Section
                 title="Actions"
-                description={`Actions the workflow declares for ${stateLabel(item.state)}.`}
+                description={`The server decides which actions ${stateLabel(item.state)} offers, records the request and keeps the executor's receipt. This browser never runs one.`}
                 aside={<Badge tone="neutral">{stateActions.length} declared</Badge>}
               >
-                <div className="rounded-md border border-info/30 bg-info-soft/50 px-3 py-2 text-xs leading-5 text-info-ink">
-                  <p className="font-medium">Execution requires the local Orbit authority.</p>
-                  <p className="mt-0.5">
-                    This server does not execute capabilities, and it exposes no capability status,
-                    so the browser lists what is declared and does not offer a run control.
-                  </p>
-                </div>
-                <p className="mt-1.5 text-2xs leading-4 text-ink-muted">
-                  Capability status is not exposed by this server.
-                </p>
-
-                {stateActions.length > 0 ? (
-                  <ul className="mt-3 flex flex-col gap-2">
-                    {stateActions.map(({ transition: edge, action }) => (
-                      <li
-                        key={`${edge.from}->${edge.to}#${action.id}`}
-                        data-work-item-action={action.id}
-                        className="rounded-md border border-line bg-surface px-3 py-2.5"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-ink">
-                              {humanizeIdentifier(workflowText(action.id))}
-                            </p>
-                            <p className="mt-0.5 text-xs leading-5 text-ink-muted">
-                              {workflowText(action.description).trim() ||
-                                'The workflow gives this action no description.'}
-                            </p>
-                            <p className="mt-1 text-2xs text-ink-faint">
-                              Declared on {stateLabel(edge.from)} → {stateLabel(edge.to)}
-                            </p>
-                          </div>
-                          <Badge tone="neutral">Not executable here</Badge>
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <Badge tone="info">Requires capability {capabilityLabel(action.capability)}</Badge>
-                          {edge.requiredCapability && edge.requiredCapability !== action.capability ? (
-                            <Badge tone="warning">Move requires {capabilityLabel(edge.requiredCapability)}</Badge>
-                          ) : null}
-                        </div>
-                        <div className="mt-2 border-t border-line pt-2">
-                          <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
-                            Parameters
-                          </p>
-                          {parameterNames(action).length > 0 ? (
-                            <ul className="mt-1 flex flex-wrap gap-1.5">
-                              {parameterNames(action).map((name) => (
-                                <li
-                                  key={name}
-                                  className="rounded-sm border border-line bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs text-ink-soft"
-                                >
-                                  {name}
-                                  <span className="ml-1 text-ink-faint">
-                                    {parameterType(action.parameters[name])}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="mt-0.5 text-xs text-ink-muted">No parameters declared.</p>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-xs leading-5 text-ink-muted">
-                    This state declares no actions. Capability status is not exposed by this server,
-                    so no installed-capability state is shown.
-                  </p>
-                )}
+                <CapabilityPanel item={item} kind={kind} />
               </Section>
 
               <Section title="Declared values" description="What the server stores for this item, in declaration order.">

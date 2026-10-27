@@ -44,6 +44,8 @@ pub mod blueprint_upgrade;
 pub mod canonical;
 pub mod capabilities;
 pub mod capability_composition;
+pub mod capability_contracts;
+pub mod capability_server;
 pub mod daily_planning;
 pub mod domain_commands;
 pub mod planning_actions;

@@ -45,6 +45,11 @@ pub enum Command {
     /// stable command name for existing scripts and automation.
     #[command(visible_alias = "workflow")]
     Blueprint(BlueprintCommand),
+    /// Run the connected deployment's capability executor (one claimed request).
+    ///
+    /// The connected authority persists an authorized intent but never runs
+    /// provider code; this process claims it and runs it locally.
+    Capability(crate::capability_serve::CapabilityRunnerCommand),
     Habit(HabitCommand),
     Routine(RoutineCommand),
     /// File-authoritative Markdown notes with durable receipts.

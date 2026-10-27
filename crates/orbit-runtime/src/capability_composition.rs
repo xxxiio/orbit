@@ -11,6 +11,10 @@ use crate::AuthoritativeHost;
 use crate::blueprint_execution::{
     BlueprintCapabilityExecutor, BlueprintExecutorRegistry, ExecutionOutcome,
 };
+use crate::capability_contracts::{
+    CapabilityContract, CapabilityScope, merge_parameters, offers_for_item, valid_command_id,
+    validate_capability_inputs,
+};
 use orbit_application::RepositoryError;
 use orbit_blueprint::{
     ActionInvocation, CapabilityCatalog, CapabilityDescriptor, CapabilityPermission,
@@ -23,27 +27,33 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The contract vocabulary lives in [`crate::capability_contracts`] so a
+/// connected server can describe a capability without loading a provider. These
+/// re-exports keep the local composition path source compatible.
+pub use crate::capability_contracts::{
+    CapabilityActionAvailability, CapabilityActionSpec, ContractCatalog, OfferedCapabilityAction,
+    contract, contracts,
+};
+
 /// The deterministic, I/O-free capability used to prove the whole composition
 /// path end to end.
 pub const REFERENCE_CAPABILITY_ID: &str = "orbit.reference.work-item-note";
 
-/// One action a trusted capability advertises to offers and to the CLI.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CapabilityActionSpec {
-    pub action_id: String,
-    pub description: String,
-    /// JSON-schema subset: `{"type":"object","properties":{...},"required":[..]}`.
-    pub input_schema: Value,
-    pub external_effect: bool,
-}
+/// The declared character bound of the reference action's required `note`.
+///
+/// The action's input schema and the capability's effect contract
+/// ([`crate::capability_contracts::declared_effect`]) both read this constant, so
+/// an offer can never advertise a longer note than the authority will accept.
+pub const REFERENCE_NOTE_MAX_CHARS: u64 = 2_000;
 
-impl CapabilityActionSpec {
-    /// Presentation never decides authority, but the CLI still refuses an
-    /// unconfirmed invocation of an effectful or explicitly destructive action.
-    pub fn is_destructive(&self) -> bool {
-        self.external_effect || self.input_schema.get("destructive") == Some(&Value::Bool(true))
-    }
-}
+/// The declared character bound of the reference action's optional `tag`.
+///
+/// Stated once for the same reason as [`REFERENCE_NOTE_MAX_CHARS`]: an input the
+/// offer does not bound is an input the authority's effect declaration refuses,
+/// which would strand a claimed request with no receipt. The bound is therefore
+/// visible in the offer (and enforced by the request form) before anything is
+/// recorded.
+pub const REFERENCE_TAG_MAX_CHARS: u64 = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrustedCapability {
@@ -162,17 +172,19 @@ pub fn reference_capability() -> TrustedCapability {
                     "note": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 2000,
+                        "maxLength": REFERENCE_NOTE_MAX_CHARS,
                         "description": "Note body (1..2000 characters)"
                     },
                     "tag": {
                         "type": "string",
+                        "maxLength": REFERENCE_TAG_MAX_CHARS,
                         "description": "Optional label for the note"
                     }
                 },
                 "required": ["note"]
             }),
             external_effect: false,
+            requires: Vec::new(),
         }],
         requires: BTreeSet::new(),
     }
@@ -246,41 +258,6 @@ fn now_ms() -> Option<i64> {
         .duration_since(std::time::UNIX_EPOCH)
         .ok()?;
     i64::try_from(elapsed.as_millis()).ok()
-}
-
-/// Why an offered action cannot be requested or executed right now.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum CapabilityActionAvailability {
-    Available,
-    Unavailable { code: String, reason: String },
-}
-
-impl CapabilityActionAvailability {
-    pub fn is_available(&self) -> bool {
-        matches!(self, Self::Available)
-    }
-
-    pub fn code(&self) -> Option<&str> {
-        match self {
-            Self::Available => None,
-            Self::Unavailable { code, .. } => Some(code),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OfferedCapabilityAction {
-    pub action_id: String,
-    pub capability: String,
-    pub description: String,
-    pub from: String,
-    pub to: String,
-    pub availability: CapabilityActionAvailability,
-    pub input_schema: Value,
-    pub declared_parameters: Value,
-    pub external_effect: bool,
-    pub requires: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -472,7 +449,9 @@ impl AuthoritativeHost {
     }
 
     /// Installation records the trusted composition's contract. An id that the
-    /// composition does not know is rejected rather than invented.
+    /// composition does not know is rejected rather than invented. The row is
+    /// built from the shared contract type so a connected server writes exactly
+    /// the same installation without constructing a composition.
     pub fn install_trusted_capability(
         &mut self,
         composition: &TrustedComposition,
@@ -482,25 +461,9 @@ impl AuthoritativeHost {
         let capability = composition
             .capability(capability_id)
             .ok_or(RepositoryError::Conflict)?;
-        let permission = match capability.descriptor.permission {
-            CapabilityPermission::Read => "read",
-            CapabilityPermission::Mutate => "mutate",
-            CapabilityPermission::ExternalEffect => "external_effect",
-        };
-        let actions_json = serde_json::to_string(&capability.actions)
-            .map_err(|error| RepositoryError::Other(error.to_string()))?;
-        let requires_json = serde_json::to_string(&capability.requires)
-            .map_err(|error| RepositoryError::Other(error.to_string()))?;
-        self.authority
-            .conn
-            .install_capability(&CapabilityInstallation {
-                capability_id: capability_id.to_owned(),
-                provider: capability.descriptor.provider.clone(),
-                permission: permission.to_owned(),
-                actions_json,
-                requires_json,
-                installed_at_ms: at_ms,
-            })
+        let contract = CapabilityContract::from_trusted(capability);
+        let installation = contract.installation(&capability.descriptor.provider, at_ms)?;
+        self.authority.conn.install_capability(&installation)
     }
 
     pub fn uninstall_trusted_capability(
@@ -554,115 +517,15 @@ impl AuthoritativeHost {
         composition: &TrustedComposition,
         item: &orbit_blueprint::BlueprintWorkItem,
     ) -> Result<Vec<OfferedCapabilityAction>, RepositoryError> {
-        let binding = self
-            .authority
-            .conn
-            .project_blueprint_binding(&item.project_id)?
-            .ok_or(RepositoryError::Conflict)?;
-        let blueprint = self
-            .authority
-            .conn
-            .load_blueprint(&binding.blueprint_id, binding.version)?
-            .ok_or(RepositoryError::Conflict)?;
-        let installed: BTreeSet<String> = self
-            .authority
-            .conn
-            .capability_installations()?
-            .into_iter()
-            .map(|installation| installation.capability_id)
-            .collect();
-        let authorized = self
-            .authority
-            .conn
-            .authorized_capabilities(&item.project_id)?;
-        let configured = composition.catalog().available();
-        let kind = blueprint
-            .item_kind(&item.kind)
-            .map_err(|error| RepositoryError::Other(error.to_string()))?;
-        let mut offers = Vec::new();
-        for edge in kind
-            .transitions
-            .iter()
-            .filter(|edge| edge.from == item.state)
-        {
-            for action in &edge.actions {
-                let trusted = composition.capability(&action.capability);
-                let spec = trusted.and_then(|capability| capability.action(&action.id));
-                let availability =
-                    if trusted.is_none() {
-                        CapabilityActionAvailability::Unavailable {
-                            code: "capability_missing".into(),
-                            reason: format!(
-                                "capability {} is not registered in the trusted composition",
-                                action.capability
-                            ),
-                        }
-                    } else if !trusted.is_some_and(|capability| capability.descriptor.enabled) {
-                        CapabilityActionAvailability::Unavailable {
-                            code: "capability_disabled".into(),
-                            reason: format!("capability {} is disabled", action.capability),
-                        }
-                    } else if !installed.contains(&action.capability) {
-                        CapabilityActionAvailability::Unavailable {
-                            code: "capability_not_installed".into(),
-                            reason: format!("capability {} is not installed", action.capability),
-                        }
-                    } else if spec.is_none() || !composition.has_executor(&action.capability) {
-                        CapabilityActionAvailability::Unavailable {
-                            code: "executor_missing".into(),
-                            reason: format!(
-                                "trusted composition has no executable action {} for {}",
-                                action.id, action.capability
-                            ),
-                        }
-                    } else if trusted.is_some_and(|capability| {
-                        capability
-                            .requires
-                            .iter()
-                            .any(|required| !installed.contains(required))
-                    }) || blueprint.required_capabilities.iter().any(|required| {
-                        !installed.contains(required) || !configured.contains(required)
-                    }) {
-                        CapabilityActionAvailability::Unavailable {
-                            code: "requirement_missing".into(),
-                            reason: format!(
-                                "capability {} has unsatisfied requirements",
-                                action.capability
-                            ),
-                        }
-                    } else if !authorized.contains(&action.capability) {
-                        CapabilityActionAvailability::Unavailable {
-                            code: "not_authorized".into(),
-                            reason: format!(
-                                "capability {} is not authorized for project {}",
-                                action.capability, item.project_id
-                            ),
-                        }
-                    } else {
-                        CapabilityActionAvailability::Available
-                    };
-                offers.push(OfferedCapabilityAction {
-                    action_id: action.id.clone(),
-                    capability: action.capability.clone(),
-                    description: action.description.clone(),
-                    from: edge.from.clone(),
-                    to: edge.to.clone(),
-                    availability,
-                    input_schema: spec
-                        .map(|spec| spec.input_schema.clone())
-                        .unwrap_or_else(|| json!({})),
-                    declared_parameters: serde_json::to_value(&action.parameters)
-                        .map_err(|error| RepositoryError::Other(error.to_string()))?,
-                    // Unknown contracts are treated as effectful so a caller
-                    // cannot skip confirmation by removing the composition.
-                    external_effect: spec.map(|spec| spec.external_effect).unwrap_or(true),
-                    requires: trusted
-                        .map(|capability| capability.requires.iter().cloned().collect())
-                        .unwrap_or_default(),
-                });
-            }
-        }
-        Ok(offers)
+        // The availability algorithm is shared with the connected server; only
+        // the executor question differs (registered provider here, announced
+        // enrolled device there).
+        offers_for_item(
+            &self.authority.conn,
+            item,
+            composition,
+            CapabilityScope::Local,
+        )
     }
 
     /// Persist an explicit request. Authorization, installation, requirements,
@@ -832,9 +695,25 @@ impl AuthoritativeHost {
         actor: &str,
         at_ms: i64,
     ) -> Result<CapabilityReceipt, RepositoryError> {
-        if actor.trim().is_empty() || actor.len() > 128 {
+        self.reconcile_capability_action_with_note(command_id, decision, actor, "", at_ms)
+    }
+
+    /// See [`Self::reconcile_capability_action`]. `note` is the authenticated
+    /// actor's own explanation, recorded inside the receipt detail so a remote
+    /// operator's decision is attributable after the fact. An empty note keeps
+    /// the historically recorded detail object byte-identical.
+    pub fn reconcile_capability_action_with_note(
+        &mut self,
+        command_id: &str,
+        decision: CapabilityReconcileDecision,
+        actor: &str,
+        note: &str,
+        at_ms: i64,
+    ) -> Result<CapabilityReceipt, RepositoryError> {
+        if actor.trim().is_empty() || actor.len() > 128 || note.len() > 1_000 {
             return Err(RepositoryError::Conflict);
         }
+        let note = note.trim();
         let request = self
             .authority
             .conn
@@ -846,11 +725,7 @@ impl AuthoritativeHost {
             // Lost acknowledgement: the claim is durable but nothing recorded
             // the provider's result, so an operator decision is the only truth.
             "claimed" => {
-                let detail = json!({
-                    "reconciled": true,
-                    "reconciled_by": actor,
-                    "recovered_from": "claimed",
-                });
+                let detail = reconcile_detail(actor, "claimed", note);
                 match &existing {
                     // Defensive replay of a claim already reconciled.
                     Some(receipt)
@@ -884,11 +759,7 @@ impl AuthoritativeHost {
                 if receipt.outcome != "uncertain" {
                     return Err(RepositoryError::Conflict);
                 }
-                let detail = json!({
-                    "reconciled": true,
-                    "reconciled_by": actor,
-                    "recovered_from": "uncertain",
-                });
+                let detail = reconcile_detail(actor, "uncertain", note);
                 self.authority.conn.settle_blueprint_action(
                     command_id,
                     outcome,
@@ -913,91 +784,21 @@ impl AuthoritativeHost {
     }
 }
 
-fn merge_parameters(
-    offer: &OfferedCapabilityAction,
-    inputs: &BTreeMap<String, Value>,
-) -> BTreeMap<String, Value> {
-    let mut parameters: BTreeMap<String, Value> = offer
-        .declared_parameters
-        .as_object()
-        .map(|declared| {
-            declared
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect()
-        })
-        .unwrap_or_default();
-    for (key, value) in inputs {
-        parameters.insert(key.clone(), value.clone());
+/// The receipt detail of an explicit reconciliation. The operator's note is
+/// recorded only when supplied, so a decision taken without one keeps the
+/// historic shape (and therefore replays identically).
+fn reconcile_detail(actor: &str, recovered_from: &str, note: &str) -> Value {
+    let mut detail = json!({
+        "reconciled": true,
+        "reconciled_by": actor,
+        "recovered_from": recovered_from,
+    });
+    if !note.is_empty()
+        && let Some(object) = detail.as_object_mut()
+    {
+        object.insert("note".to_owned(), Value::String(note.to_owned()));
     }
-    parameters
-}
-
-/// JSON-schema subset used by trusted capability actions. Only the declared
-/// contract is enforced: unknown keys never become capability parameters.
-fn validate_capability_inputs(
-    schema: &Value,
-    parameters: &BTreeMap<String, Value>,
-) -> Result<(), String> {
-    let object = schema
-        .as_object()
-        .ok_or_else(|| "input schema is not an object".to_owned())?;
-    let properties = object.get("properties").and_then(Value::as_object);
-    if let Some(required) = object.get("required").and_then(Value::as_array) {
-        for key in required {
-            let key = key
-                .as_str()
-                .ok_or_else(|| "invalid required list".to_owned())?;
-            if !parameters.contains_key(key) {
-                return Err(format!("missing required parameter: {key}"));
-            }
-        }
-    }
-    for (key, value) in parameters {
-        let Some(property) = properties.and_then(|properties| properties.get(key)) else {
-            continue;
-        };
-        let Some(kind) = property.get("type").and_then(Value::as_str) else {
-            continue;
-        };
-        let valid = match kind {
-            "string" => value.as_str().is_some_and(|text| {
-                let length = text.chars().count() as u64;
-                property
-                    .get("minLength")
-                    .and_then(Value::as_u64)
-                    .is_none_or(|min| length >= min)
-                    && property
-                        .get("maxLength")
-                        .and_then(Value::as_u64)
-                        .is_none_or(|max| length <= max)
-            }),
-            "integer" => value.as_i64().is_some_and(|number| {
-                property
-                    .get("minimum")
-                    .and_then(Value::as_i64)
-                    .is_none_or(|min| number >= min)
-                    && property
-                        .get("maximum")
-                        .and_then(Value::as_i64)
-                        .is_none_or(|max| number <= max)
-            }),
-            "boolean" => value.is_boolean(),
-            _ => true,
-        };
-        if !valid {
-            return Err(format!("invalid value for {key}"));
-        }
-    }
-    Ok(())
-}
-
-fn valid_command_id(command_id: &str) -> bool {
-    !command_id.is_empty()
-        && command_id.len() <= 128
-        && command_id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b':' | b'.'))
+    detail
 }
 
 #[cfg(test)]
@@ -1131,6 +932,7 @@ mod tests {
                         description: "Run".into(),
                         input_schema: json!({"type": "object", "properties": {}}),
                         external_effect: false,
+                        requires: Vec::new(),
                     }],
                     requires: BTreeSet::new(),
                 },
@@ -1368,6 +1170,21 @@ mod tests {
         too_long.inputs.insert("note".into(), json!(oversized));
         let error = host
             .request_capability_action(&composition, too_long)
+            .unwrap_err();
+        assert!(
+            matches!(&error, RepositoryError::Other(message)
+                if message.contains("invalid capability action input")),
+            "{error:?}"
+        );
+        // The same bound is declared for the optional tag: an over-long tag is
+        // refused before a request is persisted, so it can never reach an
+        // executor and strand the request as `claimed` with no receipt.
+        let mut tag_too_long = request("action-tag-too-long", "hello");
+        tag_too_long
+            .inputs
+            .insert("tag".into(), json!("t".repeat(65)));
+        let error = host
+            .request_capability_action(&composition, tag_too_long)
             .unwrap_err();
         assert!(
             matches!(&error, RepositoryError::Other(message)

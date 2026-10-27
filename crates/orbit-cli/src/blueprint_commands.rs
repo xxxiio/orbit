@@ -207,9 +207,14 @@ pub enum CapabilityActionSubcommand {
     },
 }
 
-/// Connected transports must fail closed: capability execution is reachable only
-/// through the local authoritative host composition.
-pub(super) const CONNECTED_CAPABILITY_REFUSAL: &str = "capability actions require the local authoritative workspace; connected parity is tracked as M25 EC-004";
+/// Connected transports must fail closed for provider execution: only an
+/// explicitly enrolled executor process runs provider code. The authority
+/// persists the intent and the receipt and never dispatches anything.
+pub(super) const CONNECTED_EXECUTE_REFUSAL: &str = "capability execution is performed by an enrolled executor, not by the authority: run `orbit capability serve --once` (or keep your executor runner running). The connected authority persists the request and the receipt; it never dispatches provider code";
+
+/// Install/authorize/revoke change what the whole workspace may execute and are
+/// operator writes; the connected CLI does not expose them in this build.
+pub(super) const CONNECTED_CAPABILITY_WRITE_REFUSAL: &str = "installing, authorizing and revoking capabilities are operator writes in connected mode; use the operator API or the web console. Capability actions themselves run in the enrolled executor (`orbit capability serve --once`)";
 
 pub(super) fn is_yaml(path: &Path) -> bool {
     matches!(
@@ -548,7 +553,9 @@ fn run_capability(
     }
 }
 
-fn parse_action_inputs(raw: Option<&str>) -> Result<BTreeMap<String, serde_json::Value>, CliError> {
+pub(super) fn parse_action_inputs(
+    raw: Option<&str>,
+) -> Result<BTreeMap<String, serde_json::Value>, CliError> {
     let Some(raw) = raw else {
         return Ok(BTreeMap::new());
     };

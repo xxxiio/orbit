@@ -29,6 +29,7 @@ pub fn habit_recurrence_capability() -> TrustedCapability {
                     .to_owned(),
             input_schema: orbit_habit_capability::input_schema(),
             external_effect: false,
+            requires: Vec::new(),
         }],
         requires: BTreeSet::new(),
     }

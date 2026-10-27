@@ -56,6 +56,46 @@ pub struct ReferenceWorkItemNote {
     pub created_at_ms: i64,
 }
 
+/// Everything one settlement commits, together, in a single savepoint: the
+/// outcome, who reported it, the detail document and — when the capability
+/// declares one — the durable effect.
+struct Settlement<'a> {
+    outcome: &'a str,
+    provider: &'a str,
+    detail: &'a Value,
+    effect: Option<&'a CapabilityEffectRecord<'a>>,
+    recorded_at_ms: i64,
+    existing: Option<CapabilityReceipt>,
+}
+
+/// A declared, schema-checked effect to persist in the same savepoint as the
+/// settlement that produced it.
+///
+/// It carries no table, path or provider: the storage layer already knows the
+/// one effect table this build has, and the runtime has already validated the
+/// payload against the capability's compile-time declaration. `command_id` is
+/// the row's primary key, so one command can never produce two effects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityEffectRecord<'a> {
+    pub kind: &'a str,
+    pub item_id: &'a str,
+    pub note: &'a str,
+    pub tag: Option<&'a str>,
+}
+
+/// A device's announcement that it can execute one capability.
+///
+/// Enrollment is the connected deployment's whole answer to "is there an
+/// executor?" — it is a durable, auditable fact rather than a process-local
+/// registry entry in the server. It grants nothing: installation and the
+/// project grant are still separate durable facts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapabilityExecutorAnnouncement {
+    pub device_id: String,
+    pub capability_id: String,
+    pub announced_at_ms: i64,
+}
+
 fn valid_ident(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
@@ -112,7 +152,120 @@ impl SqliteStore {
                 tag TEXT,
                 created_at_ms INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS orbit_reference_work_item_notes_item
-                ON orbit_reference_work_item_notes(item_id, created_at_ms);",
+                ON orbit_reference_work_item_notes(item_id, created_at_ms);
+            CREATE TABLE IF NOT EXISTS orbit_capability_executors (
+                device_id TEXT NOT NULL,
+                capability_id TEXT NOT NULL,
+                announced_at_ms INTEGER NOT NULL CHECK(announced_at_ms >= 0),
+                PRIMARY KEY (device_id, capability_id));",
+        )
+        .map_err(repo_error)
+    }
+
+    /// Record that a device can execute a capability. Re-announcing is
+    /// idempotent and refreshes the announcement time, so the roster reflects
+    /// the most recent claim of ability rather than a stale one.
+    pub fn announce_capability_executor(
+        &mut self,
+        device_id: &str,
+        capability_id: &str,
+        at_ms: i64,
+    ) -> Result<CapabilityExecutorAnnouncement, RepositoryError> {
+        if device_id.trim().is_empty()
+            || device_id.len() > 128
+            || !valid_ident(capability_id)
+            || at_ms < 0
+        {
+            return Err(RepositoryError::Conflict);
+        }
+        // Enrollment only makes sense for a device the authority can still
+        // authenticate; a revoked device must not gain an executor row.
+        let active: bool = self
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM devices WHERE id=?1 AND revoked=0)",
+                [device_id],
+                |row| row.get(0),
+            )
+            .map_err(repo_error)?;
+        if !active {
+            return Err(RepositoryError::Conflict);
+        }
+        self.execute(
+            "INSERT INTO orbit_capability_executors (device_id,capability_id,announced_at_ms)
+             VALUES (?1,?2,?3)
+             ON CONFLICT(device_id,capability_id) DO UPDATE SET announced_at_ms=?3",
+            params![device_id, capability_id, at_ms],
+        )
+        .map_err(repo_error)?;
+        self.query_row(
+            "SELECT device_id,capability_id,announced_at_ms FROM orbit_capability_executors
+             WHERE device_id=?1 AND capability_id=?2",
+            params![device_id, capability_id],
+            capability_executor_from_row,
+        )
+        .map_err(repo_error)
+    }
+
+    /// The roster of announcements held by devices that are still active,
+    /// ordered by device then capability. A revoked device's row stays durable
+    /// but is not reported, because it can no longer claim anything.
+    pub fn capability_executor_announcements(
+        &self,
+    ) -> Result<Vec<CapabilityExecutorAnnouncement>, RepositoryError> {
+        let mut statement = self
+            .prepare(
+                "SELECT e.device_id,e.capability_id,e.announced_at_ms
+                 FROM orbit_capability_executors e
+                 JOIN devices d ON d.id=e.device_id AND d.revoked=0
+                 ORDER BY e.device_id, e.capability_id",
+            )
+            .map_err(repo_error)?;
+        let rows = statement
+            .query_map([], capability_executor_from_row)
+            .map_err(repo_error)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(repo_error)
+    }
+
+    pub fn capability_executor_announcements_for(
+        &self,
+        capability_id: &str,
+    ) -> Result<Vec<CapabilityExecutorAnnouncement>, RepositoryError> {
+        let mut statement = self
+            .prepare(
+                "SELECT e.device_id,e.capability_id,e.announced_at_ms
+                 FROM orbit_capability_executors e
+                 JOIN devices d ON d.id=e.device_id AND d.revoked=0
+                 WHERE e.capability_id=?1
+                 ORDER BY e.device_id",
+            )
+            .map_err(repo_error)?;
+        let rows = statement
+            .query_map([capability_id], capability_executor_from_row)
+            .map_err(repo_error)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(repo_error)
+    }
+
+    /// Every capability announced by at least one active device.
+    pub fn announced_capability_ids(&self) -> Result<BTreeSet<String>, RepositoryError> {
+        Ok(self
+            .capability_executor_announcements()?
+            .into_iter()
+            .map(|announcement| announcement.capability_id)
+            .collect())
+    }
+
+    /// Whether this exact active device announced this exact capability.
+    pub fn capability_announced(
+        &self,
+        device_id: &str,
+        capability_id: &str,
+    ) -> Result<bool, RepositoryError> {
+        self.query_row(
+            "SELECT EXISTS(SELECT 1 FROM orbit_capability_executors e
+                 JOIN devices d ON d.id=e.device_id AND d.revoked=0
+                 WHERE e.device_id=?1 AND e.capability_id=?2)",
+            params![device_id, capability_id],
+            |row| row.get(0),
         )
         .map_err(repo_error)
     }
@@ -466,6 +619,135 @@ impl SqliteStore {
         if request.state != "claimed" && request.state != "uncertain" {
             return Err(RepositoryError::Conflict);
         }
+        // The local authority path records its effect through the provider
+        // itself, so it never supplies an effect document here.
+        self.write_action_settlement(
+            &request,
+            Settlement {
+                outcome,
+                provider,
+                detail,
+                effect: None,
+                recorded_at_ms,
+                existing,
+            },
+        )
+    }
+
+    /// Record the outcome a connected executor reported for a claim it holds.
+    ///
+    /// This is the same single-savepoint write as [`Self::settle_blueprint_action`],
+    /// with two deliberate differences: an executor may report `uncertain`, and
+    /// the only state it may settle is its own `claimed` intent. An explicit
+    /// reconcile stays the sole way *out* of `uncertain`, so an ambiguous
+    /// external effect is never retried or silently confirmed by the reporter.
+    ///
+    /// `effect` is the capability's declared, validated durable effect. When it
+    /// is present it is written **inside the same savepoint** as the receipt and
+    /// the state transition, so the authority can never record one without the
+    /// other.
+    pub fn report_blueprint_action_result(
+        &mut self,
+        command_id: &str,
+        outcome: &str,
+        provider: &str,
+        detail: &Value,
+        effect: Option<&CapabilityEffectRecord<'_>>,
+        recorded_at_ms: i64,
+    ) -> Result<CapabilityReceipt, RepositoryError> {
+        if !matches!(outcome, "succeeded" | "failed" | "uncertain")
+            || !detail.is_object()
+            || !valid_command_id(command_id)
+            || !valid_ident(provider)
+            || recorded_at_ms < 0
+        {
+            return Err(RepositoryError::Conflict);
+        }
+        let request = self
+            .blueprint_action_request(command_id)?
+            .ok_or(RepositoryError::Conflict)?;
+        if request.state == "pending" {
+            return Err(RepositoryError::Conflict);
+        }
+        // A described effect must still target this request's own item. The
+        // runtime already refused a mismatch; this is the writer's own fence.
+        if let Some(effect) = effect
+            && (!valid_ident(effect.kind) || effect.item_id != request.item_id)
+        {
+            return Err(RepositoryError::Conflict);
+        }
+        let existing = self.capability_receipt(command_id)?;
+        if let Some(receipt) = &existing {
+            if receipt.item_id != request.item_id
+                || receipt.capability != request.capability
+                || receipt.action_id != request.action_id
+                || receipt.provider != provider
+            {
+                return Err(RepositoryError::Conflict);
+            }
+            // Replaying the same outcome returns the original receipt, including
+            // an `uncertain` one; the reporter never rewrites a settled outcome.
+            if request.state == outcome {
+                if receipt.outcome == outcome {
+                    if let Some(effect) = effect {
+                        // The detail carries the effect statement, so an identical
+                        // statement replaying is a no-op; a different one cannot
+                        // be applied over a settled row.
+                        let stored = self
+                            .reference_work_item_note(command_id)?
+                            .ok_or(RepositoryError::Conflict)?;
+                        if stored.item_id != effect.item_id
+                            || stored.note != effect.note
+                            || stored.tag.as_deref() != effect.tag
+                        {
+                            return Err(RepositoryError::Conflict);
+                        }
+                    }
+                    return Ok(receipt.clone());
+                }
+                return Err(RepositoryError::Conflict);
+            }
+            if receipt.outcome != "uncertain" {
+                return Err(RepositoryError::Conflict);
+            }
+        } else if request.state == outcome {
+            return Err(RepositoryError::Conflict);
+        }
+        // Only a live claim may be settled by the executor path. A different
+        // outcome for an already resolved intent is not a correction.
+        if request.state != "claimed" {
+            return Err(RepositoryError::Conflict);
+        }
+        self.write_action_settlement(
+            &request,
+            Settlement {
+                outcome,
+                provider,
+                detail,
+                effect,
+                recorded_at_ms,
+                existing,
+            },
+        )
+    }
+
+    /// Write the receipt, the request state and (when declared) the durable
+    /// effect in one savepoint. A settled request without its receipt, or an
+    /// effect without the receipt that states it, is exactly what this prevents.
+    fn write_action_settlement(
+        &mut self,
+        request: &BlueprintActionRequest,
+        settlement: Settlement<'_>,
+    ) -> Result<CapabilityReceipt, RepositoryError> {
+        let Settlement {
+            outcome,
+            provider,
+            detail,
+            effect,
+            recorded_at_ms,
+            existing,
+        } = settlement;
+        let command_id = request.command_id.as_str();
         let serialized = serde_json::to_string(detail)
             .map_err(|error| RepositoryError::Other(error.to_string()))?;
         self.execute_batch("SAVEPOINT orbit_blueprint_action_settle")
@@ -513,6 +795,13 @@ impl SqliteStore {
                 .map_err(repo_error)?;
             if changed != 1 {
                 return Err(RepositoryError::Conflict);
+            }
+            // The declared effect lives in the same savepoint as the receipt and
+            // the state: `command_id` is the effect table's primary key, so one
+            // command id can never own two notes, and a differing payload for an
+            // existing row is a conflict rather than an overwrite.
+            if let Some(effect) = effect {
+                self.write_settlement_effect(command_id, effect, recorded_at_ms)?;
             }
             self.capability_receipt(command_id)?
                 .ok_or(RepositoryError::Conflict)
@@ -595,6 +884,52 @@ impl SqliteStore {
             })
             .map_err(repo_error)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(repo_error)
+    }
+
+    /// Write one declared effect inside the settlement savepoint.
+    ///
+    /// `orbit_reference_work_item_notes.command_id` is the primary key, so the
+    /// schema itself makes a second note for one command id impossible; the
+    /// `INSERT OR IGNORE` plus the read-back comparison turns a differing
+    /// payload into a conflict instead of an overwrite. The caller has already
+    /// validated the payload against the capability's compile-time declaration.
+    fn write_settlement_effect(
+        &mut self,
+        command_id: &str,
+        effect: &CapabilityEffectRecord<'_>,
+        created_at_ms: i64,
+    ) -> Result<ReferenceWorkItemNote, RepositoryError> {
+        if effect.note.trim().is_empty() || effect.note.chars().count() > 2_000 {
+            return Err(RepositoryError::Conflict);
+        }
+        if let Some(tag) = effect.tag
+            && (tag.trim().is_empty() || tag.chars().count() > 256)
+        {
+            return Err(RepositoryError::Conflict);
+        }
+        self.execute(
+            "INSERT OR IGNORE INTO orbit_reference_work_item_notes
+             (command_id,item_id,note,tag,created_at_ms) VALUES (?1,?2,?3,?4,?5)",
+            params![
+                command_id,
+                effect.item_id,
+                effect.note,
+                effect.tag,
+                created_at_ms
+            ],
+        )
+        .map_err(repo_error)?;
+        let stored = self
+            .reference_work_item_note(command_id)?
+            .ok_or(RepositoryError::Conflict)?;
+        if stored.item_id == effect.item_id
+            && stored.note == effect.note
+            && stored.tag.as_deref() == effect.tag
+        {
+            Ok(stored)
+        } else {
+            Err(RepositoryError::Conflict)
+        }
     }
 
     /// Durable effect of the trusted reference capability. The command ID is the
@@ -731,6 +1066,16 @@ fn reference_note_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Referenc
         note: row.get(2)?,
         tag: row.get(3)?,
         created_at_ms: row.get(4)?,
+    })
+}
+
+fn capability_executor_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<CapabilityExecutorAnnouncement> {
+    Ok(CapabilityExecutorAnnouncement {
+        device_id: row.get(0)?,
+        capability_id: row.get(1)?,
+        announced_at_ms: row.get(2)?,
     })
 }
 
@@ -1151,6 +1496,98 @@ mod settlement_tests {
     }
 
     #[test]
+    fn an_executor_result_settles_claimed_to_uncertain_atomically() {
+        let mut store = store_with_items();
+        request_row(&mut store, "action-executor", 0);
+        store.claim_blueprint_action("action-executor").unwrap();
+        let reported = json!({"state": "uncertain", "detail": "lost", "reported_by": "exec-1"});
+        let receipt = store
+            .report_blueprint_action_result(
+                "action-executor",
+                "uncertain",
+                "orbit",
+                &reported,
+                None,
+                10,
+            )
+            .unwrap();
+        assert_eq!(receipt.outcome, "uncertain");
+        assert_eq!(receipt.detail, reported);
+        assert_eq!(
+            store
+                .blueprint_action_request("action-executor")
+                .unwrap()
+                .unwrap()
+                .state,
+            "uncertain",
+            "the state and the receipt commit together"
+        );
+        // Replaying the same outcome returns the original receipt; a different
+        // outcome on a settled intent is refused.
+        assert_eq!(
+            store
+                .report_blueprint_action_result(
+                    "action-executor",
+                    "uncertain",
+                    "orbit",
+                    &reported,
+                    None,
+                    99
+                )
+                .unwrap(),
+            receipt
+        );
+        assert_eq!(
+            store.report_blueprint_action_result(
+                "action-executor",
+                "succeeded",
+                "orbit",
+                &reported,
+                None,
+                99
+            ),
+            Err(RepositoryError::Conflict)
+        );
+        // A pending intent never had an executor outcome to report.
+        request_row(&mut store, "action-pending-executor", 1);
+        assert_eq!(
+            store.report_blueprint_action_result(
+                "action-pending-executor",
+                "failed",
+                "orbit",
+                &reported,
+                None,
+                10
+            ),
+            Err(RepositoryError::Conflict)
+        );
+        // An `uncertain` receipt is still only resolvable by an explicit
+        // reconcile; the executor path cannot confirm it.
+        assert!(
+            store
+                .report_blueprint_action_result(
+                    "action-executor",
+                    "succeeded",
+                    "orbit",
+                    &reported,
+                    None,
+                    99
+                )
+                .is_err()
+        );
+        let reconciled = store
+            .settle_blueprint_action(
+                "action-executor",
+                "succeeded",
+                "orbit",
+                &detail("operator", "uncertain"),
+                100,
+            )
+            .unwrap();
+        assert_eq!(reconciled.outcome, "succeeded");
+    }
+
+    #[test]
     fn pending_settled_and_disagreeing_requests_are_refused() {
         let mut store = store_with_items();
         // Pending: never executed, so it cannot be settled.
@@ -1246,5 +1683,136 @@ mod settlement_tests {
             ),
             Err(RepositoryError::Conflict)
         );
+    }
+
+    fn effect<'a>(
+        item_id: &'a str,
+        note: &'a str,
+        tag: Option<&'a str>,
+    ) -> CapabilityEffectRecord<'a> {
+        CapabilityEffectRecord {
+            kind: "work_item_note",
+            item_id,
+            note,
+            tag,
+        }
+    }
+
+    #[test]
+    fn a_declared_effect_is_written_in_the_settlement_savepoint_exactly_once() {
+        let mut store = store_with_items();
+        request_row(&mut store, "action-effect", 0);
+        store.claim_blueprint_action("action-effect").unwrap();
+        let reported = json!({"state": "succeeded", "effect": {"applied": true}});
+        let receipt = store
+            .report_blueprint_action_result(
+                "action-effect",
+                "succeeded",
+                "orbit",
+                &reported,
+                Some(&effect("item-1", "hello", Some("demo"))),
+                70,
+            )
+            .unwrap();
+        assert_eq!(receipt.outcome, "succeeded");
+        // Receipt, state and effect all exist because one savepoint committed.
+        let stored = store
+            .reference_work_item_note("action-effect")
+            .unwrap()
+            .expect("note");
+        assert_eq!(stored.item_id, "item-1");
+        assert_eq!(stored.note, "hello");
+        assert_eq!(stored.tag.as_deref(), Some("demo"));
+        assert_eq!(stored.created_at_ms, 70);
+        assert_eq!(store.reference_work_item_note_count("item-1").unwrap(), 1);
+
+        // The identical report replays; a different payload for the same command
+        // id is a conflict, never an overwrite and never a second row.
+        assert_eq!(
+            store
+                .report_blueprint_action_result(
+                    "action-effect",
+                    "succeeded",
+                    "orbit",
+                    &reported,
+                    Some(&effect("item-1", "hello", Some("demo"))),
+                    99,
+                )
+                .unwrap(),
+            receipt
+        );
+        assert_eq!(
+            store.report_blueprint_action_result(
+                "action-effect",
+                "succeeded",
+                "orbit",
+                &reported,
+                Some(&effect("item-1", "another", None)),
+                99,
+            ),
+            Err(RepositoryError::Conflict)
+        );
+        assert_eq!(store.reference_work_item_note_count("item-1").unwrap(), 1);
+    }
+
+    #[test]
+    fn an_effect_for_another_item_is_refused_without_settling_anything() {
+        let mut store = store_with_items();
+        request_row(&mut store, "action-mismatch", 0);
+        store.claim_blueprint_action("action-mismatch").unwrap();
+        let reported = json!({"state": "succeeded"});
+        assert_eq!(
+            store.report_blueprint_action_result(
+                "action-mismatch",
+                "succeeded",
+                "orbit",
+                &reported,
+                Some(&effect("item-2", "hello", None)),
+                70,
+            ),
+            Err(RepositoryError::Conflict)
+        );
+        // Nothing partially applied: no note, no receipt, still claimed.
+        assert_eq!(store.reference_work_item_note_count("item-2").unwrap(), 0);
+        assert!(
+            store
+                .capability_receipt("action-mismatch")
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .blueprint_action_request("action-mismatch")
+                .unwrap()
+                .unwrap()
+                .state,
+            "claimed"
+        );
+        // An empty or over-long payload is refused by the writer even before the
+        // savepoint, so an unvalidated caller cannot smuggle one in.
+        assert_eq!(
+            store.report_blueprint_action_result(
+                "action-mismatch",
+                "succeeded",
+                "orbit",
+                &reported,
+                Some(&effect("item-1", "  ", None)),
+                70,
+            ),
+            Err(RepositoryError::Conflict)
+        );
+        let long = "x".repeat(2_001);
+        assert_eq!(
+            store.report_blueprint_action_result(
+                "action-mismatch",
+                "succeeded",
+                "orbit",
+                &reported,
+                Some(&effect("item-1", &long, None)),
+                70,
+            ),
+            Err(RepositoryError::Conflict)
+        );
+        assert_eq!(store.reference_work_item_note_count("item-1").unwrap(), 0);
     }
 }

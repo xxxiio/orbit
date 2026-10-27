@@ -5,96 +5,103 @@ template_digest: "179af91e65608fbfd07b28126ed729856e6524410956892a698b3f40e902e6
 project_owned: true
 record_contract: current-task
 record_schema_version: 1
-id: TASK-0012
+id: TASK-0013
 status: completed
 milestone_id: MILESTONE-0032
 ---
 
-# Task: M32 I3 — browser-authorized agent execution
+# Task: M32 I4 — connected Workflow Capability execution
 
 ## Objective
 
-Let a person start an authorized agent job for a task from the browser, watch it,
-read its evidence, review its handoff, and get back to the task — without making
-an external agent mandatory and without the server running anything on the
-browser's behalf.
+Let a trusted Workflow Capability be requested from the browser and executed by a
+separately enrolled executor through the authoritative server — with project
+grants, revision fencing, durable request identity, a single execution claim,
+idempotency, durable receipts and explicit reconciliation — while the browser and
+the server both remain incapable of executing provider code.
 
 ## Current behaviour
 
-The browser can inspect jobs, overview, attention, handoffs, review and resume
-context, and can already submit a review or resume a finished job. It cannot start
-one: `startAgentJob` exists in the API layer with no caller, there is no executor
-read, no objective field, and a job whose executor never claims it is invisible —
-`overview.next_action` reports `none` for `queued`/`preparing`, so a stuck launch
-looks like "nothing to do". Every start refusal is also collapsed into one opaque
-400, and an unknown `machine_ref` silently creates a job nothing will claim.
+Capability install, project grant, offer discovery, fenced request, single claim,
+receipts and reconciliation exist for the **local** authority only. Connected
+mode refuses capability execution by design, the server has no capability route,
+`POST blueprints` cannot publish a manifest that declares `required_capabilities`
+(it passes an empty installed set), the browser sheet states "this server exposes
+no capability status" and offers no run control, and local execution writes the
+provider effect, the request state and the receipt in three separate steps, which
+can leave a settled request with no receipt.
 
 ## Desired behaviour
 
-An eligible task offers **Start agent job**: the person picks a real enrolled
-executor, writes an objective, confirms that this queues work for an executor,
-and lands on the job page showing `preparing` and whether anyone has claimed it.
-No executor configured is a named disabled state, not a failure. The job page
-distinguishes not-claimed, claimed, confirmed and ambiguous, refuses to offer a
-retry on an ambiguous launch, and never claims that approval completes the task.
-Refusals quote the server.
+An operator can install a catalog capability and grant it to a project; a
+capability-bearing workflow can be published and bound; the browser lists offered
+actions with their availability code, supplies typed inputs, confirms an effectful
+action, requests execution and then watches `pending → claimed → succeeded/failed`
+with an immutable receipt, or settles an `uncertain` outcome explicitly. The
+executor is an active enrolled device that announced the capability, claims the
+request through the server, runs the provider in its own process and reports the
+outcome. The server never loads provider code, a workflow definition never grants
+execution, an uncertain outcome is never retried automatically, and a claim
+survives restart.
 
 ## Scope
 
-- `GET agent-executors` (owner-scoped, honest empty list) and start validation of
-  an unknown or inactive executor.
-- Preserved refusal text for start/reserve/resume and the machine routes.
-- `claim_state` on the job view and `next_action: await_executor`.
-- Optional launch objective, stored in the brief, inherited by resume, threaded
-  into the Herdr prompt only when present.
-- Client launch surface, executor state, pinned attempt, job/overview honesty,
-  unit tests.
-- Playwright acceptance with a deterministic in-process fake executor.
+- Contract-only capability catalog split out of the trusted composition.
+- Executor enrollment (announce + roster) and executor-only claim/result routes.
+- Capability status, offers, request, show/list, reconcile, install/authorize/
+  revoke routes with code-preserving refusals.
+- Atomic request-state + receipt settlement on the connected path.
+- Publication of a capability-bearing workflow against durable installs.
+- A connected executor runner and connected read/request parity in the CLI.
+- Browser capability panel: availability, typed inputs, confirmation, states,
+  receipt, reconcile.
+- Rust, CLI and browser acceptance with the runner as the executor.
 
 ## Out of scope
 
-- A machine registry, leases or grants that let one device dispatch to a device it
-  does not authenticate as; a real model/Herdr run in the browser path.
-- Changing the state machine, owner scoping, machine fencing, review/resume
-  semantics or the "no task writes" invariant.
-- Connected capability execution (I4), dogfooding (I5), final acceptance (I6),
-  any TUI change.
+- Loading provider code or running it in `orbit-server` or the browser; a plugin
+  marketplace; a machine registry beyond device enrollment/announcement.
+- Changing local-authority capability behaviour or its tests.
+- Remote agent execution (already covered by I3), dogfooding (I5), final
+  acceptance and TUI redesign (I6).
 
 ## Dependencies
 
-- Existing agent storage/runtime lifecycle, owner and machine principals.
-- The e2e fixture's machine driver recipe (`machine_ref == device id`).
+- M30 capability storage/runtime and the M25 blueprint authority gates.
+- Device authentication and revocation (executor identity).
+- The M32 I3 executor-enrollment precedent (`agent-executors`).
 
 ## Risks
 
-- An unknown executor that silently creates a `preparing` job is indistinguishable
-  from a slow one; validation must happen before the job transaction.
-- Preserving storage refusal text must not leak SQL or paths.
-- The objective must not enter shell argv.
-- The browser must never call `agent-machines/*` from product code, and an
-  ambiguous claim must never be relaunched.
+- A server handler that claims and then executes would silently make the server the
+  executor; the trust boundary is the primary risk of this iteration.
+- Three-step local settlement can lose a receipt; the connected path must settle
+  atomically.
+- A claim reset on restart would duplicate effects; claims must persist.
+- Accepting capabilities from a request body would let a workflow or a client grant
+  itself execution.
 
 ## Acceptance criteria
 
-- [x] AC-001: An eligible task can launch an authorized job from the browser with
-  a real executor and an objective, and the resulting job is visible with its
-  state and claim state.
-- [x] AC-002: No executor configured is a named disabled state; an unknown or
-  inactive executor is refused before any job exists.
-- [x] AC-003: Refusals are the server's own words, and a retry reuses the same
-  launch identity.
-- [x] AC-004: The job page distinguishes claim states, never offers a retry on an
-  ambiguous launch, and a completed job never marks the task done.
-- [x] AC-005: Rust, client and Playwright gates pass against a real server,
-  including a full launch → observe → handoff → review cycle with a deterministic
-  fake executor.
+- [x] AC-001: A catalog capability can be installed, granted to a project and
+  published in a workflow, with unknown/unauthorized refusals.
+- [x] AC-002: The browser lists offers with availability codes, submits typed
+  inputs with confirmation, and shows pending/claimed/succeeded/failed/uncertain
+  with an immutable receipt.
+- [x] AC-003: An enrolled executor claims and executes outside the server; a second
+  claim and a result from another executor are refused; claims survive restart.
+- [x] AC-004: Reconciliation settles claimed/uncertain explicitly, refuses pending,
+  and records the actor; the same identity replays without a duplicate effect.
+- [x] AC-005: Rust, CLI, client and browser gates pass, and the full
+  install → grant → publish → request → claim → execute → receipt → restart →
+  retry cycle is proven against a real server.
 
 ## Validation
 
 ```sh
 cargo fmt --all -- --check
-cargo test -p orbit-runtime -p orbit-server -p orbit-storage --offline
-cargo clippy -p orbit-runtime -p orbit-server -p orbit-storage --all-targets --offline -- -D warnings
+cargo test -p orbit-runtime -p orbit-server -p orbit-storage -p orbit-blueprint -p orbit-cli --offline
+cargo clippy -p orbit-runtime -p orbit-server -p orbit-storage -p orbit-cli --all-targets --offline -- -D warnings
 cd web && node node_modules/typescript/bin/tsc --noEmit
 cd web && node node_modules/vitest/vitest.mjs run
 cd web && node scripts/check-terminology.mjs
