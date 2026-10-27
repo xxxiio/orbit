@@ -10,6 +10,7 @@
 import type { SchedulePlanView } from '@/api/adapters'
 import type { PlanningDisposition } from '@/api/contracts'
 import type { ScheduleApprovalRequest } from '@/api/contracts'
+import { errorInfo } from '@/api/errors'
 import type { BadgeTone } from '@/components/ui/badge'
 
 export const DISPOSITION_LABELS: Record<PlanningDisposition, string> = {
@@ -152,4 +153,103 @@ export function formatDuration(minutes: number | null | undefined): string {
   const hours = Math.floor(minutes / 60)
   const rest = minutes % 60
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`
+}
+
+/* ------------------------------------------------------------------ */
+/* Failed review copy                                                  */
+/* ------------------------------------------------------------------ */
+
+export interface PlanningFailureCopy {
+  /** One sentence: what happened, naming the task when the server named one. */
+  title: string
+  /** The server's (or the browser's) own sentence, quoted; `null` when none. */
+  detail: string | null
+  /** What the person can do next. */
+  nextStep: string
+}
+
+/**
+ * True when `message` names `id` as a whole token, not as part of a longer id.
+ *
+ * Ids shorter than three characters are never inferred from prose: a task called
+ * `a` would otherwise be "named" by the word "a" in any sentence.
+ */
+function mentionsIdentifier(message: string, id: string): boolean {
+  if (id.length < 3) return false
+  let from = message.indexOf(id)
+  while (from !== -1) {
+    const before = from === 0 ? '' : message[from - 1]
+    const after = message[from + id.length] ?? ''
+    const boundedBefore = before === '' || !/[A-Za-z0-9_-]/.test(before)
+    const boundedAfter = after === '' || !/[A-Za-z0-9_-]/.test(after)
+    if (boundedBefore && boundedAfter) return true
+    from = message.indexOf(id, from + 1)
+  }
+  return false
+}
+
+/**
+ * Copy for a review that failed.
+ *
+ * The planning surface shows "Review failed" followed by whatever the server
+ * said, which for a validation refusal used to be one internal sentence with no
+ * task and no next step. This names the task when the server's own message names
+ * one, keeps the server's sentence as a secondary quote, and always says what to
+ * change — truthfully, without inventing a task the server did not name.
+ *
+ * The window/deadline advice is the honest one for a scheduling refusal: the two
+ * things a person can change are the window they asked for and a task's deadline.
+ */
+export function planningFailureCopy(
+  error: unknown,
+  taskTitles: ReadonlyMap<string, string>,
+): PlanningFailureCopy {
+  const info = errorInfo(error)
+  const serverSays = info.serverMessage
+
+  if (info.kind === 'offline') {
+    return {
+      title: 'Orbit could not reach the server to review this plan.',
+      detail: null,
+      nextStep: 'Check the connection, then review this plan again.',
+    }
+  }
+
+  // A refusal this browser made before sending anything is not the server's
+  // sentence, so it must not be quoted as one.
+  if (info.status === 0 && info.kind === 'validation') {
+    return {
+      title: info.userMessage,
+      detail: null,
+      nextStep: 'Nothing was sent, so the plan on screen is unchanged.',
+    }
+  }
+
+  const named = serverSays
+    ? [...taskTitles.entries()].find(([id]) => mentionsIdentifier(serverSays, id))
+    : undefined
+
+  if (named) {
+    const [id, title] = named
+    return {
+      title: `The server refused to review this plan because of “${title}” (${id}).`,
+      detail: serverSays,
+      nextStep: 'Adjust the planning window or that task’s deadline, then review this plan again.',
+    }
+  }
+
+  if (info.kind === 'conflict') {
+    return {
+      title: 'The accepted workspace changed while this plan was being reviewed.',
+      detail: serverSays,
+      nextStep: 'Reload the planning surface, then build and review the plan again.',
+    }
+  }
+
+  return {
+    title: 'The server refused to review this plan.',
+    detail: serverSays,
+    nextStep:
+      'Adjust the planning window or a task’s deadline in it, then review this plan again. The server did not name which task blocked it.',
+  }
 }

@@ -557,6 +557,52 @@ export function validateReconcile(
 }
 
 /* ------------------------------------------------------------------ */
+/* Requests already recorded for one action                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The request already recorded for one action on one item revision.
+ *
+ * The server records an action once per item revision: a second request for the
+ * same `(item, revision, action)` is refused as `capability request conflict`,
+ * whatever state the first one settled into. The panel therefore shows the
+ * recorded request instead of offering the action again — the availability read
+ * is the server's own answer and stays untouched.
+ */
+export function requestForActionRevision(
+  requests: CapabilityRequest[] | undefined,
+  actionId: string,
+  itemRevision: number,
+): CapabilityRequest | undefined {
+  const recorded = requests ?? []
+  for (let index = recorded.length - 1; index >= 0; index -= 1) {
+    const request = recorded[index]
+    if (request.actionId === actionId && request.itemRevision === itemRevision) return request
+  }
+  return undefined
+}
+
+export interface RecordedActionCopy {
+  /** What the recorded request means for this control, in one sentence. */
+  title: string
+  /** The state it reads, and why there is no second request to make. */
+  description: string
+}
+
+/**
+ * What to say instead of a request control once this action is already recorded
+ * for this item revision. The state comes from the history read, so the copy
+ * never claims more than the server said.
+ */
+export function recordedActionCopy(request: CapabilityRequest): RecordedActionCopy {
+  const state = requestStateCopy(request).label
+  return {
+    title: `This action is already requested for item revision ${request.itemRevision}.`,
+    description: `It reads ${state}. One action is requested once per item revision, so there is no second request to make here; a later revision of this item can be requested again. The request history below has the record and its receipt.`,
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Status summaries                                                    */
 /* ------------------------------------------------------------------ */
 

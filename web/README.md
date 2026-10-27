@@ -21,6 +21,24 @@ npm ci
 npm run dev
 ```
 
+If `npm` on `PATH` is the Windows build (the usual case inside WSL), `npm ci` fails at the
+first package `postinstall` with `UNC paths are not supported`, because Windows `cmd.exe`
+refuses a WSL path as its working directory. Two documented workarounds:
+
+```bash
+# 1. the reliable one: install a native Linux node/npm (nvm, distro package) and use that
+# 2. without one, skip scripts and ask for the host platform, then restore the exec bit
+npm ci --ignore-scripts --os=linux --cpu=x64
+chmod +x node_modules/@esbuild/linux-x64/bin/esbuild
+```
+
+Option 2 was measured on this repository: 291 packages, a clean `tsc --noEmit` and a `vite build`
+whose 16 emitted files are byte-identical to the committed `dist` build
+(`.slim/deepwork/m32-web-completeness/i6-install.md` records the commands and output). It is not
+equivalent to a normal install: esbuild's `postinstall` never runs, so the `chmod` is not optional.
+`npm run build` and the other `package.json` scripts have the same Windows-shim problem; run the
+two underlying commands instead, as `docs/web-app.md` does.
+
 The dev server runs at `http://127.0.0.1:5173` and proxies `/v1` to
 `http://127.0.0.1:8787`, where `orbit-server` listens by default. Override the proxy target
 with `ORBIT_API_PROXY` if the server runs elsewhere.
@@ -215,15 +233,23 @@ fabricated data.
 
 ## What is intentionally not here yet
 
-- Capability execution: the work-item sheet lists declared actions and says the local Orbit
-  authority owns execution, because this server exposes no execution route.
-- Starting an agent job. Knowledge, Attachments and Agents ship as read/write screens, but a job
-  is started by an executor or the command line; the browser only reviews a handoff and resumes a
-  finished job into the queue.
-- Project rename: a project cannot yet be named after the work it holds (the settings screen says
-  so twice).
-- Task created/updated timestamps in the drawer. Accessories show absolute dates; tasks show
-  relative freshness only.
-- Search across projects: the vault has its own search and the palette navigates or creates a
-  task; there is no cross-project task/note search yet.
-- Saved views: list/board filters live in the URL, and only `orbit.theme` is persisted.
+- Capability administration: `capabilities/install`, `authorize` and `revoke` are operator routes.
+  The Work Item sheet shows the server's capabilities, requests an offered action and reconciles a
+  settled one, but nothing here installs or grants a capability, and nothing here runs one — an
+  enrolled executor process claims and reports it.
+- Executor enrollment and revocation. The Agents page reads the executor roster, queues a launch,
+  reviews a handoff and resumes a finished job; a device is enrolled with the operator's admin key.
+- Project archive and deletion. Rename and status moves are part of Settings; a project cannot be
+  archived or deleted from the browser.
+- Note or folder deletion, note kinds and statuses, work-item references. Folders and notes can be
+  created, renamed and moved; the reference grammar covers projects and tasks.
+- Relative in-app Markdown links. Only absolute `http(s)` links and the `orbit://project:` /
+  `orbit://task:` references are rendered.
+- Drag-and-drop on the board, habit tracking and metric-history charts, workload/portfolio screens,
+  and workflow authoring or publishing.
+- Offline use, background sync, or a browser-side command queue.
+
+Shipped in M32 and *not* on this list any more: unified search across projects, tasks and knowledge;
+saved views; project rename and status moves; task Created/Updated; agent launch, review and resume;
+and connected Workflow Capability execution. Those are documented in `docs/web-app.md`.
+

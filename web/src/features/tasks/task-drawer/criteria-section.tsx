@@ -47,7 +47,10 @@ export function CriteriaSection({
     setAdding(true)
     const accepted = await onAdd(text)
     setAdding(false)
-    if (accepted) setNewText('')
+    // Clear only the text that was submitted. A person can start typing the
+    // next criterion while this one is still being stored; that draft must not
+    // be wiped by the previous add completing.
+    if (accepted && newTextRef.current.trim() === text) setNewText('')
   }, [onAdd])
   const addRef = useRef(add)
   addRef.current = add

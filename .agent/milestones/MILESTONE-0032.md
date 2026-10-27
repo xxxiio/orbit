@@ -6,7 +6,7 @@ project_owned: true
 record_contract: milestone-plan
 record_schema_version: 1
 id: MILESTONE-0032
-status: active
+status: completed
 ---
 
 # Milestone: Web Product Completeness, Agent Workflows & Extended Dogfooding
@@ -155,17 +155,17 @@ workflows instead of speculation. The TUI stays unchanged in M32.
   installed, granted, discovered, requested with typed inputs and executed
   through the authoritative server, with durable receipts, retry-safe
   idempotency and explicit uncertain-outcome reconciliation.
-- [ ] EC-008: Orbit Development work is managed through the browser across
+- [x] EC-008: Orbit Development work is managed through the browser across
   repeated sessions on a persistent workspace, with recorded defects, friction
   and layer-correct fixes plus regression coverage.
-- [ ] EC-009: Every new operation has real-browser acceptance against an
+- [x] EC-009: Every new operation has real-browser acceptance against an
   isolated authoritative server, including conflicts, restarts, authorization
   and empty/error states.
-- [ ] EC-010: A clean frontend installation is reproducible in a supported
+- [x] EC-010: A clean frontend installation is reproducible in a supported
   environment (install, build, Rust build, launch, browser suite).
-- [ ] EC-011: User-visible vocabulary uses Workflow throughout, enforced by the
+- [x] EC-011: User-visible vocabulary uses Workflow throughout, enforced by the
   existing terminology check, and `docs/web-app.md` matches shipped behaviour.
-- [ ] EC-012: `docs/guides/tui-redesign-spec.md` reflects proven M31/M32
+- [x] EC-012: `docs/guides/tui-redesign-spec.md` reflects proven M31/M32
   browser usage and classifies each pattern as must-match, adapt,
   not-appropriate-in-terminal or requiring shared Rust services. No TUI
   redesign is implemented.
@@ -233,7 +233,38 @@ workflows instead of speculation. The TUI stays unchanged in M32.
   restart → idle, plus uninstalled/unauthorized/invalid-input/stale-revision/
   forged-body refusals, single claim, replay, and reconcile of `uncertain` and
   `claimed`.
-- EC-008 and EC-010..EC-012 stay open until their iteration lands.
+- EC-008: `.slim/deepwork/m32-web-completeness/i5-dogfood/` — nine sessions on one
+  persistent workspace (run 9 resumed run 8), 23 steps each, 23 captures with
+  captions, step JSON and a trace, plus `.agent/evidence/m32-i5-acceptance.md`.
+  Seven defects found and recorded; the four highest-impact fixed (plan review
+  refusing the server's own proposal, silent loss of an acceptance-criterion draft,
+  a settled capability request still offered, unreadable planning-failure copy) and
+  three low-severity ones left open with reasons. The run is labelled **automated
+  interactive dogfooding**, with what still needs a human operator listed.
+- EC-009: full real-browser suite against an isolated server per worker — 136
+  passed, 5 skipped (four opt-in capture specs and the opt-in dogfooding session),
+  0 failed — covering authentication, project identity and conflicts, search, saved
+  views across a restart, task metadata, knowledge folders/links/references,
+  agent launch/review/restart/foreign-job, capability
+  install/grant/publish/offer/request/claim/execute/receipt/effect/reconcile/
+  restart, plus responsive, keyboard and accessibility suites.
+- EC-010: `.agent/evidence/m32-i6-acceptance.md` and
+  `.slim/deepwork/m32-web-completeness/i6-install.md`. A lockfile-only directory
+  installs with `npm ci --ignore-scripts --os=linux --cpu=x64` (291 packages,
+  correct linux binaries; one `chmod +x` for esbuild), typechecks, builds, and its
+  `dist` is byte-identical to the checkout build (16 files). Plain `npm ci` fails
+  **on this host** because `PATH` resolves the Windows npm shim under WSL; there is
+  no native Linux npm here. That limitation is recorded, not worked around in the
+  tooling. The documented loop (server build, client build, launch, health, asset,
+  JSON 404, enroll, sign-in, session, browser spec) was run for real.
+- EC-011: terminology guard clean over 256 files; `tests/documentation` 39 passed;
+  `docs/web-app.md` updated through I4 (search, saved views, identity, knowledge,
+  agents, capabilities) and three stale claims corrected during I6.
+- EC-012: `docs/guides/tui-redesign-spec.md` rewritten (788 → 1330 lines) from
+  proven M31/M32 usage: 18 patterns (6 match, 3 adapt, 1 inappropriate, 8 need
+  shared Rust APIs) with two classification changes explained, named missing APIs,
+  A1–A23 acceptance with a "shared service today" column, and an explicit statement
+  that M32 implements no TUI change.
 
 ## Remaining work
 

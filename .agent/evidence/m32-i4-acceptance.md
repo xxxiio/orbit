@@ -11,7 +11,7 @@ lanes on disposable servers and are reproduced in their reports.
 | Command | Result |
 |---|---|
 | `cargo fmt --all -- --check` | clean |
-| `cargo test --workspace --offline` | 1,837 passed, 0 failed, 31 binaries |
+| `cargo test --workspace --offline` | 1,844 passed, 0 failed, 31 binaries |
 | `cargo test -p orbit-runtime -p orbit-server -p orbit-storage -p orbit-cli -p orbit-blueprint --offline` | runtime 635, server 62, storage 115, CLI 154, blueprint 23, contract 2 — all passed |
 | `cargo clippy -p orbit-runtime -p orbit-server -p orbit-storage -p orbit-cli -p orbit-blueprint --all-targets --offline -- -D warnings` | clean |
 | `cd web && node node_modules/typescript/bin/tsc --noEmit` | exit 0 |

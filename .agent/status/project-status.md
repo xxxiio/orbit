@@ -40,15 +40,15 @@ task/board views, and show authoritative task Created/Updated times with an
 explicit unknown state. Since I2 it manages knowledge as a working surface:
 folders, note locations, links, project/task references and project-context
 knowledge, and since I3 it can launch an authorized agent job against a real
-executor and review the result without the job ever completing the task. M32
-I5–I6 remain: extended dogfooding and final acceptance (including the TUI redesign
-specification). Per-device project ACLs, server attachment GC and live Herdr
+executor and review the result without the job ever completing the task. M32 is
+complete (I1–I6); the next milestone is the TUI redesign from
+`docs/guides/tui-redesign-spec.md`, which is not yet defined in the roadmap. Per-device project ACLs, server attachment GC and live Herdr
 acceptance remain documented follow-ups.
 
 ## Current milestone
 
 MILESTONE-0032 — M32 Web Product Completeness, Agent Workflows & Extended
-Dogfooding, active (I1–I4 complete). MILESTONE-0031 is complete (I1–I6). M31
+Dogfooding, complete (I1–I6). MILESTONE-0031 is complete (I1–I6). M31
 shipped the React client served by `orbit-server` with session authentication,
 Home, Inbox, project management, workflow-driven workspaces and a task inspector
 against the authoritative domain. MILESTONE-0030 is complete (I1–I4), and
@@ -56,6 +56,19 @@ MILESTONE-0025 EC-001..EC-007 remain satisfied. M27 remains blocked externally.
 
 ## Recently completed
 
+- M32 I5–I6 dogfooding and acceptance: nine automated interactive dogfooding
+  sessions ran on one persistent workspace, appending work each time instead of
+  resetting, and produced 23 captures plus a defects table. The blocker they found —
+  plan review refusing the plan the server itself proposed, because the planner
+  proposed tasks whose deadline had already passed — is fixed by one shared rule used
+  by proposal and approval, and the same session now applies its plan. Silent loss of
+  an acceptance-criterion draft, a settled capability request still offered, and
+  unreadable planning-failure copy were also fixed. A lockfile-only frontend install
+  builds byte-identically to the checkout (with a documented workaround for this
+  host's Windows npm shim), and the full loop was run end to end. The TUI redesign
+  specification was rewritten from proven M31/M32 behaviour: 18 patterns classified,
+  missing shared APIs named, and no TUI change implemented. 1,844 workspace tests,
+  393 client unit tests and 136 browser checks pass.
 - M32 I4 connected Workflow Capability execution: a contract-only capability
   catalog (no executors in the server), durable executor enrollment, and the full
   capability surface — status, offers with the durable availability vocabulary,

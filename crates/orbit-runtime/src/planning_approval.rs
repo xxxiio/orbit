@@ -242,6 +242,56 @@ pub struct ApprovedScheduleReceipt {
     pub schedule_block_ids: Vec<String>,
 }
 
+/// Why a submitted schedule failed validation, in the first failing rule's terms.
+///
+/// The approval gate's refusal is read by a person deciding whether to change the
+/// window or a task's deadline, so it says which rule failed instead of only that
+/// validation failed. The refusal text is fixed human copy (`AuthorityError::
+/// Invalid` carries `&'static str`); the offending task is named by the review
+/// surface from the plan it submitted.
+fn violation_message(violations: &[orbit_planner::PlanViolation]) -> &'static str {
+    use orbit_planner::PlanViolation;
+    match violations.first() {
+        Some(PlanViolation::UnknownTask(_)) => {
+            "approved schedule failed domain validation: a task is no longer in this workspace"
+        }
+        Some(PlanViolation::DuplicateTask(_)) => {
+            "approved schedule failed domain validation: a task appears twice"
+        }
+        Some(PlanViolation::TaskNotEligible(_)) => {
+            "approved schedule failed domain validation: a task is no longer in a status that can be planned"
+        }
+        Some(PlanViolation::MissingEstimate(_)) => {
+            "approved schedule failed domain validation: a task has no duration estimate"
+        }
+        Some(PlanViolation::DurationMismatch(_)) => {
+            "approved schedule failed domain validation: a block's length does not match its task's estimate"
+        }
+        Some(PlanViolation::OutsidePlanningWindow(_)) => {
+            "approved schedule failed domain validation: a block falls outside the planning window"
+        }
+        Some(PlanViolation::BeforeEarliestStart(_)) => {
+            "approved schedule failed domain validation: a block starts before its task's earliest start"
+        }
+        Some(PlanViolation::AfterDeadline(_)) => {
+            "approved schedule failed domain validation: a block would end after its task's deadline"
+        }
+        Some(PlanViolation::OverlapsExistingSchedule(_)) => {
+            "approved schedule failed domain validation: a block overlaps time already on the calendar"
+        }
+        Some(PlanViolation::ViolatesFixedBuffer(_)) => {
+            "approved schedule failed domain validation: a block uses the buffer around a fixed commitment"
+        }
+        Some(PlanViolation::OverlapsProposedTask(_)) => {
+            "approved schedule failed domain validation: two blocks in the plan overlap"
+        }
+        Some(PlanViolation::CapacityExceeded) => {
+            "approved schedule failed domain validation: the plan needs more time than the window has free"
+        }
+        None => "approved schedule failed domain validation",
+    }
+}
+
 fn build_command(
     host: &AuthoritativeHost,
     request: &ScheduleApprovalRequest,
@@ -332,7 +382,7 @@ fn build_command(
             unscheduled: vec![],
         },
     )
-    .map_err(|_| AuthorityError::Invalid("approved schedule failed domain validation"))?;
+    .map_err(|violations| AuthorityError::Invalid(violation_message(&violations)))?;
     Ok(ApplyValidatedPlanCommand {
         window,
         policy,
@@ -448,6 +498,136 @@ mod tests {
             }],
         }
     }
+    #[test]
+    fn a_task_whose_deadline_already_passed_can_still_be_reviewed() {
+        use crate::domain_commands::{TaskAction, TaskCommand};
+        let mut host = AuthoritativeHost::open(":memory:").expect("authority");
+        host.task_command(
+            "device-a",
+            TaskCommand {
+                command_id: "overdue-create".into(),
+                expected_revision: 0,
+                action: TaskAction::Create {
+                    task_id: "overdue-task".into(),
+                    title: "Overdue work".into(),
+                    project_id: None,
+                },
+            },
+        )
+        .expect("create");
+        // The deadline is already past when the window opens: no block inside
+        // the window can meet it, so it must not decide whether the window's own
+        // proposal is reviewable (D-01).
+        host.task_command(
+            "device-a",
+            TaskCommand {
+                command_id: "overdue-planning".into(),
+                expected_revision: 1,
+                action: TaskAction::SetPlanning {
+                    task_id: "overdue-task".into(),
+                    estimated_minutes: Some(30),
+                    earliest_start_at_ms: None,
+                    deadline_at_ms: Some(20_000_000),
+                },
+            },
+        )
+        .expect("planning");
+        host.task_command(
+            "device-a",
+            TaskCommand {
+                command_id: "overdue-ready".into(),
+                expected_revision: 2,
+                action: TaskAction::ChangeStatus {
+                    task_id: "overdue-task".into(),
+                    status: "ready".into(),
+                },
+            },
+        )
+        .expect("ready");
+
+        let plan = ScheduleApprovalRequest {
+            command_id: "overdue-review".into(),
+            expected_revision: 3,
+            window_start_ms: 200_000_000,
+            window_end_ms: 207_200_000,
+            items: vec![ScheduleApprovalItem {
+                task_id: "overdue-task".into(),
+                starts_at_ms: 200_000_000,
+                ends_at_ms: 201_800_000,
+                schedule_block_id: "scheduled-overdue-task".into(),
+                activity_id: "activity-overdue-task".into(),
+            }],
+        };
+
+        let review = host
+            .review_schedule_request("device-a", &plan)
+            .expect("a plan the server proposed must be reviewable");
+        assert_eq!(review.scheduled_tasks, vec!["overdue-task"]);
+    }
+
+    #[test]
+    fn a_deadline_still_ahead_still_refuses_a_late_block() {
+        use crate::domain_commands::{TaskAction, TaskCommand};
+        let mut host = AuthoritativeHost::open(":memory:").expect("authority");
+        host.task_command(
+            "device-a",
+            TaskCommand {
+                command_id: "ahead-create".into(),
+                expected_revision: 0,
+                action: TaskAction::Create {
+                    task_id: "ahead-task".into(),
+                    title: "Due soon".into(),
+                    project_id: None,
+                },
+            },
+        )
+        .expect("create");
+        // Ahead of the window start, so a block can still end in time.
+        host.task_command(
+            "device-a",
+            TaskCommand {
+                command_id: "ahead-planning".into(),
+                expected_revision: 1,
+                action: TaskAction::SetPlanning {
+                    task_id: "ahead-task".into(),
+                    estimated_minutes: Some(30),
+                    earliest_start_at_ms: None,
+                    deadline_at_ms: Some(200_500_000),
+                },
+            },
+        )
+        .expect("planning");
+        host.task_command(
+            "device-a",
+            TaskCommand {
+                command_id: "ahead-ready".into(),
+                expected_revision: 2,
+                action: TaskAction::ChangeStatus {
+                    task_id: "ahead-task".into(),
+                    status: "ready".into(),
+                },
+            },
+        )
+        .expect("ready");
+
+        let plan = ScheduleApprovalRequest {
+            command_id: "ahead-review".into(),
+            expected_revision: 3,
+            window_start_ms: 200_000_000,
+            window_end_ms: 207_200_000,
+            items: vec![ScheduleApprovalItem {
+                task_id: "ahead-task".into(),
+                starts_at_ms: 200_000_000,
+                ends_at_ms: 201_800_000,
+                schedule_block_id: "scheduled-ahead-task".into(),
+                activity_id: "activity-ahead-task".into(),
+            }],
+        };
+
+        assert!(host.review_schedule_request("device-a", &plan).is_err());
+        assert_eq!(host.snapshot().unwrap().0, 3);
+    }
+
     #[test]
     fn wire_review_has_no_calendar_side_effect() {
         let host = authority_with_ready_task();

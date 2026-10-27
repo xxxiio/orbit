@@ -3,7 +3,7 @@
 The Orbit web app is an optional browser client for a self-hosted `orbit-server`. It reads and
 writes the same authoritative state as the CLI and the terminal workspace, over the server's
 HTTP API, and adds no second data model and no local database. This page documents the build
-shipped in M32 I3: the app shell and sign-in, Home, Inbox, Projects, one search across projects,
+shipped through M32 I4: the app shell and sign-in, Home, Inbox, Projects, one search across projects,
 tasks and knowledge, workflow-driven project workspaces (task list, board, milestones, timeline,
 and the panels a workflow declares), saved views, Work Items, planning with an explicit approval
 gate, a knowledge vault with folders, note links and project/task references, attachments,
@@ -642,7 +642,7 @@ a command and never claims work on behalf of an executor.
   and an executor must claim the new job before it runs. An unconfirmed resume warns that a new
   job may already exist and to check the overview before retrying.
 
-## Workflow upgrades## Workflow upgrades
+## Workflow upgrades
 
 A project follows one published workflow version. **Settings → Workflow** compares the pinned
 version with a target and applies a change only through a reviewed, confirmed preview.
@@ -778,7 +778,7 @@ reachable from the sidebar; `g h` / `g i` / `g p` are the only letter shortcuts.
 | Activity text contains a raw task or milestone id | The server composes that summary sentence; the browser renders it verbatim. | Read the task title in the drawer header; this is a recorded server-side gap. |
 | A board move is refused | The server's lifecycle rules do not allow that status edge. | The message on the card names the refusal; choose another status. |
 | `That change conflicted with a newer version on the server` | Another device wrote first; your revision was stale. | Use **Reload this task and try again** in the drawer, then repeat the change. The refused change was not applied. |
-| A project stays **Proposed** | The API exposes no project-status transition, so no control can exist. | Treat the badge as stored state; this is a recorded gap, not a hidden menu. |
+| A project stays **Proposed** | Status moves only exist where the lifecycle allows them: `Proposed` leads to Active, Cancelled or Archived and to nothing else. | Use **Settings → Identity**; the status control lists exactly the moves the server reports. |
 | `/console` looks nothing like this guide | `/console` is the operator page, not the product UI. | Use `/` for the product; `/console` is for administrator tasks such as direct task creation, automations and proposals. |
 
 ## Terminology

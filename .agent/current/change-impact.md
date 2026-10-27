@@ -6,53 +6,45 @@ project_owned: true
 record_contract: change-impact
 record_schema_version: 1
 status: current
-task_id: TASK-0013
+task_id: TASK-0014
 ---
 
 # Change Impact Declaration
 
 ## Task
 
-TASK-0013 — M32 I4: connected Workflow Capability execution.
+TASK-0014 — M32 I5–I6: dogfooding, final acceptance, installation and TUI handoff.
 
 ## Impact classification
 
 | Impact | Value | Reason | Activated gate |
 |---|---|---|---|
-| public_api | yes | A new capability HTTP surface: status, offers, request, show/list, claim, result, reconcile, install/authorize/revoke, executor announce/roster; `POST blueprints` now publishes against durable installs. | Compatibility gate: local capability behaviour and its tests must be unchanged; server HTTP tests. |
-| persisted_data | yes | One additive table `orbit_capability_executors` and claim ownership on the connected request path; no change to existing columns. | Migration gate: open/reopen and restart tests. |
-| configuration | no | No new keys. | none |
+| public_api | no | No new route or contract; the fixes change planner/approval behaviour and client copy within existing contracts. | Compatibility gate: workspace and browser suites. |
+| persisted_data | no | No schema change. | none |
+| configuration | no | No new keys; the dogfooding session is opt-in with `ORBIT_DOGFOOD=1`. | none |
 | dependencies | no | No new crate or npm dependency. | none |
-| security_boundary | yes | The server must never load or run provider code; a browser session must not act as an executor or an operator; grants are the only execution authority; ambiguous outcomes are never retried. | Security gate: trust-boundary greps and tests, executor credential rules, grant checks. |
-| concurrency | yes | Single execution claim, revision fencing, durable request identity, idempotent retry and atomic state+receipt settlement. | Concurrency gate: claim/replay/result/reconcile tests, restart. |
-| performance_sensitive | no | Single-user server; capability reads are durable-row reads. | none |
-| user_interface | yes | Capability panel with availability codes, typed input form, confirmation, states, receipt and reconcile. | UI gate: unit tests, Playwright, keyboard and 390 px. |
-| deployment | no | No packaging change. | none |
+| security_boundary | no | No authorization or credential change. | none |
+| concurrency | no | No new concurrency path; the shared deadline rule is pure. | none |
+| performance_sensitive | no | The session recorded no interaction above 1 s on loopback; nothing was optimised without a measurement. | none |
+| user_interface | yes | Planning failure copy, the recorded capability request, and the acceptance-criterion draft fix. | UI gate: unit tests, browser specs, 390 px and keyboard suites. |
+| deployment | yes | Clean-install evidence and a documented host limitation; no tooling change. | Deployment gate: lockfile-only install plus the documented loop, and the host limitation recorded. |
 
 ## Assumptions and unknowns
 
-- Executor identity reuses enrolled devices plus an explicit capability
-  announcement; the server is never an executor (`AUTHORITY_IDENTITY` is excluded).
-- The contract-only catalog is sufficient to validate inputs and availability; no
-  provider code is needed to offer or request an action.
-- The reference capability is the acceptance provider because it needs no external
-  service.
-- The local three-step settlement is left intact for the local path; the connected
-  path settles state and receipt atomically.
+- The dogfooding session is automated and labelled as such; human judgement items are
+  listed rather than simulated.
+- The clean-install deviation (`--ignore-scripts --os=linux --cpu=x64` plus one
+  `chmod`) is a host workaround, not a tooling change; a native-Linux-npm machine is
+  expected to run plain `npm ci` but that was not verifiable here.
 
 ## Required outputs
 
-- Contract catalog, executor enrollment, capability routes with codes, atomic
-  settlement, publication fix.
-- Connected executor runner and connected read/request parity.
-- Browser capability panel and reconcile.
-- Rust, CLI and Playwright acceptance proving the trust boundary and restart
-  durability.
+- Dogfooding record, defect table, fixes with regression tests, and a re-run proving
+  the blocker is gone.
+- Full acceptance numbers, clean-install evidence, and the TUI specification.
 
 ## Test tier
 
-- Tier 4 for the touched surface: runtime/server/storage/blueprint/CLI tests,
-  clippy `-D warnings`, client typecheck and vitest, terminology guard, production
-  build, the full Playwright suite against isolated real servers with the runner as
-  the executor, and `getdone-validate-project`. Release qualification remains
-  M15/M27.
+- Tier 4: workspace tests, clippy `-D warnings`, client typecheck and vitest,
+  terminology and documentation suites, the full Playwright suite, the opt-in
+  dogfooding session, and `getdone-validate-project`.

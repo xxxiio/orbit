@@ -18,7 +18,13 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { CapabilityOffer, CapabilityStatus, WorkItem, WorkItemKind } from '@/api/adapters'
+import type {
+  CapabilityOffer,
+  CapabilityRequest,
+  CapabilityStatus,
+  WorkItem,
+  WorkItemKind,
+} from '@/api/adapters'
 import {
   classifyError,
   useCapabilityOffers,
@@ -43,6 +49,9 @@ import {
   executorSummary,
   offersMatchRevision,
   permissionLabel,
+  recordedActionCopy,
+  requestForActionRevision,
+  requestStateCopy,
   type DeclaredCapability,
 } from './capability-model'
 import { CapabilityRequestForm } from './capability-request-form'
@@ -185,6 +194,14 @@ export function CapabilityPanel({ item, kind }: CapabilityPanelProps) {
               const capability = statusById.get(action.capability)
               const offer = offerFor(action.capability, action.id)
               const key = `${action.capability}#${action.id}`
+              // One action, one request per item revision: the server refuses a
+              // repeat as a conflict, so the panel shows the recorded request
+              // instead of offering the same intent again.
+              const recordedRequest = requestForActionRevision(
+                requests.data,
+                action.id,
+                item.revision,
+              )
               return (
                 <li
                   key={`${edge.from}->${edge.to}#${action.id}`}
@@ -192,13 +209,18 @@ export function CapabilityPanel({ item, kind }: CapabilityPanelProps) {
                   data-capability-offer={action.id}
                   data-capability-available={offer ? String(offer.available) : 'false'}
                   data-capability-code={offer ? (offer.code ?? 'available') : 'not_offered'}
+                  data-capability-recorded-request={recordedRequest?.commandId}
                   className="rounded-md border border-line bg-surface px-3 py-2.5"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
                         {humanizeIdentifier(action.id)}
-                        <OfferBadge offer={offer} loading={offers.isPending && !offers.data} />
+                        <OfferBadge
+                          offer={offer}
+                          loading={offers.isPending && !offers.data}
+                          recorded={recordedRequest}
+                        />
                       </p>
                       <p className="mt-0.5 text-xs leading-5 text-ink-muted">
                         {(offer?.description ?? action.description).trim() ||
@@ -247,7 +269,11 @@ export function CapabilityPanel({ item, kind }: CapabilityPanelProps) {
                     <UnavailableAction offer={offer} />
                   ) : null}
 
-                  {offer && offer.available ? (
+                  {offer && offer.available && recordedRequest ? (
+                    <RecordedAction request={recordedRequest} actionId={action.id} />
+                  ) : null}
+
+                  {offer && offer.available && !recordedRequest ? (
                     openAction === key ? (
                       <CapabilityRequestForm
                         item={item}
@@ -297,7 +323,14 @@ export function CapabilityPanel({ item, kind }: CapabilityPanelProps) {
         ) : null}
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div
+        className="flex flex-col gap-2"
+        id="capability-request-history"
+        data-capability-history=""
+        role="region"
+        aria-label="Capability request history"
+        tabIndex={-1}
+      >
         <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
           Requests for this item
         </p>
@@ -316,14 +349,65 @@ export function CapabilityPanel({ item, kind }: CapabilityPanelProps) {
   )
 }
 
-function OfferBadge({ offer, loading }: { offer: CapabilityOffer | undefined; loading: boolean }) {
+function OfferBadge({
+  offer,
+  loading,
+  recorded,
+}: {
+  offer: CapabilityOffer | undefined
+  loading: boolean
+  recorded: CapabilityRequest | undefined
+}) {
   if (loading) return <Badge tone="neutral">Checking availability…</Badge>
   if (!offer) return <Badge tone="neutral">Not offered for this state</Badge>
+  // The offer is still the server's answer; a recorded request is the reason
+  // this panel has nothing left to offer for it.
+  if (offer.available && recorded) {
+    const state = requestStateCopy(recorded)
+    return <Badge tone={state.tone}>Requested · {state.label}</Badge>
+  }
   if (offer.available) return <Badge tone="success">Available to request</Badge>
   return (
     <Badge tone="warning" className="font-mono">
       {offer.code ?? 'unavailable'}
     </Badge>
+  )
+}
+
+/**
+ * What stands in place of the request control once this action is already
+ * recorded for the item revision, with a link to the durable history rather
+ * than a second request the server would refuse.
+ */
+function RecordedAction({
+  request,
+  actionId,
+}: {
+  request: CapabilityRequest
+  actionId: string
+}) {
+  const copy = recordedActionCopy(request)
+  return (
+    <div
+      data-capability-recorded={actionId}
+      data-capability-recorded-state={request.recordedState}
+      className="mt-2.5 rounded-md border border-line bg-surface-sunken/50 px-3 py-2 text-xs leading-5 text-ink-soft"
+    >
+      <p className="font-medium text-ink">{copy.title}</p>
+      <p className="mt-0.5">{copy.description}</p>
+      <p className="mt-1.5 text-2xs leading-4">
+        <a
+          href="#capability-request-history"
+          data-capability-recorded-link={request.commandId}
+          className="rounded-sm font-medium text-accent underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+        >
+          Show the request history for this item
+        </a>{' '}
+        <span className="text-ink-muted">
+          (request <span className="break-all font-mono">{request.commandId}</span>)
+        </span>
+      </p>
+    </div>
   )
 }
 

@@ -110,13 +110,24 @@ pub fn plan_portfolio_schedule(
             .earliest_start_at_ms
             .unwrap_or(request.starts_at_ms)
             .max(request.starts_at_ms);
+        // The same shared rule as the standard planner and the approval gate
+        // (`orbit_planner::deadline_bound_at`): a deadline already missed when the
+        // window opens cannot be met, so it stops limiting the block end; a
+        // deadline still ahead keeps binding.
+        let deadline = orbit_planner::deadline_bound_at(task.deadline_at_ms, request.starts_at_ms);
+        let missed_deadline = task.deadline_at_ms.is_some() && deadline.is_none();
         let mut placement = None;
+        let mut deadline_blocked = false;
         for (index, window) in windows.iter().enumerate() {
             let starts_at_ms = window.starts_at_ms.max(earliest);
             let ends_at_ms = starts_at_ms
                 .checked_add(duration_ms)
                 .ok_or("slot overflow")?;
             if ends_at_ms <= window.ends_at_ms {
+                if deadline.is_some_and(|limit| ends_at_ms > limit) {
+                    deadline_blocked = true;
+                    continue;
+                }
                 placement = Some((index, starts_at_ms, ends_at_ms));
                 break;
             }
@@ -124,7 +135,13 @@ pub fn plan_portfolio_schedule(
         let Some((index, start, end)) = placement else {
             unplaced.push(UnplacedTask {
                 task_id: action.task_id.clone(),
-                reason: format!("No uninterrupted {duration}-minute opening after earliest start"),
+                reason: if deadline_blocked {
+                    format!(
+                        "Its deadline falls before this {duration}-minute block could end; move the deadline later or choose an earlier window"
+                    )
+                } else {
+                    format!("No uninterrupted {duration}-minute opening after earliest start")
+                },
             });
             continue;
         };
@@ -168,6 +185,11 @@ pub fn plan_portfolio_schedule(
         }
         if action.overdue {
             explanation.push("Overdue accepted deadline".into());
+        }
+        if missed_deadline {
+            explanation.push(
+                "Deadline has already passed; it no longer limits where this block ends".into(),
+            );
         }
         slots.push(PlannedSlot {
             task_id: task.id.clone(),
@@ -314,6 +336,27 @@ mod tests {
         let json = serde_json::to_string(&report).unwrap();
         assert!(!json.contains("secret-foreign"));
         assert_eq!(report.slots.len(), 1);
+    }
+    #[test]
+    fn an_overdue_deadline_is_still_placed_and_says_why() {
+        let mut request = req();
+        request.starts_at_ms = 60 * 60_000;
+        request.ends_at_ms = 180 * 60_000;
+        let mut late = task("late", "p", Some(30));
+        // The deadline passed before the window opens: no block in the window
+        // can meet it, so it must not stop the proposal (D-01's rule, applied to
+        // portfolio ordering too).
+        late.deadline_at_ms = Some(0);
+        let report = plan_portfolio_schedule(1, &[late], &[], &[], &request).unwrap();
+        assert_eq!(report.slots.len(), 1);
+        assert!(
+            report.slots[0]
+                .explanation
+                .iter()
+                .any(|line| line.contains("Deadline has already passed")),
+            "got {:?}",
+            report.slots[0].explanation
+        );
     }
     #[test]
     fn missing_estimate_is_explicitly_excluded() {

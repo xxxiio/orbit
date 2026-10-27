@@ -577,6 +577,47 @@ describe('capability requests', () => {
     ).toBeInTheDocument()
     expect(document.querySelector('[data-capability-reconcile]')).toBeNull()
   })
+
+  it('shows the recorded request instead of offering the action again on the same revision', async () => {
+    const settled = requestRecord({ state: 'succeeded', command_id: 'cap-settled' })
+    mockServer()
+    renderPanel({ history: [settled] })
+
+    const card = actionCard()
+    // The server still reports the action as available; the panel does not
+    // pretend otherwise and does not change the availability contract.
+    expect(card).toHaveAttribute('data-capability-available', 'true')
+    expect(card).toHaveAttribute('data-capability-recorded-request', 'cap-settled')
+    // …but a second request on this item revision would be refused, so it is not
+    // offered. The recorded state is named, not hidden.
+    expect(within(card).queryByRole('button', { name: 'Request this action' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Request this action' })).toBeNull()
+    expect(within(card).getByText('Requested · Succeeded')).toBeInTheDocument()
+    const recorded = card.querySelector<HTMLElement>('[data-capability-recorded="append_note"]')
+    expect(recorded).toHaveAttribute('data-capability-recorded-state', 'succeeded')
+    expect(recorded?.textContent).toContain('One action is requested once per item revision')
+    // The link goes to the durable history, which still lists the request.
+    const link = recorded?.querySelector<HTMLAnchorElement>('a[href="#capability-request-history"]')
+    expect(link).not.toBeNull()
+    expect(document.getElementById('capability-request-history')).not.toBeNull()
+    expect(document.querySelector('[data-capability-request="cap-settled"]')).not.toBeNull()
+    // History is rendered even while it is read: nothing was requested.
+    await waitFor(() =>
+      expect(document.querySelector('[data-capability-request="cap-settled"]')).not.toBeNull(),
+    )
+  })
+
+  it('still offers the action when the recorded request belongs to an older revision', () => {
+    mockServer()
+    renderPanel({
+      history: [requestRecord({ command_id: 'cap-old', item_revision: item.revision - 1 })],
+    })
+
+    const card = actionCard()
+    expect(within(card).getByRole('button', { name: 'Request this action' })).toBeInTheDocument()
+    expect(card.querySelector('[data-capability-recorded]')).toBeNull()
+    expect(within(card).getByText('Available to request')).toBeInTheDocument()
+  })
 })
 
 describe('capability request refusals', () => {

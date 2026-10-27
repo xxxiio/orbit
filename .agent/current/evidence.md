@@ -6,43 +6,45 @@ project_owned: true
 record_contract: evidence-manifest
 record_schema_version: 1
 status: final
-task_id: TASK-0013
+task_id: TASK-0014
 ---
 
 # Evidence Manifest
 
 ## Task
 
-TASK-0013 — M32 I4: connected Workflow Capability execution.
+TASK-0014 — M32 I5–I6: dogfooding, final acceptance, installation and TUI handoff.
 
 ## Acceptance evidence
 
 | Criterion ID | Status | Evidence |
 |---|---|---|
-| AC-001: Install, grant, publish | pass | `capability_server.rs` install/authorize/revoke + `blueprints.rs` publication against the durable installed set; server HTTP tests; `capability-execution.spec.ts` spec 2. |
-| AC-002: Browser offers, inputs, states, receipt | pass | `web/src/features/workflows/{capability-panel,capability-request-form,capability-request-history}.tsx` + `capability-model.ts`; unit tests; specs 1 and 4. |
-| AC-003: Executor claim and execution outside the server | pass | `capability_server.rs` claim/result fences, `crates/orbit-cli/src/capability_serve.rs`; grep evidence; specs 1 and 3. |
-| AC-004: Reconciliation and idempotent replay | pass | `reconcile` route + `capability-model.reconcileCopy`; specs 3 and 4 (`recovered_from: uncertain` and `claimed`). |
-| AC-005: Full cycle gates | pass | Commands above; spec 5 (restart durability, second run idle, one note). |
+| AC-001: Persistent-workspace dogfooding | pass | `.slim/deepwork/m32-web-completeness/i5-dogfood/session.md` (nine sessions, 23 captures, step JSON, trace) and `.agent/evidence/m32-i5-acceptance.md`. |
+| AC-002: Blocker fixed with regression proof | pass | `orbit_planner::deadline_bound_at` + `schedule_planning`/`portfolio_schedule`/`planning_approval`; tests `overdue_deadline_is_proposed_and_reviews_cleanly`, `a_task_whose_deadline_already_passed_can_still_be_reviewed`; the dogfooding step 06b now passes on the same workspace. |
+| AC-003: Full browser acceptance | pass | 136 passed, 5 skipped, 0 failed. |
+| AC-004: Reproducible clean install | pass | `.slim/deepwork/m32-web-completeness/i6-install.md` and `.agent/evidence/m32-i6-acceptance.md`; byte-identical `dist`. |
+| AC-005: TUI specification | pass | `docs/guides/tui-redesign-spec.md` (18 patterns, named APIs, A1–A23); no TUI change. |
 
 ## Quality gate evidence
 
 | Gate | Status | Command or artefact | Result |
 |---|---|---|---|
-| Workspace tests | pass | `cargo test --workspace --offline` | 1,837 passed, 0 failed |
+| Workspace tests | pass | `cargo test --workspace --offline` | 1,844 passed, 0 failed |
 | Lints | pass | `cargo clippy … -D warnings` | clean |
 | Formatting | pass | `cargo fmt --all -- --check` | clean |
-| Client typecheck / unit tests | pass | `tsc`, `vitest` | 0 / 383 tests |
+| Client typecheck / unit tests | pass | `tsc`, `vitest` | 0 / 393 tests |
 | Terminology guard | pass | `check-terminology.mjs` | 256 files |
+| Documentation suite | pass | `pytest tests/documentation` | 39 passed |
 | Production build | pass | `vite build` | built |
-| Browser acceptance (I4) | pass | `playwright test capability-execution` | 5 passed |
-| Browser acceptance (full) | pass | `playwright test` | 136 passed, 4 skipped, 0 failed |
-| Acceptance record | pass | `.agent/evidence/m32-i4-acceptance.md` | written from the runs above |
+| Browser acceptance | pass | `playwright test` | 136 passed, 5 skipped, 0 failed |
+| Dogfooding session | pass | `ORBIT_DOGFOOD=1 playwright test tests/e2e/dogfooding` | 1 passed (23 steps; plan step ok) |
+| Project records | pass | `getdone-validate-project` | passed |
 
 ## Checks not run
 
-- M15 release profile and M27 publication verification.
-- Live Herdr/model acceptance.
+- Plain `npm ci` on a native-Linux-npm host, an offline install, and a clean-machine
+  Playwright run (browser libraries bundle). Recorded as unverified.
+- Live Herdr/model acceptance; M15/M27 release qualification.
 
 ## Waivers
 
@@ -50,5 +52,6 @@ TASK-0013 — M32 I4: connected Workflow Capability execution.
 
 ## Residual risk
 
-- Operator-only administration and no uninstall route.
-- An action does not move the work item.
+- Three low-severity dogfooding findings remain open and recorded (D-04, D-05,
+  D-06/06b).
+- The clean-install proof relies on the documented workaround for this host's npm.

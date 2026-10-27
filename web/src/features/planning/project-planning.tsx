@@ -43,6 +43,7 @@ import {
   defaultWindow,
   formatDuration,
   parseWindow,
+  planningFailureCopy,
   readCapacity,
   toDateInput,
 } from './planning-utils'
@@ -472,6 +473,9 @@ function SchedulePanel({
   }, [receipt?.fingerprint])
 
   const estimateBlocker = data?.unplaced.find((entry) => /estimate/i.test(entry.reason)) ?? null
+  // A failed review says what failed, in the server's words, and what to do next;
+  // it names the task only when the server's own sentence names one.
+  const reviewFailure = review.error ? planningFailureCopy(review.error, taskTitles) : null
 
   const reviewBlockedReason = (plan: SchedulePlanView): string => {
     if (estimateBlocker) {
@@ -667,13 +671,28 @@ function SchedulePanel({
                 </div>
               ) : null}
             </div>
-            {review.error ? (
-              <p role="alert" className="flex items-start gap-1.5 text-xs leading-5 text-danger-ink">
+            {review.error && reviewFailure ? (
+              <div
+                role="alert"
+                data-plan-review-error=""
+                className="flex items-start gap-1.5 rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-xs leading-5 text-danger-ink"
+              >
                 <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
-                <span className="min-w-0 flex-1">
-                  Review failed. {userMessage(review.error)}
-                </span>
-              </p>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{reviewFailure.title}</p>
+                  {reviewFailure.detail ? (
+                    <p
+                      data-plan-review-error-server=""
+                      className="mt-0.5 break-words text-2xs leading-4 text-danger-ink/90"
+                    >
+                      The server said: “{reviewFailure.detail}”
+                    </p>
+                  ) : null}
+                  <p className="mt-1 text-2xs leading-4 text-danger-ink/90">
+                    {reviewFailure.nextStep}
+                  </p>
+                </div>
+              </div>
             ) : null}
           </>
         ) : null}

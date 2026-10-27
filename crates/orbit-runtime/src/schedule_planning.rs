@@ -215,12 +215,24 @@ pub fn plan_schedule(
             .earliest_start_at_ms
             .unwrap_or(request.starts_at_ms)
             .max(request.starts_at_ms);
+        // The same rule the approval gate applies (see
+        // `orbit_planner::deadline_bound_at`): a deadline that was already missed
+        // when this window opens cannot be met by any block in it, so it stops
+        // limiting where the block ends; the slot says so. A deadline still ahead
+        // of the window keeps binding, so this placement is always reviewable.
+        let deadline = orbit_planner::deadline_bound_at(task.deadline_at_ms, request.starts_at_ms);
+        let missed_deadline = task.deadline_at_ms.is_some() && deadline.is_none();
         let required_ms = duration.checked_mul(60_000).ok_or("duration overflow")?;
         let mut placement = None;
+        let mut deadline_blocked = false;
         for (index, window) in windows.iter().enumerate() {
             let start = window.starts_at_ms.max(earliest);
             let end = start.checked_add(required_ms).ok_or("slot time overflow")?;
             if end <= window.ends_at_ms {
+                if deadline.is_some_and(|limit| end > limit) {
+                    deadline_blocked = true;
+                    continue;
+                }
                 placement = Some((index, start, end));
                 break;
             }
@@ -253,6 +265,13 @@ pub fn plan_schedule(
             }
             windows.sort_by_key(|w| w.starts_at_ms);
             selected.insert(candidate.task_id.clone());
+            let mut explanation =
+                vec![format!("Fits an uninterrupted {}-minute opening", duration)];
+            if missed_deadline {
+                explanation.push(
+                    "Deadline has already passed; it no longer limits where this block ends".into(),
+                );
+            }
             slots.push(PlannedSlot {
                 task_id: candidate.task_id.clone(),
                 title: candidate.title.clone(),
@@ -261,7 +280,14 @@ pub fn plan_schedule(
                 ends_at_ms: end,
                 minutes: duration,
                 ranking: candidate.rank.unwrap_or_default(),
-                explanation: vec![format!("Fits an uninterrupted {}-minute opening", duration)],
+                explanation,
+            });
+        } else if deadline_blocked {
+            unplaced.push(UnplacedTask {
+                task_id: candidate.task_id.clone(),
+                reason: format!(
+                    "Its deadline falls before this {duration}-minute block could end; move the deadline later or choose an earlier window"
+                ),
             });
         } else {
             unplaced.push(UnplacedTask {
@@ -320,6 +346,12 @@ mod tests {
             description: String::new(),
             priority: None,
             labels: Vec::new(),
+        }
+    }
+    fn task_due(id: &str, minutes: Option<i64>, deadline: i64) -> TaskRecord {
+        TaskRecord {
+            deadline_at_ms: Some(deadline),
+            ..task(id, minutes, None)
         }
     }
     fn block(id: &str, start: i64, end: i64) -> ScheduleRecord {
@@ -411,6 +443,50 @@ mod tests {
         assert!(plan.slots.is_empty());
         assert_eq!(plan.unplaced.len(), 1);
     }
+    /// D-01: the window's own proposal must be reviewable. A task whose deadline
+    /// was already missed when the window opens is still placed — late work is
+    /// the point of planning it — and says why the deadline is not limiting it.
+    /// The approval gate's side of the same rule is covered in
+    /// `planning_approval`, which reviews exactly this placement.
+    #[test]
+    fn an_overdue_deadline_is_placed_with_an_explanation() {
+        let r = request();
+        let overdue = r.starts_at_ms - 50 * 3_600_000;
+        let tasks = [task_due("late", Some(30), overdue)];
+        let plan = plan_schedule(1, 1, &tasks, &[], &[], &r).unwrap();
+
+        assert_eq!(plan.slots.len(), 1);
+        assert_eq!(plan.slots[0].task_id, "late");
+        assert!(
+            plan.slots[0]
+                .explanation
+                .iter()
+                .any(|line| line.contains("Deadline has already passed")),
+            "the slot must explain the missed deadline, got {:?}",
+            plan.slots[0].explanation
+        );
+    }
+
+    /// The other half of the same rule: a deadline still ahead of the window is
+    /// never scheduled after it, and the rejection names the task and the reason
+    /// instead of proposing a block the approval gate would refuse.
+    #[test]
+    fn a_deadline_still_ahead_is_named_instead_of_breached() {
+        let r = request();
+        let deadline = r.starts_at_ms + 20 * 60_000;
+        let tasks = [task_due("due-soon", Some(30), deadline)];
+        let plan = plan_schedule(1, 1, &tasks, &[], &[], &r).unwrap();
+
+        assert!(plan.slots.is_empty());
+        assert_eq!(plan.unplaced.len(), 1);
+        assert_eq!(plan.unplaced[0].task_id, "due-soon");
+        assert!(
+            plan.unplaced[0].reason.contains("deadline"),
+            "the reason must name the deadline, got {}",
+            plan.unplaced[0].reason
+        );
+    }
+
     #[test]
     fn invalid_busy_intervals_fail_closed() {
         let r = request();

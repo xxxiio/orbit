@@ -475,6 +475,27 @@ fn minutes_between(start_ms: i64, end_ms: i64) -> u32 {
     ((end_ms - start_ms) / MINUTE_MS).min(u32::MAX as i64) as u32
 }
 
+/// The deadline bound a proposed block must respect, or `None` when the deadline
+/// no longer constrains where the block may end.
+///
+/// **Invariant:** proposal generation and approval validation both call this
+/// function, so a plan the planner proposes can always be reviewed. A plan the
+/// server proposes and then refuses would be a contradiction in one rule, not a
+/// validation the caller could have avoided.
+///
+/// A deadline that still lies at or after `planning_time_ms` (the start of the
+/// planning window) binds: a block can end before it, so a block that ends after
+/// it is a real miss and `AfterDeadline` is the right refusal.
+///
+/// A deadline before `planning_time_ms` cannot be met by *any* block the window
+/// can hold, because every block in it ends after the window starts. An
+/// unsatisfiable constraint cannot be the reason to refuse a schedule, so it
+/// stops constraining the end: the work is still worth planning late, and the
+/// proposal says so instead of dropping it.
+pub fn deadline_bound_at(deadline_at_ms: Option<i64>, planning_time_ms: i64) -> Option<i64> {
+    deadline_at_ms.filter(|deadline| *deadline >= planning_time_ms)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnscheduledReason {
     NotEligible,
@@ -568,7 +589,7 @@ pub fn propose_tasks_with_availability_and_buffers(
         Some(limit) => after_protection.min(limit),
         None => after_protection,
     };
-    propose_tasks_from_slots(tasks, &mut slots, remaining_budget)
+    propose_tasks_from_slots(tasks, &mut slots, remaining_budget, window.start_ms())
 }
 
 /// Day adapter over the generic planner. The caller supplies the resolved local
@@ -607,6 +628,7 @@ fn propose_tasks_from_slots(
     tasks: &[orbit_domain::Task],
     slots: &mut Vec<AvailabilitySlot>,
     mut remaining_budget: u32,
+    planning_time_ms: i64,
 ) -> PlanProposal {
     let mut proposal = PlanProposal::default();
 
@@ -648,6 +670,7 @@ fn propose_tasks_from_slots(
         }
 
         let duration_ms = i64::from(estimate) * MINUTE_MS;
+        let deadline = deadline_bound_at(planning.deadline_at_ms(), planning_time_ms);
         let mut chosen = None;
         for (index, slot) in slots.iter().copied().enumerate() {
             let start = slot
@@ -659,10 +682,7 @@ fn propose_tasks_from_slots(
             if end > slot.end_ms {
                 continue;
             }
-            if planning
-                .deadline_at_ms()
-                .is_some_and(|deadline| end > deadline)
-            {
+            if deadline.is_some_and(|deadline| end > deadline) {
                 continue;
             }
             chosen = Some((index, start, end));
@@ -880,8 +900,7 @@ pub fn validate_proposal_with_buffers(
         {
             violations.push(PlanViolation::BeforeEarliestStart(task_id.clone()));
         }
-        if planning
-            .deadline_at_ms()
+        if deadline_bound_at(planning.deadline_at_ms(), window.start_ms())
             .is_some_and(|deadline| item.end_ms > deadline)
         {
             violations.push(PlanViolation::AfterDeadline(task_id.clone()));
@@ -1495,6 +1514,79 @@ mod tests {
         )
         .expect("generated proposal should validate");
         assert_eq!(validated.proposal(), &proposal);
+    }
+
+    /// D-01: a task whose deadline had already passed when the window opens is
+    /// still proposed, and the proposal its own validator then reviews cleanly.
+    /// On the old rule the proposal left the task unplaced with `NoFittingSlot`
+    /// while the planner's sibling runtime surface placed it after the deadline,
+    /// and approval refused exactly that placement.
+    #[test]
+    fn overdue_deadline_is_proposed_and_reviews_cleanly() {
+        let window = PlanningWindow::new(200 * MINUTE_MS, 400 * MINUTE_MS).expect("window");
+        let overdue = window.start_ms() - 50 * 60 * MINUTE_MS;
+        let tasks = vec![task_with_plan(
+            "overdue",
+            orbit_domain::TaskStatus::Ready,
+            Some(30),
+            None,
+            Some(overdue),
+        )];
+
+        let proposal = propose_tasks(window, &[], &tasks, CapacityPolicy::default());
+
+        assert_eq!(proposal.scheduled.len(), 1, "late work is still proposed");
+        assert_eq!(proposal.scheduled[0].start_ms, window.start_ms());
+        assert!(proposal.unscheduled.is_empty());
+        validate_proposal(
+            window,
+            &[],
+            &tasks,
+            CapacityPolicy::default(),
+            proposal.clone(),
+        )
+        .expect("a plan the planner proposes must pass its own validation");
+    }
+
+    /// The other half of the same rule: a deadline still ahead of the window
+    /// keeps binding, so `AfterDeadline` is not weakened.
+    #[test]
+    fn deadline_at_or_after_the_window_still_binds() {
+        let window = PlanningWindow::new(200 * MINUTE_MS, 400 * MINUTE_MS).expect("window");
+        assert_eq!(
+            deadline_bound_at(Some(200 * MINUTE_MS), window.start_ms()),
+            Some(200 * MINUTE_MS)
+        );
+        assert_eq!(
+            deadline_bound_at(Some(200 * MINUTE_MS - 1), window.start_ms()),
+            None
+        );
+        assert_eq!(deadline_bound_at(None, window.start_ms()), None);
+
+        let tasks = vec![task_with_plan(
+            "ahead",
+            orbit_domain::TaskStatus::Ready,
+            Some(30),
+            None,
+            Some(220 * MINUTE_MS),
+        )];
+        let proposal = PlanProposal {
+            scheduled: vec![ProposedTaskBlock {
+                task_id: tasks[0].id().clone(),
+                start_ms: 210 * MINUTE_MS,
+                end_ms: 240 * MINUTE_MS,
+            }],
+            unscheduled: Vec::new(),
+        };
+
+        let violations =
+            validate_proposal(window, &[], &tasks, CapacityPolicy::default(), proposal)
+                .expect_err("a block after a deadline that is still ahead must be refused");
+        assert!(
+            violations
+                .iter()
+                .any(|violation| matches!(violation, PlanViolation::AfterDeadline(_)))
+        );
     }
 
     #[test]

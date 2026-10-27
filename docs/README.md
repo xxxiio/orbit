@@ -45,7 +45,7 @@ uses commands implemented by the current `orbit` binary; run `orbit --help` or
 ## Terminal workspace
 
 - [The Orbit terminal workspace](guides/tui-workspace.md) — project-centric navigation, keyboard, panels and agent monitoring.
-- [TUI redesign specification](guides/tui-redesign-spec.md) — the I5 web evidence, translated into terminal patterns, non-goals and a measurable acceptance checklist.
+- [TUI redesign specification](guides/tui-redesign-spec.md) — the proven M31/M32 web usage, translated into terminal patterns, non-goals, the shared API gaps and a measurable acceptance checklist. Implements no TUI change.
 - [Workflow-defined project views](guides/blueprint-views.md) — declare overviews, boards, tables, metrics and detail views; Basic is the default.
 - [Task details, acceptance criteria and attachments](guides/task-details-and-attachments.md) — rich task fields, ordered criteria and the managed attachment store.
 - [UI view reference](reference/ui-views.md) — exact component, source, binding and action schema.

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { SchedulePlanView } from '@/api/adapters'
+import { ApiError, ClientStateError } from '@/api/errors'
 import {
   buildScheduleApprovalRequest,
   defaultWindow,
   formatDuration,
   parseLocalDateTime,
   parseWindow,
+  planningFailureCopy,
   readCapacity,
   toDateInput,
   toTimeInput,
@@ -138,5 +140,83 @@ describe('duration formatting', () => {
     expect(formatDuration(60)).toBe('1 h')
     expect(formatDuration(90)).toBe('1 h 30 min')
     expect(formatDuration(null)).toBe('—')
+  })
+})
+
+describe('failed review copy', () => {
+  const titles = new Map([
+    ['t-orbit-23', 'Ship the overdue report'],
+    ['t-1', 'Draft the review notes'],
+  ])
+
+  it('names the task and keeps the server sentence secondary when the server names one', () => {
+    const copy = planningFailureCopy(
+      new ApiError(
+        400,
+        'approved schedule failed domain validation: task t-orbit-23 would end after its deadline',
+      ),
+      titles,
+    )
+
+    expect(copy.title).toBe(
+      'The server refused to review this plan because of “Ship the overdue report” (t-orbit-23).',
+    )
+    expect(copy.detail).toContain('would end after its deadline')
+    expect(copy.nextStep).toMatch(/deadline/)
+  })
+
+  it('is truthful about not knowing the task when the server names none', () => {
+    const copy = planningFailureCopy(
+      new ApiError(400, 'approved schedule failed domain validation'),
+      titles,
+    )
+
+    expect(copy.title).toBe('The server refused to review this plan.')
+    expect(copy.title).not.toMatch(/“/)
+    expect(copy.detail).toBe('approved schedule failed domain validation')
+    expect(copy.nextStep).toMatch(/did not name which task/)
+    expect(copy.nextStep).toMatch(/window|deadline/)
+  })
+
+  it('does not mistake a longer identifier for a known task', () => {
+    const copy = planningFailureCopy(
+      new ApiError(400, 'rejected: t-10 is not this task'),
+      new Map([['t-1', 'Draft the review notes']]),
+    )
+    expect(copy.title).toBe('The server refused to review this plan.')
+  })
+
+  it('never infers a very short id from ordinary prose', () => {
+    const copy = planningFailureCopy(
+      new ApiError(400, 'approved schedule failed domain validation: a block would end late'),
+      new Map([['a', 'The task literally called “a”']]),
+    )
+    expect(copy.title).toBe('The server refused to review this plan.')
+  })
+
+  it('says the workspace moved rather than blaming a task when the revision changed', () => {
+    const copy = planningFailureCopy(
+      new ApiError(409, 'accepted revision changed before plan review'),
+      titles,
+    )
+    expect(copy.title).toMatch(/changed while this plan was being reviewed/)
+    expect(copy.nextStep).toMatch(/Reload/)
+  })
+
+  it('never claims the server refused when it could not be reached', () => {
+    const copy = planningFailureCopy(new ApiError(0, 'Could not reach the Orbit server.'), titles)
+    expect(copy.title).toBe('Orbit could not reach the server to review this plan.')
+    expect(copy.detail).toBeNull()
+    expect(copy.nextStep).toMatch(/connection/)
+  })
+
+  it('does not put a browser-side refusal in the server’s mouth', () => {
+    const copy = planningFailureCopy(
+      new ClientStateError('Review the plan before approving it.'),
+      titles,
+    )
+    expect(copy.title).toBe('Review the plan before approving it.')
+    expect(copy.detail).toBeNull()
+    expect(copy.nextStep).toMatch(/Nothing was sent/)
   })
 })

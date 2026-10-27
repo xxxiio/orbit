@@ -6,7 +6,7 @@ project_owned: true
 record_contract: roadmap
 record_schema_version: 1
 status: current
-current_milestone: MILESTONE-0032
+current_milestone: null
 ---
 
 # Project Roadmap
@@ -538,7 +538,7 @@ none
 
 ### MILESTONE-0032 — M32 Web Product Completeness, Agent Workflows & Extended Dogfooding
 
-- **Status:** active
+- **Status:** completed
 - **Outcome:** The M31 browser client becomes a daily-use product: editable project identity, one search across projects/tasks/knowledge, saved views, managed knowledge folders and note links, browser-authorized agent execution, and connected trusted Workflow Capability execution — each proven by real-browser acceptance and by repeated Orbit Development use.
 - **Why now:** M31 could inspect more than it could operate. Rename, status, cross-project search, saved filters, folders, note links, agent launch and connected capability execution all required the CLI, so ordinary workflows had workarounds in the middle. Finishing them is the highest-priority unfinished product work, and the resulting proven experience is the correct input for the TUI redesign that follows.
 - **Depends on:** MILESTONE-0024, MILESTONE-0025, MILESTONE-0030, MILESTONE-0031
@@ -573,11 +573,11 @@ none
 - [x] EC-005: Knowledge folders and documents can be created, moved, renamed and browsed; links have back-references and broken-link indication; knowledge is reachable from project context.
 - [x] EC-006: An authorized agent job can be launched and reviewed from the browser, with restart persistence and no automatic task completion.
 - [x] EC-007: Trusted Workflow Capabilities execute through the authoritative server with grants, claims, durable receipts, retry safety and reconciliation.
-- [ ] EC-008: Extended browser dogfooding with recorded findings and layer-correct fixes.
-- [ ] EC-009: Real-browser acceptance for every new operation against an isolated authoritative server.
-- [ ] EC-010: Reproducible clean frontend installation in a supported environment.
-- [ ] EC-011: Workflow vocabulary enforced; user documentation matches shipped behaviour.
-- [ ] EC-012: TUI redesign specification updated from proven M31/M32 usage; no TUI redesign implemented.
+- [x] EC-008: Extended browser dogfooding with recorded findings and layer-correct fixes.
+- [x] EC-009: Real-browser acceptance for every new operation against an isolated authoritative server.
+- [x] EC-010: Reproducible clean frontend installation in a supported environment.
+- [x] EC-011: Workflow vocabulary enforced; user documentation matches shipped behaviour.
+- [x] EC-012: TUI redesign specification updated from proven M31/M32 usage; no TUI redesign implemented.
 
 #### Evidence
 
@@ -588,11 +588,11 @@ none
 - EC-005: I2 — shared typed-reference grammar, reference/project-knowledge routes, a folder-command queue fix, and `knowledge-folders`/`knowledge-links`/`project-knowledge` browser specs.
 - EC-006: I3 — executor roster, launch validation, claim-state honesty, objective, and an `agents-launch` spec covering the full cycle with a deterministic executor.
 - EC-007: I4 — contract-only catalog, executor enrollment, fenced claim, one-savepoint receipt+effect settlement, `orbit capability serve --once` runner, and a `capability-execution` browser spec.
-- EC-008: I5 — extended dogfooding record and layer-correct fixes (open).
-- EC-009: I6 — full real-browser acceptance against an isolated server (open).
-- EC-010: I6 — reproducible clean frontend installation (open).
-- EC-011: I6 — terminology check and user documentation matching shipped behaviour (open).
-- EC-012: I6 — updated TUI redesign specification; no TUI redesign implemented (open).
+- EC-008: I5 — nine automated interactive dogfooding sessions on one persistent workspace; seven defects recorded, four fixed including the plan-review blocker.
+- EC-009: I6 — full browser suite 136 passed / 5 opt-in skips, 0 failed.
+- EC-010: I6 — lockfile-only install with the documented WSL workaround; dist byte-identical; full loop run.
+- EC-011: I6 — terminology 256 files clean; documentation suite 39 passed; docs updated through I4.
+- EC-012: I6 — TUI specification rewritten from proven M31/M32 usage (18 patterns); no TUI change.
 
 #### Next milestone
 
