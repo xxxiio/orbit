@@ -6,58 +6,52 @@ project_owned: true
 record_contract: change-impact
 record_schema_version: 1
 status: current
-task_id: TASK-0010
+task_id: TASK-0011
 ---
 
 # Change Impact Declaration
 
 ## Task
 
-TASK-0010 — M32 I1: project rename/status, unified search, saved views and task
-timestamps.
+TASK-0011 — M32 I2: knowledge folders, links and project context.
 
 ## Impact classification
 
 | Impact | Value | Reason | Activated gate |
 |---|---|---|---|
-| public_api | yes | `ProjectCommand` gains `action`/`status`; three new routes (`project-statuses`, `search`, `saved-views[/commands]`); task detail gains two timestamp fields. | Compatibility gate: existing create payloads unchanged, Rust command tests, client contract tests. |
-| persisted_data | yes | Two new additive tables (`web_saved_views`, `web_saved_view_commands`) created through the existing schema-init path; no existing column changes. | Migration gate: open-an-existing-database test, saved-view durability after restart. |
-| configuration | no | No new configuration keys or defaults. | none |
+| public_api | yes | New `markdown-reference-commands`, `markdown-references` and `project-knowledge` routes; the typed-reference grammar moves into `orbit-runtime` with `orbit-cli` delegating. | Compatibility gate: CLI parity tests plus the existing CLI suite. |
+| persisted_data | yes | One additive table, `markdown_reference_commands`, records the receipt for a reference write (the derived Markdown payload differs after the first acceptance, so the existing Markdown ledger cannot compare it). No content store, no column and no identity change: notes stay Markdown files. | Migration gate: the table is created on open beside the other journals; replay and restart tests. |
+| configuration | no | No new keys. | none |
 | dependencies | no | No new crate or npm dependency. | none |
-| security_boundary | yes | Search runs server-side and is scoped by the authenticated device; saved views are actor-scoped and never readable across actors. | Security gate: actor isolation and authentication tests, Playwright authorization case. |
-| concurrency | yes | Project update uses the existing admission fence; saved views use a per-row version fence with command receipts. | Concurrency gate: stale-revision, stale-version and duplicate-command tests. |
-| performance_sensitive | yes | Search runs on every keystroke; it must be bounded (`limit + 1` per group, no COUNT) and cancellable client-side. | Performance gate: bounded query tests, debounce/abort in the client. |
-| user_interface | yes | Project settings becomes an editing form; the palette becomes a search surface; task and board gain saved-view controls; the task drawer gains timestamps. | UI gate: unit tests, Playwright, keyboard/a11y and 390 px passes. |
+| security_boundary | yes | A reference write publishes Markdown bytes; path safety, symlink rejection and entity existence must hold, and the browser must not author arbitrary paths. | Security gate: vault refusal tests, entity-existence tests, path validation. |
+| concurrency | yes | Reference writes reuse the Markdown command receipt and revision; a folder rename changes every path beneath it. | Concurrency gate: replay/conflict tests, invalidation of the whole knowledge family. |
+| performance_sensitive | yes | Reference and project-knowledge reads scan the vault once per request; relations are already O(vault) and must not be called per card. | Performance gate: one-scan tests, no per-note relation calls. |
+| user_interface | yes | Folder controls, pickers, breadcrumb, link authoring, typed-reference chips, project panel and task Notes section. | UI gate: unit tests, Playwright, keyboard and 390 px passes. |
 | deployment | no | No installer or packaging change. | none |
 
 ## Assumptions and unknowns
 
-- Saved views are personal presentation preferences stored by the authoritative
-  server, not domain state: they must not move the authority revision or alter a
-  workflow definition. This keeps one persistence model instead of adding
-  browser storage that would not survive a profile change.
-- Project completion criteria are not modelled in the authority SQL project row,
-  so an `update` status move validates the transition edges and name rules, not
-  success-criterion gating. This matches the existing authority create path and
-  is recorded as a known limitation rather than simulated.
-- Task timestamps are derived from recorded `activities`; a record with no
-  recorded history reports `null` rather than an invented time.
-- Search reuses the existing file-backed Markdown vault search; no new index is
-  introduced in I1.
+- The vault already owns folder create/move and note create/update/move with
+  receipts, crash replay and symlink rejection; I2 exposes them rather than
+  rebuilding them.
+- Note identity is `orbit_id` frontmatter, so a path change is not an identity
+  change; the client must invalidate every knowledge query on a move.
+- Typed references support `project` and `task` over HTTP. Work items, habits and
+  note kinds/statuses stay out: the existing contracts do not cover them and this
+  iteration does not invent them.
+- One malformed `.md` fails every knowledge read closed with 409; that is surfaced,
+  not smoothed over.
 
 ## Required outputs
 
-- Authoritative project update command, project status edges read and activity
-  and ledger coverage.
-- Bounded grouped search endpoint and client surface.
-- Saved-view storage, commands, receipts and actor scoping.
-- Task timestamps in the task detail projection and the task drawer.
-- Rust tests, client unit tests, Playwright acceptance and records.
+- Shared reference grammar plus reference command and the two scoped reads.
+- Browser folder lifecycle, link authoring, typed references and project/task
+  knowledge surfaces.
+- Unit tests, Playwright acceptance, documentation and records.
 
 ## Test tier
 
-- Tier 4 for the touched surface: `cargo test -p orbit-domain -p orbit-application
-  -p orbit-runtime -p orbit-server`, clippy `-D warnings`, client typecheck,
-  vitest, terminology guard, production build and the full Playwright suite
-  against isolated real servers, plus `getdone-validate-project`. Release
-  qualification remains M15/M27 and is not regenerated here.
+- Tier 4 for the touched surface: runtime/server/CLI tests, clippy
+  `-D warnings`, client typecheck and vitest, terminology guard, production build,
+  the full Playwright suite against isolated real servers, and
+  `getdone-validate-project`. Release qualification remains M15/M27.

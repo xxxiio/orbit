@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useProjects } from '@/hooks'
 import type { Command } from '@/components/ui/command-palette'
 import { FolderIcon, HomeIcon, InboxIcon, PlusIcon, BookIcon, AgentsIcon } from '@/components/ui/icons'
@@ -11,6 +11,7 @@ import { WorkspaceActionsProvider } from './workspace-actions'
 import { useWorkspaceActions } from '@/lib/workspace-actions'
 import { TaskDetailDrawer } from '@/features/tasks'
 import { useRecentProjectIds } from '@/lib/recent-projects'
+import { isKnowledgePath } from './route-scope'
 
 /**
  * Binds the shell to live workspace data. Everything registered here is
@@ -136,10 +137,18 @@ function WorkspaceShell() {
 }
 
 export function WorkspaceLayout() {
+  const location = useLocation()
+  /**
+   * On a knowledge route `?task=` names the task a note is being linked to, not
+   * an open task drawer. The drawer is not mounted there at all, so it cannot
+   * cover the note's reference panel and there is no focus trap to escape. Every
+   * other surface keeps the documented `?task=` drawer contract.
+   */
+  const taskDrawer = isKnowledgePath(location.pathname) ? null : <TaskDetailDrawer />
   return (
     <WorkspaceActionsProvider>
       <WorkspaceShell />
-      <TaskDetailDrawer />
+      {taskDrawer}
     </WorkspaceActionsProvider>
   )
 }

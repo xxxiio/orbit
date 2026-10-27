@@ -2546,6 +2546,98 @@ async fn authoritative_markdown_relations(
     ))
 }
 
+/// Notes that carry an exact typed reference to one entity, ordered by path.
+///
+/// The target is refused, never silently answered with an empty list: a client
+/// that asked about `habit:` or a malformed id must learn it asked something
+/// this server cannot answer.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MarkdownReferencesQuery {
+    target: String,
+}
+
+async fn authoritative_markdown_references(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<MarkdownReferencesQuery>,
+) -> Result<Json<orbit_runtime::references::MarkdownReferences>, ApiError> {
+    device(&state, &headers)?;
+    let store = state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
+    Ok(Json(
+        store
+            .markdown_references(&query.target)
+            .map_err(map_error)?,
+    ))
+}
+
+/// Add or remove one typed entity reference on a note.
+///
+/// The request is flat (not wrapped in `command`) because it names three
+/// scalars rather than one document. The runtime still publishes the body
+/// through the Markdown command ledger, so a repeated command id replays the
+/// same receipt and a reused id with a different payload conflicts.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MarkdownReferenceCommandRequest {
+    command_id: String,
+    note_id: String,
+    target: String,
+    action: String,
+}
+
+async fn authoritative_markdown_reference_command(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<MarkdownReferenceCommandRequest>,
+) -> Result<Json<orbit_runtime::references::MarkdownReferenceReceipt>, ApiError> {
+    let actor = device(&state, &headers)?;
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
+    Ok(Json(
+        store
+            .execute_markdown_reference_command(
+                &actor,
+                &request.command_id,
+                orbit_runtime::references::MarkdownReferenceCommand {
+                    note_id: request.note_id,
+                    target: request.target,
+                    action: request.action,
+                },
+            )
+            .map_err(map_error)?,
+    ))
+}
+
+/// Project-scoped knowledge: notes referencing the project or one of its tasks.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectKnowledgeQuery {
+    project_id: String,
+}
+
+async fn authoritative_project_knowledge(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ProjectKnowledgeQuery>,
+) -> Result<Json<orbit_runtime::references::ProjectKnowledge>, ApiError> {
+    device(&state, &headers)?;
+    let store = state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
+    Ok(Json(
+        store
+            .project_knowledge(&query.project_id)
+            .map_err(map_error)?,
+    ))
+}
+
 // File-authoritative command endpoint. Unlike the transitional /knowledge-commands
 // API, the body is published to a real .md file before an accepted receipt.
 #[derive(Deserialize)]
@@ -3546,6 +3638,18 @@ fn routes(state: AppState) -> Router {
             get(authoritative_markdown_relations),
         )
         .route(
+            "/v1/authoritative/markdown-references",
+            get(authoritative_markdown_references),
+        )
+        .route(
+            "/v1/authoritative/markdown-reference-commands",
+            post(authoritative_markdown_reference_command),
+        )
+        .route(
+            "/v1/authoritative/project-knowledge",
+            get(authoritative_project_knowledge),
+        )
+        .route(
             "/v1/authoritative/strategies",
             get(authoritative_strategies),
         )
@@ -4469,6 +4573,164 @@ mod tests {
                 &bearer,
             );
             assert_eq!(status, 400, "{}", body_of(&raw));
+            assert_eq!(body_of(&raw), format!(r#"{{"error":"{expected}"}}"#));
+        }
+    }
+
+    /// The three reference routes, their exact wire shapes and their refusals.
+    /// Runtime tests cover behaviour; this one proves the paths and the status
+    /// mapping a browser actually sees.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reference_commands_and_reads_keep_their_contract_over_http() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        for (path, body) in [
+            (
+                "/v1/authoritative/project-commands",
+                r#"{"command_id":"p-create","expected_revision":0,"project_id":"orbit","name":"Orbit"}"#,
+            ),
+            (
+                "/v1/authoritative/task-commands",
+                r#"{"command_id":"t-create","expected_revision":1,"action":{"type":"create","task_id":"task-1","title":"Fix the login","project_id":"orbit"}}"#,
+            ),
+            (
+                "/v1/authoritative/folder-creates",
+                r#"{"command_id":"f-create","command":{"path":"Work"}}"#,
+            ),
+            (
+                "/v1/authoritative/markdown-commands",
+                r##"{"command_id":"n-create","command":{"kind":"Create","note_id":"note-a","path":"Work/a.md","body":"# A\n"}}"##,
+            ),
+        ] {
+            let (status, raw) = post(&address, path, &bearer, body);
+            assert_eq!(status, 200, "{path}: {}", body_of(&raw));
+        }
+
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/markdown-reference-commands",
+            &bearer,
+            r#"{"command_id":"ref-1","note_id":"note-a","target":"project:orbit","action":"add"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let added: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(
+            added,
+            serde_json::json!({"command_id":"ref-1","note_id":"note-a","revision":2,
+                "changed":true,"target":"project:orbit","action":"add"})
+        );
+
+        // A replay answers with the stored receipt, not a second revision.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/markdown-reference-commands",
+            &bearer,
+            r#"{"command_id":"ref-1","note_id":"note-a","target":"project:orbit","action":"add"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(body_of(&raw)).unwrap(),
+            added
+        );
+
+        let (status, raw) = get(
+            &address,
+            "/v1/authoritative/markdown-references?target=project:orbit",
+            &bearer,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(body_of(&raw)).unwrap(),
+            serde_json::json!({"target":"project:orbit","notes":[
+                {"id":"note-a","path":"Work/a.md","title":"a"}]})
+        );
+
+        let (status, raw) = get(
+            &address,
+            "/v1/authoritative/project-knowledge?project_id=orbit",
+            &bearer,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(body_of(&raw)).unwrap(),
+            serde_json::json!({"project_id":"orbit","notes":[
+                {"id":"note-a","path":"Work/a.md","title":"a",
+                 "references":[{"kind":"project","id":"orbit"}]}],
+                "tasks":["task-1"]})
+        );
+
+        // Every refusal keeps its fixed text and its 400/409 status.
+        for (body, status_code, expected) in [
+            (
+                r#"{"command_id":"ref-2","note_id":"note-a","target":"habit:stretch","action":"add"}"#,
+                400,
+                "unsupported reference target kind",
+            ),
+            (
+                r#"{"command_id":"ref-2","note_id":"note-a","target":"project:missing","action":"add"}"#,
+                400,
+                "unknown reference target",
+            ),
+            (
+                r#"{"command_id":"ref-2","note_id":"note-a","target":"project","action":"add"}"#,
+                400,
+                "invalid reference command",
+            ),
+            (
+                r#"{"command_id":"ref-2","note_id":"note-a","target":"project:orbit","action":"replace"}"#,
+                400,
+                "invalid reference command",
+            ),
+            (
+                r#"{"command_id":"ref-2","note_id":"bad id","target":"project:orbit","action":"add"}"#,
+                400,
+                "invalid note id",
+            ),
+            (
+                r#"{"command_id":"ref-2","note_id":"note-missing","target":"project:orbit","action":"add"}"#,
+                400,
+                "note does not exist",
+            ),
+            (
+                r#"{"command_id":"ref-1","note_id":"note-a","target":"task:task-1","action":"add"}"#,
+                409,
+                "immutable sequence already used",
+            ),
+        ] {
+            let (status, raw) = post(
+                &address,
+                "/v1/authoritative/markdown-reference-commands",
+                &bearer,
+                body,
+            );
+            assert_eq!(status, status_code, "{body}: {}", body_of(&raw));
+            assert_eq!(
+                body_of(&raw),
+                format!(r#"{{"error":"{expected}"}}"#),
+                "{body}"
+            );
+        }
+
+        // A read refuses an unsupported or malformed target instead of
+        // answering with an empty note list.
+        for (path, expected) in [
+            (
+                "/v1/authoritative/markdown-references?target=habit:stretch",
+                "unsupported reference target kind",
+            ),
+            (
+                "/v1/authoritative/markdown-references?target=orbit",
+                "invalid reference target",
+            ),
+            (
+                "/v1/authoritative/project-knowledge?project_id=missing",
+                "unknown reference target",
+            ),
+        ] {
+            let (status, raw) = get(&address, path, &bearer);
+            assert_eq!(status, 400, "{path}: {}", body_of(&raw));
             assert_eq!(body_of(&raw), format!(r#"{{"error":"{expected}"}}"#));
         }
     }

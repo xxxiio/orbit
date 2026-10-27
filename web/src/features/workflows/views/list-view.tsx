@@ -262,7 +262,13 @@ export function ListView(props: ViewRendererProps) {
     return <WorkItemListView {...props} />
   }
   if (source === 'knowledge') {
-    return <KnowledgeRefsPanel component={props.component} />
+    return (
+      <KnowledgeRefsPanel
+        component={props.component}
+        projectId={props.project.id}
+        tasks={props.tasks}
+      />
+    )
   }
   if (source === 'agent_jobs') {
     return <AgentJobsPanel component={props.component} />

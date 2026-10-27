@@ -37,12 +37,18 @@ function renderPanel(panel: ReactElement) {
   )
 }
 
-function stubInventory(notes: unknown[]) {
+/** The C9 read the panel now uses. */
+function stubProjectKnowledge(
+  notes: Array<{ id: string; path: string; title: string; references: Array<{ kind: string; id: string }> }>,
+  tasks: string[] = [],
+) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes('/authoritative/markdown-inventory')) return jsonResponse(notes)
+      if (url.includes('/authoritative/project-knowledge')) {
+        return jsonResponse({ project_id: 'p-1', notes, tasks })
+      }
       return jsonResponse({ error: `unexpected fetch ${url}` }, 404)
     }),
   )
@@ -147,17 +153,11 @@ describe('declared agent_jobs panel', () => {
 })
 
 describe('declared knowledge_refs panel', () => {
-  it('uses the declared empty_text when the vault has no notes', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url.includes('/authoritative/markdown-inventory')) return jsonResponse([])
-        return jsonResponse({ error: `unexpected fetch ${url}` }, 404)
-      }),
-    )
+  it('uses the declared empty_text when the project has no notes', async () => {
+    stubProjectKnowledge([])
     renderPanel(
       <KnowledgeRefsPanel
+        projectId="p-1"
         component={component({
           id: 'references',
           type: 'knowledge_refs',
@@ -169,19 +169,74 @@ describe('declared knowledge_refs panel', () => {
     )
 
     expect(await screen.findByText('This project references no notes yet.')).toBeInTheDocument()
+    expect(screen.getByText(/The server returned no notes for this project/)).toBeInTheDocument()
+  })
+
+  it('reports a server without the read instead of pretending the project has no notes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/authoritative/project-knowledge')) {
+          return jsonResponse({ error: 'not found' }, 404)
+        }
+        return jsonResponse({ error: `unexpected fetch ${url}` }, 404)
+      }),
+    )
+    renderPanel(
+      <KnowledgeRefsPanel
+        projectId="p-1"
+        component={component({
+          id: 'references',
+          type: 'knowledge_refs',
+          title: 'References',
+          source: 'knowledge',
+        })}
+      />,
+    )
+
+    expect(await screen.findByText(/does not provide project knowledge yet/)).toBeInTheDocument()
+    expect(screen.queryByText(/The server returned no notes/)).not.toBeInTheDocument()
+  })
+
+  it('refuses to read the global inventory when it is rendered without a project', () => {
+    stubProjectKnowledge([])
+    renderPanel(
+      <KnowledgeRefsPanel
+        component={component({
+          id: 'references',
+          type: 'knowledge_refs',
+          title: 'References',
+          source: 'knowledge',
+        })}
+      />,
+    )
+
+    expect(screen.getByText(/needs a project to read/)).toBeInTheDocument()
   })
 })
 
 describe('declared knowledge_refs panel chrome', () => {
   const notes = [
-    { id: 'n-1', path: 'notes/one.md', title: 'First note' },
-    { id: 'n-2', path: 'notes/two.md', title: 'Second note' },
+    {
+      id: 'n-1',
+      path: 'notes/one.md',
+      title: 'First note',
+      references: [{ kind: 'project', id: 'p-1' }],
+    },
+    {
+      id: 'n-2',
+      path: 'notes/two.md',
+      title: 'Second note',
+      references: [{ kind: 'task', id: 't-1' }],
+    },
   ]
 
   it('lists notes, links them by path and names the declared limit', async () => {
-    stubInventory(notes)
+    stubProjectKnowledge(notes, ['t-1'])
     renderPanel(
       <KnowledgeRefsPanel
+        projectId="p-1"
         component={component({
           id: 'references',
           type: 'knowledge_refs',
@@ -194,16 +249,37 @@ describe('declared knowledge_refs panel chrome', () => {
 
     expect(await screen.findByRole('link', { name: /First note/ })).toHaveAttribute(
       'href',
-      '/knowledge/notes/one.md',
+      '/knowledge/notes/one.md?project=p-1',
     )
     expect(screen.queryByText('Second note')).not.toBeInTheDocument()
     expect(screen.getByText(/Showing 1 of 2 notes/)).toBeInTheDocument()
+    expect(screen.getByText(/1 reference this project · 1 through a task/)).toBeInTheDocument()
   })
 
-  it('names a declared column the inventory cannot represent', async () => {
-    stubInventory(notes)
+  it('shows the references that included each note, and links a task to its project', async () => {
+    stubProjectKnowledge(notes, ['t-1'])
     renderPanel(
       <KnowledgeRefsPanel
+        projectId="p-1"
+        component={component({
+          id: 'references',
+          type: 'knowledge_refs',
+          title: 'References',
+          source: 'knowledge',
+        })}
+      />,
+    )
+
+    expect(await screen.findByText('This project')).toBeInTheDocument()
+    const taskChip = screen.getByTitle('task:t-1')
+    expect(taskChip).toHaveAttribute('href', '/projects/p-1?task=t-1')
+  })
+
+  it('names a declared column the project read cannot represent', async () => {
+    stubProjectKnowledge(notes, ['t-1'])
+    renderPanel(
+      <KnowledgeRefsPanel
+        projectId="p-1"
         component={component({
           id: 'references',
           type: 'knowledge_refs',
@@ -218,9 +294,10 @@ describe('declared knowledge_refs panel chrome', () => {
   })
 
   it('renders the declared actions note with its own vocabulary', async () => {
-    stubInventory(notes)
+    stubProjectKnowledge(notes, ['t-1'])
     renderPanel(
       <KnowledgeRefsPanel
+        projectId="p-1"
         component={component({
           id: 'references',
           type: 'knowledge_refs',
@@ -235,9 +312,10 @@ describe('declared knowledge_refs panel chrome', () => {
   })
 
   it('refuses a declared filter or sort instead of showing another order', () => {
-    stubInventory(notes)
+    stubProjectKnowledge(notes, ['t-1'])
     renderPanel(
       <KnowledgeRefsPanel
+        projectId="p-1"
         component={component({
           id: 'references',
           type: 'knowledge_refs',
@@ -253,9 +331,10 @@ describe('declared knowledge_refs panel chrome', () => {
   })
 
   it('refuses a non-knowledge source by name', () => {
-    stubInventory(notes)
+    stubProjectKnowledge(notes, ['t-1'])
     renderPanel(
       <KnowledgeRefsPanel
+        projectId="p-1"
         component={component({
           id: 'references',
           type: 'knowledge_refs',

@@ -1,12 +1,64 @@
 //! Authoritative, replayable physical folder renames. A folder move is a single
 //! filesystem rename, followed by a transactional SQLite path-index update and
 //! command receipt. Pending operations are replayed before serving requests.
+//!
+//! A pending row is a promise to finish, not a promise to insist. When
+//! publication is refused by a precondition this process can see (a missing
+//! parent, a taken destination, a missing source), the row is deleted in the
+//! same flow: the intent provably never happened, and keeping it would make
+//! recovery refuse every later knowledge command with a conflict the caller
+//! cannot act on. The cost is the intent itself — a person re-issues the command
+//! under a new id — and the win is that one bad name no longer wedges the
+//! workspace until the database is rebuilt.
 use crate::{
+    knowledge_files::VaultError,
     knowledge_operations::KnowledgeOperations,
     store::{AuthorityError, AuthorityStore},
 };
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
+
+/// Fixed refusal text for a folder create whose parent folder is absent.
+pub const FOLDER_PARENT_MISSING: &str = "folder parent does not exist";
+/// Fixed refusal text for a create or move whose target name is taken.
+pub const FOLDER_DESTINATION_EXISTS: &str = "folder destination already exists";
+/// Fixed refusal text for a move whose source folder is gone.
+pub const FOLDER_SOURCE_MISSING: &str = "folder does not exist";
+
+/// Outcome of trying to publish one pending folder intent to the vault.
+///
+/// The distinction is the whole point of this type. `Refused` means *this
+/// process looked at the vault and proved that the intent cannot be applied*:
+/// the parent is missing, the destination name is taken, the source is gone. In
+/// that state nothing was written, so the durable pending row is worthless — it
+/// records an intention that can never become true, and replaying it before
+/// every later command (which is what recovery does) would refuse those later
+/// commands forever. `Ambiguous` means the vault could not be read, or what it
+/// shows cannot be explained by this intent (an I/O failure, a symlink or a
+/// foreign file where a folder should be). Those stay pending: a crash may have
+/// published the work, so only a later observation may accept or discard them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FolderPublishOutcome {
+    /// Definite, in-process refusal. Carries the human text the transport
+    /// returns verbatim, so a caller can fix its own command.
+    Refused(&'static str),
+    /// Unknown or externally caused state. The intent must remain pending.
+    Ambiguous,
+}
+
+impl From<FolderPublishOutcome> for AuthorityError {
+    /// Both halves are refusals to the caller. `Refused` is the caller's own
+    /// mistake, so it becomes the validation error the transport already quotes
+    /// as a 400 with its fixed wording. `Ambiguous` keeps the existing generic
+    /// conflict: the workspace, not the command, is what failed, and the request
+    /// may succeed once the external state is resolved.
+    fn from(outcome: FolderPublishOutcome) -> Self {
+        match outcome {
+            FolderPublishOutcome::Refused(message) => AuthorityError::Invalid(message),
+            FolderPublishOutcome::Ambiguous => AuthorityError::ImmutableConflict,
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -107,26 +159,51 @@ pub(crate) fn enqueue(
     tx.commit()?;
     Ok(None)
 }
-pub fn publish(ops: &KnowledgeOperations, mv: &FolderMove) -> Result<(), AuthorityError> {
+/// Publish one pending folder rename to the vault.
+///
+/// The return value tells the caller whether the intent is *spent* (accepted, or
+/// provably impossible) or must be retried later. It never decides that on its
+/// own: the caller owns the durable row, and only the caller knows whether a
+/// refusal means "drop the reservation" or "keep waiting".
+pub fn publish(ops: &KnowledgeOperations, mv: &FolderMove) -> Result<(), FolderPublishOutcome> {
     // Recovery of an atomic rename is unambiguous only when the source is gone.
     // Ambiguous external interventions are rejected without clobbering files.
     let source = ops
         .vault()
         .folder_exists(&mv.from)
-        .map_err(|_| AuthorityError::ImmutableConflict)?;
+        .map_err(|_| FolderPublishOutcome::Ambiguous)?;
     let destination = ops
         .vault()
         .folder_exists(&mv.to)
-        .map_err(|_| AuthorityError::ImmutableConflict)?;
+        .map_err(|_| FolderPublishOutcome::Ambiguous)?;
+    // A rename is atomic, so an absent source next to a present destination can
+    // only be this rename already having landed before its receipt. Accept it:
+    // that is the crash window between publication and acceptance.
     if !source && destination {
         return Ok(());
     }
-    if !source || destination {
-        return Err(AuthorityError::ImmutableConflict);
+    if !source {
+        return Err(FolderPublishOutcome::Refused(FOLDER_SOURCE_MISSING));
+    }
+    if destination {
+        // Both names exist. Nothing was written, and the caller can pick another
+        // name, so this is a validation refusal rather than a conflict: an
+        // atomic rename can never leave both names in place.
+        return Err(FolderPublishOutcome::Refused(FOLDER_DESTINATION_EXISTS));
     }
     ops.vault()
         .move_folder(&mv.from, &mv.to)
-        .map_err(|_| AuthorityError::ImmutableConflict)
+        .map_err(|error| match error {
+            // The two paths were just observed in the opposite state, so the rename
+            // itself raced a foreign writer. Report what the filesystem says now;
+            // neither variant can have moved the folder, because `rename` is atomic
+            // and these are its two refusal kinds.
+            VaultError::NotFound => FolderPublishOutcome::Refused(FOLDER_SOURCE_MISSING),
+            VaultError::AlreadyExists => FolderPublishOutcome::Refused(FOLDER_DESTINATION_EXISTS),
+            // I/O failures and unreadable/symlinked paths may have partially landed,
+            // so the intent stays pending for a later reconciliation.
+            _ => FolderPublishOutcome::Ambiguous,
+        })
 }
 pub(crate) fn accept(
     store: &mut AuthorityStore,
@@ -158,6 +235,25 @@ pub(crate) fn accept(
     }
     tx.commit()?;
     Ok(receipt)
+}
+
+/// Release a pending folder-move reservation after a publication that definitely
+/// did not happen.
+///
+/// Only `pending` rows are removed: an accepted row *is* the durable receipt and
+/// must never disappear. The lost information is the intent itself — a person
+/// must re-issue the move as a new command id. That is cheaper than the
+/// alternative, which is a row that can never be satisfied and that recovery
+/// replays (and fails on) before every later knowledge write.
+pub(crate) fn abandon_move(
+    store: &mut AuthorityStore,
+    command_id: &str,
+) -> Result<(), AuthorityError> {
+    store.conn.execute(
+        "DELETE FROM markdown_folder_commands WHERE command_id=?1 AND state='pending'",
+        [command_id],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -326,19 +422,47 @@ pub(crate) fn enqueue_create(
     Ok(None)
 }
 
-pub fn publish_create(ops: &KnowledgeOperations, cmd: &FolderCreate) -> Result<(), AuthorityError> {
+/// Publish one pending folder create to the vault.
+///
+/// See [`publish`]: `Refused` means the intent is spent and provably did nothing
+/// (its parent is missing, or its name is held by something else), so the caller
+/// must release the reservation; `Ambiguous` means the create may already exist
+/// and the intent must survive so recovery can accept it later.
+pub fn publish_create(
+    ops: &KnowledgeOperations,
+    cmd: &FolderCreate,
+) -> Result<(), FolderPublishOutcome> {
     // Replaying a completed mkdir is safe: the folder must still be a real
     // folder and cannot have been replaced by a symlink or file.
-    if ops
-        .vault()
-        .folder_exists(&cmd.path)
-        .map_err(|_| AuthorityError::ImmutableConflict)?
-    {
-        return Ok(());
+    match ops.vault().folder_exists(&cmd.path) {
+        Ok(true) => return Ok(()),
+        Ok(false) => {}
+        // A file, a symlink or an unreadable entry sits on the requested path.
+        // This process cannot tell whether the create landed, so it must not
+        // claim the intent is spent.
+        Err(_) => return Err(FolderPublishOutcome::Ambiguous),
     }
-    ops.vault()
-        .create_folder(&cmd.path)
-        .map_err(|_| AuthorityError::ImmutableConflict)
+    match ops.vault().create_folder(&cmd.path) {
+        Ok(()) => Ok(()),
+        // `folder_exists` just proved the leaf is absent, so the only possible
+        // missing piece is an ancestor. Nothing was created: the caller named a
+        // parent it never made, and can retry under a parent that exists.
+        Err(VaultError::NotFound) => Err(FolderPublishOutcome::Refused(FOLDER_PARENT_MISSING)),
+        // The leaf appeared between the check and the mkdir. If it is the folder
+        // the caller asked for, the intent is satisfied; anything else (a file,
+        // a symlink) is a foreign replacement this intent did not create.
+        Err(VaultError::AlreadyExists) => match ops.vault().folder_exists(&cmd.path) {
+            Ok(true) => Ok(()),
+            _ => Err(FolderPublishOutcome::Refused(FOLDER_DESTINATION_EXISTS)),
+        },
+        // The parent exists but is not a real folder (a plain file, or a symlink
+        // the vault refuses to follow), so there is no folder to hold the new
+        // one. Honest and fixable by the caller, like a missing parent.
+        Err(VaultError::InvalidPath) => Err(FolderPublishOutcome::Refused(FOLDER_PARENT_MISSING)),
+        // I/O failures may have published the directory, so the intent stays
+        // pending until a later observation can decide.
+        Err(_) => Err(FolderPublishOutcome::Ambiguous),
+    }
 }
 
 pub(crate) fn accept_create(
@@ -367,6 +491,20 @@ pub(crate) fn accept_create(
     }
     tx.commit()?;
     Ok(receipt)
+}
+
+/// Release a pending folder-create reservation after a publication that
+/// definitely did not happen. See [`abandon_move`] for why discarding the
+/// intent is safe and what it costs.
+pub(crate) fn abandon_create(
+    store: &mut AuthorityStore,
+    command_id: &str,
+) -> Result<(), AuthorityError> {
+    store.conn.execute(
+        "DELETE FROM markdown_folder_creates WHERE command_id=?1 AND state='pending'",
+        [command_id],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -415,5 +553,423 @@ mod folder_creation_acceptance_tests {
                 .path,
             "Journal"
         );
+    }
+}
+
+#[cfg(test)]
+mod folder_refusal_tests {
+    use super::*;
+    use crate::AuthoritativeHost;
+    use crate::markdown_commands::MarkdownCommand;
+
+    /// Assert a refusal is the caller-fixable, fixed-text kind the transport
+    /// answers with 400, and return its message.
+    fn refusal<T: std::fmt::Debug>(result: Result<T, AuthorityError>) -> &'static str {
+        match result {
+            Err(AuthorityError::Invalid(message)) => message,
+            other => panic!("expected a validation refusal, got {other:?}"),
+        }
+    }
+
+    fn temporary_root(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "orbit-folder-refusal-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    /// The reported defect: a create under a parent that does not exist used to
+    /// leave its intent pending, and every later knowledge write on that server
+    /// was refused by replay. It must now be a plain refusal with a name the
+    /// browser can quote, and the queue must stay usable.
+    #[test]
+    fn refused_create_does_not_poison_later_knowledge_writes() {
+        let mut host = AuthoritativeHost::open(":memory:").unwrap();
+        assert_eq!(
+            refusal(host.execute_folder_create(
+                "local",
+                "mkdir-ghost",
+                FolderCreate {
+                    path: "ghost/child".into()
+                }
+            )),
+            FOLDER_PARENT_MISSING
+        );
+        assert!(pending_creates(&host.authority).unwrap().is_empty());
+        assert!(pending(&host.authority).unwrap().is_empty());
+
+        // The next, unrelated create succeeds on the same server.
+        host.execute_folder_create(
+            "local",
+            "mkdir-alpha",
+            FolderCreate {
+                path: "Alpha".into(),
+            },
+        )
+        .unwrap();
+        // And so does a note write, which replays the folder queues first.
+        host.execute_markdown_command(
+            "local",
+            "note-1",
+            MarkdownCommand::Create {
+                note_id: "note-a".into(),
+                path: "Alpha/a.md".into(),
+                body: "# A".into(),
+            },
+        )
+        .unwrap();
+        assert!(
+            host.knowledge_vault
+                .vault()
+                .root_path()
+                .join("Alpha/a.md")
+                .is_file()
+        );
+    }
+
+    /// The same defect for renames: a destination that already exists is the
+    /// caller's choice, not a workspace conflict, and must not wedge the queue.
+    #[test]
+    fn refused_move_does_not_poison_later_knowledge_writes() {
+        let mut host = AuthoritativeHost::open(":memory:").unwrap();
+        host.knowledge_vault.vault().create_folder("Work").unwrap();
+        host.knowledge_vault
+            .vault()
+            .create_folder("Archive")
+            .unwrap();
+        host.execute_markdown_command(
+            "local",
+            "note-1",
+            MarkdownCommand::Create {
+                note_id: "note-a".into(),
+                path: "Work/a.md".into(),
+                body: "# A".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            refusal(host.execute_folder_move(
+                "local",
+                "move-work-archive",
+                FolderMove {
+                    from: "Work".into(),
+                    to: "Archive".into()
+                }
+            )),
+            FOLDER_DESTINATION_EXISTS
+        );
+        assert!(pending(&host.authority).unwrap().is_empty());
+        // Nothing moved, and the index still names the real path.
+        assert!(
+            host.indexed_markdown_knowledge()
+                .unwrap()
+                .iter()
+                .any(|n| n.id == "note-a" && n.path == "Work/a.md")
+        );
+
+        // A later, valid move on the same server succeeds and keeps the note.
+        host.execute_folder_move(
+            "local",
+            "move-work-done",
+            FolderMove {
+                from: "Work".into(),
+                to: "Done".into(),
+            },
+        )
+        .unwrap();
+        assert!(
+            host.indexed_markdown_knowledge()
+                .unwrap()
+                .iter()
+                .any(|n| n.id == "note-a" && n.path == "Done/a.md")
+        );
+        host.execute_folder_create(
+            "local",
+            "mkdir-later",
+            FolderCreate {
+                path: "Later".into(),
+            },
+        )
+        .unwrap();
+    }
+
+    /// A refused move whose source is gone names the source, not a conflict.
+    #[test]
+    fn move_from_a_missing_source_says_the_folder_does_not_exist() {
+        let mut host = AuthoritativeHost::open(":memory:").unwrap();
+        assert_eq!(
+            refusal(host.execute_folder_move(
+                "local",
+                "move-missing",
+                FolderMove {
+                    from: "Ghost".into(),
+                    to: "Ghost2".into()
+                }
+            )),
+            FOLDER_SOURCE_MISSING
+        );
+        assert!(pending(&host.authority).unwrap().is_empty());
+        host.execute_folder_create(
+            "local",
+            "mkdir-after-missing",
+            FolderCreate {
+                path: "Kept".into(),
+            },
+        )
+        .unwrap();
+    }
+
+    /// Both refusals must survive a close/open cycle of the same database: a
+    /// restart used to replay the pending row and fail on open forever.
+    #[test]
+    fn folder_refusals_do_not_survive_a_reopen_as_pending_work() {
+        let root = temporary_root("reopen");
+        std::fs::create_dir_all(&root).unwrap();
+        let database = root.join("authority.sqlite");
+        {
+            let mut host = AuthoritativeHost::open(&database).unwrap();
+            assert_eq!(
+                refusal(host.execute_folder_create(
+                    "local",
+                    "mkdir-ghost",
+                    FolderCreate {
+                        path: "ghost/child".into()
+                    }
+                )),
+                FOLDER_PARENT_MISSING
+            );
+            host.knowledge_vault.vault().create_folder("Work").unwrap();
+            host.knowledge_vault
+                .vault()
+                .create_folder("Archive")
+                .unwrap();
+            assert_eq!(
+                refusal(host.execute_folder_move(
+                    "local",
+                    "move-work-archive",
+                    FolderMove {
+                        from: "Work".into(),
+                        to: "Archive".into()
+                    }
+                )),
+                FOLDER_DESTINATION_EXISTS
+            );
+        }
+        {
+            // Opening replays both queues; neither may refuse the workspace.
+            let mut host = AuthoritativeHost::open(&database).unwrap();
+            assert!(pending_creates(&host.authority).unwrap().is_empty());
+            assert!(pending(&host.authority).unwrap().is_empty());
+            host.execute_folder_create(
+                "local",
+                "mkdir-beta",
+                FolderCreate {
+                    path: "Beta".into(),
+                },
+            )
+            .unwrap();
+            host.execute_folder_move(
+                "local",
+                "move-work-work2",
+                FolderMove {
+                    from: "Work".into(),
+                    to: "Work2".into(),
+                },
+            )
+            .unwrap();
+        }
+        // The refusals were refusals, not partial work: nothing was created or
+        // moved behind the caller's back.
+        let vault =
+            crate::knowledge_files::MarkdownVault::open(root.join("authority.knowledge")).unwrap();
+        assert!(vault.folder_exists("Beta").unwrap());
+        assert!(vault.folder_exists("Work2").unwrap());
+        assert!(!vault.folder_exists("ghost").unwrap());
+        assert!(vault.folder_exists("Archive").unwrap());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Recovery must not abort every caller for one impossible intent, and must
+    /// still accept an intent whose work landed before the crash.
+    #[test]
+    fn recovery_abandons_refused_intents_and_accepts_published_ones() {
+        let mut host = AuthoritativeHost::open(":memory:").unwrap();
+        // An intent that can never be satisfied: its parent does not exist.
+        let impossible = FolderCreate {
+            path: "ghost/child".into(),
+        };
+        enqueue_create(
+            &mut host.authority,
+            "owner",
+            "mkdir-impossible",
+            &impossible,
+        )
+        .unwrap();
+        host.recover_folder_creates().unwrap();
+        assert!(pending_creates(&host.authority).unwrap().is_empty());
+
+        // An intent whose folder was made before the crash is accepted, not
+        // abandoned: the receipt must survive the interruption.
+        let landed = FolderCreate {
+            path: "Journal".into(),
+        };
+        enqueue_create(&mut host.authority, "owner", "mkdir-landed", &landed).unwrap();
+        host.knowledge_vault
+            .vault()
+            .create_folder("Journal")
+            .unwrap();
+        host.recover_folder_creates().unwrap();
+        assert!(pending_creates(&host.authority).unwrap().is_empty());
+        assert_eq!(
+            host.execute_folder_create("owner", "mkdir-landed", landed)
+                .unwrap()
+                .path,
+            "Journal"
+        );
+
+        // Renames behave the same way: a move onto a taken name is dropped, a
+        // move that landed is accepted with its receipt.
+        host.knowledge_vault.vault().create_folder("One").unwrap();
+        host.knowledge_vault.vault().create_folder("Two").unwrap();
+        let blocked = FolderMove {
+            from: "One".into(),
+            to: "Two".into(),
+        };
+        enqueue(&mut host.authority, "owner", "move-blocked", &blocked).unwrap();
+        host.recover_folder_commands().unwrap();
+        assert!(pending(&host.authority).unwrap().is_empty());
+
+        let moved = FolderMove {
+            from: "Two".into(),
+            to: "Three".into(),
+        };
+        enqueue(&mut host.authority, "owner", "move-landed", &moved).unwrap();
+        host.knowledge_vault
+            .vault()
+            .move_folder("Two", "Three")
+            .unwrap();
+        host.recover_folder_commands().unwrap();
+        assert!(pending(&host.authority).unwrap().is_empty());
+        assert_eq!(
+            host.execute_folder_move("owner", "move-landed", moved)
+                .unwrap()
+                .command_id,
+            "move-landed"
+        );
+        // And the workspace is still writable afterwards.
+        host.execute_folder_create(
+            "owner",
+            "mkdir-after-recovery",
+            FolderCreate {
+                path: "AfterRecovery".into(),
+            },
+        )
+        .unwrap();
+    }
+
+    /// A grammar or subtree refusal is decided before the intent is durable, so
+    /// it can neither poison the queue nor be mistaken for a vault conflict.
+    #[test]
+    fn invalid_folder_moves_fail_before_enqueue() {
+        let mut host = AuthoritativeHost::open(":memory:").unwrap();
+        host.knowledge_vault.vault().create_folder("notes").unwrap();
+        host.knowledge_vault
+            .vault()
+            .create_folder("notes/research")
+            .unwrap();
+        for (id, mv) in [
+            (
+                "move-into-subtree",
+                FolderMove {
+                    from: "notes".into(),
+                    to: "notes/research/notes".into(),
+                },
+            ),
+            (
+                "move-to-itself",
+                FolderMove {
+                    from: "notes".into(),
+                    to: "notes".into(),
+                },
+            ),
+            (
+                "move-with-traversal",
+                FolderMove {
+                    from: "notes".into(),
+                    to: "../escape".into(),
+                },
+            ),
+        ] {
+            assert_eq!(
+                refusal(host.execute_folder_move("local", id, mv)),
+                "invalid folder move"
+            );
+        }
+        assert!(pending(&host.authority).unwrap().is_empty());
+        host.execute_folder_create(
+            "local",
+            "mkdir-after-invalid",
+            FolderCreate {
+                path: "AfterInvalid".into(),
+            },
+        )
+        .unwrap();
+    }
+
+    /// An accepted command still answers its identical replay with the same
+    /// receipt, and a reused id with a different payload is still a conflict.
+    #[test]
+    fn accepted_folder_commands_keep_their_receipts() {
+        let mut host = AuthoritativeHost::open(":memory:").unwrap();
+        let create = FolderCreate {
+            path: "Receipts".into(),
+        };
+        let receipt = host
+            .execute_folder_create("local", "mkdir-receipt", create.clone())
+            .unwrap();
+        assert_eq!(
+            host.execute_folder_create("local", "mkdir-receipt", create)
+                .unwrap(),
+            receipt
+        );
+        match host.execute_folder_create(
+            "local",
+            "mkdir-receipt",
+            FolderCreate {
+                path: "Other".into(),
+            },
+        ) {
+            Err(AuthorityError::ImmutableConflict) => {}
+            other => panic!("expected an immutable conflict, got {other:?}"),
+        }
+
+        host.knowledge_vault.vault().create_folder("From").unwrap();
+        let mv = FolderMove {
+            from: "From".into(),
+            to: "To".into(),
+        };
+        let receipt = host
+            .execute_folder_move("local", "move-receipt", mv.clone())
+            .unwrap();
+        assert_eq!(
+            host.execute_folder_move("local", "move-receipt", mv)
+                .unwrap(),
+            receipt
+        );
+        match host.execute_folder_move(
+            "local",
+            "move-receipt",
+            FolderMove {
+                from: "To".into(),
+                to: "Elsewhere".into(),
+            },
+        ) {
+            Err(AuthorityError::ImmutableConflict) => {}
+            other => panic!("expected an immutable conflict, got {other:?}"),
+        }
     }
 }

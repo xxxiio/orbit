@@ -49,6 +49,8 @@ import {
   fetchMarkdownDocument,
   fetchMarkdownInventory,
   fetchMarkdownRelations,
+  fetchProjectKnowledge,
+  fetchReferences,
   searchMarkdown,
 } from './endpoints/knowledge'
 import { fetchMilestones } from './endpoints/milestones'
@@ -128,7 +130,9 @@ import type {
   BundledWorkflowDescriptor,
   KnowledgeDocumentInfo,
   KnowledgeNode,
+  MarkdownReferencesResponse,
   MilestoneSnapshot,
+  ProjectKnowledgeResponse,
   TaskStatus,
 } from './contracts'
 
@@ -186,6 +190,9 @@ export const queryKeys = {
   knowledgeDocument: (path: string) => ['knowledge', 'document', path] as const,
   knowledgeRelations: (id: string) => ['knowledge', 'relations', id] as const,
   knowledgeSearch: (query: string, limit: number) => ['knowledge', 'search', query, limit] as const,
+  /** Notes that reference `<kind>:<id>`; the key names the instance, not the kind. */
+  knowledgeReferences: (target: string) => ['knowledge', 'references', target] as const,
+  projectKnowledge: (projectId: string) => ['knowledge', 'project-knowledge', projectId] as const,
   markdownManifest: () => ['knowledge', 'manifest'] as const,
   attachments: (ownerKind: string, ownerId: string) => ['attachments', ownerKind, ownerId] as const,
   attachmentContent: (id: string) => ['attachments', 'content', id] as const,
@@ -740,6 +747,34 @@ export function useMarkdownSearch(
     queryKey: queryKeys.knowledgeSearch(trimmed, limit),
     queryFn: ({ signal }) => searchMarkdown(trimmed, limit, signal),
     enabled: trimmed.length > 0,
+  })
+}
+
+/**
+ * Notes that reference one entity (`project:orbit`, `task:task-1`). A server
+ * that predates the read answers 404; the caller must show that as unavailable
+ * rather than as "no notes reference this".
+ */
+export function useMarkdownReferences(
+  target: string | null,
+): UseQueryResult<MarkdownReferencesResponse, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.knowledgeReferences(target ?? ''),
+    queryFn: ({ signal }) => fetchReferences(target as string, signal),
+    enabled: Boolean(target),
+    staleTime: 10_000,
+  })
+}
+
+/** The project-scoped knowledge read (C9): one vault scan, no per-note requests. */
+export function useProjectKnowledge(
+  projectId: string | undefined,
+): UseQueryResult<ProjectKnowledgeResponse, ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.projectKnowledge(projectId ?? ''),
+    queryFn: ({ signal }) => fetchProjectKnowledge(projectId as string, signal),
+    enabled: Boolean(projectId),
+    staleTime: 10_000,
   })
 }
 

@@ -57,6 +57,9 @@ evidence on every pass).
 | `conflict.spec.ts` | stale revision refusal and recovery |
 | `workspaces.spec.ts` | board moves (accepted/rejected), milestone lifecycle + invalid edge, dependency add/remove + readiness, workflow change, task-list URL state |
 | `planning.spec.ts` | day plan requires authored capacity, review → approval → apply survives reload, session renewal on visibility |
+| `knowledge-folders.spec.ts` | folder create → note inside it, note rename/move, folder rename carries its notes, invalid destination refusals, breadcrumb destinations — each checked on screen and through `knowledge-tree`/`markdown-inventory`/`markdown-document` |
+| `knowledge-links.spec.ts` | link two notes by id (outliner picker), follow the link, back-references, unlink removes token + backlink, an unknown `[[id]]` is named as unresolved, and an external writer between the read and the send is refused with no retry |
+| `project-knowledge.spec.ts` | project and task references from a note land in the project's `knowledge_refs` panel and the task drawer's Notes, add/remove follows the server read, a reference to a missing task is broken and not project knowledge, and the panel never claims unavailability on a server that serves the route |
 | `evidence-i2.spec.ts` | opt-in evidence capture into `web/evidence/i2/` |
 | `terminology.spec.ts` | no legacy feature name in rendered primary routes |
 | `fixture.spec.ts` | the fixture is deterministic and replayable |
@@ -69,6 +72,9 @@ tests/e2e/harness/session.ts   form sign-in, API sign-in, signed-out assertions
 tests/e2e/harness/seed.ts      fixture wiring for one harness server
 tests/e2e/harness/authority.ts authoritative reads/writes for the I1 specs
 tests/e2e/harness/fixtures.ts  `server` and `workspace` Playwright fixtures
+tests/e2e/harness/knowledge.ts server reads (tree, inventory, document, relations,
+                               references, project knowledge) and the knowledge
+                               dialogs/pickers the I2 specs drive
 tests/fixture/seed.ts          the reusable seed itself (also usable for dogfooding)
 ```
 

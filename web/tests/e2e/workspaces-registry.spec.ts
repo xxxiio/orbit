@@ -107,12 +107,20 @@ test.describe('workflow view registry', () => {
             }
           }
 
-          // Knowledge references and agent jobs are real panels now: each one
-          // must show a row the fixture actually seeded.
-          if (component.type === 'knowledge_refs') {
+          // A knowledge panel is the project-scoped read (C9): a note appears
+          // only when it references this project or one of its tasks. The
+          // fixture seeds notes but no typed reference, so every knowledge panel
+          // must render the read's empty state and still offer a way into the
+          // workspace. Listing the whole inventory here would be the I4
+          // behaviour, not this contract.
+          if (component.source === 'knowledge') {
             await expect(
-              surface.locator('a[href^="/knowledge/"]').first(),
-              `${projectId}/${view.id}/${component.id} links a real note`,
+              surface.getByText('No note references this project yet'),
+              `${projectId}/${view.id}/${component.id} says the project read is empty`,
+            ).toBeVisible()
+            await expect(
+              surface.getByRole('link', { name: 'Open Knowledge' }),
+              `${projectId}/${view.id}/${component.id} links into Knowledge`,
             ).toBeVisible()
           }
           if (component.source === 'agent_jobs') {
@@ -127,12 +135,6 @@ test.describe('workflow view registry', () => {
                 `${projectId}/${view.id}/${component.id} lists a real agent job`,
               ).toBeVisible()
             }
-          }
-          if (component.source === 'knowledge' && component.type === 'table') {
-            await expect(
-              surface.locator('a[href^="/knowledge/"]').first(),
-              `${projectId}/${view.id}/${component.id} tabulates a real note`,
-            ).toBeVisible()
           }
 
           // The fixture's guarded view declares a descending task sort. The

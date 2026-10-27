@@ -308,6 +308,56 @@ impl AuthorityStore {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Current accepted Markdown revision for one note.
+    ///
+    /// A note that exists in the vault but was never published through the
+    /// Markdown command ledger has no revision; reporting 0 states that plainly
+    /// instead of inventing a first edit that never happened.
+    pub fn markdown_note_revision(&self, note_id: &str) -> Result<i64, AuthorityError> {
+        use rusqlite::OptionalExtension;
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT revision FROM markdown_note_revisions WHERE note_id=?1",
+                [note_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(0))
+    }
+
+    /// Whether a typed reference names a live entity.
+    ///
+    /// The table name comes from a closed match over the reference kinds and the
+    /// id is always a bound parameter, so a note's `[project:…]` text can never
+    /// reach SQL as syntax.
+    pub(crate) fn reference_entity_exists(
+        &self,
+        kind: crate::references::TypedReferenceKind,
+        id: &str,
+    ) -> Result<bool, AuthorityError> {
+        use crate::references::TypedReferenceKind;
+        let table = match kind {
+            TypedReferenceKind::Project => "projects",
+            TypedReferenceKind::Task => "tasks",
+        };
+        let sql = format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id = ?1)");
+        Ok(self.conn.query_row(&sql, [id], |row| row.get(0))?)
+    }
+
+    /// Task ids of one project, ascending.
+    ///
+    /// The project knowledge read names these so a client can offer a task
+    /// reference without a second lookup; the order is fixed so the response
+    /// does not depend on insertion history.
+    pub(crate) fn project_task_ids(&self, project_id: &str) -> Result<Vec<String>, AuthorityError> {
+        let mut statement = self
+            .conn
+            .prepare("SELECT id FROM tasks WHERE project_id=?1 ORDER BY id")?;
+        let rows = statement.query_map([project_id], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Produce a consistent, standalone SQLite backup while the relay may be running.
     /// VACUUM INTO captures committed WAL transactions without copying a live WAL file.
     pub fn backup_to(&self, destination: &Path) -> Result<(), AuthorityError> {

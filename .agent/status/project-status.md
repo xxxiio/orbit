@@ -37,15 +37,16 @@ The web client is the reference product experience. Since M32 I1 it can rename a
 project and move it through the domain's legal status transitions, search
 projects, tasks and knowledge in one server query, save and restore personal
 task/board views, and show authoritative task Created/Updated times with an
-explicit unknown state. M32 I2–I6 remain: knowledge folders and links, browser
-agent execution, connected capability execution, extended dogfooding and final
-acceptance. Per-device project ACLs, server attachment GC and live Herdr
+explicit unknown state. Since I2 it manages knowledge as a working surface:
+folders, note locations, links, project/task references and project-context
+knowledge. M32 I3–I6 remain: browser agent execution, connected capability
+execution, extended dogfooding and final acceptance. Per-device project ACLs, server attachment GC and live Herdr
 acceptance remain documented follow-ups.
 
 ## Current milestone
 
 MILESTONE-0032 — M32 Web Product Completeness, Agent Workflows & Extended
-Dogfooding, active (I1 complete). MILESTONE-0031 is complete (I1–I6). M31
+Dogfooding, active (I1–I2 complete). MILESTONE-0031 is complete (I1–I6). M31
 shipped the React client served by `orbit-server` with session authentication,
 Home, Inbox, project management, workflow-driven workspaces and a task inspector
 against the authoritative domain. MILESTONE-0030 is complete (I1–I4), and
@@ -53,6 +54,18 @@ MILESTONE-0025 EC-001..EC-007 remain satisfied. M27 remains blocked externally.
 
 ## Recently completed
 
+- M32 I2 knowledge workflows: folders are real destinations with create, rename
+  and move (server-side a rename is a move), notes are created, renamed and moved
+  through a folder picker, and a folder rename carries its notes. Notes link to
+  each other by id with back-references and unresolved targets, and can reference a
+  project or task; a reference to something that no longer exists is shown as
+  broken. A project's knowledge panel reads the notes that reference it or its
+  tasks, and the task drawer has a Notes section. The typed-reference grammar moved
+  into `orbit-runtime` with the CLI delegating, so the writer and reader cannot
+  drift. A refused folder command now releases its durable intent instead of
+  blocking every later knowledge write — an availability defect found by browser
+  acceptance and fixed in the runtime. 1,759 workspace tests, 299 client unit tests
+  and 125 browser checks pass.
 - M32 I1 everyday project management: project rename and status now go through
   one authoritative `update` command (domain-validated, fenced, idempotent, with
   a no-op that writes nothing), and the status control offers exactly the edges

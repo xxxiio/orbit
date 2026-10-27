@@ -51,10 +51,11 @@ pub fn reference_backlinks(
     target: &str,
 ) -> Result<Response, CliError> {
     super::markdown_metadata::validate_typed_target(target)?;
-    let token = format!("[{}](orbit://{})", target, target);
     let matches: Vec<_> = enumerate_notes(host)?
         .into_iter()
-        .filter_map(|(note, body)| body.contains(&token).then_some(note))
+        .filter_map(|(note, body)| {
+            orbit_runtime::references::contains_reference(&body, target).then_some(note)
+        })
         .collect();
     authority_response(serde_json::json!({"target":target,"backlinks":matches}))
 }
@@ -147,10 +148,19 @@ pub fn audit_assets(
 
 #[cfg(test)]
 mod tests {
+    /// The CLI's read side must agree byte for byte with the shared writer,
+    /// including that a longer id is not a prefix match for a shorter one.
     #[test]
     fn exact_typed_reference_token_is_not_prefix_match() {
         let body = "[project:abc2](orbit://project:abc2)";
-        assert!(!body.contains("[project:abc](orbit://project:abc)"));
+        assert!(!orbit_runtime::references::contains_reference(
+            body,
+            "project:abc"
+        ));
+        assert!(orbit_runtime::references::contains_reference(
+            body,
+            "project:abc2"
+        ));
     }
     #[test]
     fn audit_is_read_only_by_construction() {

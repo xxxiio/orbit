@@ -36,6 +36,7 @@ import { DependenciesSection } from './dependencies-section'
 import { DescriptionEditor } from './description-editor'
 import { PlanningSection, type PlanningField } from './planning-section'
 import type { PlanningPatch } from './planning-fields'
+import { NotesSection } from './notes-section'
 import { PropertiesSection } from './properties-section'
 import { FieldError } from './section'
 import { DrawerSkeleton } from './skeleton'
@@ -269,7 +270,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
       className="w-full max-w-none border-l border-line sm:w-[min(40rem,94vw)]"
     >
       <EditGuardProvider register={register}>
-        <div className="flex h-full min-h-0 flex-col">
+        <div className="flex h-full min-h-0 flex-col" data-task-drawer={taskId}>
           {detail.isLoading && !task ? (
             <DrawerSkeleton />
           ) : detail.error && !task ? (
@@ -472,6 +473,8 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                       emptyHint="Upload a file to keep it with this task. The server stores the bytes and lists it here."
                     />
                   </Section>
+
+                  <NotesSection taskId={taskId} projectId={task.projectId ?? undefined} />
 
                   <ActivitySection
                     entries={detail.activity}

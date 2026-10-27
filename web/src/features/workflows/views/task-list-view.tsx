@@ -244,7 +244,7 @@ export function TableView(props: ViewRendererProps) {
   }
 
   if (source === 'knowledge') {
-    return <KnowledgeTablePanel component={component} />
+    return <KnowledgeTablePanel component={component} projectId={props.project.id} tasks={props.tasks} />
   }
 
   if (source === 'agent_jobs') {

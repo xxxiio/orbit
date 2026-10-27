@@ -1,15 +1,17 @@
 /**
- * One Markdown note: rendered body, `[[id]]` relations, precise edit and move.
+ * One Markdown note: rendered body, `[[id]]` relations, typed references, and
+ * precise edit / move / link.
  *
  * Writes never send a blind whole-body overwrite. Edit re-reads the file, checks
  * it still matches the bytes the editor was opened from, then computes
  * `expected`/`replacement` from that fresh read. Move re-reads the file for
- * `expected` immediately before sending. The same command id is reused for an
- * identical retry because the file may already have changed on disk.
+ * `expected` immediately before sending. Link and unlink do the same through
+ * `useNoteBodyEdit`. The same command id is reused for an identical retry
+ * because the file may already have changed on disk.
  *
- * The relations panel (`note/note-relations`) and the move dialog
- * (`note/note-move-dialog`) own their own chrome; this module owns the page and
- * the editor's byte fence.
+ * The relations panel (`note/note-relations`), the reference panel
+ * (`note/note-references`) and the dialogs own their own chrome; this module owns
+ * the page and the editor's byte fence.
  */
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -22,27 +24,38 @@ import {
   useMarkdownDocument,
   useMarkdownInventory,
   useMarkdownRelations,
+  useProject,
+  useWorkspaceSnapshot,
   userMessage,
   type ApiError,
 } from '@/hooks'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
-import { BookIcon, LoaderIcon, RefreshIcon } from '@/components/ui/icons'
+import { BookIcon, LinkIcon, LoaderIcon, RefreshIcon } from '@/components/ui/icons'
 import { Markdown, MarkdownEditor } from '@/components/markdown'
 import { Panel, PanelBody, PanelHeader } from '@/components/ui/panel'
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/components/ui/utils'
+import type { FolderOption } from './folder-model'
+import { noteFolder } from './folder-model'
 import {
+  folderHref,
   isNotePath,
   joinMarkdown,
   noteHref,
   noteTitleFromPath,
   splitMarkdown,
+  taskSurfaceHref,
 } from './knowledge-model'
+import { NoteContextBar } from './note/note-context-bar'
 import { NoteMoveDialog } from './note/note-move-dialog'
+import { NoteLinkDialog } from './note/note-link-dialog'
+import { NoteReferences } from './note/note-references'
 import { NoteRelations } from './note/note-relations'
+import { useNoteBodyEdit } from './note/use-note-body-edit'
+import { removeNoteLink } from './reference-model'
 
 interface SaveAttempt {
   key: string
@@ -50,18 +63,41 @@ interface SaveAttempt {
   command: MarkdownCommand
 }
 
+export interface NoteContext {
+  /** The project this note was opened from. */
+  projectId?: string
+  /** The task this note was opened from. */
+  taskId?: string
+}
+
 export interface NoteViewProps {
   path: string
   onRefreshTree: () => void
+  folderOptions: FolderOption[]
+  context?: NoteContext
+  /**
+   * Drops the task context from the address. On this surface `?task=` is a note
+   * context, so removing it leaves the note open and only stops the link.
+   */
+  onClearTaskContext?: () => void
 }
 
-export function NoteView({ path, onRefreshTree }: NoteViewProps) {
+export function NoteView({
+  path,
+  onRefreshTree,
+  folderOptions,
+  context,
+  onClearTaskContext,
+}: NoteViewProps) {
   const document = useMarkdownDocument(path)
   const inventory = useMarkdownInventory()
+  const snapshot = useWorkspaceSnapshot()
   const parts = splitMarkdown(document.data?.body ?? '')
   const noteId = parts.noteId
   const relations = useMarkdownRelations(noteId ?? undefined)
   const command = useMarkdownCommand()
+  const bodyEdit = useNoteBodyEdit({ noteId, document })
+  const project = useProject(context?.projectId)
   const { toast } = useToast()
   const navigate = useNavigate()
 
@@ -72,6 +108,8 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
   const [stale, setStale] = useState(false)
   const [announcement, setAnnouncement] = useState<string | null>(null)
   const [moveOpen, setMoveOpen] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const attempt = useIdempotentAttempt<SaveAttempt, { command: MarkdownCommand }>((key, payload) => ({
     key,
@@ -116,6 +154,7 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
     }
     resetEdit()
     command.reset()
+    bodyEdit.reset()
     setLocalError(null)
     setAnnouncement(null)
     try {
@@ -217,6 +256,39 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
     }
   }
 
+  const unlink = async (targetId: string) => {
+    if (!noteId || editing || command.isPending) return
+    setUnlinkingId(targetId)
+    setLocalError(null)
+    const outcome = await bodyEdit.run(`${path}\u0000unlink\u0000${targetId}`, (body) =>
+      removeNoteLink(body, targetId),
+    )
+    setUnlinkingId(null)
+    switch (outcome.status) {
+      case 'accepted':
+        setAnnouncement(`Link to ${targetId} removed.`)
+        return
+      case 'unchanged':
+        setLocalError(`This note does not contain a [[${targetId}]] link. Nothing was sent.`)
+        return
+      case 'stale':
+        setLocalError(
+          'The note identity changed on disk. Reload the note before unlinking; nothing was sent.',
+        )
+        return
+      case 'unreadable':
+        setLocalError('The note could not be re-read, so nothing was sent. Try again.')
+        return
+      case 'blocked':
+        setLocalError(
+          'A previous link change is still unresolved. Retry it, or reload the note, before unlinking another link.',
+        )
+        return
+      default:
+        return
+    }
+  }
+
   if (document.isPending && !document.data) {
     return (
       <Panel aria-busy="true" aria-label="Loading note">
@@ -254,7 +326,7 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
           }
           action={
             <Button asChild variant="secondary" size="sm">
-              <Link to="/knowledge">Back to Knowledge</Link>
+              <Link to={folderHref(noteFolder(path))}>Back to the folder</Link>
             </Button>
           }
           secondaryAction={
@@ -270,10 +342,55 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
 
   const body = editing ? draft : parts.body
   const idToPath = new Map((inventory.data ?? []).map((note) => [note.id, note.path]))
+  const linkOutcome = bodyEdit.error && !bodyEdit.pending ? bodyEdit.error : null
+
+  /**
+   * The task named by `?task=`. On this surface that parameter is a note
+   * context, so the note states which task it means and where that task lives.
+   * A task the workspace no longer has still keeps its id visible.
+   */
+  const contextTask = context?.taskId
+    ? snapshot.data?.tasks.find((task) => task.id === context.taskId) ?? null
+    : null
+  const contextTaskHref = context?.taskId
+    ? taskSurfaceHref(contextTask?.projectId ?? context?.projectId, context.taskId)
+    : null
+  const backHref = context?.projectId
+    ? `/projects/${context.projectId}${context.taskId ? `?task=${encodeURIComponent(context.taskId)}` : ''}`
+    : contextTaskHref
+  const backLabel = context?.projectId
+    ? `Back to ${project?.name ?? 'the project'}`
+    : 'Back to the task'
+
+  /**
+   * Dropping the task context removes the control that had focus, so focus moves
+   * to the note itself rather than falling to `<body>`. The note is the stable
+   * thing the person was reading.
+   */
+  const clearTaskContext = () => {
+    onClearTaskContext?.()
+    window.document.querySelector<HTMLElement>('[data-note-panel]')?.focus({ preventScroll: true })
+    setAnnouncement('Task context removed. This note is no longer linked to a task.')
+  }
 
   return (
     <>
-      <Panel className="min-w-0 overflow-hidden">
+      {context?.taskId && contextTaskHref ? (
+        <div className="mb-4">
+          <NoteContextBar
+            taskId={context.taskId}
+            taskTitle={contextTask?.title}
+            taskHref={contextTaskHref}
+            onClear={clearTaskContext}
+          />
+        </div>
+      ) : null}
+
+      <Panel
+        data-note-panel
+        tabIndex={-1}
+        className="min-w-0 overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+      >
         <PanelHeader
           eyebrow="Note"
           title={
@@ -289,7 +406,11 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
             </span>
           }
           description={
-            <span className="font-mono text-2xs text-ink-muted" title={path}>
+            <span
+              className="font-mono text-2xs text-ink-muted"
+              title={path}
+              data-note-location-path={noteFolder(path)}
+            >
               {path}
             </span>
           }
@@ -307,8 +428,21 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
               <Button
                 variant="secondary"
                 size="sm"
+                leadingIcon={<LinkIcon size={14} />}
+                onClick={() => setLinkOpen(true)}
+                disabled={writing || editing || !noteId}
+                title={noteId ? undefined : 'A note needs an orbit_id before it can be linked.'}
+                data-note-action="link"
+              >
+                Link
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => setMoveOpen(true)}
                 disabled={writing || editing || !noteId}
+                title="Rename or move this note"
+                data-note-action="move"
               >
                 Move
               </Button>
@@ -343,6 +477,18 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
         />
 
         <PanelBody className="min-w-0">
+          {backHref ? (
+            <p className="mb-4 text-2xs">
+              <Link
+                to={backHref}
+                data-note-back
+                className="font-medium text-accent-soft-ink underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              >
+                ← {backLabel}
+              </Link>
+            </p>
+          ) : null}
+
           {stale ? (
             <div
               role="alert"
@@ -356,7 +502,7 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
           {!noteId ? (
             <div className="mb-4 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs leading-5 text-warning-ink">
               This file has no <span className="font-mono">orbit_id</span> in its frontmatter. It is
-              readable, but the server cannot accept edits or moves until it has a stable id.
+              readable, but the server cannot accept edits, links or moves until it has a stable id.
             </div>
           ) : null}
 
@@ -385,6 +531,45 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
               className="mt-4 rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-xs leading-5 text-danger-ink"
             >
               {localError}
+            </div>
+          ) : null}
+
+          {linkOutcome ? (
+            <div
+              role="alert"
+              className={cn(
+                'mt-4 rounded-md border px-3 py-2 text-xs leading-5',
+                bodyEdit.uncertain
+                  ? 'border-warning/40 bg-warning-soft text-warning-ink'
+                  : 'border-danger/30 bg-danger-soft text-danger-ink',
+              )}
+              data-link-error
+            >
+              <p className="font-medium">
+                {bodyEdit.uncertain
+                  ? 'The link change was not confirmed; the note may already have changed.'
+                  : 'The server refused this change to the note.'}
+              </p>
+              <p className="mt-0.5">
+                {bodyEdit.uncertain
+                  ? uncertainMessage(bodyEdit.error)
+                  : userMessage(bodyEdit.error)}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {bodyEdit.uncertain ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={bodyEdit.pending}
+                    onClick={() => void bodyEdit.retry()}
+                  >
+                    Retry the same change
+                  </Button>
+                ) : null}
+                <Button size="sm" variant="quiet" onClick={() => void reload()} disabled={writing}>
+                  Reload note
+                </Button>
+              </div>
             </div>
           ) : null}
 
@@ -425,7 +610,7 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
           ) : null}
 
           <p role="status" aria-live="polite" className="mt-3 min-h-4 text-2xs text-ink-muted">
-            {writing ? (
+            {writing || bodyEdit.pending ? (
               <span className="inline-flex items-center gap-1.5">
                 <LoaderIcon size={12} className="animate-spin text-accent" />
                 Saving to disk…
@@ -447,18 +632,49 @@ export function NoteView({ path, onRefreshTree }: NoteViewProps) {
         relations={relations}
         inventoryError={inventory.error && !inventory.data ? inventory.error : null}
         idToPath={idToPath}
+        onUnlink={noteId && !editing ? (id) => void unlink(id) : undefined}
+        unlinkingId={unlinkingId}
+        unlinkDisabled={editing || bodyEdit.pending || command.isPending}
+      />
+
+      <NoteReferences
+        noteId={noteId}
+        body={parts.body}
+        projectId={context?.projectId}
+        taskId={context?.taskId}
+        readOnly={editing || writing || bodyEdit.pending}
+        onChanged={() => {
+          void document.refetch()
+          void inventory.refetch()
+        }}
       />
 
       {moveOpen ? (
         <NoteMoveDialog
           currentPath={path}
           noteId={noteId ?? ''}
+          options={folderOptions}
           onClose={() => setMoveOpen(false)}
           onRefreshTree={onRefreshTree}
           onMoved={(target) => {
             setMoveOpen(false)
             navigate(noteHref(target))
             toast({ tone: 'success', title: 'Note moved', description: target })
+          }}
+        />
+      ) : null}
+
+      {linkOpen && noteId ? (
+        <NoteLinkDialog
+          currentNoteId={noteId}
+          currentTitle={title}
+          notes={inventory.data ?? []}
+          document={document}
+          onClose={() => setLinkOpen(false)}
+          onLinked={(note) => {
+            setLinkOpen(false)
+            setAnnouncement(`Linked ${note.title}.`)
+            toast({ tone: 'success', title: 'Notes linked', description: note.title })
           }}
         />
       ) : null}

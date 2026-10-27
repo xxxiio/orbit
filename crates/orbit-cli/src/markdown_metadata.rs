@@ -4,6 +4,7 @@
 use super::markdown_cli::{authority_response, knowledge_error};
 use super::*;
 use orbit_runtime::markdown_commands::MarkdownCommand;
+use orbit_runtime::references::{add_typed_reference, remove_typed_reference, valid_reference_id};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum NoteKind {
@@ -127,13 +128,6 @@ fn set_scalar(markdown: &str, key: &str, value: &str) -> Result<String, CliError
     }
     Ok(result)
 }
-fn valid_target(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 128
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-}
 fn link_token(id: &str) -> String {
     format!("[[{id}]]")
 }
@@ -179,7 +173,7 @@ pub fn mutate_note(
     operation: NoteMetadataOperation,
     command_id: Option<String>,
 ) -> Result<Response, CliError> {
-    if !valid_target(&id) {
+    if !valid_reference_id(&id) {
         return Err(malformed("invalid note identity"));
     }
     let (_, before) = host
@@ -192,7 +186,7 @@ pub fn mutate_note(
             set_scalar(&before, "orbit_status", status.as_str())?
         }
         NoteMetadataOperation::AddLink(target) => {
-            if !valid_target(&target) {
+            if !valid_reference_id(&target) {
                 return Err(malformed("invalid target identity"));
             }
             if host
@@ -213,26 +207,18 @@ pub fn mutate_note(
                 text
             }
         }
+        // The byte grammar is the runtime's: the same function the HTTP
+        // reference command calls decides presence, layout and rewriting.
         NoteMetadataOperation::AddTypedReference(target) => {
             validate_typed_target(&target)?;
-            let token = format!("[{}](orbit://{})", target, target);
-            if before.contains(&token) {
-                before.clone()
-            } else {
-                let mut text = before.clone();
-                if !text.ends_with('\n') {
-                    text.push('\n');
-                }
-                text.push_str(&format!("\n{}\n", token));
-                text
-            }
+            add_typed_reference(&before, &target).0
         }
         NoteMetadataOperation::RemoveTypedReference(target) => {
             validate_typed_target(&target)?;
-            before.replace(&format!("[{}](orbit://{})", target, target), "")
+            remove_typed_reference(&before, &target).0
         }
         NoteMetadataOperation::RemoveLink(target) => {
-            if !valid_target(&target) {
+            if !valid_reference_id(&target) {
                 return Err(malformed("invalid target identity"));
             }
             remove_links(&before, &target)
@@ -301,11 +287,17 @@ pub fn inspect_notes(
     authority_response(results)
 }
 
+/// The CLI accepts one reference kind the server does not: `habit:` names a
+/// capability that only a local workspace resolves. The shared grammar decides
+/// the byte shape; which kinds are *entities* is transport policy, and it stays
+/// here so the server can refuse an unsupported kind without weakening the CLI.
 pub(super) fn validate_typed_target(target: &str) -> Result<(), CliError> {
-    let (kind, id) = target
-        .split_once(':')
-        .ok_or_else(|| malformed("typed target requires project:, task:, or habit:"))?;
-    if !matches!(kind, "project" | "task" | "habit") || !valid_target(id) {
+    let Some((kind, id)) = target.split_once(':') else {
+        return Err(malformed(
+            "typed target requires project:, task:, or habit:",
+        ));
+    };
+    if !matches!(kind, "project" | "task" | "habit") || !valid_reference_id(id) {
         return Err(malformed("invalid typed target"));
     }
     Ok(())
@@ -323,6 +315,70 @@ pub enum NoteMetadataOperation {
 mod tests {
     use super::*;
     const BASE: &str = "---\norbit_id: note_1\n---\n# Example\n";
+
+    /// The CLI's `note reference` path, after delegating its grammar, must still
+    /// publish exactly the bytes it always did: one canonical token on its own
+    /// paragraph, and an unchanged body when the reference is already there.
+    #[test]
+    fn typed_reference_commands_still_publish_the_cli_bytes() {
+        let mut host = orbit_runtime::AuthoritativeHost::open(":memory:").unwrap();
+        host.execute_markdown_command(
+            "orbit-cli",
+            "create-note-1",
+            MarkdownCommand::Create {
+                note_id: "note_1".into(),
+                path: "note_1.md".into(),
+                body: "# Example\n".into(),
+            },
+        )
+        .unwrap();
+        mutate_note(
+            &mut host,
+            "note_1".into(),
+            NoteMetadataOperation::AddTypedReference("project:orbit".into()),
+            Some("ref-cli-1".into()),
+        )
+        .unwrap();
+        assert_eq!(
+            host.markdown_by_id("note_1").unwrap().unwrap().1,
+            format!("{BASE}\n[project:orbit](orbit://project:orbit)\n")
+        );
+        // The second add is the CLI's `changed:false` answer and writes nothing.
+        let again = mutate_note(
+            &mut host,
+            "note_1".into(),
+            NoteMetadataOperation::AddTypedReference("project:orbit".into()),
+            Some("ref-cli-2".into()),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(again).unwrap(),
+            serde_json::json!({"type":"authority","result":{"id":"note_1","changed":false}})
+        );
+        mutate_note(
+            &mut host,
+            "note_1".into(),
+            NoteMetadataOperation::RemoveTypedReference("project:orbit".into()),
+            Some("ref-cli-3".into()),
+        )
+        .unwrap();
+        assert_eq!(
+            host.markdown_by_id("note_1").unwrap().unwrap().1,
+            format!("{BASE}\n\n")
+        );
+    }
+
+    /// `habit:` is a CLI-only kind: it keeps working locally, and the shared
+    /// grammar (not a private copy) decides its bytes.
+    #[test]
+    fn habit_references_remain_available_to_the_cli() {
+        validate_typed_target("habit:stretch").unwrap();
+        let (body, changed) = add_typed_reference(BASE, "habit:stretch");
+        assert!(changed);
+        assert!(body.ends_with("\n[habit:stretch](orbit://habit:stretch)\n"));
+        assert!(validate_typed_target("work_item:w-1").is_err());
+    }
+
     #[test]
     fn metadata_preserves_body_and_identity() {
         let changed = set_scalar(BASE, "orbit_status", "archived").unwrap();

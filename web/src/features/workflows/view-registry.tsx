@@ -61,7 +61,7 @@ function MetricHistoryView(props: ViewRendererProps) {
 }
 
 function KnowledgeRefsView(props: ViewRendererProps) {
-  return <KnowledgeRefsPanel component={props.component} />
+  return <KnowledgeRefsPanel component={props.component} projectId={props.project.id} tasks={props.tasks} />
 }
 
 function AgentJobsView(props: ViewRendererProps) {

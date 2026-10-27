@@ -11,8 +11,12 @@ import type {
   MarkdownDocumentResponse,
   MarkdownManifestEntry,
   MarkdownReceipt,
+  MarkdownReferenceCommandRequest,
+  MarkdownReferenceReceipt,
+  MarkdownReferencesResponse,
   MoveFolderRequest,
   MoveFolderResponse,
+  ProjectKnowledgeResponse,
 } from '../contracts'
 
 const BASE = '/authoritative'
@@ -78,4 +82,43 @@ export function createFolder(request: CreateFolderRequest): Promise<CreateFolder
 
 export function moveFolder(request: MoveFolderRequest): Promise<MoveFolderResponse> {
   return api.post<MoveFolderResponse>(`${BASE}/folder-moves`, request)
+}
+
+/**
+ * Notes that carry a typed reference to one entity, ordered by path. The target
+ * is `<kind>:<id>`; the server refuses a malformed or unsupported one rather
+ * than returning an empty list.
+ */
+export function fetchReferences(
+  target: string,
+  signal?: AbortSignal,
+): Promise<MarkdownReferencesResponse> {
+  return api.get<MarkdownReferencesResponse>(withQuery(`${BASE}/markdown-references`, { target }), {
+    signal,
+  })
+}
+
+/**
+ * The project-scoped notes: every note that references this project or one of
+ * its tasks, with the references that caused the inclusion.
+ */
+export function fetchProjectKnowledge(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<ProjectKnowledgeResponse> {
+  return api.get<ProjectKnowledgeResponse>(
+    withQuery(`${BASE}/project-knowledge`, { project_id: projectId }),
+    { signal },
+  )
+}
+
+/**
+ * Add or remove a typed reference. The body is read and published through the
+ * Markdown command path, so a lost response can still mean the note changed and
+ * the identical retry must replay the same command id.
+ */
+export function sendReferenceCommand(
+  request: MarkdownReferenceCommandRequest,
+): Promise<MarkdownReferenceReceipt> {
+  return api.post<MarkdownReferenceReceipt>(`${BASE}/markdown-reference-commands`, request)
 }

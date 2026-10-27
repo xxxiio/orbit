@@ -33,14 +33,19 @@ test.describe('knowledge notes', () => {
     await goto(page, server, '/knowledge')
     await expect(page.getByRole('heading', { level: 1, name: 'Knowledge' })).toBeVisible()
 
-    // Create: the dialog names the file path and writes frontmatter with a
-    // stable id; nothing is shown as a note until the server accepts it.
-    await page.getByRole('button', { name: 'New note' }).click()
+    // Create: the location comes from a picker over the vault's real folders and
+    // the name is one file name; the dialog previews the path it will write, and
+    // writes frontmatter with a stable id. Nothing is shown as a note until the
+    // server accepts it.
+    await page.locator('[data-action="new-note"]').click()
     const create = page.getByRole('dialog')
-    await create.getByLabel('Path').fill(createdPath)
+    await create.locator('[data-field="folder"]').click()
+    await page.locator('[data-folder-option="notes"]').click()
+    await create.locator('[data-field="note-name"]').fill('i4-browser-note.md')
+    await expect(create.locator('[data-preview-path]')).toHaveText(createdPath)
     await create.getByLabel('Title').fill('I4 browser note')
     await create.getByLabel('Markdown').fill('First body line.')
-    await create.getByRole('button', { name: 'Create note' }).click()
+    await create.locator('[data-action="create-note"]').click()
     await expect(create).toBeHidden()
     await expect(page).toHaveURL(new RegExp(`/knowledge/${createdPath}$`))
     await expect(page.getByText('First body line.')).toBeVisible()
@@ -83,10 +88,12 @@ test.describe('knowledge notes', () => {
     // Move: the file changes path, the stable id and body survive.
     await page.goBack()
     await expect(page.getByText('Second body with')).toBeVisible()
-    await page.getByRole('button', { name: 'Move' }).click()
+    await page.locator('[data-note-action="move"]').click()
     const move = page.getByRole('dialog')
-    await move.getByLabel('New path').fill(movedPath)
-    await move.getByRole('button', { name: 'Move note' }).click()
+    await move.locator('[data-field="folder"]').click()
+    await page.locator('[data-folder-option="notes/research"]').click()
+    await expect(move.locator('[data-preview-path]')).toHaveText(movedPath)
+    await move.locator('[data-action="move-note"]').click()
     await expect(move).toBeHidden()
     await expect(page).toHaveURL(new RegExp(`/knowledge/${movedPath}$`))
 
@@ -219,7 +226,16 @@ test.describe('knowledge notes', () => {
 
     await goto(page, server, '/knowledge/notes/missing-note.md')
     await expect(page.getByText('This note could not be found')).toBeVisible()
-    await page.getByRole('link', { name: 'Back to Knowledge' }).click()
+    // The honest next step from a missing note is the folder it names, which the
+    // vault really has; the vault root is one breadcrumb away from there.
+    await page.getByRole('link', { name: 'Back to the folder' }).click()
+    await expect(page).toHaveURL(/\/knowledge\?folder=notes$/)
+    await expect(page.locator('[data-selected-folder]')).toHaveAttribute(
+      'data-selected-folder',
+      'notes',
+    )
+    // The vault root is still one breadcrumb away from the folder it landed on.
+    await page.locator('[data-breadcrumb-path=""]').click()
     await expect(page).toHaveURL(/\/knowledge$/)
 
     const search = page.getByLabel('Search notes')

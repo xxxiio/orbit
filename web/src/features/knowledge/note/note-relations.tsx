@@ -22,9 +22,26 @@ export interface NoteRelationsProps {
   /** A failed identity index: ids are still shown, just not resolved to paths. */
   inventoryError: ApiError | null
   idToPath: Map<string, string>
+  /**
+   * Removes a `[[id]]` token through the fenced body edit. Absent while the
+   * editor holds a draft: a link write must not race a draft.
+   */
+  onUnlink?: (id: string) => void
+  /** The id whose link is being removed, while the write is in flight. */
+  unlinkingId?: string | null
+  /** A link write may not start (editor open, or an earlier write unresolved). */
+  unlinkDisabled?: boolean
 }
 
-export function NoteRelations({ noteId, relations, inventoryError, idToPath }: NoteRelationsProps) {
+export function NoteRelations({
+  noteId,
+  relations,
+  inventoryError,
+  idToPath,
+  onUnlink,
+  unlinkingId = null,
+  unlinkDisabled = false,
+}: NoteRelationsProps) {
   const relationRows = relations.data ? splitRelations(relations.data) : null
 
   return (
@@ -68,12 +85,17 @@ export function NoteRelations({ noteId, relations, inventoryError, idToPath }: N
           <div className="flex flex-col gap-4">
             <RelationGroup
               label="Links to"
+              group="links"
               ids={relationRows.resolvedOutgoing}
               idToPath={idToPath}
               empty="No resolvable outgoing links."
+              onRemove={onUnlink}
+              removingId={unlinkingId}
+              disabled={unlinkDisabled}
             />
             <RelationGroup
               label="Linked from"
+              group="backlinks"
               ids={relations.data?.backlinks ?? []}
               idToPath={idToPath}
               empty="No other note links here yet."
@@ -83,7 +105,11 @@ export function NoteRelations({ noteId, relations, inventoryError, idToPath }: N
                 <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
                   Unresolved references
                 </p>
-                <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Unresolved references">
+                <ul
+                  className="mt-1.5 flex flex-wrap gap-1.5"
+                  aria-label="Unresolved references"
+                  data-reference-group="unresolved"
+                >
                   {relationRows.unresolved.map((id) => (
                     <li key={id}>
                       <span
@@ -106,14 +132,22 @@ export function NoteRelations({ noteId, relations, inventoryError, idToPath }: N
 
 function RelationGroup({
   label,
+  group,
   ids,
   idToPath,
   empty,
+  onRemove,
+  removingId = null,
+  disabled = false,
 }: {
   label: string
+  group: 'links' | 'backlinks'
   ids: string[]
   idToPath: Map<string, string>
   empty: string
+  onRemove?: (id: string) => void
+  removingId?: string | null
+  disabled?: boolean
 }) {
   return (
     <div>
@@ -121,24 +155,43 @@ function RelationGroup({
       {ids.length === 0 ? (
         <p className="mt-1 text-xs leading-5 text-ink-muted">{empty}</p>
       ) : (
-        <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label={label}>
+        <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label={label} data-reference-group={group}>
           {ids.map((id) => {
             const target = idToPath.get(id)
             return (
               <li key={id}>
-                {target ? (
-                  <Link
-                    to={noteHref(target)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent-soft px-2 py-0.5 font-mono text-2xs text-accent-soft-ink transition-colors hover:border-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                    title={target}
-                  >
-                    {id}
-                  </Link>
-                ) : (
-                  <span className="inline-flex items-center rounded-full border border-line bg-surface-sunken px-2 py-0.5 font-mono text-2xs text-ink-muted">
-                    {id}
-                  </span>
-                )}
+                <span className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent-soft px-2 py-0.5 font-mono text-2xs text-accent-soft-ink">
+                  {target ? (
+                    <Link
+                      to={noteHref(target)}
+                      className="underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                      title={target}
+                      data-note-link={id}
+                    >
+                      {id}
+                    </Link>
+                  ) : (
+                    <span
+                      className="border-line text-ink-muted"
+                      title="The vault index has no path for this id yet"
+                      data-note-link={id}
+                    >
+                      {id}
+                    </span>
+                  )}
+                  {onRemove ? (
+                    <button
+                      type="button"
+                      onClick={() => onRemove(id)}
+                      disabled={disabled || removingId === id}
+                      aria-label={`Remove the link to ${target ?? id}`}
+                      data-note-unlink={id}
+                      className="rounded-full px-0.5 text-ink-muted transition-colors hover:text-danger-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50"
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </span>
               </li>
             )
           })}

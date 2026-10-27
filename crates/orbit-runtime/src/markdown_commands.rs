@@ -125,11 +125,19 @@ pub(crate) fn schema(store: &AuthorityStore) -> Result<(), AuthorityError> {
     Ok(())
 }
 
-fn safe_id(s: &str) -> bool {
+pub(crate) fn safe_id(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 128
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// One command id names exactly one intent in every durable ledger, so the
+/// identity rule lives here rather than being restated by each command type.
+pub(crate) fn valid_command_id(command_id: &str) -> bool {
+    // `update-` is reserved for the internally derived Markdown updates, which
+    // callers must never be able to collide with.
+    safe_id(command_id) && !command_id.starts_with("update-")
 }
 
 pub(crate) fn enqueue(
@@ -138,7 +146,7 @@ pub(crate) fn enqueue(
     command_id: &str,
     command: &MarkdownCommand,
 ) -> Result<Option<MarkdownReceipt>, AuthorityError> {
-    if !safe_id(actor) || !safe_id(command_id) || command_id.starts_with("update-") {
+    if !safe_id(actor) || !valid_command_id(command_id) {
         return Err(AuthorityError::Invalid("invalid markdown command identity"));
     }
     validate_command(command)?;

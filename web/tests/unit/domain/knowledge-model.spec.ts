@@ -9,6 +9,7 @@ import {
   noteTitleFromPath,
   splitMarkdown,
   splitRelations,
+  taskSurfaceHref,
 } from '@/features/knowledge/knowledge-model'
 
 describe('knowledge markdown model', () => {
@@ -88,5 +89,12 @@ describe('knowledge markdown model', () => {
         unresolved: ['missing'],
       }),
     ).toEqual({ resolvedOutgoing: ['n-1'], unresolved: ['missing'] })
+  })
+
+  it('opens a task in its project, and in the Inbox when it has none', () => {
+    expect(taskSurfaceHref('p-research', 't-1')).toBe('/projects/p-research?task=t-1')
+    expect(taskSurfaceHref(null, 't-1')).toBe('/inbox?task=t-1')
+    expect(taskSurfaceHref(undefined, 't-1')).toBe('/inbox?task=t-1')
+    expect(taskSurfaceHref('p-research', 't/2')).toBe('/projects/p-research?task=t%2F2')
   })
 })

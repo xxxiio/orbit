@@ -144,7 +144,7 @@ workflows instead of speculation. The TUI stays unchanged in M32.
 - [x] EC-004: Task created/updated timestamps come from authoritative recorded
   history, are displayed in a readable form with full precision available, and
   report unknown for records without history.
-- [ ] EC-005: Knowledge folders and documents can be created, moved, renamed
+- [x] EC-005: Knowledge folders and documents can be created, moved, renamed
   and browsed; documents can be linked with navigable back-references and
   broken-link indication; knowledge is reachable from project context.
 - [ ] EC-006: An authorized agent job can be launched from an eligible task in
@@ -196,7 +196,18 @@ workflows instead of speculation. The TUI stays unchanged in M32.
   --workspace --offline` green, clippy `-D warnings` clean across the touched
   crates, fmt clean, client `tsc` clean, vitest 46 files / 249 tests, terminology
   230 files, production build, Playwright 106 passed / 4 skipped / 0 failed.
-- EC-005..EC-008 and EC-010..EC-012 stay open until their iteration lands.
+- EC-005: `crates/orbit-runtime/src/references.rs` (shared typed-reference
+  grammar, 19 tests), `markdown-reference-commands` / `markdown-references` /
+  `project-knowledge` routes, and the folder-command journal fix that stops a
+  refused folder operation from blocking every later write (6 regression tests).
+  Browser: `knowledge-folders.spec.ts` (8), `knowledge-links.spec.ts` (4),
+  `project-knowledge.spec.ts` (7) — every claim is read back from the server as
+  well as asserted on screen. Folder create/rename/move, note create/rename/move,
+  link and unlink with back-references and unresolved targets, project/task
+  references with broken-target display, the project knowledge panel and the task
+  Notes section all ship; note/folder deletion and work-item references are stated
+  as absent.
+- EC-006..EC-008 and EC-010..EC-012 stay open until their iteration lands.
 
 ## Remaining work
 

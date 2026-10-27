@@ -889,6 +889,58 @@ export interface MarkdownReceipt {
   revision: number
 }
 
+/**
+ * The typed-reference grammar the runtime owns: a Markdown link whose text and
+ * target are both `kind:id` (`[project:orbit](orbit://project:orbit)`). The
+ * browser parses it only to describe what the note says; it never writes the
+ * token itself — the reference command does.
+ */
+export type TypedReferenceKind = 'project' | 'task'
+
+export interface TypedReference {
+  kind: TypedReferenceKind
+  id: string
+}
+
+export type ReferenceAction = 'add' | 'remove'
+
+export interface MarkdownReferenceCommandRequest {
+  command_id: string
+  note_id: string
+  /** `<kind>:<id>`, e.g. `project:orbit`. */
+  target: string
+  action: ReferenceAction
+}
+
+export interface MarkdownReferenceReceipt {
+  command_id: string
+  note_id: string
+  revision: number
+  /** `false` when the token was already present (add) or absent (remove). */
+  changed: boolean
+  target: string
+  action: ReferenceAction
+}
+
+/** `GET /authoritative/markdown-references?target=project:orbit`, ordered by path. */
+export interface MarkdownReferencesResponse {
+  target: string
+  notes: KnowledgeDocumentInfo[]
+}
+
+/** One note in a project's knowledge read, with the references that included it. */
+export interface ProjectKnowledgeNote extends KnowledgeDocumentInfo {
+  references: TypedReference[]
+}
+
+/** `GET /authoritative/project-knowledge?project_id=orbit`. */
+export interface ProjectKnowledgeResponse {
+  project_id: string
+  notes: ProjectKnowledgeNote[]
+  /** The project's task ids, so a reference can be named without another read. */
+  tasks: string[]
+}
+
 export interface CreateFolderRequest {
   command_id: string
   command: { path: string }

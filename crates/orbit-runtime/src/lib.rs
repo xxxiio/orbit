@@ -76,6 +76,7 @@ pub mod knowledge_files;
 pub mod knowledge_operations;
 pub mod knowledge_service;
 pub mod markdown_commands;
+pub mod references;
 
 /// Storage failures while resolving an attachment owner stay typed application
 /// errors so transports can answer without exposing SQL details.
@@ -160,6 +161,7 @@ impl AuthoritativeHost {
         // Ownership belongs to the same process-local authoritative service;
         // legacy client adapters may not open a second independent store.
         markdown_commands::schema(&authority)?;
+        references::schema(&authority)?;
         folder_commands::schema(&authority)?;
         folder_commands::create_schema(&authority)?;
         let mut host = Self {
@@ -429,10 +431,26 @@ impl AuthoritativeHost {
 
     /// Replay durable empty-folder creation before note publication: a pending
     /// note may reference a folder that was created immediately before a crash.
+    ///
+    /// A replayed intent whose publication is *definitely* refused (its parent
+    /// is gone, its name was taken) is abandoned rather than returned: recovery
+    /// runs before every knowledge write, so a single impossible intent would
+    /// otherwise refuse the whole workspace forever. That is safe precisely
+    /// because nothing was published, and its only loss is the intention itself
+    /// — a person must issue the create again with a new command id.
     pub fn recover_folder_creates(&mut self) -> Result<(), store::AuthorityError> {
         for (id, command) in folder_commands::pending_creates(&self.authority)? {
-            folder_commands::publish_create(&self.knowledge_vault, &command)?;
-            folder_commands::accept_create(&mut self.authority, &id, &command)?;
+            match folder_commands::publish_create(&self.knowledge_vault, &command) {
+                Ok(()) => {
+                    folder_commands::accept_create(&mut self.authority, &id, &command)?;
+                }
+                Err(folder_commands::FolderPublishOutcome::Refused(_)) => {
+                    folder_commands::abandon_create(&mut self.authority, &id)?;
+                }
+                // An unreadable or externally disturbed vault may still have
+                // published this create; keep the intent for a later attempt.
+                Err(error) => return Err(error.into()),
+            }
         }
         Ok(())
     }
@@ -451,18 +469,52 @@ impl AuthoritativeHost {
         {
             return Ok(receipt);
         }
-        folder_commands::publish_create(&self.knowledge_vault, &command)?;
-        folder_commands::accept_create(&mut self.authority, id, &command)
+        self.publish_folder_create(id, &command)
+    }
+
+    /// Publish one reserved folder create and record its receipt.
+    ///
+    /// A definite refusal releases the reservation in the same flow: the durable
+    /// pending row exists only to be replayed, and replaying an intent the vault
+    /// has proved impossible would refuse every later knowledge command. A
+    /// crash between publication and acceptance still behaves as before — the
+    /// pending row survives, and recovery finds the folder already there, so it
+    /// accepts instead of abandoning.
+    fn publish_folder_create(
+        &mut self,
+        id: &str,
+        command: &folder_commands::FolderCreate,
+    ) -> Result<folder_commands::FolderCreateReceipt, store::AuthorityError> {
+        match folder_commands::publish_create(&self.knowledge_vault, command) {
+            Ok(()) => folder_commands::accept_create(&mut self.authority, id, command),
+            Err(folder_commands::FolderPublishOutcome::Refused(message)) => {
+                folder_commands::abandon_create(&mut self.authority, id)?;
+                Err(store::AuthorityError::Invalid(message))
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// Replay interrupted folder renames before allowing further commands.
+    ///
+    /// As with [`Self::recover_folder_creates`], a replay that is definitely
+    /// refused is abandoned instead of aborting the caller. A rename whose work
+    /// did land is never refused: exactly one of its two paths is moved, so the
+    /// publish step observes "source gone, destination present" and accepts.
     pub fn recover_folder_commands(&mut self) -> Result<(), store::AuthorityError> {
         for (id, mv) in folder_commands::pending(&self.authority)? {
-            folder_commands::publish(&self.knowledge_vault, &mv)?;
-            let notes = self.markdown_knowledge_index().map_err(|_| {
-                store::AuthorityError::Invalid("folder recovery identity collision")
-            })?;
-            folder_commands::accept(&mut self.authority, &id, &mv, &notes)?;
+            match folder_commands::publish(&self.knowledge_vault, &mv) {
+                Ok(()) => {
+                    let notes = self.markdown_knowledge_index().map_err(|_| {
+                        store::AuthorityError::Invalid("folder recovery identity collision")
+                    })?;
+                    folder_commands::accept(&mut self.authority, &id, &mv, &notes)?;
+                }
+                Err(folder_commands::FolderPublishOutcome::Refused(_)) => {
+                    folder_commands::abandon_move(&mut self.authority, &id)?;
+                }
+                Err(error) => return Err(error.into()),
+            }
         }
         Ok(())
     }
@@ -480,11 +532,31 @@ impl AuthoritativeHost {
         if let Some(receipt) = folder_commands::enqueue(&mut self.authority, actor, id, &mv)? {
             return Ok(receipt);
         }
-        folder_commands::publish(&self.knowledge_vault, &mv)?;
-        let notes = self
-            .markdown_knowledge_index()
-            .map_err(|_| store::AuthorityError::Invalid("folder move identity collision"))?;
-        folder_commands::accept(&mut self.authority, id, &mv, &notes)
+        self.publish_folder_move(id, &mv)
+    }
+
+    /// Publish one reserved folder move, rebuild the path index and record its
+    /// receipt. A definite refusal releases the reservation for the reason given
+    /// on [`Self::publish_folder_create`]; the index is untouched because
+    /// nothing moved.
+    fn publish_folder_move(
+        &mut self,
+        id: &str,
+        mv: &folder_commands::FolderMove,
+    ) -> Result<folder_commands::FolderReceipt, store::AuthorityError> {
+        match folder_commands::publish(&self.knowledge_vault, mv) {
+            Ok(()) => {
+                let notes = self.markdown_knowledge_index().map_err(|_| {
+                    store::AuthorityError::Invalid("folder move identity collision")
+                })?;
+                folder_commands::accept(&mut self.authority, id, mv, &notes)
+            }
+            Err(folder_commands::FolderPublishOutcome::Refused(message)) => {
+                folder_commands::abandon_move(&mut self.authority, id)?;
+                Err(store::AuthorityError::Invalid(message))
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// Apply durable SQLite intents before accepting new knowledge commands.
@@ -571,6 +643,123 @@ impl AuthoritativeHost {
         knowledge_service::KnowledgeServiceError,
     > {
         knowledge_service::KnowledgeService::new(&self.knowledge_vault).discover()
+    }
+
+    /// Add or remove one typed entity reference on a note.
+    ///
+    /// The body change is published as an ordinary
+    /// [`markdown_commands::MarkdownCommand::Update`] under the same command id,
+    /// so the durable receipt, the per-note revision, the expected-bytes fence
+    /// and the index rebuild are *the existing ones*. A parallel writer here
+    /// would be a second set of guarantees for the same file, which is exactly
+    /// how two of them drift apart.
+    ///
+    /// Order is part of the contract: envelope, reconciliation, replay, target
+    /// kind, entity existence, note existence. A command refused at any step
+    /// writes nothing and leaves its id free for a corrected retry.
+    pub fn execute_markdown_reference_command(
+        &mut self,
+        actor: &str,
+        command_id: &str,
+        command: references::MarkdownReferenceCommand,
+    ) -> Result<references::MarkdownReferenceReceipt, store::AuthorityError> {
+        use references::{
+            INVALID_REFERENCE_COMMAND, MarkdownReferenceAction, MarkdownReferenceCommand,
+            MarkdownReferenceReceipt, NOTE_DOES_NOT_EXIST, TypedReference, TypedReferenceKind,
+            UNKNOWN_REFERENCE_TARGET, UNSUPPORTED_REFERENCE_KIND,
+        };
+        // The envelope is validated before any vault or SQL read, so a refusal
+        // never depends on the state of the workspace.
+        if !markdown_commands::safe_id(actor) || !markdown_commands::valid_command_id(command_id) {
+            return Err(store::AuthorityError::Invalid(INVALID_REFERENCE_COMMAND));
+        }
+        if !references::valid_reference_id(&command.note_id) {
+            return Err(store::AuthorityError::Invalid(references::INVALID_NOTE_ID));
+        }
+        let Some(action) = MarkdownReferenceAction::parse(&command.action) else {
+            return Err(store::AuthorityError::Invalid(INVALID_REFERENCE_COMMAND));
+        };
+        let Some((kind, id)) = references::parse_reference_token(&command.target) else {
+            return Err(store::AuthorityError::Invalid(INVALID_REFERENCE_COMMAND));
+        };
+        // Reconciliation runs *after* the envelope: a refused command must not
+        // report a workspace problem instead of its own validation refusal.
+        self.recover_folder_creates()?;
+        self.recover_markdown_commands()?;
+        self.recover_folder_commands()?;
+        let payload = serde_json::to_string(&MarkdownReferenceCommand {
+            note_id: command.note_id.clone(),
+            target: command.target.clone(),
+            action: command.action.clone(),
+        })
+        .map_err(|_| store::AuthorityError::Invalid(INVALID_REFERENCE_COMMAND))?;
+        if let Some(receipt) = references::replayed(&self.authority, actor, command_id, &payload)? {
+            return Ok(receipt);
+        }
+        let Some(kind) = TypedReferenceKind::parse(kind) else {
+            return Err(store::AuthorityError::Invalid(UNSUPPORTED_REFERENCE_KIND));
+        };
+        let target = TypedReference {
+            kind,
+            id: id.to_owned(),
+        };
+        // The entity tables are authoritative: neither an index nor an earlier
+        // note may introduce a reference to something that does not exist.
+        if !self.authority.reference_entity_exists(kind, &target.id)? {
+            return Err(store::AuthorityError::Invalid(UNKNOWN_REFERENCE_TARGET));
+        }
+        let Some((_, body)) = self
+            .markdown_by_id(&command.note_id)
+            .map_err(store::AuthorityError::Knowledge)?
+        else {
+            return Err(store::AuthorityError::Invalid(NOTE_DOES_NOT_EXIST));
+        };
+        let as_target = target.as_target();
+        let (replacement, changed) = match action {
+            MarkdownReferenceAction::Add => references::add_typed_reference(&body, &as_target),
+            MarkdownReferenceAction::Remove => {
+                references::remove_typed_reference(&body, &as_target)
+            }
+        };
+        let receipt = if changed {
+            let markdown = self.execute_markdown_command(
+                actor,
+                command_id,
+                markdown_commands::MarkdownCommand::Update {
+                    note_id: command.note_id.clone(),
+                    expected: body,
+                    replacement,
+                },
+            )?;
+            MarkdownReferenceReceipt {
+                command_id: command_id.to_owned(),
+                note_id: command.note_id.clone(),
+                revision: markdown.revision,
+                changed: true,
+                target: as_target,
+                action: action.as_str().to_owned(),
+            }
+        } else {
+            // Nothing was published, so there is no new revision to report. The
+            // note's current accepted revision is the honest answer; 0 means the
+            // note never went through the Markdown ledger.
+            MarkdownReferenceReceipt {
+                command_id: command_id.to_owned(),
+                note_id: command.note_id.clone(),
+                revision: self.authority.markdown_note_revision(&command.note_id)?,
+                changed: false,
+                target: as_target,
+                action: action.as_str().to_owned(),
+            }
+        };
+        references::record(&mut self.authority, actor, command_id, &payload, &receipt)?;
+        Ok(receipt)
+    }
+
+    /// Current accepted revision for one note, or 0 when the note was never
+    /// published through the Markdown command ledger.
+    pub fn markdown_note_revision(&self, note_id: &str) -> Result<i64, store::AuthorityError> {
+        self.authority.markdown_note_revision(note_id)
     }
 
     /// Reconcile the disposable SQLite note index from physical Markdown files.
@@ -746,6 +935,57 @@ impl AuthoritativeHost {
         knowledge_service::KnowledgeServiceError,
     > {
         knowledge_service::KnowledgeService::new(&self.knowledge_vault).relations(note_id)
+    }
+
+    /// Every note that carries the exact typed reference to `target`.
+    ///
+    /// The whole answer comes from one vault pass: the per-note relation read
+    /// would rescan the vault once per note, and a dedicated index would be a
+    /// second source of truth for something the files already say. A reference
+    /// to an entity that no longer exists is still returned — the caller shows
+    /// it as broken instead of silently dropping the backlink.
+    pub fn markdown_references(
+        &self,
+        target: &str,
+    ) -> Result<references::MarkdownReferences, store::AuthorityError> {
+        let target =
+            references::authority_target(target).map_err(store::AuthorityError::Invalid)?;
+        let notes = references::scan_notes(&self.knowledge_vault)
+            .map_err(store::AuthorityError::Knowledge)?;
+        Ok(references::MarkdownReferences {
+            target: target.as_target(),
+            notes: references::reference_notes(&notes, &target),
+        })
+    }
+
+    /// Notes that reference one project or one of its live tasks.
+    ///
+    /// "Live" is read from the accepted task rows, so a reference to a task that
+    /// was renamed away or removed cannot include a note in a project view that
+    /// no longer contains that task. The note itself keeps the token; only this
+    /// scoped answer filters it.
+    pub fn project_knowledge(
+        &self,
+        project_id: &str,
+    ) -> Result<references::ProjectKnowledge, store::AuthorityError> {
+        use references::{INVALID_REFERENCE_TARGET, TypedReferenceKind, UNKNOWN_REFERENCE_TARGET};
+        if !references::valid_reference_id(project_id) {
+            return Err(store::AuthorityError::Invalid(INVALID_REFERENCE_TARGET));
+        }
+        if !self
+            .authority
+            .reference_entity_exists(TypedReferenceKind::Project, project_id)?
+        {
+            return Err(store::AuthorityError::Invalid(UNKNOWN_REFERENCE_TARGET));
+        }
+        let tasks = self.authority.project_task_ids(project_id)?;
+        let notes = references::scan_notes(&self.knowledge_vault)
+            .map_err(store::AuthorityError::Knowledge)?;
+        Ok(references::ProjectKnowledge {
+            project_id: project_id.to_owned(),
+            notes: references::project_knowledge_notes(&notes, project_id, &tasks),
+            tasks,
+        })
     }
 
     /// Folder hierarchy is read from the actual Markdown directory tree.

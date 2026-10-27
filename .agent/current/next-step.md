@@ -5,7 +5,7 @@ template_digest: "b88835ce70ef09490ad55db0e910dc05ff721384d6ccad8d45eafedd7654aa
 project_owned: true
 record_contract: next-step
 record_schema_version: 1
-id: NEXT-0015
+id: NEXT-0016
 status: completed
 milestone_id: MILESTONE-0032
 advances_exit_criteria: [EC-001, EC-002, EC-003, EC-004, EC-009, EC-011]
@@ -15,61 +15,62 @@ advances_exit_criteria: [EC-001, EC-002, EC-003, EC-004, EC-009, EC-011]
 
 ## Objective
 
-Land M32 iteration I1: project rename/status through authoritative commands,
-one server-backed search across projects/tasks/knowledge, saved views that
-survive a browser restart, and authoritative task timestamps — each proven by
+Land M32 iteration I2: knowledge folders and document locations, note links with
+back-references, and project/task-contextual knowledge — each proven by
 real-browser acceptance against an isolated server.
 
 ## Why this is next
 
-The four gaps are the operations a person performs daily in the shipped web
-product, and each currently forces a CLI workaround. They are also the
-prerequisites for the later M32 iterations: I2 needs the same command/read
-discipline for knowledge, I3/I4 need the browser to operate rather than only
-inspect, and I5 dogfooding cannot evaluate workflows that cannot be completed.
+I1 closed the everyday project-management gaps. Knowledge is the next daily
+surface that still needs the CLI: the vault and the server already support folder
+and note moves with receipts, but the browser offers no folder control, no way to
+create a link, and no project-scoped knowledge. Until those exist, notes cannot be
+used as part of project work, and I5 dogfooding cannot evaluate a knowledge
+workflow.
 
 ## Preconditions
 
-- MILESTONE-0031 complete at `d1e916a`; M31 web client, Playwright harness and
-  API contract documentation are the baseline.
-- Frozen I1 contracts in `.slim/deepwork/m32-web-completeness/i1-plan.md`.
+- M32 I1 committed (`1c27354`); knowledge vault, folder commands, note commands
+  and `[[id]]` relations ship and are tested.
+- Frozen I2 contracts in `.slim/deepwork/m32-web-completeness/i2-plan.md`.
 
 ## Inputs
 
-- `web/src/{api,features,app,components}/**`, `web/tests/{unit,e2e}/**`.
-- `crates/orbit-{domain,application,runtime,server}/**`.
-- `.slim/deepwork/m32-web-completeness/{progress.md,i1-plan.md}`.
+- `web/src/features/knowledge/**`, `web/src/api/{endpoints,mutations,queries}.ts`.
+- `crates/orbit-runtime/src/{references.rs,markdown_commands.rs,lib.rs}`,
+  `crates/orbit-server/src/main.rs`, `crates/orbit-cli/src/{markdown_metadata,
+  markdown_discovery}.rs`.
+- `.slim/deepwork/m32-web-completeness/i2-plan.md`.
 
 ## Ordered actions
 
-1. Rust authority lane: project update command + status edges + search +
-   task timestamps + saved views, with focused tests.
-2. Web client lane: settings form, palette search, saved-view controls, task
-   metadata, unit tests.
-3. Browser acceptance lane: Playwright specs for rename/status/conflict,
-   search, saved views and timestamps; fix integration defects.
-4. Run the full gates, record honest evidence, update the milestone criteria
-   and journal, then start I2.
+1. Runtime lane: shared reference grammar, reference command through the Markdown
+   command path, reference read and project-knowledge read, with tests.
+2. Client lane: folder lifecycle with pickers and breadcrumb, note rename,
+   link/unlink authoring, typed references with broken-target state,
+   project-aware `knowledge_refs`, task-drawer Notes section.
+3. Browser acceptance lane: folder, link and project-knowledge specs; fix
+   integration defects in the owning layer.
+4. Run the gates, record evidence, update milestone criteria and journal, then
+   start I3.
 
 ## Expected outputs
 
-- Four working operations in the browser, each with a server contract, tests
-  and real-browser evidence.
-- Saved views persisted server-side without touching the semantic ledger or a
-  workflow definition.
-- Task timestamps that report `Unknown` instead of guessing.
+- Working folder create/rename/move and document move/rename from the browser.
+- A link picker with back-references, and project/task references that navigate.
+- A project knowledge panel and a task Notes section backed by one server scan.
+- Rust, unit and browser evidence.
 
 ## Acceptance criteria
 
-- [x] NS-001: `POST /authoritative/project-commands` with `action=update`
-  renames and transitions a project, fences stale revisions, replays receipts
-  and leaves identity stable.
-- [x] NS-002: `GET /authoritative/search` returns grouped bounded results and
-  the client opens each destination.
-- [x] NS-003: Saved views survive a browser restart and never modify a workflow
-  definition; the authority revision does not move on a saved-view write.
-- [x] NS-004: Task detail exposes created/updated from recorded activity, with
-  `null` for records without history.
+- [x] NS-001: Folder create/rename/move and note create/rename/move persist and
+  refuse invalid destinations with the server's message.
+- [x] NS-002: A note link can be created and removed and its back-reference is
+  visible; a broken target is indicated.
+- [x] NS-003: Project/task references can be added and removed and appear in the
+  project knowledge read; a reference to a deleted entity is shown as broken.
+- [x] NS-004: The reference grammar is shared with the CLI and CLI behaviour is
+  unchanged.
 - [x] NS-005: Full Rust tests, clippy, typecheck, vitest, terminology, build and
   Playwright pass on the frozen tree.
 - [x] NS-006: `getdone-validate-project` exits 0.
@@ -77,7 +78,7 @@ inspect, and I5 dogfooding cannot evaluate workflows that cannot be completed.
 ## Validation
 
 ```sh
-cargo test -p orbit-domain -p orbit-application -p orbit-runtime -p orbit-server --offline
+cargo test -p orbit-runtime -p orbit-server -p orbit-cli --offline
 cd web && node node_modules/typescript/bin/tsc --noEmit
 cd web && node node_modules/vitest/vitest.mjs run
 cd web && node scripts/check-terminology.mjs
@@ -88,12 +89,13 @@ getdone-validate-project
 
 ## Stop conditions
 
-- A proposed command would bypass the revision fence, the receipt, or the
-  semantic ledger for actual domain state.
-- A saved view would require mutating a pinned workflow definition.
-- A timestamp cannot be derived from recorded history without fabricating it.
-- The client would need a second implementation of a server rule.
+- A second content store, a body column, or a revived SQL knowledge table would be
+  needed.
+- A reference write would bypass the Markdown command receipt or revision.
+- The client would have to reimplement the reference grammar.
+- Project scoping would have to be faked by filtering the global inventory.
 
 ## Out of scope
 
-- I2–I6 work, any TUI change, M27 publication, M15 evidence regeneration.
+- Note/folder deletion, note kinds/statuses, work-item references, I3–I6 work, and
+  any TUI change.

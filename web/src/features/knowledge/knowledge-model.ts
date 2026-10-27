@@ -91,6 +91,39 @@ export function noteHref(path: string): string {
     .join('/')}`
 }
 
+/**
+ * Where a task opens with its drawer: inside its project when it has one, else
+ * in the Inbox. A note's reference chip uses this, so a link out of the note
+ * never lands back on the note's own surface.
+ */
+export function taskSurfaceHref(projectId: string | null | undefined, taskId: string): string {
+  const base = projectId ? `/projects/${projectId}` : '/inbox'
+  return `${base}?task=${encodeURIComponent(taskId)}`
+}
+
+/**
+ * The knowledge page's folder destination. The root is `/knowledge` with no
+ * query string; any other folder is a real, shareable address.
+ */
+export function folderHref(folder: string): string {
+  return folder.length === 0 ? '/knowledge' : `/knowledge?folder=${encodeURIComponent(folder)}`
+}
+
+/** One file name as the vault expects it: a name plus `.md`, never a path. */
+export function isValidNoteFileName(name: string): boolean {
+  if (name.length === 0 || name.length > 255 - 3) return false
+  if (name.includes('/') || name.includes('\\') || name.includes('\0')) return false
+  if (!name.toLowerCase().endsWith('.md')) return false
+  const base = name.slice(0, -3)
+  return base.length > 0 && base !== '.' && base !== '..' && !base.startsWith('.')
+}
+
+/** The note path a folder and a file name compose. */
+export function notePathInFolder(folder: string, fileName: string): string {
+  const name = fileName.trim()
+  return folder.length === 0 ? name : `${folder}/${name}`
+}
+
 export function noteTitleFromPath(path: string): string {
   const name = path.split('/').pop() ?? path
   return name.replace(/\.md$/i, '')

@@ -3,10 +3,11 @@
 The Orbit web app is an optional browser client for a self-hosted `orbit-server`. It reads and
 writes the same authoritative state as the CLI and the terminal workspace, over the server's
 HTTP API, and adds no second data model and no local database. This page documents the build
-shipped in M32 I1: the app shell and sign-in, Home, Inbox, Projects, one search across projects,
+shipped in M32 I2: the app shell and sign-in, Home, Inbox, Projects, one search across projects,
 tasks and knowledge, workflow-driven project workspaces (task list, board, milestones, timeline,
 and the panels a workflow declares), saved views, Work Items, planning with an explicit approval
-gate, knowledge, attachments, agent jobs, editable project settings and workflow upgrades. Anything listed as missing below really is missing in this
+gate, a knowledge vault with folders, note links and project/task references, attachments, agent
+jobs, editable project settings and workflow upgrades. Anything listed as missing below really is missing in this
 build. For a one-page setup path aimed at a new internal tester, start with the
 [web quickstart](guides/web-quickstart.md).
 
@@ -492,14 +493,22 @@ break `[[id]]` links.
 
 - **Tree and search.** The vault panel lists folders and notes; the header counts notes (with
   correct singular/plural). Search reads `/markdown-search` over titles and bodies and lists
-  matches by path. Selecting a note opens it in the note page.
-- **New note.** The dialog takes a **Path** relative to the vault, ending in `.md`, a **Title**
-  used for the first heading, and plain Markdown. The note id is minted before the request and
-  written to the frontmatter. The path's folder must already exist; the hint lists the existing
-  folders.
-- **Note page.** Renders the Markdown body, shows the stable id and path, and offers **Reload**,
-  **Edit**, **Move** and, while editing, **Cancel** and **Save note**. Edit is disabled for a
-  file with no `orbit_id`, because the server cannot accept an edit without one.
+  matches by path. Selecting a note opens it, and a folder is a real destination: the breadcrumb
+  walks parents and children, the folder view lists exactly what is inside it, and the open folder
+  survives a reload.
+- **Folders.** **New folder** creates a folder at the root or inside the selected one; **Rename**
+  and **Move** change its name or its parent. A rename moves every note underneath with it. The
+  server refuses a missing parent, a destination that already exists and a folder moved inside
+  itself, and the dialog quotes that refusal without changing the tree. Creating a folder that
+  already exists is accepted by the server as a no-op and the toast says **Folder ready**, not
+  "created".
+- **New note.** The dialog takes a **Title**, Markdown and a **folder picked from the tree** — you
+  never type a path by hand. The note id is minted before the request and written to the
+  frontmatter. The chosen folder must exist, and the picker only offers folders that do.
+- **Note page.** Renders the Markdown body and shows the note's **location** with the folder path,
+  the stable id, and the actions **Reload**, **Edit**, **Rename**, **Move**, **Link a note** and,
+  while editing, **Cancel** and **Save note**. Edit is disabled for a file with no `orbit_id`,
+  because the server cannot accept an edit without one.
 - **Saving is fenced by the file.** Before sending an update the editor re-reads the file and
   sends the bytes it just read as `expected`. If the file changed on disk, the write is refused
   and the page says to reload and reapply the change; if the id changed, it refuses too. A
@@ -507,15 +516,39 @@ break `[[id]]` links.
 - **Uncertain writes.** If the server's answer is lost, the page says **The write was not
   confirmed; the file may still have changed.** and offers **Retry the same change** (the same
   command id and payload) and **Reload note**. It does not claim the write failed or succeeded.
-- **Move.** **Move** takes a new path and re-reads the file for the same `expected` fence. The
-  destination folder must already exist; the `.md` extension is required. Moving keeps the
-  stable id and every `[[id]]` link.
+- **Rename and Move.** **Rename** changes the last path segment; **Move** changes the folder. Both
+  re-read the file for the same `expected` fence, keep the stable id and keep every `[[id]]` link.
+  After an accepted move the app follows the note to its new path, and a link to the old path says
+  the note moved instead of pretending it never existed.
+- **Linking notes.** **Link a note** picks a note by title from the inventory and appends a
+  `[[id]]` reference through the same fenced `Update` command, so the picker cannot produce an id
+  that does not exist. **Unlink** removes it. Writing the id by hand still works and an id no note
+  owns is shown as unresolved.
 - **Relations.** The Relations panel lists **Links to** (this note's outgoing `[[id]]`
-  references resolved to paths), **Linked from** (backlinks) and **Unresolved references** (ids
-  no note in the vault owns). If the inventory cannot be read, ids are still shown and the
-  panel says they could not be resolved.
+  references resolved to paths), **Linked from** (backlinks), **Unresolved references** (ids no
+  note in the vault owns) and **References** (typed project/task references, below). If the
+  inventory cannot be read, ids are still shown and the panel says they could not be resolved.
+- **A task on a note is context, not a task page.** `/knowledge/notes/x.md?task=<id>` opens
+  the note with a **Task context** bar naming the task: **Open the task** goes to the task in its
+  project (where the drawer lives), and **Stop linking** removes just the `task` parameter and
+  keeps the note, its folder and its project context. On knowledge routes the task drawer is not
+  mounted at all, so the note and its reference panel are never covered; on every other surface
+  `?task=` still opens the drawer, `Esc` still closes it there, and on a note `Esc` leaves the
+  note as it is.
+- **Project and task references.** A note can reference a project or a task
+  (`[project:orbit](orbit://project:orbit)` and the same shape with `task:`), added with
+  **Reference this project** / **Reference this task** or the **Link a note** dialog's reference
+  tab, and removed from the chip. The reference is one Markdown link, so it travels with the file
+  and needs no database. `habit:` and work-item references are refused by the server: the wire
+  contract covers projects and tasks.
+- **A reference to something that no longer exists** is shown as a broken chip with the reason and
+  stays removable. It is never silently dropped and never links to a dead end.
+- **Project knowledge.** A project's `knowledge_refs` panel reads the notes that reference the
+  project or any of its tasks, says which reference caused each row, and opens the note. Without a
+  project it refuses by name instead of falling back to the whole vault. The task drawer's
+  **Notes** section does the same for one task and can link or unlink a note.
 
-There is no folder creation, note deletion or file rename outside **Move** in this build; see
+There is no note deletion, no folder deletion, and no note kind or status in this build; see
 [Not available yet](#not-available-yet).
 
 ## Attachments
@@ -724,10 +757,11 @@ supports much of it:
 
 - **Project archive or deletion.** Rename and status transitions are now part of Settings; a
   project cannot be archived or deleted from the browser.
-- **Knowledge folder creation, note deletion or a rename outside Move.** Notes can be created
-  only in folders that already exist, and the folder endpoints have no browser control.
-- **Relative in-app Markdown links and task↔note relations.** Only absolute `http(s)` links are
-  rendered (in a new tab); there is no first-class note association in the drawer.
+- **Note or folder deletion, note kinds/statuses, and work-item references.** Folders and notes
+  can be created, renamed and moved; nothing can be deleted, and the reference grammar covers
+  projects and tasks only.
+- **Relative in-app Markdown links.** Only absolute `http(s)` links and the two reference forms
+  above are rendered; a relative `[text](notes/other.md)` link is plain text.
 - **Starting an agent job.** An executor or the command line starts one; the browser reviews a
   handoff, records a decision and resumes a finished job into the queue, and none of those
   actions completes the task.
