@@ -39,6 +39,7 @@ import type { PlanningPatch } from './planning-fields'
 import { PropertiesSection } from './properties-section'
 import { FieldError } from './section'
 import { DrawerSkeleton } from './skeleton'
+import { TaskTimestamps } from './task-timestamps'
 import type { TaskCommand } from './task-command'
 import { EditGuardProvider, InlineTitle, type EditorHandle } from '@/components/forms'
 
@@ -324,6 +325,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                     ? projects.find((project) => project.id === task.projectId)?.name ?? 'Project'
                     : 'No project · In the Inbox'}
                 </p>
+                <TaskTimestamps createdAtMs={task.createdAtMs} updatedAtMs={task.updatedAtMs} />
                 {detail.error ? (
                   <div className="mt-2 flex items-start gap-2 rounded-sm border border-warning/40 bg-warning-soft px-2 py-1.5">
                     <AlertCircleIcon size={13} className="mt-0.5 shrink-0 text-warning-ink" />

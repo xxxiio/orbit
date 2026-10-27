@@ -6,6 +6,11 @@ playwright-report/
 playwright/.cache/
 *.local
 .DS_Store
+# Local server database created when the server is started from this directory
+orbit-server.db
+orbit-server.db-wal
+orbit-server.db-shm
+orbit-server.knowledge/
 .env
 .env.*
 !.env.example

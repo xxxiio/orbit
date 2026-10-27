@@ -8,7 +8,7 @@
  *   stable) because the server evaluates at the instant it is given;
  * - any 401 on any read signs this browser out of the session store, once.
  */
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import {
   useQueries,
   useQuery,
@@ -52,6 +52,9 @@ import {
   searchMarkdown,
 } from './endpoints/knowledge'
 import { fetchMilestones } from './endpoints/milestones'
+import { fetchProjectStatuses } from './endpoints/projects'
+import { fetchSavedViews } from './endpoints/saved-views'
+import { searchOrbit } from './endpoints/search'
 import { fetchSnapshot } from './endpoints/snapshot'
 import { fetchAcceptanceCriteria, fetchTaskActivity, fetchTaskDetail, fetchTaskTransitions } from './endpoints/tasks'
 import {
@@ -76,7 +79,10 @@ import {
   toNextActions,
   toPortfolioCapacity,
   toProjectDependencies,
+  toProjectStatusOptions,
+  toSavedView,
   toSchedulePlan,
+  toSearchView,
   toTaskDetail,
   toTaskGraph,
   toTaskReadiness,
@@ -100,7 +106,10 @@ import {
   type NextActionsView,
   type PortfolioCapacityView,
   type ProjectDependencyView,
+  type ProjectStatusOption,
+  type SavedView,
   type SchedulePlanView,
+  type SearchView,
   type Task,
   type TaskGraphView,
   type TaskReadinessView,
@@ -130,6 +139,12 @@ export const queryKeys = {
   /** Shared with the scaffold's session module so there is exactly one cache entry. */
   session: () => sessionQueryKey,
   snapshot: () => ['snapshot'] as const,
+  projectStatuses: () => ['project-statuses'] as const,
+  search: (query: string, limit: number, projectId?: string | null) =>
+    ['search', query, limit, projectId ?? ''] as const,
+  /** Prefix for invalidating every cached search when a result's title changes. */
+  searchAll: () => ['search'] as const,
+  savedViews: () => ['saved-views'] as const,
   task: (id: string) => ['task', id] as const,
   taskAcceptanceCriteria: (id: string) => ['task', id, 'acceptance-criteria'] as const,
   taskActivity: (id: string) => ['task', id, 'activity'] as const,
@@ -249,6 +264,77 @@ export function useWorkspaceSnapshot(): UseQueryResult<WorkspaceSnapshot, ApiErr
     queryFn: ({ signal }) => fetchSnapshot(signal),
     staleTime: SNAPSHOT_STALE_TIME,
     select: toWorkspaceSnapshot,
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Project statuses                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The domain's own transition table for project statuses. There is no fallback
+ * list: a failed read leaves the caller with `error`, and the settings form
+ * shows the stored status read-only rather than guessing.
+ */
+export function useProjectStatuses(): UseQueryResult<ProjectStatusOption[], ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.projectStatuses(),
+    queryFn: ({ signal }) => fetchProjectStatuses(signal),
+    staleTime: 5 * 60_000,
+    select: toProjectStatusOptions,
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Unified search                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One server search, disabled for an empty query. The hook caps the query at
+ * the contract's 200 characters before it is sent. Changing the query cancels
+ * the previous request through its `AbortSignal` instead of letting a late
+ * answer replace a newer one.
+ */
+export function useOrbitSearch(
+  query: string,
+  limit = 10,
+  projectId?: string | null,
+): UseQueryResult<SearchView, ApiError> {
+  const trimmed = query.trim().slice(0, 200)
+  const queryClient = useQueryClient()
+  const queryKey = useMemo(
+    () => queryKeys.search(trimmed, limit, projectId),
+    [trimmed, limit, projectId],
+  )
+
+  useEffect(
+    () => () => {
+      void queryClient.cancelQueries({ queryKey })
+    },
+    [queryClient, queryKey],
+  )
+
+  return useApiQuery({
+    queryKey,
+    queryFn: ({ signal }) => searchOrbit(trimmed, { limit, projectId }, signal),
+    enabled: trimmed.length > 0,
+    staleTime: 15_000,
+    select: toSearchView,
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Saved views                                                         */
+/* ------------------------------------------------------------------ */
+
+/** Personal presentation preferences stored by the authority, not a workflow read. */
+export function useSavedViews(): UseQueryResult<SavedView[], ApiError> {
+  return useApiQuery({
+    queryKey: queryKeys.savedViews(),
+    // The accepted-write helpers store this same adapted shape, so a rename or
+    // delete is visible in the open list before the refetch settles.
+    queryFn: async ({ signal }) => (await fetchSavedViews(signal)).views.map(toSavedView),
+    staleTime: 10_000,
   })
 }
 

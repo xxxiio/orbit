@@ -177,12 +177,18 @@ export interface AuthorityProjectsResponse {
   projects: ProjectRecord[]
 }
 
-/** `deny_unknown_fields`; `workflow_id` is only read on the first accepted create. */
+/**
+ * `deny_unknown_fields`; `action` defaults to `create` when absent.
+ * `workflow_id` is only read on the first accepted create, and an empty `name`
+ * on `update` means "keep the stored name".
+ */
 export interface ProjectCommand {
   command_id: string
   expected_revision: number
+  action?: 'create' | 'update'
   project_id: string
   name: string
+  status?: string
   workflow_id?: string
 }
 
@@ -190,6 +196,106 @@ export interface ProjectResult {
   revision: number
   duplicate: boolean
   project: ProjectRecord
+}
+
+/** One status and the targets the domain accepts from it (`GET /project-statuses`). */
+export interface ProjectStatusRecord {
+  status: string
+  next: string[]
+}
+
+export interface ProjectStatusesResponse {
+  statuses: ProjectStatusRecord[]
+}
+
+/* ------------------------------------------------------------------ */
+/* Search                                                              */
+/* ------------------------------------------------------------------ */
+
+export type SearchResultKind = 'project' | 'task' | 'note'
+
+/** One match. `subtitle` is composed by the server; the client never rebuilds it. */
+export interface SearchResultRecord {
+  kind: SearchResultKind
+  id: string
+  title: string
+  subtitle: string | null
+  project_id: string | null
+  path: string | null
+}
+
+export interface SearchGroupRecord {
+  kind: SearchResultKind
+  truncated: boolean
+  results: SearchResultRecord[]
+}
+
+/** Groups are always present in the order project, task, note. */
+export interface SearchResponse {
+  revision: number
+  query: string
+  limit: number
+  groups: SearchGroupRecord[]
+}
+
+/* ------------------------------------------------------------------ */
+/* Saved views                                                         */
+/* ------------------------------------------------------------------ */
+
+export type SavedViewScope = 'project' | 'inbox' | 'home'
+export type SavedViewDisplay = 'list' | 'board'
+
+/** A personal presentation preference, never a workflow view. */
+export interface SavedViewRecord {
+  id: string
+  name: string
+  scope: string
+  project_id: string | null
+  query: string
+  display: string
+  version: number
+  created_at_ms: number
+  updated_at_ms: number
+}
+
+export interface SavedViewListResponse {
+  views: SavedViewRecord[]
+}
+
+/**
+ * Tagged `type`, snake_case. `expected_version` 0 means create; rename and
+ * delete must carry the live row version.
+ */
+export type SavedViewCommand =
+  | {
+      type: 'save'
+      command_id: string
+      view_id: string
+      expected_version: number
+      name: string
+      scope: SavedViewScope
+      project_id: string | null
+      query: string
+      display: SavedViewDisplay
+    }
+  | {
+      type: 'rename'
+      command_id: string
+      view_id: string
+      expected_version: number
+      name: string
+    }
+  | {
+      type: 'delete'
+      command_id: string
+      view_id: string
+      expected_version: number
+    }
+
+export interface SavedViewResult {
+  duplicate: boolean
+  /** `null` for delete, because the server removes the record. */
+  view: SavedViewRecord | null
 }
 
 /* ------------------------------------------------------------------ */
@@ -224,6 +330,9 @@ export interface TaskDetailResponse {
   description: string
   priority: string | null
   labels: string[]
+  /** Derived from recorded activity; `null` when no history row exists. */
+  created_at_ms: number | null
+  updated_at_ms: number | null
 }
 
 export interface AcceptanceCriterionResponse {

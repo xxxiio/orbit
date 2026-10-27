@@ -6,51 +6,51 @@ project_owned: true
 record_contract: acceptance-report
 record_schema_version: 1
 status: passed
-task_id: TASK-0009
+task_id: TASK-0010
 ---
 
 # Current Acceptance Report
 
 ## Task
 
-TASK-0009 — M30 I2–I4 and the navigation rail correction.
+TASK-0010 — M32 I1: project rename/status, unified search, saved views and task
+timestamps.
 
 ## Gate results
 
 | Gate ID | Gate | Status | Evidence |
 |---|---|---|---|
-| G-0001 | Navigation rail drives the workspace | pass | `input/dispatch.rs` activates the focused rail row on every screen; `activate_sidebar` keeps the rail focused for Home/Inbox/Agents/Projects; project activation hands focus to the workspace. 4 regression tests (`m30_sidebar_navigation_tests`); real-binary PTY repro: Projects → Home → Inbox → Agents → Alpha Project when driven from the rail. |
-| G-0002 | Connected MCP blueprint writes are outbox-backed | pass | `crates/orbit-mcp/src/blueprint_tools.rs` has no `.post(`; every write queues via `queue_blueprint_transport` then flushes and reports `accepted`/`pending`/`conflict` from the outbox row. 8 MCP tests; real server/MCP acceptance covers offline pending, accepted receipt, identical replay, same-id different-body conflict, lost-ack replay with one applied effect, duplicate command refusal, read paths never queued, policy refusal. |
-| G-0003 | Previewable, fenced blueprint upgrades | pass | `preview_blueprint_upgrade` diffs kinds/states/fields/transitions/actions/capabilities/views and classifies warnings/blockers with a SHA-256 fingerprint over accepted state; `apply_blueprint_upgrade` requires `--confirm` plus the fingerprint, recomputes inside a savepoint, refuses blockers/mismatch, preserves items, idempotent. 13 runtime tests, 2 CLI tests, 60 local CLI acceptance checks (preview → refusals → apply → restart). No auto-upgrade on publish/install. |
-| G-0004 | Habit recurrence owned by an opt-in capability | pass | New `orbit-habit-capability` crate owns `evaluate_habit_periods` and the summary types; `orbit-domain` keeps only occurrence/period types. Runtime registers `orbit.habit.recurrence` without installing/authorizing it; application/evidence reads return explicit `Unavailable` until installed (and granted for project evidence). Package 5 tests, domain 56, application 17, runtime 542; moved tests preserve streak numbers; task-only flow needs no habit capability. |
-| G-0005 | Quality gates | pass | `cargo test --workspace --offline` 1,658 passed, 0 failed (31 binaries); clippy `-D warnings` clean across 14 crates; fmt clean; PTY 65 passed/1 skipped; MCP 4; contracts 43; documentation 39; capability workflow 1; local CLI 60; `getdone-validate-project` passed. |
+| G-0001 | Project rename and status through authoritative commands | pass | `ProjectCommandRequest` `action:"update"` (`crates/orbit-runtime/src/store.rs`), domain `Project::rename`/`restore`/`ProjectStatus::parse`/`ALL`, `GET /v1/authoritative/project-statuses`. Order is envelope → receipt replay → revision fence → domain, so a stale fence answers 409 before any existence or no-op check. 8 runtime command tests, 5 server HTTP tests, and `web/tests/e2e/project-settings.spec.ts` 6/6 (rename on every surface with a stable id, status persistence, server-offered edges plus a refused illegal move, stale revision that never claims success, Cancel, blank name). |
+| G-0002 | Unified search across projects, tasks and knowledge | pass | `crates/orbit-runtime/src/search.rs` (escaped `LIKE`, `LOWER()` on both sides, `limit + 1` per group instead of COUNT, project filter) + `GET /v1/authoritative/search`; notes reuse the file-backed vault search, no new index. 7 runtime tests and 5 server tests; `search.spec.ts` 5/5 (three kinds, each destination, empty query keeps commands, honest empty state, keyboard + focus, unauthenticated 401, stale note target). |
+| G-0003 | Saved views persist and stay out of workflow definitions | pass | `crates/orbit-runtime/src/saved_views.rs` with its own tables and receipts; a test asserts the authority revision does not move and the Playwright spec re-reads the workflow binding before/after. 9 runtime tests, 2 server tests; `saved-views.spec.ts` 6/6 including a second browser context and a stale-version refusal. |
+| G-0004 | Authoritative task timestamps with unknown state | pass | `AuthorityStore::task_timestamps` derives `MIN(kind='created')` and `MAX(occurred_at_ms)` from `activities`; `TaskDetailResponse` carries both as nullable. Runtime tests cover known, advanced and unknown; `task-metadata.spec.ts` 2/2; the `Unknown` rendering branch is unit-tested because API-created tasks always have history. |
+| G-0005 | Browser acceptance and quality gates | pass | Full gates below, run by the orchestrator on the reconciled tree. |
 
 ## Commands run
 
 ```text
 cargo fmt --all -- --check                                   # clean
-cargo test --workspace --offline                             # 1,658 passed, 0 failed (31 binaries)
-cargo clippy -p orbit-domain -p orbit-application -p orbit-storage -p orbit-runtime \
-  -p orbit-sync -p orbit-blueprint -p orbit-client -p orbit-ui -p orbit-tui \
-  -p orbit-mcp -p orbit-cli -p orbit-server -p orbit-progress \
-  -p orbit-habit-capability --all-targets --offline -- -D warnings   # clean
-cargo test -p orbit-runtime --offline blueprint_upgrade       # 13 passed
-cargo test -p orbit-mcp --offline                             # 76 passed
-cargo test -p orbit-cli --offline                             # 128 passed
-cargo test -p orbit-habit-capability -p orbit-domain -p orbit-application --offline
-python3 -m pytest -q tests/acceptance/tui tests/acceptance/mcp \
-  tests/contracts tests/documentation                          # 151 passed, 1 skipped (plus capability test)
-python3 -m pytest -q tests/acceptance/test_m30_capability_workflow.py   # 1 passed
-python3 tests/acceptance/local_cli_workflows.py --binary target/debug/orbit  # 60 passed
-getdone-validate-project                                      # passed
+cargo test --workspace --offline                             # 1,730 passed, 0 failed, 31 binaries, exit 0
+cargo clippy -p orbit-domain -p orbit-application -p orbit-runtime -p orbit-server -p orbit-client \
+  --all-targets --offline -- -D warnings                     # clean
+cd web && node node_modules/typescript/bin/tsc --noEmit      # exit 0
+cd web && node node_modules/vitest/vitest.mjs run            # 46 files, 249 tests passed
+cd web && node scripts/check-terminology.mjs                 # 230 files, no legacy feature name
+cd web && node node_modules/vite/bin/vite.js build           # built (pre-existing chunk-size warning only)
+cd web && node node_modules/@playwright/test/cli.js test <four I1 specs>   # 19 passed
+cd web && node node_modules/@playwright/test/cli.js test     # 106 passed, 4 skipped, 0 failed (5.5 min)
 ```
+
+Hand-run wire check against a disposable server on a fresh database: create →
+`action:"update"` (rename + status) → replay `duplicate:true` at the original
+revision → stale fence 409 before domain checks → six statuses with legal edges →
+grouped search with server subtitles → task-detail timestamps → saved-view
+save/list; empty `q` is 400.
 
 ## Checks not run
 
-- Full `./scripts/m15-full-automated.sh --profile full` release profile (unchanged
-  release qualification remains M15/M27; the focused suites above were run).
-- Connected capability execution and MCP capability tools (not implemented; the
-  refusal is explicit).
+- M15 full release profile and M27 publication verification (unchanged external
+  release qualification, deliberately not regenerated).
 - Live Herdr/model acceptance (unchanged external requirement).
 
 ## Waivers
@@ -59,8 +59,11 @@ getdone-validate-project                                      # passed
 
 ## Residual risk
 
-- Connected capability actions remain local-only by design; connected blueprint
-  writes are now outbox-backed.
-- Habit streaks/evidence are unavailable until the capability is installed and
-  (for project evidence) granted; this is intended opt-in behaviour.
-- Upgrade blockers intentionally refuse incompatible live-data changes.
+- Project completion criteria are not modelled in the authority SQL project row,
+  so a status move validates transition edges and name rules, not
+  success-criterion gating — the same limitation the authority create path has.
+- The board carries no URL-backed filter state, so a saved board view restores the
+  display plus whatever query the URL already has.
+- Search case folding is ASCII (SQLite `LOWER`), stated rather than approximated.
+- Saved-view ids are primary keys across soft deletes, so a tombstoned id cannot be
+  reused; the client mints fresh ids.

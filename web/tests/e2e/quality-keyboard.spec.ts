@@ -154,18 +154,19 @@ test.describe('keyboard-only', () => {
     await search.focus()
     await page.keyboard.press('Control+k')
 
-    const palette = page.getByRole('dialog', { name: 'Command palette' })
+    const palette = page.getByRole('dialog', { name: 'Search or run a command' })
     await expect(palette).toBeVisible()
     const input = palette.getByRole('combobox')
     await expect(input).toBeFocused()
-    await expect(input).toHaveAttribute('placeholder', 'Search commands…')
+    await expect(input).toHaveAttribute('placeholder', 'Search projects, tasks and knowledge…')
     await expect(palette.getByRole('option', { name: /New task/ })).toBeVisible()
     await expect(palette.getByRole('option', { name: /Go to Inbox/ })).toBeVisible()
 
-    // A query that matches nothing says so, and Escape returns focus to the
-    // control that had it.
+    // A query that matches nothing says so (the palette searches the server as
+    // soon as the query is non-empty), and Escape returns focus to the control
+    // that had it.
     await page.keyboard.type('zzz')
-    await expect(palette).toContainText('No matching commands')
+    await expect(palette).toContainText('No matches for “zzz”')
     await page.keyboard.press('Escape')
     await expect(palette).toBeHidden()
     await expect(search).toBeFocused()

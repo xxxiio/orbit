@@ -461,7 +461,13 @@ fn project_workflow_binding_roundtrips_through_the_client() {
         .expect("workflow bound");
     assert_eq!(binding.project_id, "project-1");
     assert_eq!(binding.workflow_id, "development");
-    assert_eq!(binding.version, 2);
+    // The bound version is whichever version the bundle currently declares.
+    // Pinning a literal here made a legitimate manifest bump look like a client
+    // regression, so the expectation is read from the same descriptor the
+    // install path uses.
+    let bundled =
+        orbit_blueprint::bundled::bundled_blueprint("development").expect("bundled workflow");
+    assert_eq!(binding.version, bundled.version);
 
     drop(client);
     let _ = fs::remove_dir_all(dir);

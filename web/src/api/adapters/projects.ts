@@ -4,7 +4,13 @@
  * A project carries the status the server accepted; a milestone mutation result
  * carries `null` for `delete`, when the server removed the record.
  */
-import type { MilestoneRecord, MilestoneResult, ProjectRecord, ProjectStatus } from '../contracts'
+import type {
+  MilestoneRecord,
+  MilestoneResult,
+  ProjectRecord,
+  ProjectStatus,
+  ProjectStatusesResponse,
+} from '../contracts'
 import { asStatus } from './shared'
 
 export interface Project {
@@ -19,6 +25,26 @@ export function toProject(record: ProjectRecord): Project {
     name: record.name,
     status: asStatus<ProjectStatus>(record.status),
   }
+}
+
+/** One status and the transitions the domain accepts from it. */
+export interface ProjectStatusOption {
+  status: ProjectStatus
+  next: ProjectStatus[]
+}
+
+/**
+ * The server's transition table, not a client copy. A status the server did not
+ * report keeps an empty edge list so the form can tell the person it is
+ * read-only instead of guessing what the move should be.
+ */
+export function toProjectStatusOptions(
+  response: ProjectStatusesResponse,
+): ProjectStatusOption[] {
+  return response.statuses.map((record) => ({
+    status: asStatus<ProjectStatus>(record.status),
+    next: record.next.map((status) => asStatus<ProjectStatus>(status)),
+  }))
 }
 
 export interface Milestone {

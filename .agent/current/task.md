@@ -5,105 +5,101 @@ template_digest: "179af91e65608fbfd07b28126ed729856e6524410956892a698b3f40e902e6
 project_owned: true
 record_contract: current-task
 record_schema_version: 1
-id: TASK-0009
+id: TASK-0010
 status: completed
-milestone_id: MILESTONE-0030
+milestone_id: MILESTONE-0032
 ---
 
-# Task: M30 I2–I4 and the navigation rail correction
+# Task: M32 I1 — everyday project management
 
 ## Objective
 
-Fix the reported navigation defect — whatever is selected in the sidebar must
-drive the workspace — and finish the remaining instruction scope: connected MCP
-blueprint outbox parity (M25 EC-004), previewable blueprint upgrades (EC-005) and
-habit recurrence ownership by an opt-in capability package (EC-006).
+Close the four most immediately frustrating gaps in the shipped web client:
+project rename and status editing, one search across projects/tasks/knowledge,
+saved task and board views, and honest task created/updated timestamps.
 
 ## Current behaviour
 
-After M30 I1 the rail looked unresponsive: on the Projects screen `Enter` ignored
-the focused sidebar row and always opened the workspace's selected project row,
-and activating a top-level destination dropped focus into the workspace so
-further `j`/`k` did nothing. M25 EC-004/005/006 were open: connected MCP blueprint
-writes posted directly to the authority and bypassed the replica outbox; binding
-was first-binding-wins with no upgrade preview; habit recurrence/streak math
-lived in `orbit-domain`.
+`project-commands` accepts only creation, so `ProjectSettings` prints "Not
+supported by the API yet" for rename and shows status read-only. There is no
+cross-entity search: the palette searches a static command list and each page
+filters only what it already loaded. Filters live entirely in the URL and are
+lost when the person navigates away. Task records carry no timestamps and no
+projection exposes the recorded activity times.
 
 ## Desired behaviour
 
-`Enter` activates the focused rail row on every screen; top-level rail
-destinations keep the rail focused while project activation hands the keyboard to
-the workspace. Connected blueprint writes are queued durably before any flush and
-report accepted/pending/conflict with immutable receipts and lost-ack replay.
-Blueprint upgrades are previewed with a typed diff, warnings/blockers and a
-fingerprint, and only applied with explicit confirmation; nothing upgrades
-automatically. Habit recurrence is computed by the opt-in
-`orbit.habit.recurrence` capability, not core, with explicit unavailable status
-when it is not installed.
+A project can be renamed and moved through legal status transitions in the
+browser, fenced on the accepted revision, with the server's refusal quoted
+verbatim and the new identity reflected everywhere without a reload. ⌘/Ctrl+K
+searches projects, tasks and knowledge through one bounded server endpoint and
+opens the correct destination. A person can save the current filter/sort/display
+configuration, reopen it after a browser restart, rename and delete it, and no
+workflow definition is modified by doing so. The task drawer shows authoritative
+created/updated times, and `Unknown` where no history exists — never a
+fabricated date.
 
 ## Scope
 
-- Rail `Enter` precedence and focus behaviour, regression tests, guide wording.
-- Queue-first connected MCP blueprint writes, dispositions, receipts, offline
-  replay and lost-ack recovery; no direct connected write bypass.
-- `preview_blueprint_upgrade`/`apply_blueprint_upgrade` with fingerprint fencing,
-  CLI `upgrade-preview|upgrade`, connected refusal, tests and docs.
-- `orbit-habit-capability` package, runtime registration/executor, install and
-  project-grant gating, domain/application extraction, docs.
-- Records, evidence, documentation and full acceptance.
+- `ProjectCommandAction::Update` (rename, status, no-op), project status edges
+  read, project activity and ledger change, tests.
+- `GET /v1/authoritative/search` with grouped bounded results over projects,
+  tasks and the existing Markdown vault search.
+- `GET/POST /v1/authoritative/saved-views[/commands]` with per-row version
+  fencing, receipts and actor scoping — no authority revision movement.
+- Task timestamps derived from recorded `activities`, exposed on task detail.
+- Web: settings form, palette-backed search, saved-view controls, task metadata,
+  unit tests.
+- Browser acceptance for all four operations against an isolated server.
 
 ## Out of scope
 
-- Connected capability execution and MCP capability tools.
-- New top-level TUI screens or a second persistence model.
-- M27 public release publication and deployment verification.
-- Per-device project ACLs and server attachment GC.
+- Knowledge folder/link work (I2), agent launch (I3), connected capability
+  execution (I4), dogfooding (I5), final acceptance and TUI specification (I6).
+- Any TUI change; local-only CLI behaviour changes; a second domain engine in
+  TypeScript; new search-index infrastructure.
 
 ## Dependencies
 
-- M30 I1 capability composition, storage grants/receipts and TUI shell.
-- Existing replica outbox (`AuthorityConnection::queue_blueprint_transport`,
-  `flush`) and blueprint command receipts.
-- Existing habit occurrence storage and bundled habits workflow.
+- M31 web client, API layer, Playwright harness and session auth.
+- Authoritative command engine (`PendingCommand`, receipts, revision fence).
+- Existing `markdown_search` file-backed vault search.
 
 ## Risks
 
-- A queue-first write that reports accepted without confirmation would violate
-  the pending-vs-accepted rule; dispositions are read from the outbox row and an
-  unobservable outcome is pending.
-- Upgrade previews can be stale; apply recomputes inside a savepoint and refuses
-  fingerprint mismatches or blockers.
-- Moving recurrence out of core could silently change streak semantics; the
-  algorithm is moved verbatim and covered by the moved tests plus gating tests.
+- Project identity must survive a rename: the id is the key for tasks, work
+  items, milestone bindings and workflow bindings.
+- A no-op update must be idempotent without consuming a revision, and must still
+  fence on the accepted revision first.
+- Saved views must never be mistaken for workflow-defined views; they must not
+  touch the semantic ledger.
+- Derived timestamps must degrade to `Unknown` rather than to "now".
 
 ## Acceptance criteria
 
-- [x] AC-001: `Enter` activates the focused rail row on every screen; top-level
-  destinations keep rail focus; project activation moves to the workspace.
-- [x] AC-002: Connected MCP blueprint writes queue before flushing and report
-  `accepted`/`pending`/`conflict`; offline replay and lost-ack replay return the
-  original receipt exactly once.
-- [x] AC-003: Blueprint upgrades are previewable with typed diffs, warnings and
-  blockers plus a fingerprint; apply requires `--confirm` and the exact
-  fingerprint, preserves items and is idempotent.
-- [x] AC-004: Habit recurrence/streak math lives in `orbit-habit-capability` and
-  is gated by installation (and project grant for evidence); core domain no
-  longer computes it; existing habit data and non-recurrence flows are unchanged.
-- [x] AC-005: Workspace, clippy, fmt, PTY, MCP, docs, contracts and CLI acceptance
-  pass; M25 EC-001..EC-007 are satisfied with evidence.
+- [x] AC-001: Project rename and status transition are accepted through the
+  authoritative command with fencing, idempotent replay and domain validation,
+  and persist across refresh.
+- [x] AC-002: One search returns grouped, bounded, authorization-scoped results
+  across projects, tasks and notes, and each result opens its destination.
+- [x] AC-003: Saved views save/rename/delete/restore, survive a browser restart
+  and never modify a pinned workflow.
+- [x] AC-004: Task created/updated timestamps are authoritative and explicitly
+  unknown for records without history.
+- [x] AC-005: Rust, client typecheck, vitest, terminology, build and Playwright
+  acceptance pass against a real server.
 
 ## Validation
 
 ```sh
 cargo fmt --all -- --check
-cargo test --workspace --offline          # 1,658 passed, 31 binaries
-cargo clippy -p orbit-domain -p orbit-application -p orbit-storage \
-  -p orbit-runtime -p orbit-sync -p orbit-blueprint -p orbit-client -p orbit-ui \
-  -p orbit-tui -p orbit-mcp -p orbit-cli -p orbit-server -p orbit-progress \
-  -p orbit-habit-capability --all-targets -- -D warnings
-cargo test -p orbit-habit-capability -p orbit-runtime -p orbit-mcp -p orbit-cli --offline
-python3 -m pytest -q tests/acceptance/tui tests/acceptance/mcp tests/contracts tests/documentation
-python3 tests/acceptance/local_cli_workflows.py --binary target/debug/orbit
-python3 -m pytest -q tests/acceptance/test_m30_capability_workflow.py
+cargo test -p orbit-domain -p orbit-application -p orbit-runtime -p orbit-server --offline
+cargo clippy -p orbit-domain -p orbit-application -p orbit-runtime -p orbit-server \
+  --all-targets --offline -- -D warnings
+cd web && node node_modules/typescript/bin/tsc --noEmit
+cd web && node node_modules/vitest/vitest.mjs run
+cd web && node scripts/check-terminology.mjs
+cd web && node node_modules/vite/bin/vite.js build
+cd web && node node_modules/@playwright/test/cli.js test
 getdone-validate-project
 ```

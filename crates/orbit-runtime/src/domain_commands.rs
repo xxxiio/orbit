@@ -129,11 +129,65 @@ pub struct ProjectCommand {
     pub command_id: String,
     pub expected_revision: i64,
     pub project_id: String,
+    #[serde(default)]
     pub name: String,
     /// Optional workflow to pin at creation. Absent means the Basic default.
     /// Only read on the first, accepted command; retries return the receipt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow_id: Option<String>,
+}
+/// Which lifecycle operation one project command expresses.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectCommandAction {
+    #[default]
+    Create,
+    Update,
+}
+
+impl ProjectCommandAction {
+    /// `create` is the historical payload. Keeping the tag out of the stored
+    /// receipt payload while it holds the default means a receipt written
+    /// before `action` existed still compares equal on retry.
+    pub const fn is_create(&self) -> bool {
+        matches!(self, Self::Create)
+    }
+}
+/// The additive project command payload accepted by the authority endpoint.
+///
+/// It is a superset of [`ProjectCommand`] rather than a modification of it: the
+/// older value keeps being sent by existing transports and workflow steps, which
+/// remain source compatible, and it converts into this payload as a `create`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectCommandRequest {
+    pub command_id: String,
+    pub expected_revision: i64,
+    #[serde(default, skip_serializing_if = "ProjectCommandAction::is_create")]
+    pub action: ProjectCommandAction,
+    pub project_id: String,
+    /// Required for `create`. On `update`, an empty string means "keep the name".
+    #[serde(default)]
+    pub name: String,
+    /// `update` (and optional initial state on `create`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
+}
+
+impl From<ProjectCommand> for ProjectCommandRequest {
+    fn from(command: ProjectCommand) -> Self {
+        Self {
+            command_id: command.command_id,
+            expected_revision: command.expected_revision,
+            action: ProjectCommandAction::Create,
+            project_id: command.project_id,
+            name: command.name,
+            status: None,
+            workflow_id: command.workflow_id,
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectRecord {

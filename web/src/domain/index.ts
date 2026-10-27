@@ -13,5 +13,14 @@ export {
   projectStatusLabels,
 } from './project-status'
 export { isTaskCompleted, isTaskOpen } from './project-progress'
-export { endOfDay, formatDay, formatMoment, formatTimeOfDay, startOfDay } from './datetime'
+export {
+  endOfDay,
+  formatDay,
+  formatMoment,
+  formatTaskTimestamp,
+  formatTimeOfDay,
+  startOfDay,
+  type TimestampDisplay,
+  type TimestampFormatOptions,
+} from './datetime'
 export { workflowCopy, workflowText } from './workflow-copy'

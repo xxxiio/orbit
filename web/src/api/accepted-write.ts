@@ -18,7 +18,7 @@
  * server accepted the write, and it stores exactly what the server returned.
  */
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
-import type { Task, WorkItem } from './adapters'
+import type { Project, SavedView, Task, WorkItem } from './adapters'
 import type {
   AuthoritySnapshotResponse,
   BlueprintWorkItemRecord,
@@ -62,6 +62,73 @@ export function acceptLedgerRevision(queryClient: QueryClient, revision: number)
   // upgrade fingerprint) any open preview was computed from. Refreshing it here
   // keeps Apply from ever confirming a comparison the person was not shown.
   void queryClient.invalidateQueries({ queryKey: queryKeys.upgradePreviewAll() })
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Saved views                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Write an accepted saved-view row into the cached list, newest first (the
+ * server's own order). A replay or out-of-order answer carrying an older
+ * version leaves the newer row alone, so a rename is never rewound.
+ */
+export function acceptSavedView(queryClient: QueryClient, view: SavedView): void {
+  queryClient.setQueryData<SavedView[]>(queryKeys.savedViews(), (previous) => {
+    if (!previous) return previous
+    const current = previous.find((candidate) => candidate.id === view.id)
+    if (current && current.version > view.version) return previous
+    return [view, ...previous.filter((candidate) => candidate.id !== view.id)]
+  })
+}
+
+/**
+ * Remove an accepted deleted row. The version guard prevents a late delete
+ * answer from removing a row that a newer rename has already replaced.
+ */
+export function removeSavedView(
+  queryClient: QueryClient,
+  viewId: string,
+  version: number,
+): void {
+  queryClient.setQueryData<SavedView[]>(queryKeys.savedViews(), (previous) => {
+    if (!previous) return previous
+    const current = previous.find((candidate) => candidate.id === viewId)
+    if (!current || current.version > version) return previous
+    return previous.filter((candidate) => candidate.id !== viewId)
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Project records                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Write an accepted project row into the cached snapshot. Every project label
+ * on screen (sidebar, header, project list, recent destinations, command
+ * palette) reads this projection, so the rename is visible before the refetch
+ * settles. The id is the key; a row the cache does not hold is left alone.
+ */
+export function acceptProjectRecord(
+  queryClient: QueryClient,
+  project: Project,
+  revision: number = Number.POSITIVE_INFINITY,
+): void {
+  const snapshot = queryClient.getQueryData<AuthoritySnapshotResponse>(queryKeys.snapshot())
+  // A replayed receipt carries the revision the original command had. If a
+  // newer accepted write has already advanced the snapshot, its record wins.
+  if (snapshot && snapshot.revision > revision) return
+  queryClient.setQueryData<AuthoritySnapshotResponse>(queryKeys.snapshot(), (previous) => {
+    if (!previous) return previous
+    let changed = false
+    const projects = previous.projects.map((record) => {
+      if (record.id !== project.id) return record
+      changed = true
+      return { ...record, name: project.name, status: project.status }
+    })
+    return changed ? { ...previous, projects } : previous
+  })
 }
 
 /* ------------------------------------------------------------------ */

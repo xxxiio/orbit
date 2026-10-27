@@ -145,9 +145,12 @@ export function useApiMutation<TData, TVariables>({
  */
 export {
   acceptLedgerRevision,
+  acceptProjectRecord,
   acceptRevision,
+  acceptSavedView,
   acceptTaskRecord,
   acceptWorkItemRecord,
+  removeSavedView,
   workItemRecord,
   workItemRevision,
 } from '../accepted-write'

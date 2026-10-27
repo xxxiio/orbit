@@ -49,6 +49,10 @@ evidence on every pass).
 | `auth.spec.ts` | sign-in, expiry, revocation, sign-out |
 | `home.spec.ts` | server-derived Home sections and empty state |
 | `projects.spec.ts` | project creation, duplicate names, validation, task creation |
+| `project-settings.spec.ts` | rename + status through authoritative commands, server-offered status edges, illegal move refused, stale revision, cancel, blank name |
+| `search.spec.ts` | one server search across projects/tasks/knowledge: grouping, keyboard navigation, opening each result, unauthenticated refusal, stale target |
+| `saved-views.spec.ts` | save/restore/rename/delete a personal view, browser restart, no workflow or ledger change, stale version refused |
+| `task-metadata.spec.ts` | recorded Created/Updated values in the drawer, Updated advances on a change |
 | `tasks.spec.ts` | capture, drawer edits, rejected transition, bulk status |
 | `conflict.spec.ts` | stale revision refusal and recovery |
 | `workspaces.spec.ts` | board moves (accepted/rejected), milestone lifecycle + invalid edge, dependency add/remove + readiness, workflow change, task-list URL state |
@@ -63,6 +67,7 @@ evidence on every pass).
 tests/e2e/harness/server.ts    spawn/health-wait/enroll/teardown, log tail on failure
 tests/e2e/harness/session.ts   form sign-in, API sign-in, signed-out assertions
 tests/e2e/harness/seed.ts      fixture wiring for one harness server
+tests/e2e/harness/authority.ts authoritative reads/writes for the I1 specs
 tests/e2e/harness/fixtures.ts  `server` and `workspace` Playwright fixtures
 tests/fixture/seed.ts          the reusable seed itself (also usable for dogfooding)
 ```
@@ -114,6 +119,10 @@ against the shipped build, and a failure is a product regression.
 | `auth.spec.ts` | a wrong token is refused inline with no cookie; valid credentials leave `/login` and survive a reload with an HttpOnly cookie; sign-out clears the server session and lands on `/login`; an expired session is explained on `/login`; revoking the device with the admin key kills a live browser session (`reload → /login`, `/v1/web/session` 401, cookie gone). `mobile-chromium` runs this file at a phone viewport. |
 | `home.spec.ts` | an empty workspace renders an empty state rather than an error; stat counts come from the snapshot; section "Show all" actually reveals the rest; status controls write through the server. |
 | `projects.spec.ts` | creating a project is an authoritative write that appears in the shell, the index and after reload; two projects may share a name; empty names are refused without a request; a task created *inside* a new project, edited and status-changed, keeps its values after reload. |
+| `project-settings.spec.ts` | a rename reaches the header, page title, sidebar and index without a reload and keeps the project id; a status move persists across a reload; the status control offers exactly the server's edges and an illegal move is refused without writing; a stale revision is reported, refreshed and never shown as success; Cancel and a blank name write nothing. |
+| `search.spec.ts` | one server query groups a project, a task and a note that share a seeded marker, activates each destination (including `?task=`), keeps the command list for an empty query, shows an honest empty state, navigates with ↑/↓/Enter, restores focus on Escape, refuses unauthenticated search, and lands a stale result on a not-found state. |
+| `saved-views.spec.ts` | status + priority + sort are stored as the URL query with the list display; the view restores filters, sort and display after a reload and in a second browser context; rename and delete are server writes; saving changes no workflow binding and does not advance the ledger; a stale version is refused with the server's words and the list refreshes. |
+| `task-metadata.spec.ts` | the drawer's Created/Updated `datetime` values are the server's `created_at_ms`/`updated_at_ms`, readable labels carry the full timestamp, a change advances Updated and leaves Created alone, and a real task never shows `Unknown` (the null branch is unit-covered). |
 | `tasks.spec.ts` | capture → rename → description → priority → labels → status survives a reload (drawer deep-links via `?task=`); an illegal transition shows the server's refusal and keeps the stored status; a bulk status change applies to every selected task and both persist after reload. |
 | `conflict.spec.ts` | a stale-revision command is refused with the server's explanation, the UI keeps the stored value, and a refresh makes the next attempt succeed. |
 | `fixture.spec.ts` | the fixture is replayable: a second seed over the same database duplicates no rows and does not advance the authority revision. |

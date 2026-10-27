@@ -3,10 +3,10 @@
 The Orbit web app is an optional browser client for a self-hosted `orbit-server`. It reads and
 writes the same authoritative state as the CLI and the terminal workspace, over the server's
 HTTP API, and adds no second data model and no local database. This page documents the build
-shipped in M31 I6: the app shell and sign-in, Home, Inbox, Projects, workflow-driven project
-workspaces (task list, board, milestones, timeline, and the panels a workflow declares), Work
-Items, planning with an explicit approval gate, knowledge, attachments, agent jobs, project
-settings and workflow upgrades. Anything listed as missing below really is missing in this
+shipped in M32 I1: the app shell and sign-in, Home, Inbox, Projects, one search across projects,
+tasks and knowledge, workflow-driven project workspaces (task list, board, milestones, timeline,
+and the panels a workflow declares), saved views, Work Items, planning with an explicit approval
+gate, knowledge, attachments, agent jobs, editable project settings and workflow upgrades. Anything listed as missing below really is missing in this
 build. For a one-page setup path aimed at a new internal tester, start with the
 [web quickstart](guides/web-quickstart.md).
 
@@ -217,6 +217,27 @@ without a project. The field clears only after the server accepts it; a rejectio
 text in place with the server's message beneath. Titles are limited to 280 characters. Press
 `c` outside a field to open the full **New task** dialog, which can also choose a project.
 
+### Search
+
+`Ctrl`/`Cmd`+`K` (or `/` when the page has no search field) opens one search over the whole
+server, not just the screen you are on.
+
+- An empty query keeps the command list. As soon as you type, the palette asks the server
+  (`GET /authoritative/search`) once, after a short debounce, and replaces the commands with
+  results grouped **Projects**, **Tasks** and **Knowledge**.
+- Each group reports at most ten results and says when it was truncated; the server matches
+  names, task titles and note paths/titles with a wildcard-escaped substring search.
+- `↑`/`↓` move through the results across groups, `Enter` opens the highlighted one, `Esc`
+  closes the palette and returns focus where it was. A project opens the project, a task opens
+  its project with the drawer on that task, and a note opens the note.
+- The loading, empty (`No matches for "…"`) and server-error states are stated rather than
+  implied. An older server without the route says search is not available instead of failing
+  silently.
+- A note or task deleted after the results were fetched lands on an honest not-found state.
+
+Search is scoped to the signed-in device, and it never downloads the workspace into the browser
+to filter it there.
+
 ### Projects
 
 **Projects** lists the projects on the server, with a grid or list layout toggle. Each entry
@@ -291,6 +312,12 @@ The Tasks view is the shared task table with project-level state:
 - **Sorting and filtering.** Every column header offers its server-backed field; the toolbar
   offers search, status, priority and a sort select. Filtering and sorting are presentation over
   the snapshot, and never recompute readiness.
+- **Saved views.** **Saved views** stores the current URL query (search, status, priority, sort,
+  columns, page) with the display preference (`list` or `board`) under a name you choose, and
+  reopens it later. Saved views are personal presentation preferences stored by the server: they
+  survive a browser restart and a different browser profile, and saving one never changes a
+  workflow definition. Rename and delete are separate commands; a stale version is refused with
+  the server's words and the list refreshes.
 
 ### Board
 
@@ -310,6 +337,9 @@ The Board is a task Kanban for the project.
 - Completion from `Ready` is two legal moves (`Ready → In progress → Done`), because the domain
   forbids `Ready → Done`. There is no single-key Done mnemonic; `m` plus the menu is the
   keyboard path. This is a known rough edge, not a hidden shortcut.
+- **Saved views** works here too: a saved `board` configuration restores the display and the
+  query the URL carries. This build's board has no URL-backed filter state of its own, so a
+  board view stores less than a list view rather than inventing filters.
 - Drag-and-drop is deliberately not implemented. Keyboard parity was the requirement for
   offering a pointer gesture, and a drag across ten horizontally scrolling columns could not be
   made reliable; the keyboard and the move menu are the complete interaction.
@@ -332,6 +362,10 @@ Open a task from any title, row or next-action link. The drawer is URL state:
 
 - Header — short task ID, status and priority badges, milestone badge, inline editable title,
   and the project name.
+- **Created and Updated** — the authoritative times, taken from the server's recorded activity
+  for this task and shown as a readable date in the drawer. The full timestamp is available on
+  hover and to a screen reader. A task with no recorded history shows **Unknown** rather than a
+  guessed date. A change advances **Updated** and leaves **Created** alone.
 - **Details** — status, priority, project and milestone selectors; the milestone selector is
   disabled until the task belongs to a project. The status selector offers only legal next
   states, with the same all-status fallback as the Inbox when the edge read fails.
@@ -576,13 +610,20 @@ what the server ships and pin what the server has already published.
 
 ## Project settings
 
-**Settings** states what the API can and cannot do:
+**Settings** edits project identity and pins the project's workflow:
 
-- **Identity** — name, status and ID. The status is the stored value (a project created here is
-  **Proposed**); this build exposes no project-status transition, so there is no control. Rename
-  is not supported by the API, and the panel says so instead of offering a dead control. Archive
-  and delete are likewise absent. Creating a differently named project is the only supported way
-  to change identity, and its work does not move with it.
+- **Identity** — an editable **Project name** and **Status**, and the ID. Both edits are one
+  fenced command (`action: update`) sent to the server; the domain decides whether a name is
+  acceptable and whether a status move is legal. The status control offers exactly the moves the
+  server reports (`GET /authoritative/project-statuses`) and nothing else, so a project created
+  here starts **Proposed** and can only move where the lifecycle allows. **Save changes** is
+  disabled until something changed; **Cancel** discards the draft. A refusal is shown inline in
+  the server's words, a stale revision says the project changed elsewhere and refreshes without
+  claiming success, and an unconfirmed answer says the outcome is unknown.
+- **The project ID never changes.** A rename updates the name in the sidebar, the project header,
+  the projects list, recent destinations and search results after the server accepts it, without
+  a reload. Tasks, Work Items and the workflow binding still point at the same project.
+- Archive and deletion are still not exposed.
 - **Views in this workflow** — the tabs the project currently shows, with each view's panels and
   layout.
 - **Workflow** — the pinned name and version, **Refresh list**, the available published
@@ -616,21 +657,22 @@ it never shows a change before the server has accepted it.
 | Keys | Action |
 | --- | --- |
 | `c` | Open **New task**. On the Inbox, if quick capture is visible, focus it instead. |
-| `/` | Focus the page's search field where one exists; otherwise open the command palette. |
-| `Ctrl`+`K`, `Cmd`+`K` | Toggle the command palette. |
+| `/` | Focus the page's search field where one exists; otherwise open search. |
+| `Ctrl`+`K`, `Cmd`+`K` | Toggle the search/command palette. |
 | `g` then `h` / `i` / `p` | Go to Home / Inbox / Projects. |
 | `j` / `k`, `x` | Move between rows; `x` selects the focused row (Inbox and project lists). |
 | `h` / `j` / `k` / `l` | On a board, move focus between cards and columns. |
 | `m` | On a focused board card, open **Move to…** (task board) or the sheet with its Moves (Work Item board). |
-| `Enter`, `Space` | Activate the focused row or button; in the palette, `Enter` runs the highlighted command. |
-| `↑` / `↓` | Move inside the command palette. Inside a table, `Tab` and `Shift`+`Tab` move through focusable controls. |
+| `Enter`, `Space` | Activate the focused row or button; in the palette, `Enter` runs the highlighted command or opens the highlighted search result. |
+| `↑` / `↓` | Move inside the palette (commands and search results alike). Inside a table, `Tab` and `Shift`+`Tab` move through focusable controls. |
 | `Esc` | Close the palette or the task drawer. |
 
 The two-key `g` sequences must be completed within about a second. Shortcuts are ignored while
 you type in an input, textarea, select or editable field, and while a dialog or the drawer has
 focus. There is no `?` help overlay in the web app; this table is the reference.
-The palette lists only implemented actions — new task, new project, go to Home, Inbox, Projects,
-Knowledge or Agents, and open a named project. Knowledge, Agents and every direct route are
+With an empty query the palette lists only implemented actions — new task, new project, go to
+Home, Inbox, Projects, Knowledge or Agents, and open a named project — because those are the
+commands this build has. Knowledge, Agents and every direct route are
 reachable from the sidebar; `g h` / `g i` / `g p` are the only letter shortcuts.
 
 ## Accessibility and theme
@@ -680,17 +722,12 @@ where it is part of the HTTP path.
 This build is an honest subset. Do not expect the following, even though the server API
 supports much of it:
 
-- **Project rename, archive or deletion, and project status transitions.** A project created
-  here keeps **Proposed**; the API has no transition route, so Settings states the limitation
-  instead of offering a control.
-- **Task created/updated timestamps in the drawer.** The drawer shows activity and relative
-  freshness; it does not show absolute task timestamps.
+- **Project archive or deletion.** Rename and status transitions are now part of Settings; a
+  project cannot be archived or deleted from the browser.
 - **Knowledge folder creation, note deletion or a rename outside Move.** Notes can be created
   only in folders that already exist, and the folder endpoints have no browser control.
 - **Relative in-app Markdown links and task↔note relations.** Only absolute `http(s)` links are
   rendered (in a new tab); there is no first-class note association in the drawer.
-- **Saved views.** Task list and board filters, sort and columns live in the URL; only
-  `orbit.theme` and `orbit.recent-projects` are persisted in the browser.
 - **Starting an agent job.** An executor or the command line starts one; the browser reviews a
   handoff, records a decision and resumes a finished job into the queue, and none of those
   actions completes the task.
@@ -704,8 +741,6 @@ supports much of it:
   published version; everything else is console/HTTP only.
 - Moving a milestone to another project.
 - Device enrollment, revocation, automation and proposal review in the product UI.
-- A global search over tasks, projects and notes. Knowledge has its own vault search; the
-  command palette navigates and starts the creation dialogs.
 - Offline use, background sync, or a browser-side command queue.
 
 Known rough edges inside shipped screens (recorded in the I5 cycle, not hidden):

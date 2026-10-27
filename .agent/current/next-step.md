@@ -5,93 +5,95 @@ template_digest: "b88835ce70ef09490ad55db0e910dc05ff721384d6ccad8d45eafedd7654aa
 project_owned: true
 record_contract: next-step
 record_schema_version: 1
-id: NEXT-0014
+id: NEXT-0015
 status: completed
-milestone_id: MILESTONE-0031
-advances_exit_criteria: [EC-002, EC-006, EC-007, EC-009, EC-010]
+milestone_id: MILESTONE-0032
+advances_exit_criteria: [EC-001, EC-002, EC-003, EC-004, EC-009, EC-011]
 ---
 
 # Next Deterministic Step
 
 ## Objective
 
-Complete M31 iteration I6: close the remaining dogfooding findings in their correct layers,
-measure and fix the real performance and accessibility gaps, bring the user documentation up
-to the shipped product, and derive the TUI redesign specification from the recorded I5 cycle.
+Land M32 iteration I1: project rename/status through authoritative commands,
+one server-backed search across projects/tasks/knowledge, saved views that
+survive a browser restart, and authoritative task timestamps — each proven by
+real-browser acceptance against an isolated server.
 
 ## Why this is next
 
-I1–I5 delivered and verified the web application: session auth, daily core, workflow-driven
-workspaces, planning, knowledge, attachments, agents, and a real Orbit Development cycle on an
-isolated server whose evidence is pinned to a clean commit. What remains is refinement and the
-documentation artefacts the milestone requires — including the TUI redesign specification, which
-must be derived from that usage rather than assumed.
+The four gaps are the operations a person performs daily in the shipped web
+product, and each currently forces a CLI workaround. They are also the
+prerequisites for the later M32 iterations: I2 needs the same command/read
+discipline for knowledge, I3/I4 need the browser to operate rather than only
+inspect, and I5 dogfooding cannot evaluate workflows that cannot be completed.
 
 ## Preconditions
 
-- MILESTONE-0031 I1–I5 committed and verified (`3f4101f`, `0ff8af9`, `987bcf1`, `dfcfb8a`).
-- I5 issue log with layer classification at `.slim/deepwork/m31-web-app/i5-issues.md`.
-- I5 evidence at `web/evidence/i5/` with a reproducible script.
+- MILESTONE-0031 complete at `d1e916a`; M31 web client, Playwright harness and
+  API contract documentation are the baseline.
+- Frozen I1 contracts in `.slim/deepwork/m32-web-completeness/i1-plan.md`.
 
 ## Inputs
 
-- `web/src/**` (all features), `web/tests/**`, `web/evidence/i5/**`.
-- `.slim/deepwork/m31-web-app/{i5-issues.md,i6-plan.md,gate-5.md}`.
-- `docs/web-app.md` and the documentation index.
+- `web/src/{api,features,app,components}/**`, `web/tests/{unit,e2e}/**`.
+- `crates/orbit-{domain,application,runtime,server}/**`.
+- `.slim/deepwork/m32-web-completeness/{progress.md,i1-plan.md}`.
 
 ## Ordered actions
 
-1. Close or explicitly record the remaining I5 findings: status controls on rows/table cards,
-   the description double-alert, note links, humanized activity summaries, project status,
-   board completion shortcut, time-input width, folder creation.
-2. Responsive and accessibility sweep across every primary route at 1440/1280/1024/900/390,
-   with keyboard-only passes, focus return, aria-live, contrast and reduced motion.
-3. Measure cold load, project switch, 122-task list render, board interaction, detail open and
-   mutation round trip; fix only measured bottlenecks and record the numbers.
-4. Update `docs/web-app.md` and the index for the shipped I3–I6 behaviour, including the honest
-   remaining gaps; verify every documented command and shortcut.
-5. Write `docs/guides/tui-redesign-spec.md` from the I5 record, classifying each proven pattern.
-6. Freeze, run the full suite and the dogfood script, reconcile records and close the milestone
-   only for criteria genuinely demonstrated.
+1. Rust authority lane: project update command + status edges + search +
+   task timestamps + saved views, with focused tests.
+2. Web client lane: settings form, palette search, saved-view controls, task
+   metadata, unit tests.
+3. Browser acceptance lane: Playwright specs for rename/status/conflict,
+   search, saved views and timestamps; fix integration defects.
+4. Run the full gates, record honest evidence, update the milestone criteria
+   and journal, then start I2.
 
 ## Expected outputs
 
-- Every I5 finding either fixed with a regression test or open with a recorded reason.
-- A measured performance/a11y/responsive record, not impressions.
-- Documentation that matches the product, using Workflow terminology.
-- A TUI redesign specification derived from real usage.
-- Green full suite and dogfood evidence on a frozen commit.
+- Four working operations in the browser, each with a server contract, tests
+  and real-browser evidence.
+- Saved views persisted server-side without touching the semantic ledger or a
+  workflow definition.
+- Task timestamps that report `Unknown` instead of guessing.
 
 ## Acceptance criteria
 
-- [x] NS-001: No primary route overflows horizontally at 390px and every route is keyboard-operable.
-- [x] NS-002: The measured route timings are recorded and any fix cites the measurement it improved.
-- [x] NS-003: `docs/web-app.md` documents only shipped behaviour and every command in it was run.
-- [x] NS-004: `docs/guides/tui-redesign-spec.md` classifies each pattern with evidence from I5.
-- [x] NS-005: The full Playwright suite and the dogfood script pass on a frozen commit.
-- [x] NS-006: Milestone exit criteria are marked only where demonstrated; the rest stay open with reasons.
-- [x] NS-007: `getdone-validate-project --project-root . --skills-root /home/xliu/dev/getdone` exits 0.
+- [x] NS-001: `POST /authoritative/project-commands` with `action=update`
+  renames and transitions a project, fences stale revisions, replays receipts
+  and leaves identity stable.
+- [x] NS-002: `GET /authoritative/search` returns grouped bounded results and
+  the client opens each destination.
+- [x] NS-003: Saved views survive a browser restart and never modify a workflow
+  definition; the authority revision does not move on a saved-view write.
+- [x] NS-004: Task detail exposes created/updated from recorded activity, with
+  `null` for records without history.
+- [x] NS-005: Full Rust tests, clippy, typecheck, vitest, terminology, build and
+  Playwright pass on the frozen tree.
+- [x] NS-006: `getdone-validate-project` exits 0.
 
 ## Validation
 
 ```sh
+cargo test -p orbit-domain -p orbit-application -p orbit-runtime -p orbit-server --offline
 cd web && node node_modules/typescript/bin/tsc --noEmit
 cd web && node node_modules/vitest/vitest.mjs run
 cd web && node scripts/check-terminology.mjs
 cd web && node node_modules/vite/bin/vite.js build
 cd web && node node_modules/@playwright/test/cli.js test
-cd web && node tests/e2e/i5/dogfood.mjs
-cargo test -p orbit-server -p orbit-runtime -p orbit-blueprint --offline
-getdone-validate-project --project-root . --skills-root /home/xliu/dev/getdone
+getdone-validate-project
 ```
 
 ## Stop conditions
 
-- A performance or accessibility claim cannot be measured or reproduced.
-- Documentation would describe behaviour the build does not have.
-- A milestone criterion cannot be evidenced end to end.
+- A proposed command would bypass the revision fence, the receipt, or the
+  semantic ledger for actual domain state.
+- A saved view would require mutating a pinned workflow definition.
+- A timestamp cannot be derived from recorded history without fabricating it.
+- The client would need a second implementation of a server rule.
 
 ## Out of scope
 
-- Reopening M22–M30, connected capability execution, or a TUI implementation change.
-- Flutter client work and M27 public release verification.
+- I2–I6 work, any TUI change, M27 publication, M15 evidence regeneration.

@@ -19,6 +19,8 @@ function accepted(overrides: Partial<Task> = {}): Task {
     description: 'Keep it small.',
     priority: 'high',
     labels: ['web'],
+    createdAtMs: null,
+    updatedAtMs: null,
     ...overrides,
   }
 }
@@ -36,6 +38,8 @@ function detailRecord(overrides: Partial<TaskDetailResponse> = {}): TaskDetailRe
     description: 'Keep it small.',
     priority: 'low',
     labels: [],
+    created_at_ms: null,
+    updated_at_ms: null,
     ...overrides,
   }
 }

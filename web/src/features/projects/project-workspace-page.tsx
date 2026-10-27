@@ -41,6 +41,14 @@ import { useWorkspaceActions } from '@/lib/workspace-actions'
 import { projectStatusLabel, workflowText } from '@/domain'
 import { isTerminalStatus } from '@/features/tasks'
 import { ProjectPlanning } from '@/features/planning'
+import {
+  SavedViewRestoreProvider,
+  findViewForDisplay,
+  projectViewDisplay,
+  searchFromQuery,
+  type SavedView,
+} from '@/features/saved-views'
+import { useToast } from '@/components/ui/toast'
 import { ProjectSettings } from './project-settings'
 import { recordProjectOpen } from '@/lib/recent-projects'
 import { useProjectWorkflow } from './use-project-workflow'
@@ -200,6 +208,8 @@ export function ProjectWorkspacePage() {
   const workflow = useProjectWorkflow(projectId)
   const itemDrawer = useWorkItemDrawer()
   const { openNewTask } = useWorkspaceActions()
+  const navigate = useNavigate()
+  const { toast } = useToast()
 
   useDocumentTitle(project ? project.name : 'Project')
 
@@ -216,6 +226,28 @@ export function ProjectWorkspacePage() {
   const reservedViews = reservedDeclaredViews(views)
   const currentId = viewId ?? navViews[0]?.id ?? 'overview'
   const declaredView = navViews.find((view) => view.id === currentId)
+  // A saved view restores the query string and the list/board display. When the
+  // workflow has no view for that display, the filters still land on the current
+  // view and the page says so instead of silently pretending.
+  const currentDisplay = declaredView ? projectViewDisplay(declaredView) : null
+  const restoreSavedView = useMemo<{ restore: (view: SavedView) => void }>(
+    () => ({
+      restore: (view) => {
+        const target = findViewForDisplay(navViews, view.display)
+        const targetId = target?.id ?? currentId
+        if (!target && currentDisplay !== view.display) {
+          toast({
+            tone: 'default',
+            title: 'Saved filters applied to this view',
+            description: `This workflow has no ${view.display} view, so the stored filters were applied here.`,
+          })
+        }
+        if (!project) return
+        navigate(`/projects/${project.id}/${targetId}${searchFromQuery(view.query)}`)
+      },
+    }),
+    [currentDisplay, currentId, navigate, navViews, project, toast],
+  )
   // A reserved id always belongs to the tool, even if a workflow declared it.
   const tool = currentId === PLANNING_ID || currentId === SETTINGS_ID ? currentId : null
   const openCount = tasks.filter((task) => !isTerminalStatus(task.status)).length
@@ -322,248 +354,250 @@ export function ProjectWorkspacePage() {
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-col gap-4 border-b border-line pb-1">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="section-label">Project</p>
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <h1 className="font-display text-3xl font-medium tracking-tight text-ink">{project.name}</h1>
-              <Badge tone={project.status === 'active' ? 'success' : 'neutral'} dot>
-                {projectStatusLabel(project.status)}
-              </Badge>
-              {workflow.label ? (
-                <Badge tone="accent">{workflow.label}</Badge>
-              ) : workflow.loading ? (
-                <Skeleton className="h-4 w-20" />
-              ) : workflow.binding ? (
-                <Badge tone="neutral">Workflow unavailable</Badge>
-              ) : (
-                <Badge tone="neutral">No workflow pinned</Badge>
-              )}
-            </div>
-            <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
-              <span className="tabular-nums">{tasks.length}</span> task{tasks.length === 1 ? '' : 's'}
-              <span aria-hidden="true">·</span>
-              <span className="tabular-nums">{openCount}</span> open
-              <span aria-hidden="true">·</span>
-              <span className="tabular-nums">{projectMilestones.length}</span> milestone
-              {projectMilestones.length === 1 ? '' : 's'}
-              <span aria-hidden="true">·</span>
-              <span className="font-mono text-2xs">{project.id}</span>
-            </p>
-          </div>
-
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <ProjectSwitcher currentId={project.id} />
-            {primaryAction?.kind === 'new_task' ? (
-              <Button
-                size="sm"
-                leadingIcon={<PlusIcon size={15} />}
-                onClick={() => openNewTask(project.id)}
-              >
-                New task
-              </Button>
-            ) : primaryAction?.kind === 'new_milestone' ? (
-              <NewMilestoneButton projectId={project.id} projectName={project.name} />
-            ) : primaryAction?.kind === 'new_work_item' ? (
-              <NewWorkItemButton
-                projectId={project.id}
-                workflow={workflow.workflow}
-                pinnedKind={pinnedKind}
-                variant="primary"
-                size="sm"
-                label="New work item"
-              />
-            ) : null}
-            {tool !== SETTINGS_ID ? (
-              <Button asChild variant="quiet" size="sm" aria-label="Project settings">
-                <Link to={`/projects/${project.id}/${SETTINGS_ID}`}>
-                  <SettingsIcon size={16} />
-                  <span className="hidden sm:inline">Settings</span>
-                </Link>
-              </Button>
-            ) : null}
-          </div>
-        </div>
-
-        <nav
-          ref={navRef}
-          aria-label="Project sections"
-          className="-mb-px flex gap-5 overflow-x-auto"
-        >
-          {navViews.map((view) => {
-            const active = view.id === currentId
-            return (
-              <Link
-                key={view.id}
-                to={`/projects/${project.id}/${view.id}`}
-                aria-current={active ? 'page' : undefined}
-                title={workflowText(view.description)}
-                className={cn(
-                  'relative -mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-0.5 pb-2.5 pt-1 text-sm font-medium transition-colors',
-                  active
-                    ? 'border-accent text-ink'
-                    : 'border-transparent text-ink-muted hover:text-ink',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
+    <SavedViewRestoreProvider value={restoreSavedView}>
+      <div className="flex flex-col gap-5">
+        <header className="flex flex-col gap-4 border-b border-line pb-1">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="section-label">Project</p>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <h1 className="font-display text-3xl font-medium tracking-tight text-ink">{project.name}</h1>
+                <Badge tone={project.status === 'active' ? 'success' : 'neutral'} dot>
+                  {projectStatusLabel(project.status)}
+                </Badge>
+                {workflow.label ? (
+                  <Badge tone="accent">{workflow.label}</Badge>
+                ) : workflow.loading ? (
+                  <Skeleton className="h-4 w-20" />
+                ) : workflow.binding ? (
+                  <Badge tone="neutral">Workflow unavailable</Badge>
+                ) : (
+                  <Badge tone="neutral">No workflow pinned</Badge>
                 )}
-              >
-                {workflowText(view.title) || humanizeIdentifier(view.id)}
-                {badgeFor(view)}
-              </Link>
-            )
-          })}
-          {views.length === 0 ? (
-            <span className="pb-2.5 text-sm text-ink-muted">This workflow declares no views</span>
+              </div>
+              <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
+                <span className="tabular-nums">{tasks.length}</span> task{tasks.length === 1 ? '' : 's'}
+                <span aria-hidden="true">·</span>
+                <span className="tabular-nums">{openCount}</span> open
+                <span aria-hidden="true">·</span>
+                <span className="tabular-nums">{projectMilestones.length}</span> milestone
+                {projectMilestones.length === 1 ? '' : 's'}
+                <span aria-hidden="true">·</span>
+                <span className="font-mono text-2xs">{project.id}</span>
+              </p>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <ProjectSwitcher currentId={project.id} />
+              {primaryAction?.kind === 'new_task' ? (
+                <Button
+                  size="sm"
+                  leadingIcon={<PlusIcon size={15} />}
+                  onClick={() => openNewTask(project.id)}
+                >
+                  New task
+                </Button>
+              ) : primaryAction?.kind === 'new_milestone' ? (
+                <NewMilestoneButton projectId={project.id} projectName={project.name} />
+              ) : primaryAction?.kind === 'new_work_item' ? (
+                <NewWorkItemButton
+                  projectId={project.id}
+                  workflow={workflow.workflow}
+                  pinnedKind={pinnedKind}
+                  variant="primary"
+                  size="sm"
+                  label="New work item"
+                />
+              ) : null}
+              {tool !== SETTINGS_ID ? (
+                <Button asChild variant="quiet" size="sm" aria-label="Project settings">
+                  <Link to={`/projects/${project.id}/${SETTINGS_ID}`}>
+                    <SettingsIcon size={16} />
+                    <span className="hidden sm:inline">Settings</span>
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <nav
+            ref={navRef}
+            aria-label="Project sections"
+            className="-mb-px flex gap-5 overflow-x-auto"
+          >
+            {navViews.map((view) => {
+              const active = view.id === currentId
+              return (
+                <Link
+                  key={view.id}
+                  to={`/projects/${project.id}/${view.id}`}
+                  aria-current={active ? 'page' : undefined}
+                  title={workflowText(view.description)}
+                  className={cn(
+                    'relative -mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-0.5 pb-2.5 pt-1 text-sm font-medium transition-colors',
+                    active
+                      ? 'border-accent text-ink'
+                      : 'border-transparent text-ink-muted hover:text-ink',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
+                  )}
+                >
+                  {workflowText(view.title) || humanizeIdentifier(view.id)}
+                  {badgeFor(view)}
+                </Link>
+              )
+            })}
+            {views.length === 0 ? (
+              <span className="pb-2.5 text-sm text-ink-muted">This workflow declares no views</span>
+            ) : null}
+
+            <span aria-hidden="true" className="mb-2 w-px shrink-0 self-end bg-line" />
+
+            <Link
+              to={`/projects/${project.id}/${PLANNING_ID}`}
+              data-tool="planning"
+              aria-current={tool === PLANNING_ID ? 'page' : undefined}
+              className={cn(
+                'relative -mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-0.5 pb-2.5 pt-1 text-sm font-medium transition-colors',
+                tool === PLANNING_ID
+                  ? 'border-accent text-ink'
+                  : 'border-transparent text-ink-muted hover:text-ink',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
+              )}
+            >
+              <ClockIcon size={14} />
+              Planning
+            </Link>
+            <Link
+              to={`/projects/${project.id}/${SETTINGS_ID}`}
+              data-tool="settings"
+              aria-current={tool === SETTINGS_ID ? 'page' : undefined}
+              className={cn(
+                'relative -mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-0.5 pb-2.5 pt-1 text-sm font-medium transition-colors',
+                tool === SETTINGS_ID
+                  ? 'border-accent text-ink'
+                  : 'border-transparent text-ink-muted hover:text-ink',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
+              )}
+            >
+              <SettingsIcon size={14} />
+              Settings
+            </Link>
+          </nav>
+
+          {reservedViews.length > 0 ? (
+            <div
+              role="status"
+              data-reserved-view={reservedViews.map((view) => view.id).join(',')}
+              className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-ink"
+            >
+              <LayersIcon size={14} className="shrink-0" />
+              <span className="min-w-0 flex-1">
+                The pinned workflow declares a view with the reserved id{' '}
+                {reservedViews.map((view) => `“${view.id}”`).join(', ')}. It is not rendered so the{' '}
+                {reservedViews.map((view) => (view.id === PLANNING_ID ? 'Planning' : 'Settings')).join(' and ')}{' '}
+                tool keeps that route. Rename the view id in the workflow to see it.
+              </span>
+            </div>
           ) : null}
+        </header>
 
-          <span aria-hidden="true" className="mb-2 w-px shrink-0 self-end bg-line" />
-
-          <Link
-            to={`/projects/${project.id}/${PLANNING_ID}`}
-            data-tool="planning"
-            aria-current={tool === PLANNING_ID ? 'page' : undefined}
-            className={cn(
-              'relative -mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-0.5 pb-2.5 pt-1 text-sm font-medium transition-colors',
-              tool === PLANNING_ID
-                ? 'border-accent text-ink'
-                : 'border-transparent text-ink-muted hover:text-ink',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
-            )}
-          >
-            <ClockIcon size={14} />
-            Planning
-          </Link>
-          <Link
-            to={`/projects/${project.id}/${SETTINGS_ID}`}
-            data-tool="settings"
-            aria-current={tool === SETTINGS_ID ? 'page' : undefined}
-            className={cn(
-              'relative -mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-0.5 pb-2.5 pt-1 text-sm font-medium transition-colors',
-              tool === SETTINGS_ID
-                ? 'border-accent text-ink'
-                : 'border-transparent text-ink-muted hover:text-ink',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
-            )}
-          >
-            <SettingsIcon size={14} />
-            Settings
-          </Link>
-        </nav>
-
-        {reservedViews.length > 0 ? (
-          <div
-            role="status"
-            data-reserved-view={reservedViews.map((view) => view.id).join(',')}
-            className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-ink"
-          >
+        {workflow.error ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-ink">
             <LayersIcon size={14} className="shrink-0" />
             <span className="min-w-0 flex-1">
-              The pinned workflow declares a view with the reserved id{' '}
-              {reservedViews.map((view) => `“${view.id}”`).join(', ')}. It is not rendered so the{' '}
-              {reservedViews.map((view) => (view.id === PLANNING_ID ? 'Planning' : 'Settings')).join(' and ')}{' '}
-              tool keeps that route. Rename the view id in the workflow to see it.
+              The pinned workflow could not be read, so the default views are shown. {userMessage(workflow.error)}
             </span>
+            <Button variant="quiet" size="sm" onClick={workflow.refetch}>
+              Retry
+            </Button>
           </div>
         ) : null}
-      </header>
 
-      {workflow.error ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-ink">
-          <LayersIcon size={14} className="shrink-0" />
-          <span className="min-w-0 flex-1">
-            The pinned workflow could not be read, so the default views are shown. {userMessage(workflow.error)}
-          </span>
-          <Button variant="quiet" size="sm" onClick={workflow.refetch}>
-            Retry
-          </Button>
-        </div>
-      ) : null}
+        {tool === PLANNING_ID ? (
+          <ProjectPlanning project={project} tasks={tasks} milestones={projectMilestones} />
+        ) : tool === SETTINGS_ID ? (
+          <ProjectSettings
+            project={project}
+            workflow={workflow.workflow}
+            binding={workflow.binding}
+            loading={workflow.loading}
+            error={workflow.error}
+            onRetry={workflow.refetch}
+          />
+        ) : !declaredView && !tool && workflow.loading ? (
+          <ViewContentSkeleton />
+        ) : !declaredView && !tool && workflow.error ? (
+          <Panel>
+            <EmptyState
+              icon={<LayersIcon size={21} />}
+              title="This view could not be resolved"
+              description="The project's pinned workflow could not be read, so the views it declares are unknown. The workspace falls back to Overview and Tasks once the workflow is readable."
+              action={
+                <Button variant="secondary" size="sm" onClick={workflow.refetch}>
+                  Retry the workflow
+                </Button>
+              }
+              className="min-h-[20rem]"
+            />
+          </Panel>
+        ) : !declaredView && !tool && views.length === 0 ? (
+          <Panel>
+            <EmptyState
+              icon={<LayersIcon size={21} />}
+              title="This workflow declares no views"
+              description="The project follows a workflow whose manifest publishes no views. Nothing is missing from the data, and this workspace does not substitute Overview or Tasks for a declaration that does not exist."
+              className="min-h-[20rem]"
+            />
+          </Panel>
+        ) : declaredView ? (
+          <ViewSurface
+            view={declaredView}
+            project={project}
+            tasks={tasks}
+            milestones={projectMilestones}
+            workItems={workItems.data ?? []}
+            workItemsState={workItemsState}
+            workflow={workflow.workflow}
+            workflowLoading={workflow.loading}
+            workflowRetry={workflow.refetch}
+          />
+        ) : (
+          <Panel>
+            <EmptyState
+              icon={<LayersIcon size={21} />}
+              title="This view does not exist"
+              description={
+                <>
+                  {viewId ? (
+                    <span className="font-medium text-ink-soft">{humanizeIdentifier(viewId)}</span>
+                  ) : (
+                    'The requested view'
+                  )}{' '}
+                  is not declared by this project&apos;s workflow. Nothing is hidden: the workflow simply
+                  has no such view.
+                </>
+              }
+              action={
+                <Button asChild variant="secondary" size="sm">
+                  <Link to={`/projects/${project.id}/${navViews[0]?.id ?? ''}`}>
+                    Open {workflowText(navViews[0]?.title) || 'the first view'}
+                  </Link>
+                </Button>
+              }
+              className="min-h-[22rem]"
+            />
+          </Panel>
+        )}
 
-      {tool === PLANNING_ID ? (
-        <ProjectPlanning project={project} tasks={tasks} milestones={projectMilestones} />
-      ) : tool === SETTINGS_ID ? (
-        <ProjectSettings
-          project={project}
-          workflow={workflow.workflow}
-          binding={workflow.binding}
-          loading={workflow.loading}
-          error={workflow.error}
-          onRetry={workflow.refetch}
-        />
-      ) : !declaredView && !tool && workflow.loading ? (
-        <ViewContentSkeleton />
-      ) : !declaredView && !tool && workflow.error ? (
-        <Panel>
-          <EmptyState
-            icon={<LayersIcon size={21} />}
-            title="This view could not be resolved"
-            description="The project's pinned workflow could not be read, so the views it declares are unknown. The workspace falls back to Overview and Tasks once the workflow is readable."
-            action={
-              <Button variant="secondary" size="sm" onClick={workflow.refetch}>
-                Retry the workflow
-              </Button>
-            }
-            className="min-h-[20rem]"
+        {itemDrawer.itemId ? (
+          <WorkItemSheet
+            item={openWorkItem}
+            workflow={workflow.workflow}
+            onClose={itemDrawer.closeItem}
+            onRefresh={workItemsState.refetch}
           />
-        </Panel>
-      ) : !declaredView && !tool && views.length === 0 ? (
-        <Panel>
-          <EmptyState
-            icon={<LayersIcon size={21} />}
-            title="This workflow declares no views"
-            description="The project follows a workflow whose manifest publishes no views. Nothing is missing from the data, and this workspace does not substitute Overview or Tasks for a declaration that does not exist."
-            className="min-h-[20rem]"
-          />
-        </Panel>
-      ) : declaredView ? (
-        <ViewSurface
-          view={declaredView}
-          project={project}
-          tasks={tasks}
-          milestones={projectMilestones}
-          workItems={workItems.data ?? []}
-          workItemsState={workItemsState}
-          workflow={workflow.workflow}
-          workflowLoading={workflow.loading}
-          workflowRetry={workflow.refetch}
-        />
-      ) : (
-        <Panel>
-          <EmptyState
-            icon={<LayersIcon size={21} />}
-            title="This view does not exist"
-            description={
-              <>
-                {viewId ? (
-                  <span className="font-medium text-ink-soft">{humanizeIdentifier(viewId)}</span>
-                ) : (
-                  'The requested view'
-                )}{' '}
-                is not declared by this project&apos;s workflow. Nothing is hidden: the workflow simply
-                has no such view.
-              </>
-            }
-            action={
-              <Button asChild variant="secondary" size="sm">
-                <Link to={`/projects/${project.id}/${navViews[0]?.id ?? ''}`}>
-                  Open {workflowText(navViews[0]?.title) || 'the first view'}
-                </Link>
-              </Button>
-            }
-            className="min-h-[22rem]"
-          />
-        </Panel>
-      )}
-
-      {itemDrawer.itemId ? (
-        <WorkItemSheet
-          item={openWorkItem}
-          workflow={workflow.workflow}
-          onClose={itemDrawer.closeItem}
-          onRefresh={workItemsState.refetch}
-        />
-      ) : null}
-    </div>
+        ) : null}
+      </div>
+    </SavedViewRestoreProvider>
   )
 }

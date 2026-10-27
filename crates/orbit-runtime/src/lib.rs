@@ -18,6 +18,15 @@ mod attachment_authority_tests;
 #[cfg(test)]
 mod blueprint_upgrade_tests;
 
+#[cfg(test)]
+mod project_command_tests;
+
+#[cfg(test)]
+mod saved_views_tests;
+
+#[cfg(test)]
+mod search_tests;
+
 use std::path::Path;
 
 /// Host-owned authoritative SQLite command and projection implementation.
@@ -48,8 +57,10 @@ pub mod portfolio_capacity;
 pub mod portfolio_schedule;
 pub mod project_dependency_planning;
 pub mod project_handoffs;
+pub mod saved_views;
 pub mod scenario_execution;
 pub mod schedule_planning;
+pub mod search;
 mod store;
 pub mod task_dependencies;
 pub mod task_dependency_preview;
@@ -57,7 +68,7 @@ pub mod task_graph;
 pub mod task_impact;
 pub mod task_next;
 pub mod workload_insights;
-pub use store::{AuthorityError, AuthorityEvent};
+pub use store::{AuthorityError, AuthorityEvent, TaskTimestamps};
 pub mod authority_evidence;
 pub mod folder_commands;
 pub mod habit_capability;
@@ -649,6 +660,36 @@ impl AuthoritativeHost {
         knowledge_service::KnowledgeService::new(&self.knowledge_vault).search(query, limit)
     }
 
+    /// One unified answer across accepted projects/tasks and Markdown notes.
+    ///
+    /// Projects and tasks are matched in SQL inside one authority snapshot;
+    /// notes reuse the same file-backed search the knowledge views use, so no
+    /// second index exists and the retired SQL note bodies stay unread.
+    pub fn search(
+        &self,
+        query: &str,
+        limit: usize,
+        project_id: Option<&str>,
+    ) -> Result<search::SearchResponse, store::AuthorityError> {
+        let limit = search::normalize_limit(limit);
+        let search::AuthoritySearch {
+            revision,
+            query: text,
+            projects,
+            tasks,
+        } = self.authority.search(query, limit, project_id)?;
+        // One row beyond the page proves note truncation without counting.
+        let notes = self
+            .markdown_search(&text, limit.saturating_add(1))
+            .map_err(store::AuthorityError::Knowledge)?;
+        Ok(search::SearchResponse {
+            revision,
+            query: text,
+            limit,
+            groups: vec![projects, tasks, search::note_group(notes, limit)],
+        })
+    }
+
     /// Term references are resolved from physical Markdown, never from the
     /// retired SQL knowledge index. Results are navigation-friendly occurrences.
     pub fn markdown_term_locations(
@@ -1078,9 +1119,34 @@ impl AuthoritativeHost {
     pub fn project_command(
         &mut self,
         actor: &str,
-        command: domain_commands::ProjectCommand,
+        command: impl Into<domain_commands::ProjectCommandRequest>,
     ) -> Result<domain_commands::ProjectResult, store::AuthorityError> {
         self.authority.authority_project_command(actor, command)
+    }
+
+    /// Created/updated moments derived from the recorded task activity history.
+    pub fn task_timestamps(
+        &self,
+        task_id: &str,
+    ) -> Result<store::TaskTimestamps, store::AuthorityError> {
+        self.authority.task_timestamps(task_id)
+    }
+
+    /// Live saved views owned by one actor, most recently changed first.
+    pub fn saved_views(
+        &self,
+        actor: &str,
+    ) -> Result<Vec<saved_views::SavedViewRecord>, store::AuthorityError> {
+        self.authority.saved_views(actor)
+    }
+
+    /// Apply one saved-view command. This never advances the authority revision.
+    pub fn saved_view_command(
+        &mut self,
+        actor: &str,
+        command: saved_views::SavedViewCommand,
+    ) -> Result<saved_views::SavedViewResult, store::AuthorityError> {
+        self.authority.saved_view_command(actor, command)
     }
 
     pub fn strategies(

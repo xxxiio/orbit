@@ -65,6 +65,8 @@ function task(overrides: Partial<Task> = {}): Task {
     description: '',
     priority: 'high',
     labels: [],
+    createdAtMs: null,
+    updatedAtMs: null,
     ...overrides,
   }
 }

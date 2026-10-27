@@ -64,6 +64,7 @@ import {
   useBoardKeyboard,
 } from '@/components/surface'
 import { WorkItemBoardView } from './work-item-views'
+import { SavedViewsButton } from '@/features/saved-views'
 
 interface BoardColumn {
   status: TaskStatus
@@ -187,6 +188,9 @@ function BoardSurface({
 
   return (
     <>
+      <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+        <SavedViewsButton display="board" />
+      </div>
       {actionableNote === null ? null : (
         <p className="mb-3 text-2xs text-ink-muted">{actionableNote}</p>
       )}

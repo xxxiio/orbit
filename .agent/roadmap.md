@@ -6,7 +6,7 @@ project_owned: true
 record_contract: roadmap
 record_schema_version: 1
 status: current
-current_milestone: null
+current_milestone: MILESTONE-0032
 ---
 
 # Project Roadmap
@@ -297,7 +297,7 @@ MILESTONE-0027
 
 #### Exit criteria
 
-- [ ] EC-001: A tag-triggered release workflow validates version consistency, builds and verifies canonical archives for the declared Linux/macOS matrix, records source revision and target metadata, attests provenance, and creates only a gated draft release unless explicitly authorized.
+- [x] EC-001: A tag-triggered release workflow validates version consistency, builds and verifies canonical archives for the declared Linux/macOS matrix, records source revision and target metadata, attests provenance, and creates only a gated draft release unless explicitly authorized.
 - [x] EC-002: Root `install.sh` works when piped to `sh`, detects supported platforms, resolves the latest stable or an explicit version, verifies checksums before installation, reuses the transactional archive installer, and preserves an existing installation on failure.
 - [x] EC-003: `orbit init` creates the documented `~/.orbit` layout, a versioned validated configuration and a local SQLite workspace; it is idempotent, preserves existing configuration and data, and honors CLI > environment > config-file > default precedence including `ORBIT_DB`.
 - [x] EC-004: `orbit doctor` reports executable, configuration validity, effective database, authority mode, connected settings and optional dependencies without modifying data or printing secrets.
@@ -531,6 +531,68 @@ MILESTONE-0031
 - EC-008: `web/tests/e2e/i5/dogfood.mjs` + `web/evidence/i5/` (run on `987bcf1`, evidence `dfcfb8a`; dist/binary hashes, 30 captures, DB+WAL), issue log `.slim/deepwork/m31-web-app/i5-issues.md`.
 - EC-009: partial — `docs/web-app.md` covers I1 and is being extended for I3–I6 in I6; criterion stays open until every documented command is re-executed.
 - EC-010: open — the TUI redesign specification is an I6 deliverable.
+
+#### Next milestone
+
+none
+
+### MILESTONE-0032 — M32 Web Product Completeness, Agent Workflows & Extended Dogfooding
+
+- **Status:** active
+- **Outcome:** The M31 browser client becomes a daily-use product: editable project identity, one search across projects/tasks/knowledge, saved views, managed knowledge folders and note links, browser-authorized agent execution, and connected trusted Workflow Capability execution — each proven by real-browser acceptance and by repeated Orbit Development use.
+- **Why now:** M31 could inspect more than it could operate. Rename, status, cross-project search, saved filters, folders, note links, agent launch and connected capability execution all required the CLI, so ordinary workflows had workarounds in the middle. Finishing them is the highest-priority unfinished product work, and the resulting proven experience is the correct input for the TUI redesign that follows.
+- **Depends on:** MILESTONE-0024, MILESTONE-0025, MILESTONE-0030, MILESTONE-0031
+
+#### Scope
+
+- Authoritative project rename/status/metadata commands with revision fencing and idempotent receipts.
+- One server-backed bounded search over projects, tasks and knowledge.
+- Saved views as personal presentation preferences, distinct from workflow-defined views.
+- Authoritative task created/updated timestamps with honest unknown state.
+- Knowledge folders, document move/rename, note links, back-references and broken-link indication.
+- Project-contextual knowledge and entity association reuse.
+- Browser-authorized agent job launch, monitoring, evidence, handoff and review.
+- Connected trusted Workflow Capability execution with grants, claims, receipts and reconciliation.
+- Extended dogfooding on a persistent Orbit Development workspace and fixes in the owning layer.
+- Reproducible clean frontend installation, final acceptance and an updated TUI redesign specification.
+
+#### Non-goals
+
+- Rebuilding the M31 web app; a second TypeScript domain engine; direct SQL in HTTP handlers.
+- Any TUI redesign or TUI feature work in this milestone.
+- Reopening M22–M31, or M27 release publication and M15 release qualification.
+- Flutter, arbitrary executable plugins, a public marketplace, cloud AI, mandatory Herdr, multi-tenancy.
+- A server dependency for local-only CLI/TUI operation.
+
+#### Exit criteria
+
+- [x] EC-001: Project rename and status change through authoritative commands, with stable identity, fencing, idempotency and persistence.
+- [x] EC-002: Unified bounded server-backed search across projects, tasks and knowledge with navigable grouped results.
+- [x] EC-003: Saved views persist across browser restart and never modify a workflow definition.
+- [x] EC-004: Task created/updated timestamps from recorded history, with explicit unknown state.
+- [ ] EC-005: Knowledge folders and documents can be created, moved, renamed and browsed; links have back-references and broken-link indication; knowledge is reachable from project context.
+- [ ] EC-006: An authorized agent job can be launched and reviewed from the browser, with restart persistence and no automatic task completion.
+- [ ] EC-007: Trusted Workflow Capabilities execute through the authoritative server with grants, claims, durable receipts, retry safety and reconciliation.
+- [ ] EC-008: Extended browser dogfooding with recorded findings and layer-correct fixes.
+- [ ] EC-009: Real-browser acceptance for every new operation against an isolated authoritative server.
+- [ ] EC-010: Reproducible clean frontend installation in a supported environment.
+- [ ] EC-011: Workflow vocabulary enforced; user documentation matches shipped behaviour.
+- [ ] EC-012: TUI redesign specification updated from proven M31/M32 usage; no TUI redesign implemented.
+
+#### Evidence
+
+- EC-001: I1 — authoritative project update command, status edges read and Playwright `project-settings.spec.ts` (see `MILESTONE-0032.md`).
+- EC-002: I1 — `GET /authoritative/search` and the palette search surface; Playwright `search.spec.ts`.
+- EC-003: I1 — saved-view commands, storage and browser-restart persistence; Playwright `saved-views.spec.ts`.
+- EC-004: I1 — task-detail timestamps derived from recorded activity; Rust and Playwright `task-metadata.spec.ts`.
+- EC-005: I2 — knowledge folders, document move/rename, note links and back-references (open).
+- EC-006: I3 — browser agent launch, monitoring, handoff and review (open).
+- EC-007: I4 — connected Workflow Capability execution through the server (open).
+- EC-008: I5 — extended dogfooding record and layer-correct fixes (open).
+- EC-009: I6 — full real-browser acceptance against an isolated server (open).
+- EC-010: I6 — reproducible clean frontend installation (open).
+- EC-011: I6 — terminology check and user documentation matching shipped behaviour (open).
+- EC-012: I6 — updated TUI redesign specification; no TUI redesign implemented (open).
 
 #### Next milestone
 

@@ -184,6 +184,7 @@ function FullTaskList({
         defaultSort={sortDeclaration.sort ?? DEFAULT_TASK_SORT}
         rowLimit={component.limit ?? undefined}
         emptyText={emptyTextOption(component) ?? undefined}
+        showSavedViews
       />
     </ComponentPanel>
   )

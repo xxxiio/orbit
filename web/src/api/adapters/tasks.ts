@@ -31,6 +31,12 @@ export interface Task {
   description: string
   priority: TaskPriority | null
   labels: string[]
+  /**
+   * Recorded history timestamps, only sent by the detail read. `null` means the
+   * server has no history row for that value; it is never filled in locally.
+   */
+  createdAtMs: number | null
+  updatedAtMs: number | null
 }
 
 function toPriority(value: string | null | undefined): TaskPriority | null {
@@ -43,8 +49,14 @@ function toPriority(value: string | null | undefined): TaskPriority | null {
 /**
  * Trap 1: `TaskRecord` omits the id keys when null, `TaskDetailResponse`
  * always sends them. `?? null` collapses both encodings to the same UI value.
+ *
+ * Timestamps exist only on the detail read (contract C4). A task from the
+ * snapshot therefore carries `null`, not a guessed date; an older server that
+ * omits the keys also lands on `null`.
  */
 export function toTask(record: TaskRecord | TaskDetailResponse): Task {
+  const createdAtMs = 'created_at_ms' in record ? (record.created_at_ms ?? null) : null
+  const updatedAtMs = 'updated_at_ms' in record ? (record.updated_at_ms ?? null) : null
   return {
     id: record.id,
     title: record.title,
@@ -57,6 +69,8 @@ export function toTask(record: TaskRecord | TaskDetailResponse): Task {
     description: record.description,
     priority: toPriority(record.priority),
     labels: record.labels,
+    createdAtMs,
+    updatedAtMs,
   }
 }
 

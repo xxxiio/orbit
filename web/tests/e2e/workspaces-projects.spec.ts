@@ -84,7 +84,7 @@ test.describe('dependencies and readiness', () => {
 })
 
 test.describe('project settings', () => {
-  test('shows the pinned version, refuses to invent rename, and changing the workflow updates the tabs', async ({
+  test('shows the pinned version and the editable identity, and changing the workflow updates the tabs', async ({
     page,
     workspace,
   }) => {
@@ -92,7 +92,10 @@ test.describe('project settings', () => {
 
     await goto(page, server, '/projects/p-development/settings')
     await expect(page.getByRole('heading', { name: 'Development', level: 1 })).toBeVisible()
-    await expect(page.getByText(/Not supported by the API yet/).first()).toBeVisible()
+    // Identity is an authoritative form now; the id itself stays immutable.
+    await expect(page.locator('[data-project-identity]')).toBeVisible()
+    await expect(page.locator('[data-project-name-input]')).toHaveValue('Development')
+    await expect(page.getByText(/This id never changes/)).toBeVisible()
     await expect(page.getByText('Development v3', { exact: true }).first()).toBeVisible()
     await expect(page.getByRole('link', { name: /^Milestones/ })).toBeVisible()
 

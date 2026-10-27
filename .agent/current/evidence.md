@@ -6,48 +6,45 @@ project_owned: true
 record_contract: evidence-manifest
 record_schema_version: 1
 status: final
-task_id: TASK-0009
+task_id: TASK-0010
 ---
 
 # Evidence Manifest
 
 ## Task
 
-TASK-0009 — M30 I2–I4 and the navigation rail correction.
+TASK-0010 — M32 I1: project rename/status, unified search, saved views and task
+timestamps.
 
 ## Acceptance evidence
 
 | Criterion ID | Status | Evidence |
 |---|---|---|
-| AC-001: Navigation rail drives the workspace | pass | `crates/orbit-tui/src/input/dispatch.rs` (Enter precedence), `crates/orbit-tui/src/app/navigation.rs` (`activate_sidebar` focus), `crates/orbit-tui/src/tests/m30_sidebar_navigation_tests.rs` (4 tests), `docs/guides/tui-workspace.md`; real-binary PTY: Projects → Home → Inbox → Agents → Alpha Project. |
-| AC-002: Connected MCP blueprint writes are outbox-backed | pass | `crates/orbit-mcp/src/blueprint_tools.rs` (`blueprint_write`/`blueprint_disposition`, zero `.post(`), `crates/orbit-mcp/src/main.rs` schemas, `tests/acceptance/mcp/test_m30_blueprint_outbox.py`; `cargo test -p orbit-mcp` 76 passed (8 outbox tests: offline pending, accepted replay, conflicting id, lost-ack with original receipt, no fabricated receipt, reads not queued, local mode unchanged); server receipt counts asserted in the Python case. |
-| AC-003: Previewable fenced upgrades | pass | `crates/orbit-runtime/src/blueprint_upgrade.rs` (+13 tests), `crates/orbit-cli/src/blueprint_commands.rs` (`upgrade-preview`/`upgrade`, 2 CLI tests), `crates/orbit-cli/src/connected_blueprint.rs` (refusal); `tests/acceptance/local_cli_workflows.py` 60 passed; documented transcript in `docs/guides/custom-blueprints.md`, `docs/reference/cli.md`, `docs/cli-contract.md`. |
-| AC-004: Habit recurrence capability ownership | pass | New `crates/orbit-habit-capability` (5 tests, moved algorithm), `crates/orbit-runtime/src/habit_capability.rs` (registration/executor/gating tests), `crates/orbit-runtime/src/application_services.rs` (install+grant gate), `crates/orbit-application` outcomes, domain 56 tests with no recurrence symbols; `docs/guides/habits-routines-schedules.md` executed against an isolated DB. |
+| AC-001: Project rename and status editing | pass | `crates/orbit-domain/src/project.rs` (`rename`, `restore`, `ProjectStatus::{ALL,parse}`), `crates/orbit-runtime/src/domain_commands.rs` (`ProjectCommandRequest`, `ProjectCommandAction`), `crates/orbit-runtime/src/store.rs` (`authority_project_command` update path, `append_command_activity`, `latest_field_version`), `crates/orbit-runtime/src/project_command_tests.rs` (8), `crates/orbit-server/src/main.rs` (status edges + 5 HTTP tests); client `project-identity-form.tsx`, `project-edit.ts`; `web/tests/e2e/project-settings.spec.ts` 6/6. |
+| AC-002: Unified search | pass | `crates/orbit-runtime/src/search.rs`, `search_tests.rs` (7), `GET /v1/authoritative/search`; client `adapters/search.ts`, `endpoints/search.ts`, `command-palette.tsx`, `app-shell.tsx`; `web/tests/e2e/search.spec.ts` 5/5, `web/tests/unit/api/search-adapter.spec.ts`. |
+| AC-003: Saved views | pass | `crates/orbit-runtime/src/saved_views.rs`, `saved_views_tests.rs` (9, including "a saved view never moves the authority revision"), server list/command routes; client `features/saved-views/**`, `mutations/saved-views.ts`, `endpoints/saved-views.ts`; `web/tests/e2e/saved-views.spec.ts` 6/6, `web/tests/unit/features/saved-views.spec.ts`. |
+| AC-004: Task timestamps | pass | `AuthorityStore::task_timestamps` + `TaskDetailResponse` timestamps and server test `task_detail_reports_history_derived_timestamps`; client `task-timestamps.tsx`, `formatTaskTimestamp`; `web/tests/e2e/task-metadata.spec.ts` 2/2, `web/tests/unit/domain/task-timestamps.spec.ts`. |
 | AC-005: Quality gates | pass | See the gate table below. |
 
 ## Quality gate evidence
 
 | Gate | Status | Command or artefact | Result |
 |---|---|---|---|
-| Workspace tests | pass | `cargo test --workspace --offline` | 1,658 passed, 0 failed, 31 binaries |
-| TUI tests | pass | `cargo test -p orbit-tui --offline` | 250 passed (incl. 4 rail regression tests) |
-| Runtime tests | pass | `cargo test -p orbit-runtime --offline` | 542 passed (incl. 13 upgrade tests) |
-| MCP tests | pass | `cargo test -p orbit-mcp --offline` | 76 passed (incl. 8 outbox tests) |
-| CLI tests | pass | `cargo test -p orbit-cli --offline` | 128 passed |
-| Habit capability | pass | `cargo test -p orbit-habit-capability -p orbit-domain -p orbit-application --offline` | 5 / 56 / 17 passed |
-| Lints | pass | `cargo clippy … --all-targets -- -D warnings` | clean (14 crates) |
+| Workspace tests | pass | `cargo test --workspace --offline` | 1,730 passed, 0 failed, 31 binaries, exit 0 |
+| Lints | pass | `cargo clippy -p orbit-domain -p orbit-application -p orbit-runtime -p orbit-server -p orbit-client --all-targets --offline -- -D warnings` | clean |
 | Formatting | pass | `cargo fmt --all -- --check` | clean |
-| Terminal acceptance | pass | `python3 -m pytest -q tests/acceptance/tui` | 65 passed, 1 skipped (opt-in fixture) |
-| MCP acceptance | pass | `python3 -m pytest -q tests/acceptance/mcp` | 4 passed |
-| Local CLI acceptance | pass | `python3 tests/acceptance/local_cli_workflows.py --binary target/debug/orbit` | 60 passed |
-| Capability acceptance | pass | `python3 -m pytest -q tests/acceptance/test_m30_capability_workflow.py` | 1 passed (capability list assertion updated for the opt-in habit package) |
-| Contracts / docs | pass | `python3 -m pytest -q tests/contracts tests/documentation` | 43 / 39 passed |
-| Project records | pass | `getdone-validate-project` | passed |
+| Client typecheck | pass | `node node_modules/typescript/bin/tsc --noEmit` | exit 0 |
+| Client unit tests | pass | `node node_modules/vitest/vitest.mjs run` | 46 files, 249 tests passed |
+| Terminology guard | pass | `node scripts/check-terminology.mjs` | 230 files, no user-visible legacy feature name |
+| Production build | pass | `node node_modules/vite/bin/vite.js build` | built; only the pre-existing chunk-size warning |
+| Browser acceptance (I1) | pass | `playwright test` on the four I1 specs | 19 passed |
+| Browser acceptance (full) | pass | `playwright test` | 106 passed, 4 skipped (opt-in captures), 0 failed |
+| Acceptance record | pass | `.agent/evidence/m32-i1-acceptance.md` | written from the runs above |
 
 ## Checks not run
 
-- Full M15 release profile (release qualification remains M15/M27).
-- Connected capability execution and MCP capability tools (not implemented).
+- M15 full release profile and M27 publication verification (release
+  qualification remains M15/M27; deliberately not regenerated).
 - Live Herdr/model acceptance (unchanged external requirement).
 
 ## Waivers
@@ -56,8 +53,9 @@ TASK-0009 — M30 I2–I4 and the navigation rail correction.
 
 ## Residual risk
 
-- Connected capability actions stay local-only; connected blueprint writes are
-  outbox-backed.
-- Habit streaks/evidence require the opt-in capability installation (and grant
-  for project evidence); counts and last-occurrence data remain independent.
-- Upgrade blockers refuse incompatible live-data changes rather than remapping.
+- Project completion-criteria gating is not modelled in the authority SQL project
+  row; a status move validates edges and name rules only.
+- A saved board view restores display plus the current URL query, because the board
+  has no URL-backed filters yet.
+- Search folding is ASCII, matching SQLite `LOWER`.
+- A soft-deleted saved-view id keeps its primary key and cannot be reused.

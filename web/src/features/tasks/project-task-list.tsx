@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/icons'
 import { cn } from '@/components/ui/utils'
 import { useWorkspaceActions } from '@/lib/workspace-actions'
+import { SavedViewsButton } from '@/features/saved-views'
 import {
   ALL,
   filterAndSortTasks,
@@ -67,6 +68,7 @@ export function ProjectTaskList({
   defaultSort = DEFAULT_TASK_SORT,
   rowLimit,
   emptyText,
+  showSavedViews = false,
 }: {
   project: Project
   tasks: Task[]
@@ -79,6 +81,8 @@ export function ProjectTaskList({
   rowLimit?: number
   /** The workflow's declared empty copy, when it published any. */
   emptyText?: string
+  /** Only the full project list owns a saved-view control; summaries do not. */
+  showSavedViews?: boolean
 }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const state = readTaskListUrl(searchParams, defaultColumns, defaultSort)
@@ -232,11 +236,14 @@ export function ProjectTaskList({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <ColumnPicker
-          columns={state.columns}
-          onToggle={toggleColumn}
-          onReset={() => commit({ columns: [...defaultColumns] })}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <ColumnPicker
+            columns={state.columns}
+            onToggle={toggleColumn}
+            onReset={() => commit({ columns: [...defaultColumns] })}
+          />
+          {showSavedViews ? <SavedViewsButton display="list" /> : null}
+        </div>
         <WindowSummary total={capped.length} window={windowed} />
       </div>
 

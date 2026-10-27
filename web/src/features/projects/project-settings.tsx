@@ -28,9 +28,10 @@ import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/components/ui/utils'
 import { humanizeIdentifier } from '@/lib/humanize'
-import { projectStatusLabel, workflowCopy, workflowText } from '@/domain'
+import { workflowCopy, workflowText } from '@/domain'
 import { UpgradeDiff, UpgradeReceipt } from '@/features/workflows'
 import { BundledWorkflowInstall } from '@/features/workflows/bundled-workflow-install'
+import { ProjectIdentityForm } from './project-identity-form'
 
 function IdentityRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -256,27 +257,24 @@ export function ProjectSettings({
           <PanelHeader
             title="Identity"
             eyebrow="Project settings"
-            description="What the server stores for this project."
+            description="Rename the project or move its status. The project id is permanent."
           />
-          <PanelBody>
+          <PanelBody className="flex flex-col gap-4">
             <dl className="flex flex-col">
-              <IdentityRow label="Name">{project.name}</IdentityRow>
-              <IdentityRow label="Status">{projectStatusLabel(project.status)}</IdentityRow>
               <IdentityRow label="Project ID">
                 <span className="break-all font-mono text-2xs text-ink-muted">{project.id}</span>
-              </IdentityRow>
-              <IdentityRow label="Rename">
-                <span className="text-ink-muted">
-                  Not supported by the API yet. This build cannot rename a project, so the name and
-                  id stay as they are.
+                <span className="mt-1 block text-2xs leading-4 text-ink-muted">
+                  This id never changes. Renaming the project does not change its address, its links
+                  or the work stored under it.
                 </span>
               </IdentityRow>
             </dl>
+            <ProjectIdentityForm project={project} />
           </PanelBody>
           <PanelFooter>
             <p className="text-2xs leading-4 text-ink-muted">
-              Creating a differently named project is the only supported way to change identity; its
-              work does not move with it.
+              Status moves are checked by the server against the project&apos;s stored state. The
+              form always shows the accepted value, never a locally applied one.
             </p>
           </PanelFooter>
         </Panel>
@@ -413,9 +411,9 @@ export function ProjectSettings({
           <PanelBody className="flex items-start gap-2">
             <SettingsIcon size={15} className="mt-0.5 shrink-0 text-ink-faint" />
             <p className="text-2xs leading-4 text-ink-muted">
-              Project archives, deletions and rename are not available over this API, so they are
-              not offered here. Editing workflows themselves is a console feature; this screen only
-              pins a published version.
+              Project archives and deletions are not available over this API, so they are not
+              offered here. Editing workflows themselves is a console feature; this screen only pins
+              a published version.
             </p>
           </PanelBody>
         </Panel>

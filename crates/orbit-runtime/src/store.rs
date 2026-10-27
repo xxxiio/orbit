@@ -37,6 +37,10 @@ pub enum AuthorityError {
     StaleRevision,
     IncompleteProjection,
     MigrationConflict,
+    /// The file-backed knowledge vault could not be read. Unified search
+    /// composes notes from Markdown, so a vault identity failure makes the
+    /// combined answer unavailable instead of silently note-less.
+    Knowledge(crate::knowledge_service::KnowledgeServiceError),
 }
 impl From<rusqlite::Error> for AuthorityError {
     fn from(error: rusqlite::Error) -> Self {
@@ -46,6 +50,15 @@ impl From<rusqlite::Error> for AuthorityError {
 
 pub fn digest(value: &str) -> Vec<u8> {
     Sha256::digest(value.as_bytes()).to_vec()
+}
+
+/// Honest created/updated moments for one task, derived from its recorded
+/// activity history. A task with no history row reports `None` instead of a
+/// timestamp fabricated at read time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaskTimestamps {
+    pub created_at_ms: Option<i64>,
+    pub updated_at_ms: Option<i64>,
 }
 
 /// Ordered labels attached to one task. Labels are a separate table so the
@@ -189,6 +202,10 @@ impl AuthorityStore {
                 authority_revision INTEGER NOT NULL,\
                 view_json TEXT NOT NULL\
             );")?;
+        // Personal presentation preferences live beside the command ledger so
+        // every existing database gains them on open, but they stay outside the
+        // semantic ledger: saving a view is not an authority change.
+        crate::saved_views::schema(&conn)?;
         // A single projects/tasks record is authoritative for both local and
         // HTTP transports. Revision metadata is attached to the same tasks row.
         let task_columns = {
@@ -758,34 +775,42 @@ impl AuthorityStore {
             .collect::<Result<Vec<_>, _>>()?;
         Ok((self.tip()?, projects))
     }
-    /// Create a canonical project; state, event, receipt and replay snapshot
-    /// share the same immediate SQLite transaction as authoritative tasks.
+    /// Create or update a canonical project; state, activity, semantic event,
+    /// receipt and replay snapshot share the same immediate SQLite transaction.
+    ///
+    /// `create` keeps the accepted behaviour of the first project command.
+    /// `update` applies a rename and/or a legal status move, and a request that
+    /// changes nothing returns the current record without writing (not even a
+    /// receipt), which makes it idempotent by construction.
     pub fn authority_project_command(
         &mut self,
         actor: &str,
-        command: crate::domain_commands::ProjectCommand,
+        request: impl Into<crate::domain_commands::ProjectCommandRequest>,
     ) -> Result<crate::domain_commands::ProjectResult, AuthorityError> {
-        use crate::domain_commands::{ProjectRecord, ProjectResult};
-        use orbit_domain::{Project, ProjectId};
+        use crate::domain_commands::{ProjectCommandAction, ProjectRecord, ProjectResult};
+        use orbit_domain::{Project, ProjectId, ProjectStatus};
         use orbit_sync::{EntityKind, EntityRef, FieldMutation, SemanticChange};
+        let request = request.into();
         if actor.trim().is_empty()
-            || command.command_id.trim().is_empty()
-            || command.command_id.len() > 128
-            || command.expected_revision < 0
+            || request.command_id.trim().is_empty()
+            || request.command_id.len() > 128
+            || request.expected_revision < 0
         {
             return Err(AuthorityError::Invalid("invalid project command"));
         }
-        let payload = serde_json::to_string(&command)
+        let payload = serde_json::to_string(&request)
             .map_err(|_| AuthorityError::Invalid("invalid project command"))?;
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let pending = crate::command_engine::PendingCommand {
-            command_id: &command.command_id,
+            command_id: &request.command_id,
             actor,
             payload: &payload,
-            expected_revision: command.expected_revision,
+            expected_revision: request.expected_revision,
         };
+        // Retries are answered from the receipt before any fence or domain
+        // check, exactly like the task command path.
         let next = match pending.check(&tx)? {
             crate::command_engine::CommandAdmission::Duplicate(json) => {
                 let mut result: ProjectResult = serde_json::from_str(&json)
@@ -795,73 +820,237 @@ impl AuthorityStore {
             }
             crate::command_engine::CommandAdmission::New(sequence) => sequence,
         };
-        if command.project_id.len() > 256 || command.name.len() > 4096 {
+        if request.project_id.len() > 256 || request.name.len() > Project::MAX_NAME_LEN {
             return Err(AuthorityError::Invalid("project field too long"));
         }
-        let project = Project::new(
-            ProjectId::new(command.project_id.clone())
-                .map_err(|_| AuthorityError::Invalid("invalid project id"))?,
-            command.name.clone(),
-        )
-        .map_err(|_| AuthorityError::Invalid("invalid project name"))?;
-        let record = ProjectRecord {
-            id: project.id().as_str().to_owned(),
-            name: project.name().to_owned(),
-            status: project.status().as_str().to_owned(),
-        };
-        if tx.execute(
-            "INSERT OR IGNORE INTO projects(id,name,status) VALUES(?1,?2,?3)",
-            params![record.id, record.name, record.status],
-        )? != 1
-        {
-            return Err(AuthorityError::ImmutableConflict);
-        }
-        // Same transaction as the project row: the default or explicitly
-        // selected workflow manifest and binding commit with the command or roll
-        // back with it.
-        match command.workflow_id.as_deref() {
-            None | Some("basic") => {
-                crate::default_workflow::ensure_basic_workflow(&tx, &record.id)?;
-            }
-            Some(workflow_id) => {
-                // Bind the revision the registry reads back, not the bundled
-                // descriptor constant: a stale or conflicting publication must
-                // never be disguised as the manifest the bundle declares.
-                let version =
-                    match crate::default_workflow::install_bundled_workflow(&tx, workflow_id) {
-                        Ok(blueprint) => blueprint.version,
-                        Err(_) => {
-                            let published: Option<i64> = tx
-                                .query_row(
-                                    "SELECT MAX(version) FROM orbit_blueprints WHERE id=?1",
-                                    [workflow_id],
-                                    |row| row.get(0),
-                                )
-                                .optional()?
-                                .flatten();
-                            match published {
-                                Some(version) => u32::try_from(version)
-                                    .map_err(|_| AuthorityError::Invalid("unknown workflow"))?,
-                                None => return Err(AuthorityError::Invalid("unknown workflow")),
+        let (record, mutations, activity) = match request.action {
+            ProjectCommandAction::Create => {
+                let mut project = Project::new(
+                    ProjectId::new(request.project_id.clone())
+                        .map_err(|_| AuthorityError::Invalid("invalid project id"))?,
+                    request.name.clone(),
+                )
+                .map_err(|_| AuthorityError::Invalid("invalid project name"))?;
+                // An optional initial state still obeys the domain rules: a
+                // project cannot be created straight into a state its lifecycle
+                // would not have reached.
+                if let Some(status) = request.status.as_deref() {
+                    let target = ProjectStatus::parse(status.trim())
+                        .ok_or(AuthorityError::Invalid("invalid project status"))?;
+                    if target != project.status() {
+                        project.transition_to(target).map_err(|error| {
+                            AuthorityError::Application(
+                                orbit_application::ApplicationError::Domain(error),
+                            )
+                        })?;
+                    }
+                }
+                let record = ProjectRecord {
+                    id: project.id().as_str().to_owned(),
+                    name: project.name().to_owned(),
+                    status: project.status().as_str().to_owned(),
+                };
+                if tx.execute(
+                    "INSERT OR IGNORE INTO projects(id,name,status) VALUES(?1,?2,?3)",
+                    params![record.id, record.name, record.status],
+                )? != 1
+                {
+                    return Err(AuthorityError::ImmutableConflict);
+                }
+                // Same transaction as the project row: the default or explicitly
+                // selected workflow manifest and binding commit with the command
+                // or roll back with it.
+                match request.workflow_id.as_deref() {
+                    None | Some("basic") => {
+                        crate::default_workflow::ensure_basic_workflow(&tx, &record.id)?;
+                    }
+                    Some(workflow_id) => {
+                        // Bind the revision the registry reads back, not the
+                        // bundled descriptor constant: a stale or conflicting
+                        // publication must never be disguised as the manifest the
+                        // bundle declares.
+                        let version = match crate::default_workflow::install_bundled_workflow(
+                            &tx,
+                            workflow_id,
+                        ) {
+                            Ok(blueprint) => blueprint.version,
+                            Err(_) => {
+                                let published: Option<i64> = tx
+                                    .query_row(
+                                        "SELECT MAX(version) FROM orbit_blueprints WHERE id=?1",
+                                        [workflow_id],
+                                        |row| row.get(0),
+                                    )
+                                    .optional()?
+                                    .flatten();
+                                match published {
+                                    Some(version) => u32::try_from(version)
+                                        .map_err(|_| AuthorityError::Invalid("unknown workflow"))?,
+                                    None => {
+                                        return Err(AuthorityError::Invalid("unknown workflow"));
+                                    }
+                                }
                             }
-                        }
-                    };
-                tx.execute(
-                    "INSERT OR IGNORE INTO orbit_project_blueprints\
-                     (project_id, blueprint_id, blueprint_version) VALUES(?1,?2,?3)",
-                    params![record.id, workflow_id, version],
-                )?;
+                        };
+                        tx.execute(
+                            "INSERT OR IGNORE INTO orbit_project_blueprints\
+                             (project_id, blueprint_id, blueprint_version) VALUES(?1,?2,?3)",
+                            params![record.id, workflow_id, version],
+                        )?;
+                    }
+                }
+                (
+                    record,
+                    vec![
+                        FieldMutation::new("name", Some(project.name().to_owned()), None)
+                            .map_err(|_| AuthorityError::Invalid("invalid project name"))?,
+                        FieldMutation::new(
+                            "status",
+                            Some(project.status().as_str().to_owned()),
+                            None,
+                        )
+                        .map_err(|_| AuthorityError::Invalid("invalid project status"))?,
+                    ],
+                    // Creation is not a rename or a status move, so it keeps
+                    // today's behaviour: no accepted-state activity row.
+                    None,
+                )
             }
+            ProjectCommandAction::Update => {
+                if request.name.trim().is_empty() && request.status.is_none() {
+                    return Err(AuthorityError::Invalid(
+                        "project update requires a name or status",
+                    ));
+                }
+                // A workflow binding is chosen once, at creation. Accepting it
+                // here would silently re-point an existing project's workflow.
+                if request.workflow_id.is_some() {
+                    return Err(AuthorityError::Invalid(
+                        "project workflow binding is fixed at creation",
+                    ));
+                }
+                let saved: Option<(String, String)> = tx
+                    .query_row(
+                        "SELECT name,status FROM projects WHERE id=?1",
+                        [&request.project_id],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()?;
+                let (saved_name, saved_status) =
+                    saved.ok_or(AuthorityError::Invalid("project does not exist"))?;
+                let mut project = Project::restore(
+                    ProjectId::new(request.project_id.clone())
+                        .map_err(|_| AuthorityError::Invalid("invalid project id"))?,
+                    saved_name.clone(),
+                    ProjectStatus::parse(&saved_status)
+                        .ok_or(AuthorityError::Invalid("invalid saved project status"))?,
+                )
+                .map_err(|_| AuthorityError::Invalid("invalid project name"))?;
+                if !request.name.trim().is_empty() {
+                    project
+                        .rename(request.name.clone())
+                        .map_err(|_| AuthorityError::Invalid("invalid project name"))?;
+                }
+                if let Some(status) = request.status.as_deref() {
+                    let target = ProjectStatus::parse(status.trim())
+                        .ok_or(AuthorityError::Invalid("invalid project status"))?;
+                    // Re-requesting the current status is a no-op, not a
+                    // transition: otherwise the completion gate would refuse an
+                    // unchanged `completed` project.
+                    if target != project.status() {
+                        project.transition_to(target).map_err(|error| {
+                            AuthorityError::Application(
+                                orbit_application::ApplicationError::Domain(error),
+                            )
+                        })?;
+                    }
+                }
+                let renamed = project.name() != saved_name;
+                let moved = project.status().as_str() != saved_status;
+                if !renamed && !moved {
+                    // Nothing to persist. The revision fence above was the only
+                    // precondition, so report the current record and let the
+                    // transaction roll back on return: no receipt, no activity,
+                    // no ledger change, and a retry is still a no-op.
+                    return Ok(ProjectResult {
+                        revision: request.expected_revision,
+                        duplicate: false,
+                        project: ProjectRecord {
+                            id: request.project_id.clone(),
+                            name: saved_name,
+                            status: saved_status,
+                        },
+                    });
+                }
+                tx.execute(
+                    "UPDATE projects SET name=?1,status=?2 WHERE id=?3",
+                    params![
+                        project.name(),
+                        project.status().as_str(),
+                        request.project_id
+                    ],
+                )?;
+                let record = ProjectRecord {
+                    id: request.project_id.clone(),
+                    name: project.name().to_owned(),
+                    status: project.status().as_str().to_owned(),
+                };
+                // The ledger carries only the fields this command changed, and
+                // each mutation names the change it supersedes so replay stays
+                // an accepted edit rather than a conflict.
+                let mut mutations = Vec::with_capacity(2);
+                if renamed {
+                    let base = latest_field_version(
+                        &tx,
+                        EntityKind::Project,
+                        &request.project_id,
+                        "name",
+                    )?;
+                    mutations.push(
+                        FieldMutation::new("name", Some(record.name.clone()), base)
+                            .map_err(|_| AuthorityError::Invalid("invalid project name"))?,
+                    );
+                }
+                if moved {
+                    let base = latest_field_version(
+                        &tx,
+                        EntityKind::Project,
+                        &request.project_id,
+                        "status",
+                    )?;
+                    mutations.push(
+                        FieldMutation::new("status", Some(record.status.clone()), base)
+                            .map_err(|_| AuthorityError::Invalid("invalid project status"))?,
+                    );
+                }
+                let kind = if moved { "status_changed" } else { "updated" };
+                let summary = match (renamed, moved) {
+                    (true, true) => format!(
+                        "Project renamed to {} and status changed to {}",
+                        record.name, record.status
+                    ),
+                    (false, true) => format!("Project status changed to {}", record.status),
+                    (true, false) => format!("Project renamed to {}", record.name),
+                    (false, false) => String::new(),
+                };
+                (record, mutations, Some((kind, summary)))
+            }
+        };
+        if let Some((kind, summary)) = activity {
+            append_command_activity(
+                &tx,
+                "project",
+                &request.command_id,
+                actor,
+                &record.id,
+                kind,
+                &summary,
+            )?;
         }
         let change = SemanticChange::new(
             EntityRef::new(EntityKind::Project, record.id.clone())
                 .map_err(|_| AuthorityError::Invalid("invalid project reference"))?,
-            vec![
-                FieldMutation::new("name", Some(record.name.clone()), None)
-                    .map_err(|_| AuthorityError::Invalid("invalid project name"))?,
-                FieldMutation::new("status", Some(record.status.clone()), None)
-                    .map_err(|_| AuthorityError::Invalid("invalid project status"))?,
-            ],
+            mutations,
         )
         .map_err(|_| AuthorityError::Invalid("invalid project semantic change"))?;
         let result = ProjectResult {
@@ -896,6 +1085,34 @@ impl AuthorityStore {
         task_id: &str,
     ) -> Result<Option<crate::domain_commands::TaskRecord>, AuthorityError> {
         read_task_record(&self.conn, task_id)
+    }
+    /// Created/updated moments derived from the recorded activity history, never
+    /// from the wall clock at read time. A task with no history reports `None`.
+    pub fn task_timestamps(&self, task_id: &str) -> Result<TaskTimestamps, AuthorityError> {
+        let created_at_ms = self.conn.query_row(
+            "SELECT MIN(occurred_at_ms) FROM activities WHERE subject_kind='task' AND subject_id=?1 AND activity_kind='created'",
+            [task_id],
+            |row| row.get(0),
+        )?;
+        let updated_at_ms = self.conn.query_row(
+            "SELECT MAX(occurred_at_ms) FROM activities WHERE subject_kind='task' AND subject_id=?1",
+            [task_id],
+            |row| row.get(0),
+        )?;
+        Ok(TaskTimestamps {
+            created_at_ms,
+            updated_at_ms,
+        })
+    }
+    /// Projects and tasks matching one query, read from a single SQLite snapshot
+    /// so the reported revision describes exactly the rows returned.
+    pub fn search(
+        &self,
+        query: &str,
+        limit: usize,
+        project_id: Option<&str>,
+    ) -> Result<crate::search::AuthoritySearch, AuthorityError> {
+        crate::search::search_authority(&self.conn, query, limit, project_id)
     }
     /// Single authority transaction: validate domain rules, commit the canonical
     /// task, immutable semantic event and command acknowledgement together.
@@ -1397,8 +1614,9 @@ impl AuthorityStore {
                 ));
             }
         };
-        append_task_command_activity(
+        append_command_activity(
             &tx,
+            "task",
             &command.command_id,
             actor,
             &record_id,
@@ -1588,15 +1806,16 @@ impl AuthorityStore {
     }
 }
 
-/// Append one activity for a connected raw-SQL task command so HTTP/MCP parity
+/// Append one activity for a connected raw-SQL command so HTTP/MCP parity
 /// matches the rich application command path. The deterministic id is derived
 /// from the durable command id; duplicate commands return their receipt before
 /// reaching this insert, so a retry can never append a second activity.
-fn append_task_command_activity(
+fn append_command_activity(
     tx: &rusqlite::Connection,
+    subject_kind: &str,
     command_id: &str,
     actor: &str,
-    task_id: &str,
+    subject_id: &str,
     kind: &str,
     summary: &str,
 ) -> Result<(), AuthorityError> {
@@ -1609,10 +1828,11 @@ fn append_task_command_activity(
     tx.execute(
         "INSERT INTO activities(id,subject_kind,subject_id,activity_kind,activity_kind_value,\
          origin_kind,origin_value,occurred_at_ms,summary) \
-         VALUES(?1,'task',?2,?3,NULL,'external',?4,?5,?6)",
+         VALUES(?1,?2,?3,?4,NULL,'external',?5,?6,?7)",
         params![
             format!("activity-{command_id}"),
-            task_id,
+            subject_kind,
+            subject_id,
             kind,
             actor,
             occurred_at_ms,
@@ -1629,15 +1849,27 @@ fn latest_task_field_version(
     task_id: &str,
     field: &str,
 ) -> Result<Option<orbit_sync::ChangeId>, AuthorityError> {
-    use orbit_sync::{ChangeEnvelope, EntityKind};
+    latest_field_version(tx, orbit_sync::EntityKind::Task, task_id, field)
+}
+
+/// Resolve the change that last wrote one entity field. Replaying a mutation for
+/// an already-versioned field requires exactly that predecessor; anything else
+/// would be recorded as an unresolved conflict instead of an accepted edit.
+fn latest_field_version(
+    tx: &rusqlite::Transaction<'_>,
+    kind: orbit_sync::EntityKind,
+    entity_id: &str,
+    field: &str,
+) -> Result<Option<orbit_sync::ChangeId>, AuthorityError> {
+    use orbit_sync::ChangeEnvelope;
     let mut stmt =
         tx.prepare("SELECT wire FROM authority_history WHERE kind='change' ORDER BY cursor DESC")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     for row in rows {
         let envelope =
             ChangeEnvelope::from_wire_json(&row?).map_err(|_| AuthorityError::MigrationConflict)?;
-        if envelope.change.entity.kind == EntityKind::Task
-            && envelope.change.entity.id == task_id
+        if envelope.change.entity.kind == kind
+            && envelope.change.entity.id == entity_id
             && envelope
                 .change
                 .mutations

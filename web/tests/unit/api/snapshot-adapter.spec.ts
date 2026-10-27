@@ -20,6 +20,8 @@ describe('snapshot adapters', () => {
       ...snapshotRecord,
       project_id: null,
       milestone_id: null,
+      created_at_ms: null,
+      updated_at_ms: null,
     }
     expect('project_id' in detailRecord).toBe(true)
 
@@ -44,6 +46,30 @@ describe('snapshot adapters', () => {
     // The authority rejects free-form priorities, so an unknown value is damaged
     // data: show no priority rather than invent one.
     expect(toTask(taskRecord({ priority: 'critical' })).priority).toBeNull()
+  })
+
+  it("maps recorded task timestamps, and keeps an older server's missing keys unknown", () => {
+    const detail: TaskDetailResponse = {
+      ...taskRecord({ id: 't-3', project_id: 'p-1' }),
+      project_id: 'p-1',
+      milestone_id: null,
+      created_at_ms: 1_761_432_000_000,
+      updated_at_ms: 1_761_435_600_000,
+    }
+
+    expect(toTaskDetail(detail)).toMatchObject({
+      createdAtMs: 1_761_432_000_000,
+      updatedAtMs: 1_761_435_600_000,
+    })
+
+    // A snapshot row has no history fields at all; a new timestamp is not invented.
+    expect(toTask(taskRecord()).createdAtMs).toBeNull()
+    expect(toTask(taskRecord()).updatedAtMs).toBeNull()
+
+    // An older server omits the keys; that is `Unknown`, not a parse failure.
+    const older = withoutKeys(detail, 'created_at_ms', 'updated_at_ms')
+    expect(toTaskDetail(older).createdAtMs).toBeNull()
+    expect(toTaskDetail(older).updatedAtMs).toBeNull()
   })
 
   it('adapts the whole snapshot slice the UI reads', () => {

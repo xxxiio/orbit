@@ -22,6 +22,8 @@ const SELECTED: Task[] = ['t-1', 't-2', 't-3'].map((id) => ({
   description: '',
   priority: null,
   labels: [],
+  createdAtMs: null,
+  updatedAtMs: null,
 }))
 
 function useBulk() {

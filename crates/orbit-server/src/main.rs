@@ -21,9 +21,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
-use domain_commands::{
-    ProjectCommand, ProjectRecord, ProjectResult, TaskCommand, TaskRecord, TaskResult,
-};
+use domain_commands::{ProjectRecord, ProjectResult, TaskCommand, TaskRecord, TaskResult};
 use orbit_application::ApplicationError;
 use orbit_runtime::AuthoritativeHost;
 use orbit_runtime::AuthorityError;
@@ -152,6 +150,12 @@ fn map_error(err: AuthorityError) -> ApiError {
             "incompatible or conflicting authority history",
         ),
         AuthorityError::Unauthorized => error(StatusCode::FORBIDDEN, "device identity mismatch"),
+        AuthorityError::Knowledge(vault_error) => {
+            // The Markdown vault is a local file store; an ambiguous or missing
+            // identity is a data-integrity condition, not a client mistake.
+            eprintln!("orbit-server knowledge error: {vault_error:?}");
+            error(StatusCode::CONFLICT, "knowledge vault is unavailable")
+        }
         AuthorityError::Sql(rusqlite_error) => {
             // Never expose private SQL or local paths in HTTP error bodies.
             eprintln!("orbit-server storage error: {rusqlite_error}");
@@ -1561,6 +1565,9 @@ fn attachment_authority_error(error: AuthorityError) -> AttachmentFailure {
         AuthorityError::Unauthorized => {
             attachment_error(StatusCode::FORBIDDEN, "device identity mismatch")
         }
+        AuthorityError::Knowledge(_) => {
+            attachment_error(StatusCode::CONFLICT, "knowledge vault is unavailable")
+        }
         AuthorityError::Sql(error) => {
             eprintln!("orbit-server attachment storage error: {error}");
             attachment_error(StatusCode::INTERNAL_SERVER_ERROR, "storage error")
@@ -1901,6 +1908,10 @@ struct TaskDetailResponse {
     description: String,
     priority: Option<String>,
     labels: Vec<String>,
+    /// Derived from the recorded activity history; null when the task has no
+    /// history row, never a read-time timestamp.
+    created_at_ms: Option<i64>,
+    updated_at_ms: Option<i64>,
 }
 impl From<TaskRecord> for TaskDetailResponse {
     fn from(task: TaskRecord) -> Self {
@@ -1916,6 +1927,18 @@ impl From<TaskRecord> for TaskDetailResponse {
             description: task.description,
             priority: task.priority,
             labels: task.labels,
+            created_at_ms: None,
+            updated_at_ms: None,
+        }
+    }
+}
+impl TaskDetailResponse {
+    /// Attach the history-derived moments to the canonical projection.
+    fn with_timestamps(task: TaskRecord, timestamps: orbit_runtime::TaskTimestamps) -> Self {
+        Self {
+            created_at_ms: timestamps.created_at_ms,
+            updated_at_ms: timestamps.updated_at_ms,
+            ..Self::from(task)
         }
     }
 }
@@ -1980,7 +2003,8 @@ async fn authoritative_task_detail(
         .task_record(&id)
         .map_err(map_error)?
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "task not found"))?;
-    Ok(Json(TaskDetailResponse::from(task)))
+    let timestamps = store.task_timestamps(&id).map_err(map_error)?;
+    Ok(Json(TaskDetailResponse::with_timestamps(task, timestamps)))
 }
 async fn authoritative_task_acceptance_criteria(
     State(state): State<AppState>,
@@ -2149,7 +2173,7 @@ async fn authoritative_projects(
 async fn authoritative_project_command(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(command): Json<ProjectCommand>,
+    Json(command): Json<domain_commands::ProjectCommandRequest>,
 ) -> Result<Json<ProjectResult>, ApiError> {
     let actor = device(&state, &headers)?;
     let mut store = state
@@ -2158,6 +2182,105 @@ async fn authoritative_project_command(
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
     Ok(Json(
         store.project_command(&actor, command).map_err(map_error)?,
+    ))
+}
+#[derive(Serialize)]
+struct ProjectStatusResponse {
+    status: &'static str,
+    next: Vec<&'static str>,
+}
+#[derive(Serialize)]
+struct ProjectStatusesResponse {
+    statuses: Vec<ProjectStatusResponse>,
+}
+/// The project status edges the domain actually accepts, read from
+/// [`orbit_domain::ProjectStatus::can_transition_to`] rather than a second
+/// transition table, so the client offers exactly what the write path accepts.
+/// Every status is listed in canonical order and never offers itself.
+async fn authoritative_project_statuses(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ProjectStatusesResponse>, ApiError> {
+    device(&state, &headers)?;
+    let statuses = orbit_domain::ProjectStatus::ALL
+        .into_iter()
+        .map(|status| ProjectStatusResponse {
+            status: status.as_str(),
+            next: orbit_domain::ProjectStatus::ALL
+                .into_iter()
+                .filter(|next| *next != status && status.can_transition_to(*next))
+                .map(|next| next.as_str())
+                .collect(),
+        })
+        .collect();
+    Ok(Json(ProjectStatusesResponse { statuses }))
+}
+#[derive(Deserialize)]
+struct SearchQuery {
+    /// Absent is treated as empty so the refusal text stays the contract's.
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    limit: Option<usize>,
+    #[serde(default)]
+    project_id: Option<String>,
+}
+/// One query across projects, tasks and notes. All matching and composition
+/// happen in the runtime; this handler only maps the response.
+async fn authoritative_search(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<orbit_runtime::search::SearchResponse>, ApiError> {
+    device(&state, &headers)?;
+    let store = state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
+    let limit = query.limit.unwrap_or(orbit_runtime::search::DEFAULT_LIMIT);
+    // An empty filter means "no filter"; only a real id narrows the answer.
+    let project_id = query
+        .project_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    Ok(Json(
+        store
+            .search(&query.q, limit, project_id)
+            .map_err(map_error)?,
+    ))
+}
+#[derive(Serialize)]
+struct SavedViewsResponse {
+    views: Vec<orbit_runtime::saved_views::SavedViewRecord>,
+}
+async fn authoritative_saved_views(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<SavedViewsResponse>, ApiError> {
+    let actor = device(&state, &headers)?;
+    let store = state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
+    Ok(Json(SavedViewsResponse {
+        views: store.saved_views(&actor).map_err(map_error)?,
+    }))
+}
+async fn authoritative_saved_view_command(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(command): Json<orbit_runtime::saved_views::SavedViewCommand>,
+) -> Result<Json<orbit_runtime::saved_views::SavedViewResult>, ApiError> {
+    let actor = device(&state, &headers)?;
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
+    Ok(Json(
+        store
+            .saved_view_command(&actor, command)
+            .map_err(map_error)?,
     ))
 }
 #[derive(Deserialize)]
@@ -3370,6 +3493,19 @@ fn routes(state: AppState) -> Router {
             post(authoritative_project_command),
         )
         .route(
+            "/v1/authoritative/project-statuses",
+            get(authoritative_project_statuses),
+        )
+        .route("/v1/authoritative/search", get(authoritative_search))
+        .route(
+            "/v1/authoritative/saved-views",
+            get(authoritative_saved_views),
+        )
+        .route(
+            "/v1/authoritative/saved-views/commands",
+            post(authoritative_saved_view_command),
+        )
+        .route(
             "/v1/authoritative/knowledge-tree",
             get(authoritative_knowledge_tree),
         )
@@ -4129,6 +4265,332 @@ mod tests {
             validation.1,
             "invalid task status transition: inbox -> done"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn project_statuses_read_returns_the_domain_edges_for_every_status() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        let (code, raw) = get(&address, "/v1/authoritative/project-statuses", &bearer);
+        assert_eq!(code, 200, "{}", body_of(&raw));
+        let body: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        let statuses = body["statuses"].as_array().expect("statuses is an array");
+        assert_eq!(statuses.len(), orbit_domain::ProjectStatus::ALL.len());
+        for (entry, status) in statuses.iter().zip(orbit_domain::ProjectStatus::ALL) {
+            assert_eq!(entry["status"], status.as_str());
+            let next: Vec<&str> = entry["next"]
+                .as_array()
+                .expect("next is an array")
+                .iter()
+                .map(|value| value.as_str().expect("status is a string"))
+                .collect();
+            assert!(!next.contains(&status.as_str()), "self is not an edge");
+            for other in orbit_domain::ProjectStatus::ALL {
+                assert_eq!(
+                    next.contains(&other.as_str()),
+                    other != status && status.can_transition_to(other),
+                    "{} -> {} disagree with the domain",
+                    status.as_str(),
+                    other.as_str()
+                );
+            }
+        }
+        // A terminal state offers nothing at all.
+        let archived = statuses
+            .iter()
+            .find(|entry| entry["status"] == "archived")
+            .expect("archived is listed");
+        assert_eq!(archived["next"].as_array().map(Vec::len), Some(0));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn project_updates_rename_move_status_and_quote_domain_refusals() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        // The historical create payload still works untouched.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &bearer,
+            r#"{"command_id":"p-create","expected_revision":0,"project_id":"orbit","name":"Orbit"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let created: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(created["revision"], 1);
+        assert_eq!(created["duplicate"], false);
+        assert_eq!(created["project"]["status"], "proposed");
+        assert_eq!(created["project"]["name"], "Orbit");
+
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &bearer,
+            r#"{"command_id":"p-rename","expected_revision":1,"action":"update","project_id":"orbit","name":"Orbit Web"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let renamed: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(renamed["revision"], 2);
+        assert_eq!(renamed["project"]["name"], "Orbit Web");
+        assert_eq!(renamed["project"]["status"], "proposed");
+
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &bearer,
+            r#"{"command_id":"p-status","expected_revision":2,"action":"update","project_id":"orbit","status":"active"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let moved: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(moved["revision"], 3);
+        assert_eq!(moved["project"]["name"], "Orbit Web");
+        assert_eq!(moved["project"]["status"], "active");
+
+        // A domain refusal quotes the actual from/to states.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &bearer,
+            r#"{"command_id":"p-illegal","expected_revision":3,"action":"update","project_id":"orbit","status":"proposed"}"#,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("invalid project status transition: active -> proposed"),
+            "{}",
+            body_of(&raw)
+        );
+
+        // A stale fence keeps the pre-existing generic 409.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &bearer,
+            r#"{"command_id":"p-stale","expected_revision":1,"action":"update","project_id":"orbit","name":"Stale"}"#,
+        );
+        assert_eq!(status, 409, "{}", body_of(&raw));
+        assert_eq!(body_of(&raw), r#"{"error":"stale server revision"}"#);
+
+        // An update that changes nothing reports the current record at the tip.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &bearer,
+            r#"{"command_id":"p-noop","expected_revision":3,"action":"update","project_id":"orbit","name":"Orbit Web","status":"active"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let noop: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(noop["revision"], 3);
+        assert_eq!(noop["duplicate"], false);
+
+        let (_, raw) = get(&address, "/v1/authoritative/projects", &bearer);
+        let projects: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(projects["revision"], 3, "a no-op must not advance history");
+        assert_eq!(projects["projects"][0]["name"], "Orbit Web");
+        assert_eq!(projects["projects"][0]["status"], "active");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn search_reads_three_groups_and_refuses_an_empty_query() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &bearer,
+            r#"{"command_id":"p-create","expected_revision":0,"project_id":"orbit","name":"Orbit"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/task-commands",
+            &bearer,
+            r#"{"command_id":"t-create","expected_revision":1,"action":{"type":"create","task_id":"task-1","title":"Fix the Orbit login","project_id":"orbit"}}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+
+        let (status, raw) = get(&address, "/v1/authoritative/search?q=orbit", &bearer);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let body: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(body["query"], "orbit");
+        assert_eq!(body["limit"], 10);
+        assert_eq!(body["revision"], 2);
+        let groups = body["groups"].as_array().expect("groups is an array");
+        assert_eq!(
+            groups
+                .iter()
+                .map(|group| group["kind"].as_str().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["project", "task", "note"]
+        );
+        assert_eq!(groups[0]["truncated"], false);
+        assert_eq!(groups[0]["results"][0]["kind"], "project");
+        assert_eq!(groups[0]["results"][0]["title"], "Orbit");
+        assert_eq!(groups[0]["results"][0]["subtitle"], "proposed");
+        assert_eq!(groups[0]["results"][0]["project_id"], "orbit");
+        assert_eq!(groups[0]["results"][0]["path"], serde_json::Value::Null);
+        assert_eq!(groups[1]["results"][0]["kind"], "task");
+        assert_eq!(groups[1]["results"][0]["title"], "Fix the Orbit login");
+        assert_eq!(groups[1]["results"][0]["subtitle"], "inbox · Orbit");
+        assert_eq!(groups[2]["results"], serde_json::json!([]));
+
+        // The project filter narrows both entity groups.
+        let (status, raw) = get(
+            &address,
+            "/v1/authoritative/search?q=orbit&project_id=missing",
+            &bearer,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let filtered: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(filtered["groups"][0]["results"], serde_json::json!([]));
+        assert_eq!(filtered["groups"][1]["results"], serde_json::json!([]));
+
+        // The page size is clamped to the contract window.
+        let (_, raw) = get(
+            &address,
+            "/v1/authoritative/search?q=orbit&limit=999",
+            &bearer,
+        );
+        let clamped: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(clamped["limit"], 20);
+
+        for (query, expected) in [
+            ("", "search query is required"),
+            ("%20%20", "search query is required"),
+            (&"a".repeat(201), "search query is too long"),
+        ] {
+            let (status, raw) = get(
+                &address,
+                &format!("/v1/authoritative/search?q={query}"),
+                &bearer,
+            );
+            assert_eq!(status, 400, "{}", body_of(&raw));
+            assert_eq!(body_of(&raw), format!(r#"{{"error":"{expected}"}}"#));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn saved_views_round_trip_without_moving_the_revision() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        let (_, raw) = get(&address, "/v1/authoritative/snapshot", &bearer);
+        let before: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        let revision = before["revision"].clone();
+
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/saved-views/commands",
+            &bearer,
+            r#"{"type":"save","command_id":"c-1","view_id":"sv-1","expected_version":0,"name":"Ready work","scope":"project","project_id":"orbit","query":"status=ready&sort=due","display":"list"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let saved: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(saved["duplicate"], false);
+        assert_eq!(saved["view"]["version"], 1);
+        assert_eq!(saved["view"]["display"], "list");
+
+        let (status, raw) = get(&address, "/v1/authoritative/saved-views", &bearer);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let listed: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(listed["views"].as_array().map(Vec::len), Some(1));
+        assert_eq!(listed["views"][0]["name"], "Ready work");
+        assert!(listed["views"][0].get("deleted").is_none());
+
+        // A replayed command id answers from the receipt.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/saved-views/commands",
+            &bearer,
+            r#"{"type":"save","command_id":"c-1","view_id":"sv-1","expected_version":0,"name":"Ready work","scope":"project","project_id":"orbit","query":"status=ready&sort=due","display":"list"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let replay: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(replay["duplicate"], true);
+
+        // A stale per-row version is a fixed-text refusal.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/saved-views/commands",
+            &bearer,
+            r#"{"type":"rename","command_id":"c-2","view_id":"sv-1","expected_version":9,"name":"Ready queue"}"#,
+        );
+        assert_eq!(status, 400, "{}", body_of(&raw));
+        assert_eq!(
+            body_of(&raw),
+            r#"{"error":"saved view changed on the server"}"#
+        );
+
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/saved-views/commands",
+            &bearer,
+            r#"{"type":"rename","command_id":"c-3","view_id":"sv-1","expected_version":1,"name":"Ready queue"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let renamed: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(renamed["view"]["version"], 2);
+        assert_eq!(renamed["view"]["name"], "Ready queue");
+
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/saved-views/commands",
+            &bearer,
+            r#"{"type":"delete","command_id":"c-4","view_id":"sv-1","expected_version":2}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let deleted: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(deleted["view"], serde_json::Value::Null);
+
+        let (_, raw) = get(&address, "/v1/authoritative/saved-views", &bearer);
+        let listed: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(listed["views"], serde_json::json!([]));
+
+        // Unknown tags and unknown fields are refused by the tagged union.
+        let (status, _) = post(
+            &address,
+            "/v1/authoritative/saved-views/commands",
+            &bearer,
+            r#"{"type":"archive","command_id":"c-5","view_id":"sv-1","expected_version":1}"#,
+        );
+        assert_eq!(status, 422);
+
+        // None of this moved the authority revision or the ledger.
+        let (_, raw) = get(&address, "/v1/authoritative/snapshot", &bearer);
+        let after: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        assert_eq!(after["revision"], revision);
+        assert_eq!(after["history_fingerprint"], before["history_fingerprint"]);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn task_detail_reports_history_derived_timestamps() {
+        let dist = TempDist::built();
+        let state = test_state(&dist);
+        let address = spawn(routes(state.clone())).await;
+        let bearer =
+            format!("Authorization: Bearer {DEVICE_TOKEN}\r\nx-orbit-device-id: device-1\r\n");
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/task-commands",
+            &bearer,
+            r#"{"command_id":"t-create","expected_revision":0,"action":{"type":"create","task_id":"task-1","title":"Ship it"}}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = get(&address, "/v1/authoritative/tasks/task-1", &bearer);
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let body: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
+        let created = body["created_at_ms"]
+            .as_i64()
+            .expect("a created activity exists");
+        assert_eq!(body["updated_at_ms"].as_i64(), Some(created));
+
+        // The unknown case (a task row without history) is covered by the
+        // runtime read; the HTTP projection only ever serialises what it finds.
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

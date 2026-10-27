@@ -12,6 +12,18 @@ pub enum ProjectStatus {
 }
 
 impl ProjectStatus {
+    /// Every built-in status in canonical display order. Callers derive their
+    /// offered edges through [`Self::can_transition_to`]; the transition table
+    /// itself is never duplicated outside this module.
+    pub const ALL: [Self; 6] = [
+        Self::Proposed,
+        Self::Active,
+        Self::OnHold,
+        Self::Completed,
+        Self::Cancelled,
+        Self::Archived,
+    ];
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Proposed => "proposed",
@@ -37,6 +49,20 @@ impl ProjectStatus {
             Self::Completed => matches!(next, Self::Archived),
             Self::Cancelled => matches!(next, Self::Archived),
             Self::Archived => false,
+        }
+    }
+
+    /// Parse a persisted or wire status token. Unknown tokens are reported as
+    /// absent so each caller keeps its own fixed refusal text.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "proposed" => Some(Self::Proposed),
+            "active" => Some(Self::Active),
+            "on_hold" => Some(Self::OnHold),
+            "completed" => Some(Self::Completed),
+            "cancelled" => Some(Self::Cancelled),
+            "archived" => Some(Self::Archived),
+            _ => None,
         }
     }
 }
@@ -244,6 +270,11 @@ pub struct Project {
 }
 
 impl Project {
+    /// Longest accepted project name, in bytes. The SQL authority rejects a
+    /// longer name before it ever restores one into a domain aggregate, so both
+    /// transports share one bound.
+    pub const MAX_NAME_LEN: usize = 4096;
+
     pub fn new(id: ProjectId, name: impl Into<String>) -> Result<Self, DomainError> {
         let name = name.into();
         if name.trim().is_empty() {
@@ -259,6 +290,34 @@ impl Project {
             progress_signals: mode.default_signals(),
             success_criteria: Vec::new(),
         })
+    }
+
+    /// Rehydrate an accepted project from stored state.
+    ///
+    /// The canonical SQL row carries identity, name and status only, so the
+    /// remaining facets keep the defaults [`Self::new`] assigns. Rehydration
+    /// implies no lifecycle event and re-checks no transition: the stored
+    /// status was accepted when it was written.
+    pub fn restore(
+        id: ProjectId,
+        name: impl Into<String>,
+        status: ProjectStatus,
+    ) -> Result<Self, DomainError> {
+        let mut project = Self::new(id, name)?;
+        project.status = status;
+        Ok(project)
+    }
+
+    /// Rename in place. Blank names are a domain invariant; length is bounded at
+    /// the transport boundary through [`Self::MAX_NAME_LEN`], exactly like task
+    /// titles, because the bound is about storage rather than identity.
+    pub fn rename(&mut self, name: impl Into<String>) -> Result<(), DomainError> {
+        let name = name.into();
+        if name.trim().is_empty() {
+            return Err(DomainError::EmptyProjectName);
+        }
+        self.name = name;
+        Ok(())
     }
 
     pub fn id(&self) -> &ProjectId {
@@ -411,5 +470,51 @@ mod tests {
             .set_success_criterion_status("tests", SuccessCriterionStatus::Satisfied)
             .unwrap();
         project.transition_to(ProjectStatus::Completed).unwrap();
+    }
+
+    #[test]
+    fn statuses_parse_round_trip_and_expose_their_edges() {
+        assert_eq!(ProjectStatus::ALL.len(), 6);
+        for status in ProjectStatus::ALL {
+            assert_eq!(ProjectStatus::parse(status.as_str()), Some(status));
+            assert_eq!(status.as_str(), status.as_str());
+        }
+        assert_eq!(ProjectStatus::parse("Proposed"), None);
+        assert_eq!(ProjectStatus::parse("backlog"), None);
+        // A status never offers itself as an edge, even though the domain allows
+        // a same-state transition as a no-op.
+        let offered: Vec<&str> = ProjectStatus::ALL
+            .into_iter()
+            .filter(|next| *next != ProjectStatus::Proposed)
+            .filter(|next| ProjectStatus::Proposed.can_transition_to(*next))
+            .map(ProjectStatus::as_str)
+            .collect();
+        assert_eq!(offered, vec!["active", "cancelled", "archived"]);
+    }
+
+    #[test]
+    fn rename_rejects_blank_names_and_keeps_the_status() {
+        let mut project = Project::new(project_id(), "Orbit").unwrap();
+        project.transition_to(ProjectStatus::Active).unwrap();
+        assert_eq!(project.rename("   "), Err(DomainError::EmptyProjectName));
+        assert_eq!(project.name(), "Orbit");
+        project.rename("Orbit Web").unwrap();
+        assert_eq!(project.name(), "Orbit Web");
+        assert_eq!(project.status(), ProjectStatus::Active);
+    }
+
+    #[test]
+    fn restore_rehydrates_persisted_state_without_replaying_lifecycle() {
+        // `Proposed -> Completed` is not a legal transition, but a row written
+        // before this rule (or by a later migration) must still load.
+        let project = Project::restore(project_id(), "Archive", ProjectStatus::Completed).unwrap();
+        assert_eq!(project.name(), "Archive");
+        assert_eq!(project.status(), ProjectStatus::Completed);
+        assert_eq!(project.mode(), ProjectMode::Standard);
+        assert!(project.success_criteria().is_empty());
+        assert_eq!(
+            Project::restore(project_id(), "  ", ProjectStatus::Active),
+            Err(DomainError::EmptyProjectName)
+        );
     }
 }

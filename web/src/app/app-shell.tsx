@@ -1,12 +1,26 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { OrbitMark, Wordmark } from '@/components/ui/brand'
 import { IconButton } from '@/components/ui/icon-button'
-import { CommandPalette, type Command } from '@/components/ui/command-palette'
+import {
+  CommandPalette,
+  type Command,
+  type PaletteSearchGroup,
+  type PaletteSearchState,
+} from '@/components/ui/command-palette'
 import { Drawer } from '@/components/ui/drawer'
 import { MenuIcon, SearchIcon } from '@/components/ui/icons'
 import { Sidebar, commandShortcutLabel, type SidebarSession } from '@/components/layout/sidebar'
 import type { ProjectNavItem } from '@/components/navigation/nav'
+import { noteHref } from '@/features/knowledge/knowledge-model'
+import {
+  classifyError,
+  useDebouncedValue,
+  useOrbitSearch,
+  userMessage,
+} from '@/hooks'
+import type { SearchResult } from '@/api/adapters'
+import { searchGroupLabel } from '@/api/adapters'
 
 export interface AppShellProps {
   /** Live project navigation, grouped by the shell. */
@@ -29,7 +43,12 @@ export function AppShell({
 }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
+  const [paletteQuery, setPaletteQuery] = useState('')
   const paletteReturnFocus = useRef<HTMLElement | null>(null)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const previousPath = useRef(location.pathname)
+  const pendingPrefix = useRef<{ key: string; at: number } | null>(null)
 
   // A keyboard shortcut is not a Radix Trigger, so the palette has to remember
   // the element to return to itself. Restoring in a timer lets Radix finish its
@@ -37,20 +56,94 @@ export function AppShell({
   const openPalette = () => {
     const active = document.activeElement
     paletteReturnFocus.current = active instanceof HTMLElement ? active : null
+    setPaletteQuery('')
     setCommandOpen(true)
   }
   const closePalette = () => {
     setCommandOpen(false)
+    setPaletteQuery('')
     window.setTimeout(() => {
       const target = paletteReturnFocus.current
       if (target?.isConnected) target.focus({ preventScroll: true })
       else document.getElementById('main')?.focus({ preventScroll: true })
     }, 0)
   }
-  const location = useLocation()
-  const navigate = useNavigate()
-  const previousPath = useRef(location.pathname)
-  const pendingPrefix = useRef<{ key: string; at: number } | null>(null)
+
+  const trimmedQuery = paletteQuery.trim()
+  const debouncedQuery = useDebouncedValue(trimmedQuery, 200)
+  const searchRead = useOrbitSearch(debouncedQuery, 10)
+
+  const openSearchResult = useCallback(
+    (result: SearchResult) => {
+      if (result.kind === 'project') {
+        navigate(`/projects/${encodeURIComponent(result.id)}`)
+        return
+      }
+      if (result.kind === 'task') {
+        const projectId = result.projectId
+        const currentProject = /^\/projects\/([^/]+)/.exec(location.pathname)?.[1]
+        const sameProject =
+          projectId !== null && currentProject !== undefined && decodeURIComponent(currentProject) === projectId
+        const viewId = location.pathname.split('/')[3]
+        const keepsView = viewId !== 'settings' && viewId !== 'planning'
+        if (sameProject && keepsView) {
+          const params = new URLSearchParams(location.search)
+          params.set('task', result.id)
+          navigate(`${location.pathname}?${params.toString()}`)
+          return
+        }
+        const base = projectId ? `/projects/${encodeURIComponent(projectId)}` : '/inbox'
+        navigate(`${base}?task=${encodeURIComponent(result.id)}`)
+        return
+      }
+      navigate(result.path ? noteHref(result.path) : '/knowledge')
+    },
+    [location.pathname, location.search, navigate],
+  )
+
+  const searchState = useMemo<PaletteSearchState | undefined>(() => {
+    if (trimmedQuery.length === 0) return undefined
+    const data = searchRead.data
+    const debounceSettled = debouncedQuery === trimmedQuery
+    const settledData = data && debounceSettled && data.query === trimmedQuery ? data : null
+    const groups: PaletteSearchGroup[] = settledData
+      ? settledData.groups.map((group) => ({
+          kind: group.kind,
+          label: searchGroupLabel(group.kind),
+          truncated: group.truncated,
+          results: group.results.map((result) => ({
+            id: result.id,
+            kind: result.kind,
+            title: result.title,
+            subtitle: result.subtitle,
+            projectId: result.projectId,
+            path: result.path,
+          })),
+        }))
+      : []
+    const pending = !settledData && (searchRead.isFetching || !debounceSettled)
+    const error = debounceSettled && searchRead.error
+      ? classifyError(searchRead.error) === 'notFound'
+        ? 'Search is not available on this server build yet.'
+        : userMessage(searchRead.error)
+      : null
+    return {
+      groups,
+      total: settledData?.total ?? 0,
+      pending,
+      error,
+      onRetry: () => void searchRead.refetch(),
+      onSelect: (result) => openSearchResult(result),
+    }
+  }, [
+    trimmedQuery,
+    debouncedQuery,
+    searchRead.data,
+    searchRead.isFetching,
+    searchRead.error,
+    searchRead.refetch,
+    openSearchResult,
+  ])
 
   useEffect(() => {
     const isEditable = (target: EventTarget | null) =>
@@ -117,7 +210,7 @@ export function AppShell({
           return
         }
         event.preventDefault()
-        setCommandOpen(true)
+        openPalette()
       }
     }
 
@@ -211,6 +304,10 @@ export function AppShell({
           else closePalette()
         }}
         commands={commands}
+        query={paletteQuery}
+        onQueryChange={setPaletteQuery}
+        search={searchState}
+        placeholder="Search projects, tasks and knowledge…"
       />
     </div>
   )

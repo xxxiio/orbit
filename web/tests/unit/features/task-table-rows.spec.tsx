@@ -20,6 +20,8 @@ const tasks: Task[] = ['Alpha task', 'Beta task', 'Gamma task'].map((title, inde
   description: '',
   priority: null,
   labels: [],
+  createdAtMs: null,
+  updatedAtMs: null,
 }))
 
 function InboxLike({ onOpen }: { onOpen: (task: Task) => void }) {

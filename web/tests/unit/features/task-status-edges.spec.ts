@@ -24,6 +24,8 @@ const rowTask: Task = {
   description: '',
   priority: null,
   labels: [],
+  createdAtMs: null,
+  updatedAtMs: null,
 }
 
 describe('statusOptionsFor', () => {
