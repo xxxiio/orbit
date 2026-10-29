@@ -99,8 +99,8 @@ export function MilestoneCreateDialog({
           </Field>
 
           <p className="text-2xs leading-4 text-ink-muted">
-            Milestones have a lifecycle and attached tasks, but no dates in this API yet. Progress is
-            counted from the tasks you assign.
+            A milestone is a checkpoint: set its target date from the milestone list or the roadmap.
+            Progress is counted from the tasks you assign.
           </p>
 
           {command.disposition === 'uncertain' && command.error ? (

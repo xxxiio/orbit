@@ -11,6 +11,7 @@ import {
   type BulkAction,
   type SelectOption,
 } from './task-list-model'
+import { TASK_GROUP_OPTIONS, type TaskGroupKey } from './task-list-state'
 
 export interface TaskFilterBarProps {
   search: string
@@ -22,6 +23,8 @@ export interface TaskFilterBarProps {
   sortValue: string
   onSortValueChange: (value: string) => void
   sortOptions: SelectOption[]
+  groupValue?: TaskGroupKey
+  onGroupValueChange?: (value: TaskGroupKey) => void
   searchPlaceholder: string
   searchLabel: string
   sortLabel: string
@@ -42,6 +45,8 @@ export function TaskFilterBar({
   sortValue,
   onSortValueChange,
   sortOptions,
+  groupValue,
+  onGroupValueChange,
   searchPlaceholder,
   searchLabel,
   sortLabel,
@@ -100,6 +105,24 @@ export function TaskFilterBar({
             ))}
           </SelectContent>
         </Select>
+
+        {groupValue !== undefined && onGroupValueChange ? (
+          <Select
+            value={groupValue}
+            onValueChange={(value) => onGroupValueChange(value as TaskGroupKey)}
+          >
+            <SelectTrigger className="h-9 w-[11rem] text-sm" aria-label="Group tasks">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TASK_GROUP_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  Group: {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
       </div>
     </div>
   )

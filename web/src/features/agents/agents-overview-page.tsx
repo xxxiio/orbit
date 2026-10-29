@@ -247,28 +247,28 @@ export function AgentsOverviewPage() {
         <>
           <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-4">
             <div className="bg-surface px-4 py-3">
-              <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">Visible jobs</dt>
-              <dd className="mt-1 font-display text-2xl tabular-nums leading-none text-ink">
+              <dt className="text-2xs font-semibold tracking-label text-ink-muted">Visible jobs</dt>
+              <dd className="mt-1 font-sans text-xl tabular-nums leading-none text-ink">
                 {overview.data?.length ?? 0}
               </dd>
             </div>
             <div className="bg-surface px-4 py-3">
-              <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">Need attention</dt>
-              <dd className="mt-1 font-display text-2xl tabular-nums leading-none text-warning-ink">
+              <dt className="text-2xs font-semibold tracking-label text-ink-muted">Need attention</dt>
+              <dd className="mt-1 font-sans text-xl tabular-nums leading-none text-warning-ink">
                 {attention.length}
               </dd>
             </div>
             <div className="bg-surface px-4 py-3">
-              <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">
+              <dt className="text-2xs font-semibold tracking-label text-ink-muted">
                 Awaiting executor
               </dt>
-              <dd className="mt-1 font-display text-2xl tabular-nums leading-none text-info-ink">
+              <dd className="mt-1 font-sans text-xl tabular-nums leading-none text-info-ink">
                 {awaiting.length}
               </dd>
             </div>
             <div className="bg-surface px-4 py-3">
-              <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">Running</dt>
-              <dd className="mt-1 font-display text-2xl tabular-nums leading-none text-ink">{running}</dd>
+              <dt className="text-2xs font-semibold tracking-label text-ink-muted">Running</dt>
+              <dd className="mt-1 font-sans text-xl tabular-nums leading-none text-ink">{running}</dd>
             </div>
           </dl>
 

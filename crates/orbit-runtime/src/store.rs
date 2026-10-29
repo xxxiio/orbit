@@ -206,6 +206,22 @@ impl AuthorityStore {
         // every existing database gains them on open, but they stay outside the
         // semantic ledger: saving a view is not an authority change.
         crate::saved_views::schema(&conn)?;
+        // Epics are an additive authority family: older databases gain the
+        // tables on open and keep every existing task untouched.
+        crate::authority_epics::ensure_epic_schema(&conn)?;
+        // A milestone may carry a target checkpoint date. Existing rows stay
+        // dateless (NULL), which the roadmap renders as "unscheduled".
+        let milestone_columns = {
+            let mut stmt = conn.prepare("PRAGMA table_info(milestones)")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+        if !milestone_columns
+            .iter()
+            .any(|column| column == "target_at_ms")
+        {
+            conn.execute("ALTER TABLE milestones ADD COLUMN target_at_ms INTEGER", [])?;
+        }
         // A single projects/tasks record is authoritative for both local and
         // HTTP transports. Revision metadata is attached to the same tasks row.
         let task_columns = {

@@ -111,13 +111,14 @@ test.describe('project settings', () => {
     await dialog.getByRole('button', { name: 'Change workflow', exact: true }).click()
     await expect(dialog).toBeHidden()
 
-    // The project now follows Basic: Tasks appears, Milestones and Agent jobs go.
-    await expect(page.getByRole('link', { name: /^Tasks/ })).toBeVisible()
-    await expect(page.getByRole('link', { name: /^Milestones/ })).toHaveCount(0)
+    // The project now follows Basic: its extra Agent jobs view goes, while the
+    // canonical List/Board/Backlog/Roadmap/Milestones remain available.
+    await expect(page.getByRole('link', { name: /^List/ })).toBeVisible()
+    await expect(page.getByRole('link', { name: /^Agent jobs/ })).toHaveCount(0)
     await expect(page.getByText('Basic v1', { exact: true }).first()).toBeVisible()
 
     await page.reload()
-    await expect(page.getByRole('link', { name: /^Tasks/ })).toBeVisible()
-    await expect(page.getByRole('link', { name: /^Milestones/ })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: /^List/ })).toBeVisible()
+    await expect(page.getByRole('link', { name: /^Agent jobs/ })).toHaveCount(0)
   })
 })

@@ -295,7 +295,7 @@ function TaskDrawerPanel({ taskId, onClose }: { taskId: string; onClose: () => v
             <>
               <header className="border-b border-line px-5 pb-4 pr-12 pt-5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-2xs uppercase tracking-[0.08em] text-ink-muted">
+                  <span className="font-mono text-2xs text-ink-muted">
                     {task.id.length > 18 ? `${task.id.slice(0, 8)}…${task.id.slice(-4)}` : task.id}
                   </span>
                   <Badge tone={statusTones[task.status]} dot>

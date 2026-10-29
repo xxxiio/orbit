@@ -116,8 +116,8 @@ function HomeSkeleton() {
 function StatCell({ label, value, hint }: { label: string; value: number; hint?: string }) {
   return (
     <div className="bg-surface px-4 py-3" title={hint}>
-      <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">{label}</dt>
-      <dd className="mt-1 font-display text-2xl tabular-nums leading-none text-ink">{value}</dd>
+      <dt className="text-2xs font-semibold tracking-label text-ink-muted">{label}</dt>
+      <dd className="mt-1 font-sans text-xl tabular-nums leading-none text-ink">{value}</dd>
     </div>
   )
 }
@@ -546,7 +546,7 @@ export function HomePage() {
   if (snapshot.error && !snapshot.data) {
     return (
       <div className="flex flex-col gap-6">
-        <h1 className="font-display text-3xl font-medium tracking-tight text-ink">Today</h1>
+        <h1 className="font-sans text-2xl font-semibold tracking-tight text-ink">Today</h1>
         <Panel>
           <ErrorState
             title="Today could not be loaded"
@@ -570,7 +570,7 @@ export function HomePage() {
           <p className="section-label" title="Local time">
             {formatWeekday(now)}
           </p>
-          <h1 className="mt-1 font-display text-3xl font-medium tracking-tight text-ink md:text-4xl">
+          <h1 className="mt-1 font-sans text-2xl font-semibold tracking-tight text-ink">
             {formatLongDay(now)}
           </h1>
           <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-soft">

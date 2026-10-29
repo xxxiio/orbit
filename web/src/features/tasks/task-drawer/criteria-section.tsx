@@ -134,6 +134,10 @@ export function CriteriaSection({
         className="mt-2 flex items-center gap-1.5"
         onSubmit={(event) => {
           event.preventDefault()
+          // Keep the draft while a previous save is in flight. The old input
+          // was disabled, so a fast Enter was silently swallowed; now it is
+          // simply ignored and the text stays for the next attempt.
+          if (command.isPending) return
           void add()
         }}
       >
@@ -142,7 +146,6 @@ export function CriteriaSection({
           onChange={(event) => setNewText(event.target.value)}
           placeholder="Add a criterion"
           aria-label="New acceptance criterion"
-          disabled={command.isPending}
           className="h-8 min-w-0 flex-1 rounded-sm border border-line bg-surface px-2 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
         />
         <Button

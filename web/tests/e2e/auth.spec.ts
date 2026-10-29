@@ -17,6 +17,20 @@ import { enrollDeviceWithAdminKey, revokeDevice, startServer } from './harness/s
 const WRONG_TOKEN = 'not-the-token-issued-for-this-device-0001'
 
 test.describe('authentication', () => {
+  test('a first-time visitor gets a clean sign-in page, never an expiry warning', async ({
+    page,
+    server,
+  }) => {
+    // No cookie, no marker: 401 here means "sign in", not "your session died".
+    await page.goto(`${server.base}/`)
+    await expectSignedOut(page, server)
+    await expect(page.getByRole('heading', { name: 'Sign in to Orbit' })).toBeVisible()
+    await expect(
+      page.getByText(/session (has )?(expired|ended)|your session expired|signed out/i),
+      'a browser that never signed in must not be told its session expired',
+    ).toHaveCount(0)
+  })
+
   test('a wrong device token is rejected inline without creating a session', async ({
     page,
     server,
@@ -83,6 +97,10 @@ test.describe('authentication', () => {
 
     await expectSignedOut(page, server)
     await expect(page.getByRole('heading', { name: 'Sign in to Orbit' })).toBeVisible()
+    await expect(
+      page.getByText(/session (has )?(expired|ended)|your session expired|signed out/i),
+      'an explicit sign-out must land on a quiet form',
+    ).toHaveCount(0)
   })
 
   test('an expired session bounces to /login and says why', async ({ page }) => {
@@ -92,6 +110,10 @@ test.describe('authentication', () => {
     const shortLived = await startServer({ env: { ORBIT_WEB_SESSION_TTL_SECONDS: '1' } })
     try {
       const session = await signInViaApi(page, shortLived)
+      // A real browser loads the app while the session is still valid; that
+      // successful read is what marks "previously authenticated".
+      await page.goto(`${shortLived.base}/`)
+      await expect(page).not.toHaveURL(/\/login/)
       await expect
         .poll(() => Date.now(), { timeout: 15_000, intervals: [200] })
         .toBeGreaterThan(session.expires_at_ms + 500)

@@ -143,7 +143,7 @@ export function CapabilityPanel({ item, kind }: CapabilityPanelProps) {
       ) : null}
 
       <div className="flex flex-col gap-2">
-        <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+        <p className="text-2xs font-semibold tracking-label text-ink-faint">
           Actions offered for {stateLabel(item.state)}
         </p>
 
@@ -246,7 +246,7 @@ export function CapabilityPanel({ item, kind }: CapabilityPanelProps) {
 
                   {parameterNames(action).length > 0 ? (
                     <div className="mt-2 border-t border-line pt-2">
-                      <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                      <p className="text-2xs font-semibold tracking-label text-ink-faint">
                         Declared parameters
                       </p>
                       <ul className="mt-1 flex flex-wrap gap-1.5">
@@ -331,7 +331,7 @@ export function CapabilityPanel({ item, kind }: CapabilityPanelProps) {
         aria-label="Capability request history"
         tabIndex={-1}
       >
-        <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+        <p className="text-2xs font-semibold tracking-label text-ink-faint">
           Requests for this item
         </p>
         <CapabilityRequestHistory
@@ -440,7 +440,7 @@ function CapabilityStatusList({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+      <p className="text-2xs font-semibold tracking-label text-ink-faint">
         Capability status
       </p>
 

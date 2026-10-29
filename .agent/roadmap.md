@@ -6,7 +6,7 @@ project_owned: true
 record_contract: roadmap
 record_schema_version: 1
 status: current
-current_milestone: null
+current_milestone: MILESTONE-0033
 ---
 
 # Project Roadmap
@@ -593,6 +593,57 @@ none
 - EC-010: I6 — lockfile-only install with the documented WSL workaround; dist byte-identical; full loop run.
 - EC-011: I6 — terminology 256 files clean; documentation suite 39 passed; docs updated through I4.
 - EC-012: I6 — TUI specification rewritten from proven M31/M32 usage (18 patterns); no TUI change.
+
+#### Next milestone
+
+none
+
+### MILESTONE-0033 — M33 Professional Web UX, Epic-Based Planning & Jira-Inspired Project Management
+
+- **Status:** active
+- **Outcome:** Orbit's browser client becomes a professional, issue-centric project workspace with one application typeface, a corrected first-visit sign-in state, canonical List/Board/Backlog/Roadmap/Milestones sections, authoritative Epics that group Tasks and Work Items, milestone target dates, and a dependency-aware roadmap. The TUI is not redesigned; it receives a specification derived from the browser model.
+- **Why now:** M31/M32 shipped operations without a coherent management surface. The TUI redesign depends on a validated issue-centric model, so building it in the terminal first would encode guesses.
+- **Depends on:** MILESTONE-0031, MILESTONE-0032
+
+#### Scope
+
+- Inter typography, neutral tokens, restrained scale and removal of decorative serif/display type.
+- First-visit vs expiry/revocation auth distinction without credential storage.
+- Canonical project sections and workflow-declared extras; List grouping and Epic column; Backlog; project Epic filter.
+- Authoritative Epic family with task and Work Item membership, progress, activity and safe delete.
+- Milestone target dates as checkpoint instants.
+- Routeable roadmap with week/month/quarter scales, epics, task windows, milestone markers, dependencies and unscheduled work.
+- Real-browser acceptance and light/dark desktop/laptop/phone captures; TUI specification addendum.
+
+#### Non-goals
+
+- TUI redesign; Jira branding; mandatory sprints; Story Points; public release.
+- A second frontend domain engine; renaming internal blueprint crates/routes.
+- Reopening M31/M32 or M27 release publication.
+
+#### Exit criteria
+
+- [x] EC-001: Inter application typography; no decorative serif headings.
+- [x] EC-002: First visit is quiet; expiry/revocation explained; sign-out quiet.
+- [x] EC-003: Canonical Overview/List/Board/Backlog/Roadmap/Milestones plus workflow extras, with `/tasks` and `/timeline` aliases.
+- [x] EC-004: Epics are authoritative, same-project, revision-fenced and group Tasks and Work Items with server progress.
+- [x] EC-005: Milestones stay checkpoints with one optional target date.
+- [x] EC-006: Roadmap renders epics, tasks, milestones, dependencies and unscheduled work at three scales.
+- [x] EC-007: Real-browser acceptance and captures at 1440×900, 1280×800, 390×844 in both themes.
+- [ ] EC-008: A human reviews the built UI for visual and usability quality.
+- [x] EC-009: Rust workspace, formatting and clippy gates pass after the Epic module.
+
+#### Evidence
+
+- EC-001: `web/src/main.tsx`, `web/src/styles/{tokens,globals}.css`, `web/tailwind.config.ts`; captures `web/evidence/m33/`.
+- EC-002: `web/src/api/session-history.ts`, `protected-route.tsx`, `session-history.spec.ts`, `auth.spec.ts` (chromium + mobile).
+- EC-003: `project-workspace-page.tsx`, `project-workspace-nav.spec.ts`, updated registry/saved-view suites.
+- EC-004: `crates/orbit-runtime/src/authority_epics.rs`, server routes, `epics.spec.ts`, Work Item case.
+- EC-005: `authority_milestones.rs` `set_target`, `roadmap.spec.ts`.
+- EC-006: `web/src/features/roadmap/**`, `roadmap-model.spec.ts`, `roadmap.spec.ts`.
+- EC-007: `web/evidence/m33/` 24 captures; README records the build and data.
+- EC-009: `cargo test --workspace --offline` 1,848 passed / 0 failed; fmt and clippy clean.
+- EC-008: open; `NEXT-0020` records the human review request.
 
 #### Next milestone
 

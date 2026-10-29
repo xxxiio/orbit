@@ -30,6 +30,11 @@ pub enum MilestoneAction {
         milestone_id: String,
         status: String,
     },
+    /// Set or clear the checkpoint date. It is a marker, not a duration.
+    SetTarget {
+        milestone_id: String,
+        target_at_ms: Option<i64>,
+    },
     MoveProject {
         milestone_id: String,
         project_id: String,
@@ -44,6 +49,7 @@ impl MilestoneAction {
             Self::Create { milestone_id, .. }
             | Self::Rename { milestone_id, .. }
             | Self::ChangeStatus { milestone_id, .. }
+            | Self::SetTarget { milestone_id, .. }
             | Self::MoveProject { milestone_id, .. }
             | Self::Delete { milestone_id } => milestone_id,
         }
@@ -56,6 +62,9 @@ pub struct MilestoneRecord {
     pub project_id: String,
     pub name: String,
     pub status: String,
+    /// Checkpoint date, when one was scheduled. Dateless milestones remain valid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_at_ms: Option<i64>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MilestoneResult {
@@ -101,7 +110,7 @@ fn ensure_project(conn: &Connection, id: &str) -> Result<(), AuthorityError> {
 fn record(conn: &Connection, id: &str) -> Result<Option<MilestoneRecord>, AuthorityError> {
     Ok(conn
         .query_row(
-            "SELECT id,project_id,name,status FROM milestones WHERE id=?1",
+            "SELECT id,project_id,name,status,target_at_ms FROM milestones WHERE id=?1",
             [id],
             |row| {
                 Ok(MilestoneRecord {
@@ -109,6 +118,7 @@ fn record(conn: &Connection, id: &str) -> Result<Option<MilestoneRecord>, Author
                     project_id: row.get(1)?,
                     name: row.get(2)?,
                     status: row.get(3)?,
+                    target_at_ms: row.get(4)?,
                 })
             },
         )
@@ -147,7 +157,11 @@ fn mutation(
         .map_err(|_| AuthorityError::Invalid("invalid milestone semantic mutation"))
 }
 fn validate_record(conn: &Connection, m: &MilestoneRecord) -> Result<(), AuthorityError> {
-    if !valid_id(&m.id) || !valid_name(&m.name) || !status_allowed(&m.status) {
+    if !valid_id(&m.id)
+        || !valid_name(&m.name)
+        || !status_allowed(&m.status)
+        || m.target_at_ms.is_some_and(|at| at < 0)
+    {
         return Err(AuthorityError::Invalid("invalid stored milestone"));
     }
     ensure_project(conn, &m.project_id)
@@ -162,7 +176,7 @@ impl AuthorityStore {
         )?;
         let milestones = {
             let mut stmt = tx.prepare(
-                "SELECT id,project_id,name,status FROM milestones ORDER BY project_id,id",
+                "SELECT id,project_id,name,status,target_at_ms FROM milestones ORDER BY project_id,id",
             )?;
             stmt.query_map([], |r| {
                 Ok(MilestoneRecord {
@@ -170,6 +184,7 @@ impl AuthorityStore {
                     project_id: r.get(1)?,
                     name: r.get(2)?,
                     status: r.get(3)?,
+                    target_at_ms: r.get(4)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?
@@ -268,6 +283,23 @@ impl AuthorityStore {
                 tx.execute(
                     "UPDATE milestones SET status=?1 WHERE id=?2",
                     params![status, id],
+                )?;
+                (Some(required(&tx, &id)?), vec![change])
+            }
+            MilestoneAction::SetTarget { target_at_ms, .. } => {
+                required(&tx, &id)?;
+                if target_at_ms.is_some_and(|at| at < 0) {
+                    return Err(AuthorityError::Invalid("invalid milestone target date"));
+                }
+                let change = mutation(
+                    &tx,
+                    &id,
+                    "target_at_ms",
+                    target_at_ms.map(|at| at.to_string()),
+                )?;
+                tx.execute(
+                    "UPDATE milestones SET target_at_ms=?1 WHERE id=?2",
+                    params![target_at_ms, id],
                 )?;
                 (Some(required(&tx, &id)?), vec![change])
             }
@@ -733,5 +765,51 @@ mod tests {
         );
         assert_eq!(db.authority_milestones().unwrap().revision, 2);
         assert_eq!(db.event_count().unwrap(), 2);
+    }
+    #[test]
+    fn target_date_is_a_clearable_checkpoint_marker() {
+        let mut db = store();
+        project(&mut db, "p", 0);
+        db.authority_milestone_command(
+            "user",
+            command(
+                "create",
+                1,
+                MilestoneAction::Create {
+                    milestone_id: "m".into(),
+                    project_id: "p".into(),
+                    name: "Ready".into(),
+                },
+            ),
+        )
+        .unwrap();
+        let set = db
+            .authority_milestone_command(
+                "user",
+                command(
+                    "set-target",
+                    2,
+                    MilestoneAction::SetTarget {
+                        milestone_id: "m".into(),
+                        target_at_ms: Some(1_790_000_000_000),
+                    },
+                ),
+            )
+            .unwrap();
+        assert_eq!(set.milestone.unwrap().target_at_ms, Some(1_790_000_000_000));
+        let cleared = db
+            .authority_milestone_command(
+                "user",
+                command(
+                    "clear-target",
+                    3,
+                    MilestoneAction::SetTarget {
+                        milestone_id: "m".into(),
+                        target_at_ms: None,
+                    },
+                ),
+            )
+            .unwrap();
+        assert_eq!(cleared.milestone.unwrap().target_at_ms, None);
     }
 }

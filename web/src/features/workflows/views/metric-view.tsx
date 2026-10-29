@@ -54,7 +54,7 @@ function MetricNumber({
   if (value === null) {
     return (
       <p className="flex items-baseline gap-2">
-        <span className="font-display text-4xl leading-none text-ink-faint">—</span>
+        <span className="font-sans text-2xl leading-none text-ink-faint">—</span>
         <span className="text-xs font-medium text-ink-muted">No numeric values to aggregate</span>
       </p>
     )
@@ -62,7 +62,7 @@ function MetricNumber({
   const label = nounFor(noun, value)
   return (
     <p className="flex items-baseline gap-2">
-      <span aria-hidden="true" className="font-display text-4xl tabular-nums leading-none text-ink">
+      <span aria-hidden="true" className="font-sans text-2xl tabular-nums leading-none text-ink">
         {displayValue(value)}
       </span>
       <span className="text-xs font-medium text-ink-muted">{label}</span>

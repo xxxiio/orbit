@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { Milestone, Project, Task } from '@/api/adapters'
+import type { Epic, Milestone, Project, Task } from '@/api/adapters'
 import {
   defaultNowMs,
   useProjects,
@@ -36,7 +36,7 @@ import {
   type TaskSort,
 } from './task-list-model'
 import { ClearFiltersButton, TaskBulkBar, TaskFilterBar } from './task-filter-bar'
-import { isTerminalStatus } from './task-meta'
+import { isTerminalStatus, statusLabel } from './task-meta'
 import { TaskTable } from './task-table'
 import { useTaskBulkCommand } from './use-task-bulk-command'
 import { useTaskCommandState } from './use-task-command-state'
@@ -50,7 +50,15 @@ import {
   windowTasks,
   writeTaskListUrl,
   type TaskColumnKey,
+  type TaskGroupKey,
 } from './task-list-state'
+
+interface TaskGroupRow {
+  key: string
+  label: string
+  rows: Task[]
+  epic?: Epic
+}
 
 /**
  * The project task list.
@@ -64,8 +72,11 @@ export function ProjectTaskList({
   project,
   tasks,
   milestones,
+  epics = [],
   defaultColumns = DEFAULT_PROJECT_COLUMNS,
   defaultSort = DEFAULT_TASK_SORT,
+  defaultGroup = 'none',
+  taskFilter,
   rowLimit,
   emptyText,
   showSavedViews = false,
@@ -73,10 +84,15 @@ export function ProjectTaskList({
   project: Project
   tasks: Task[]
   milestones: Milestone[]
+  epics?: Epic[]
   /** Columns declared by the workflow's table component, if it declared any. */
   defaultColumns?: readonly TaskColumnKey[]
   /** The workflow's declared sort, used until the URL chooses another one. */
   defaultSort?: TaskSort
+  /** Grouping used until the URL chooses another one (Backlog defaults to Epic). */
+  defaultGroup?: TaskGroupKey
+  /** A surface-level scope, applied after the URL filters. */
+  taskFilter?: (task: Task) => boolean
   /** The workflow's declared `limit`: the most rows this surface may show. */
   rowLimit?: number
   /** The workflow's declared empty copy, when it published any. */
@@ -85,7 +101,7 @@ export function ProjectTaskList({
   showSavedViews?: boolean
 }) {
   const [searchParams, setSearchParams] = useSearchParams()
-  const state = readTaskListUrl(searchParams, defaultColumns, defaultSort)
+  const state = readTaskListUrl(searchParams, defaultColumns, defaultSort, defaultGroup)
   const projects = useProjects()
   const { openNewTask } = useWorkspaceActions()
   const { openTask } = useTaskDrawer()
@@ -106,11 +122,15 @@ export function ProjectTaskList({
     [defaultSort, setSearchParams],
   )
 
+  const scoped = useMemo(
+    () => (taskFilter ? tasks.filter((task) => taskFilter(task)) : tasks),
+    [tasks, taskFilter],
+  )
   const filtered = useMemo(
-    () => filterAndSortTasks(tasks, state, state.sort),
+    () => filterAndSortTasks(scoped, state, state.sort),
     // `state` is re-created from the URL on every render; depend on its values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tasks, state.search, state.status, state.priority, state.sort.key, state.sort.direction],
+    [scoped, state.search, state.status, state.priority, state.sort.key, state.sort.direction],
   )
 
   // The workflow's declared `limit` caps the set after the person's own filters
@@ -121,6 +141,55 @@ export function ProjectTaskList({
   }, [filtered, rowLimit])
   const windowed = useMemo(() => windowTasks(capped, state.page), [capped, state.page])
   const visible = windowed.rows
+  const epicByTask = useMemo(() => {
+    const map = new Map<string, Epic>()
+    for (const epic of epics) for (const taskId of epic.taskIds) map.set(taskId, epic)
+    return map
+  }, [epics])
+  const groups = useMemo<TaskGroupRow[] | null>(() => {
+    if (state.group === 'none') return null
+    if (state.group === 'epic') {
+      const byEpic = new Map<string, Task[]>()
+      for (const task of visible) {
+        const epic = epicByTask.get(task.id)
+        const key = epic?.id ?? '__none__'
+        const rows = byEpic.get(key) ?? []
+        rows.push(task)
+        byEpic.set(key, rows)
+      }
+      const ordered: TaskGroupRow[] = epics
+        .filter((epic) => byEpic.has(epic.id))
+        .map((epic) => ({
+          key: epic.id,
+          label: epic.title,
+          rows: byEpic.get(epic.id) ?? [],
+          epic,
+        }))
+      const unassigned = byEpic.get('__none__')
+      if (unassigned?.length) {
+        ordered.push({ key: '__none__', label: 'No epic', rows: unassigned, epic: undefined })
+      }
+      return ordered
+    }
+    const byValue = new Map<string, Task[]>()
+    for (const task of visible) {
+      const value = state.group === 'status' ? task.status : (task.priority ?? 'none')
+      const rows = byValue.get(value) ?? []
+      rows.push(task)
+      byValue.set(value, rows)
+    }
+    return [...byValue.entries()].map<TaskGroupRow>(([value, rows]) => ({
+      key: value,
+      label:
+        state.group === 'status'
+          ? statusLabel(value as Task['status'])
+          : value === 'none'
+            ? 'No priority'
+            : value.charAt(0).toUpperCase() + value.slice(1),
+      rows,
+      epic: undefined,
+    }))
+  }, [visible, state.group, epics, epicByTask])
   const taskIds = useMemo(() => new Set(tasks.map((task) => task.id)), [tasks])
   const selected = useMemo(
     () => new Set(state.selected.filter((id) => taskIds.has(id))),
@@ -192,6 +261,80 @@ export function ProjectTaskList({
     commit({ columns: next })
   }
 
+  const renderTable = (rows: Task[], caption: string) => (
+    <TaskTable
+      tasks={rows}
+      projects={projects}
+      milestones={milestones}
+      epics={epics}
+      caption={caption}
+      selection={{
+        selected,
+        onToggle: (taskId) => {
+          const next = new Set(selected)
+          if (next.has(taskId)) next.delete(taskId)
+          else next.add(taskId)
+          commit({ selected: [...next] })
+        },
+        onToggleAll: () => {
+          const allSelected = rows.length > 0 && rows.every((task) => selected.has(task.id))
+          const next = new Set(selected)
+          if (allSelected) {
+            for (const task of rows) next.delete(task.id)
+          } else {
+            for (const task of rows) next.add(task.id)
+          }
+          commit({ selected: [...next] })
+        },
+      }}
+      onOpen={(task) => openTask(task.id)}
+      onStatusChange={changeStatus}
+      onProjectChange={changeProject}
+      onPriorityChange={changePriority}
+      pending={pending}
+      errorTaskId={errorTaskId}
+      error={error}
+      errorField={errorField}
+      sort={state.sort}
+      onSortChange={(sort: TaskSort) => commit({ sort, page: 1 })}
+      columns={state.columns}
+      readiness={needsReadiness ? readinessByTask : undefined}
+      dependencies={needsGraph ? graphByTask : undefined}
+      empty={
+        tasks.length === 0 ? (
+          <EmptyState
+            icon={<LayersIcon size={20} />}
+            title={emptyText ?? 'No tasks in this project yet'}
+            description="Add the first task here, or assign an Inbox task to this project. This view stays empty until the server has a task."
+            action={
+              <Button
+                variant="secondary"
+                size="sm"
+                leadingIcon={<PlusIcon size={14} />}
+                onClick={() => openNewTask(project.id)}
+              >
+                New task in {project.name}
+              </Button>
+            }
+            className="min-h-[16rem]"
+          />
+        ) : (
+          <EmptyState
+            compact
+            headingLevel="p"
+            title="No tasks match these filters"
+            description="Try a different word, status or priority — or clear the filters to see the whole project."
+            action={
+              <Button variant="secondary" size="sm" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            }
+          />
+        )
+      }
+    />
+  )
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -230,6 +373,8 @@ export function ProjectTaskList({
           commit({ sort: { key: projectSortKey(value), direction: 'asc' }, page: 1 })
         }
         sortOptions={projectSortOptions}
+        groupValue={state.group}
+        onGroupValueChange={(group) => commit({ group, page: 1 })}
         searchPlaceholder={`Search tasks in ${project.name}`}
         searchLabel="Search tasks in this project"
         sortLabel="Sort tasks"
@@ -278,76 +423,44 @@ export function ProjectTaskList({
         />
       ) : null}
 
-      <TaskTable
-        tasks={visible}
-        projects={projects}
-        milestones={milestones}
-        caption={`Tasks in ${project.name}`}
-        selection={{
-          selected,
-          onToggle: (taskId) => {
-            const next = new Set(selected)
-            if (next.has(taskId)) next.delete(taskId)
-            else next.add(taskId)
-            commit({ selected: [...next] })
-          },
-          onToggleAll: () => {
-            const allSelected = visible.length > 0 && visible.every((task) => selected.has(task.id))
-            const next = new Set(selected)
-            if (allSelected) {
-              for (const task of visible) next.delete(task.id)
-            } else {
-              for (const task of visible) next.add(task.id)
-            }
-            commit({ selected: [...next] })
-          },
-        }}
-        onOpen={(task) => openTask(task.id)}
-        onStatusChange={changeStatus}
-        onProjectChange={changeProject}
-        onPriorityChange={changePriority}
-        pending={pending}
-        errorTaskId={errorTaskId}
-        error={error}
-        errorField={errorField}
-        sort={state.sort}
-        onSortChange={(sort: TaskSort) => commit({ sort, page: 1 })}
-        columns={state.columns}
-        readiness={needsReadiness ? readinessByTask : undefined}
-        dependencies={needsGraph ? graphByTask : undefined}
-        empty={
-          tasks.length === 0 ? (
-            <EmptyState
-              icon={<LayersIcon size={20} />}
-              title={emptyText ?? 'No tasks in this project yet'}
-              description="Add the first task here, or assign an Inbox task to this project. This view stays empty until the server has a task."
-              action={
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  leadingIcon={<PlusIcon size={14} />}
-                  onClick={() => openNewTask(project.id)}
-                >
-                  New task in {project.name}
-                </Button>
-              }
-              className="min-h-[16rem]"
-            />
-          ) : (
-            <EmptyState
-              compact
-              headingLevel="p"
-              title="No tasks match these filters"
-              description="Try a different word, status or priority — or clear the filters to see the whole project."
-              action={
-                <Button variant="secondary" size="sm" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-              }
-            />
-          )
-        }
-      />
+      {groups ? (
+        <div className="flex flex-col gap-3">
+          {groups.map((group) => (
+            <details
+              key={group.key}
+              open
+              data-epic-group={group.epic?.id ?? undefined}
+              className="overflow-hidden rounded-lg border border-line bg-surface"
+            >
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-surface-sunken/60 px-3.5 py-2.5 text-sm font-medium text-ink marker:content-none hover:bg-surface-hover">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate">{group.label}</span>
+                  <span className="text-2xs font-normal tabular-nums text-ink-muted">
+                    {group.rows.length}
+                  </span>
+                </span>
+                {group.epic ? (
+                  <span className="hidden shrink-0 items-center gap-2 text-2xs font-normal text-ink-muted sm:flex">
+                    <span className="tabular-nums">
+                      {group.epic.progress.completed}/{group.epic.progress.total}
+                    </span>
+                    <span className="h-1.5 w-24 overflow-hidden rounded-full bg-line">
+                      <span
+                        className="block h-full rounded-full bg-accent"
+                        style={{ width: `${group.epic.progress.percent}%` }}
+                      />
+                    </span>
+                    <span className="tabular-nums">{group.epic.progress.percent}%</span>
+                  </span>
+                ) : null}
+              </summary>
+              {renderTable(group.rows, `${project.name} — ${group.label}`)}
+            </details>
+          ))}
+        </div>
+      ) : (
+        renderTable(visible, `Tasks in ${project.name}`)
+      )}
 
       {rowLimit && filtered.length > capped.length ? (
         <p className="text-2xs leading-4 text-ink-muted">

@@ -31,7 +31,7 @@ function ProjectGroup({
 
   return (
     <div className="pb-1.5">
-      <p className="px-2 pb-1 text-2xs font-semibold uppercase tracking-label text-ink-muted">{label}</p>
+      <p className="px-2 pb-1 text-2xs font-semibold tracking-label text-ink-muted">{label}</p>
       <ul aria-label={label} className="flex flex-col gap-0.5">
         {projects.map((project) => (
           <li key={project.id}>
@@ -106,7 +106,7 @@ export function Sidebar({
           <OrbitMark size={30} className="transition-transform duration-500 ease-out group-hover:rotate-12" />
           <span className="flex flex-col">
             <Wordmark />
-            <span className="mt-0.5 text-[0.625rem] font-medium uppercase tracking-[0.14em] text-ink-muted">
+            <span className="mt-0.5 text-[0.6875rem] font-medium text-ink-muted">
               Self-hosted
             </span>
           </span>
@@ -237,7 +237,7 @@ export function Sidebar({
         <div className="mt-1 flex items-center gap-2 rounded-md px-1.5 py-1.5">
           <div
             aria-hidden="true"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-line bg-surface-sunken text-[0.625rem] font-semibold uppercase text-ink-soft"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-line bg-surface-sunken text-[0.625rem] font-semibold text-ink-soft"
           >
             {session?.deviceId ? session.deviceId.slice(0, 2) : '··'}
           </div>

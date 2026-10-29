@@ -43,9 +43,11 @@ const RUN_ID =
 
 /**
  * One server per parallel test keeps isolation cheap enough at this suite size,
- * but the machine still has to breathe: leave headroom for the servers.
+ * but the machine still has to breathe: leave headroom for the servers. Two
+ * workers is the measured stable ceiling on this host; four produced keyboard
+ * focus flakes under load without finding a product defect.
  */
-const WORKERS = Math.max(1, Math.min(4, Math.floor(cpus().length / 2)))
+const WORKERS = Math.max(1, Math.min(2, Math.floor(cpus().length / 2)))
 
 const outputDir = EVIDENCE ? join('evidence', 'e2e', RUN_ID) : join('test-results')
 

@@ -204,7 +204,7 @@ function Receipt({ receipt, commandId }: { receipt: CapabilityReceipt; commandId
       data-capability-receipt={commandId}
       className="mt-2 rounded-sm border border-line bg-surface px-2.5 py-2"
     >
-      <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+      <p className="text-2xs font-semibold tracking-label text-ink-faint">
         Receipt, as reported
       </p>
       <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-2xs leading-4 text-ink-soft">

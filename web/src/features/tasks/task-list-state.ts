@@ -23,6 +23,7 @@ export type TaskColumnKey =
   | 'priority'
   | 'project'
   | 'milestone'
+  | 'epic'
   | 'due'
   | 'estimate'
   | 'labels'
@@ -35,6 +36,7 @@ export const TASK_COLUMN_LABELS: Record<TaskColumnKey, string> = {
   priority: 'Priority',
   project: 'Project',
   milestone: 'Milestone',
+  epic: 'Epic',
   due: 'Due',
   estimate: 'Estimate',
   labels: 'Labels',
@@ -61,6 +63,7 @@ const TASK_COLUMN_DESCRIPTORS: readonly ColumnDescriptor[] = (
     priority: [],
     project: ['project_id'],
     milestone: ['milestone_id'],
+    epic: ['epic_id', 'epic'],
     due: ['due_date', 'deadline'],
     estimate: ['estimated_minutes'],
     labels: [],
@@ -73,7 +76,7 @@ export const DEFAULT_PROJECT_COLUMNS: readonly TaskColumnKey[] = [
   'title',
   'status',
   'priority',
-  'project',
+  'epic',
   'milestone',
   'due',
   'estimate',
@@ -90,11 +93,25 @@ function isColumnKey(value: string): value is TaskColumnKey {
 const SORT_KEYS: readonly TaskSortKey[] = ['title', 'status', 'priority', 'due', 'project', 'milestone']
 export const DEFAULT_TASK_SORT: TaskSort = { key: 'due', direction: 'asc' }
 
+export type TaskGroupKey = 'none' | 'epic' | 'status' | 'priority'
+
+export const TASK_GROUP_OPTIONS: readonly { value: TaskGroupKey; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'epic', label: 'Epic' },
+  { value: 'status', label: 'Status' },
+  { value: 'priority', label: 'Priority' },
+]
+
+function isGroupKey(value: string): value is TaskGroupKey {
+  return TASK_GROUP_OPTIONS.some((option) => option.value === value)
+}
+
 export interface TaskListUrlState {
   search: string
   status: string
   priority: string
   sort: TaskSort
+  group: TaskGroupKey
   page: number
   columns: readonly TaskColumnKey[]
   selected: readonly string[]
@@ -137,6 +154,7 @@ export function readTaskListUrl(
   fallbackColumns: readonly TaskColumnKey[] = DEFAULT_PROJECT_COLUMNS,
   /** The workflow's declared sort, used when the URL does not name one. */
   fallbackSort: TaskSort = DEFAULT_TASK_SORT,
+  fallbackGroup: TaskGroupKey = 'none',
 ): TaskListUrlState {
   const columns = readColumns(params) ?? [...fallbackColumns]
   const selected = (params.get('sel') ?? '')
@@ -149,6 +167,7 @@ export function readTaskListUrl(
     status: params.get('status') ?? ALL,
     priority: params.get('priority') ?? ALL,
     sort: readSort(params, fallbackSort),
+    group: isGroupKey(params.get('group') ?? '') ? (params.get('group') as TaskGroupKey) : fallbackGroup,
     page: readPositiveInteger(params.get('page'), 1),
     columns: [...new Set<TaskColumnKey>(['title', ...columns])],
     selected: [...new Set(selected)],
@@ -160,6 +179,7 @@ export interface TaskListUrlPatch {
   status?: string
   priority?: string
   sort?: TaskSort
+  group?: TaskGroupKey
   page?: number
   columns?: readonly TaskColumnKey[]
   selected?: readonly string[]
@@ -189,6 +209,7 @@ export function writeTaskListUrl(
   if (patch.search !== undefined) setOrDelete('q', patch.search.trim())
   if (patch.status !== undefined) setOrDelete('status', patch.status === ALL ? '' : patch.status)
   if (patch.priority !== undefined) setOrDelete('priority', patch.priority === ALL ? '' : patch.priority)
+  if (patch.group !== undefined) setOrDelete('group', patch.group)
   if (patch.page !== undefined) {
     setOrDelete('page', patch.page <= 1 ? '' : String(patch.page))
   }

@@ -55,6 +55,7 @@ import {
   searchMarkdown,
 } from './endpoints/knowledge'
 import { fetchMilestones } from './endpoints/milestones'
+import { fetchEpics } from './endpoints/epics'
 import { fetchProjectStatuses } from './endpoints/projects'
 import { fetchSavedViews } from './endpoints/saved-views'
 import { searchOrbit } from './endpoints/search'
@@ -85,6 +86,7 @@ import {
   toAgentReview,
   toDayPlan,
   toDependency,
+  toEpic,
   toMilestone,
   toNextActions,
   toPortfolioCapacity,
@@ -142,9 +144,11 @@ import {
 } from './adapters'
 import type { Attachment } from './adapters'
 import { toAttachment } from './adapters'
+import type { Epic } from './adapters'
 import type {
   AttachmentOwnerKind,
   BundledWorkflowDescriptor,
+  EpicSnapshot,
   KnowledgeDocumentInfo,
   KnowledgeNode,
   MarkdownReferencesResponse,
@@ -172,6 +176,7 @@ export const queryKeys = {
   taskTransitions: (status: TaskStatus) => ['task-transitions', status] as const,
   taskDependencies: () => ['task-dependencies'] as const,
   milestones: () => ['milestones'] as const,
+  epics: () => ['epics'] as const,
   taskReadiness: (nowMs: number) => ['task-readiness', nowMs] as const,
   taskReadinessAll: () => ['task-readiness'] as const,
   nextActions: (nowMs: number, limit: number) => ['next-actions', nowMs, limit] as const,
@@ -476,6 +481,23 @@ export function useTaskActivity(id: string | undefined): UseQueryResult<Activity
 /* ------------------------------------------------------------------ */
 /* Milestones + dependencies                                           */
 /* ------------------------------------------------------------------ */
+
+export function useEpics(projectId?: string): UseQueryResult<Epic[], ApiError> {
+  const select = useCallback(
+    (snapshot: EpicSnapshot) =>
+      snapshot.epics
+        .map(toEpic)
+        .filter((epic) => (projectId ? epic.projectId === projectId : true)),
+    [projectId],
+  )
+
+  return useApiQuery({
+    queryKey: queryKeys.epics(),
+    queryFn: ({ signal }) => fetchEpics(signal),
+    staleTime: 30_000,
+    select,
+  })
+}
 
 export function useMilestones(projectId?: string): UseQueryResult<Milestone[], ApiError> {
   const select = useCallback(

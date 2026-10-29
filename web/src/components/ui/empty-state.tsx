@@ -51,7 +51,7 @@ export function EmptyState({
       {eyebrow ? <p className="section-label mb-2">{eyebrow}</p> : null}
       <Heading
         className={cn(
-          'font-display font-medium tracking-tight text-ink',
+          'font-sans font-medium tracking-tight text-ink',
           compact ? 'text-lg' : 'text-xl',
         )}
       >

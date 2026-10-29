@@ -76,6 +76,7 @@ impl ChangeId {
 pub enum EntityKind {
     Project,
     Milestone,
+    Epic,
     Task,
     Habit,
     HabitOccurrence,

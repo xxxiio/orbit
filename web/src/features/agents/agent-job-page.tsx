@@ -221,7 +221,7 @@ export function AgentJobPage() {
 
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-4">
         <div className="bg-surface px-4 py-3">
-          <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">State</dt>
+          <dt className="text-2xs font-semibold tracking-label text-ink-muted">State</dt>
           <dd className="mt-1.5">
             <Badge tone={agentStateTone(current.state)} dot>
               {agentStateLabel(current.state)}
@@ -229,19 +229,19 @@ export function AgentJobPage() {
           </dd>
         </div>
         <div className="bg-surface px-4 py-3">
-          <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">Revision</dt>
-          <dd className="mt-1 font-display text-2xl tabular-nums leading-none text-ink">
+          <dt className="text-2xs font-semibold tracking-label text-ink-muted">Revision</dt>
+          <dd className="mt-1 font-sans text-xl tabular-nums leading-none text-ink">
             {current.revision}
           </dd>
         </div>
         <div className="bg-surface px-4 py-3">
-          <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">Handoffs</dt>
-          <dd className="mt-1 font-display text-2xl tabular-nums leading-none text-ink">
+          <dt className="text-2xs font-semibold tracking-label text-ink-muted">Handoffs</dt>
+          <dd className="mt-1 font-sans text-xl tabular-nums leading-none text-ink">
             {handoffs.data?.length ?? '—'}
           </dd>
         </div>
         <div className="bg-surface px-4 py-3">
-          <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">Review</dt>
+          <dt className="text-2xs font-semibold tracking-label text-ink-muted">Review</dt>
           <dd className="mt-1.5">
             <Badge tone={review.data?.decision === 'approved' ? 'success' : review.data ? 'warning' : 'neutral'}>
               {reviewDecisionLabel(review.data?.decision)}

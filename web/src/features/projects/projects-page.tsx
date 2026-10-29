@@ -332,22 +332,22 @@ export function ProjectsPage() {
             <caption className="sr-only">Projects with workflow, task counts and status</caption>
             <thead>
               <tr className="bg-surface-sunken/95">
-                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold tracking-label text-ink-faint">
                   Project
                 </th>
-                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold tracking-label text-ink-faint">
                   Workflow
                 </th>
-                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold tracking-label text-ink-faint">
                   Open
                 </th>
-                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold tracking-label text-ink-faint">
                   Done
                 </th>
-                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold tracking-label text-ink-faint">
                   Total
                 </th>
-                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                <th scope="col" className="border-b border-line px-4 py-2 text-2xs font-semibold tracking-label text-ink-faint">
                   Status
                 </th>
               </tr>

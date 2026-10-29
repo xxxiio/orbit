@@ -107,7 +107,7 @@ export function ClaimStateNote({ copy }: { copy: ClaimStateCopy }) {
         <Badge tone={copy.tone} dot>
           {copy.label}
         </Badge>
-        <span className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+        <span className="text-2xs font-semibold tracking-label text-ink-faint">
           Machine claim
         </span>
       </div>
@@ -132,7 +132,7 @@ export function JsonBlock({ label, value }: { label: string; value: unknown }) {
   }
   return (
     <div className="min-w-0">
-      <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">{label}</p>
+      <p className="text-2xs font-semibold tracking-label text-ink-faint">{label}</p>
       <pre className="scrollbar-slim mt-1 max-h-72 overflow-auto rounded-md border border-line bg-surface-sunken p-3 font-mono text-2xs leading-5 text-ink-soft">
         {text}
       </pre>
@@ -172,7 +172,7 @@ export function HandoffList({ handoffs }: { handoffs: AgentHandoff[] }) {
 export function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="min-w-0">
-      <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">{label}</dt>
+      <dt className="text-2xs font-semibold tracking-label text-ink-faint">{label}</dt>
       <dd className={cn('break-words text-sm text-ink-soft', mono && 'font-mono text-xs')}>{value}</dd>
     </div>
   )

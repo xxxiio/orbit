@@ -195,7 +195,7 @@ export function Markdown({ source, className }: { source: string; className?: st
                 key={index}
                 className={
                   block.level === 1
-                    ? 'mt-4 font-display text-lg font-medium text-ink first:mt-0'
+                    ? 'mt-4 font-sans text-lg font-medium text-ink first:mt-0'
                     : 'mt-4 text-sm font-semibold text-ink first:mt-0'
                 }
               >

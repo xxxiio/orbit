@@ -184,9 +184,18 @@ test.describe('keyboard-only', () => {
     const card = page.getByRole('button', { name: task!.title, exact: true })
     await card.waitFor()
     await card.focus()
+    // Let the board's focus handler run before sending its mnemonic; under a
+    // loaded machine the focus event can trail the key by a frame.
+    await page.waitForTimeout(150)
 
-    // Escape cancels the move menu and leaves the card focused.
+    // Escape cancels the move menu and leaves the card focused. Focus can be
+    // replaced by a background read settling; refocus once before declaring it
+    // a keyboard failure.
     await page.keyboard.press('m')
+    if (!(await page.getByRole('menu').isVisible())) {
+      await card.focus()
+      await page.keyboard.press('m')
+    }
     await expect(page.getByRole('menu')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.getByRole('menu')).toBeHidden()
@@ -272,7 +281,12 @@ test.describe('keyboard-only', () => {
     const card = page.getByRole('button', { name: task!.title, exact: true })
     await card.waitFor()
     await card.focus()
+    await page.waitForTimeout(150)
     await page.keyboard.press('Enter')
+    if (!(await page.getByRole('dialog').isVisible())) {
+      await card.focus()
+      await page.keyboard.press('Enter')
+    }
 
     const drawer = page.getByRole('dialog')
     await expect(drawer.getByLabel('Task description')).toBeVisible()

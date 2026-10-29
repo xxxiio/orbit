@@ -1,10 +1,11 @@
 import type { Task } from '@/api/adapters'
 import type { TaskPriority, TaskStatus } from '@/api/contracts'
 import { PropertySelect } from '@/components/forms'
-import { useTaskTransitions, userMessage } from '@/hooks'
+import { useEpics, useTaskTransitions, userMessage } from '@/hooks'
 import type { ApiError } from '@/api/errors'
 import { NO_PRIORITY, prioritySelectOptions, statusOptionsFor } from '../task-controls'
 import { LabelsEditor } from './labels-editor'
+import { EpicAssignmentField, epicIdForTask } from '@/features/epics'
 import { FieldError, SavingNote, Section } from './section'
 import type { TaskCommand } from './task-command'
 
@@ -60,6 +61,8 @@ export function PropertiesSection({
       ? error
       : null
 
+  const epics = useEpics(task.projectId ?? undefined)
+  const epicId = epicIdForTask(epics.data ?? [], task.id)
   const transitions = useTaskTransitions(task.status)
   const allowedNext = transitions.edges.get(task.status) ?? null
   const options = statusOptionsFor(task.status, allowedNext)
@@ -112,6 +115,13 @@ export function PropertiesSection({
           options={prioritySelectOptions}
           pending={pendingDetail('priority')}
           disabled={command.isPending}
+        />
+
+        <EpicAssignmentField
+          epics={epics.data ?? []}
+          selectedEpicId={epicId}
+          taskId={task.id}
+          disabled={!task.projectId || epics.isPending}
         />
 
         <PropertySelect

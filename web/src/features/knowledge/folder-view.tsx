@@ -162,7 +162,7 @@ export function FolderView({
           <div className="flex flex-col gap-5">
             {folders.length > 0 ? (
               <div>
-                <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                <p className="text-2xs font-semibold tracking-label text-ink-faint">
                   Folders
                 </p>
                 <ul className="mt-1.5 flex flex-col gap-1" aria-label="Folders">
@@ -186,7 +186,7 @@ export function FolderView({
             ) : null}
 
             <div>
-              <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">Notes</p>
+              <p className="text-2xs font-semibold tracking-label text-ink-faint">Notes</p>
               {notes.length === 0 ? (
                 <p className="mt-1.5 text-xs leading-5 text-ink-muted">
                   No note sits directly in this folder.

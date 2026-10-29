@@ -115,7 +115,7 @@ test.describe('projects', () => {
     await expect(page.getByRole('heading', { name: projectName, level: 1 })).toBeVisible()
 
     // Create the task from *this* project's workspace, not from the Inbox.
-    await page.getByRole('main').getByRole('button', { name: 'New task', exact: true }).click()
+    await page.getByRole('main').getByRole('button', { name: 'New task', exact: true }).first().click()
     const taskDialog = page.getByRole('dialog')
     await expect(taskDialog).toBeVisible()
     await expect(taskDialog.getByLabel('Title')).toBeVisible()
@@ -126,8 +126,8 @@ test.describe('projects', () => {
     await taskDialog.getByRole('button', { name: 'Create task' }).click()
     await expect(taskDialog).toBeHidden()
 
-    // Open the project's Tasks view and the new task's drawer.
-    await page.getByRole('link', { name: /^Tasks/ }).click()
+    // Open the project's List view and the new task's drawer.
+    await page.getByRole('link', { name: /^List/ }).click()
     await expect(page.getByRole('heading', { name: projectName, level: 1 })).toBeVisible()
     await page.getByRole('button', { name: taskTitle, exact: true }).first().click()
     const drawer = page.getByRole('dialog')

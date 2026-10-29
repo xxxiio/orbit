@@ -4,8 +4,9 @@
 
 @layer base {
   :root {
-    --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
-    --font-display: 'Fraunces Variable', ui-serif, Georgia, serif;
+    --font-sans: 'Inter Variable', Inter, Arial, Helvetica, sans-serif;
+    /* Legacy alias: display type is the same application face, not a serif. */
+    --font-sans: 'Inter Variable', Inter, Arial, Helvetica, sans-serif;
     --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
     --focus-ring: 0 0 0 2px hsl(var(--canvas)), 0 0 0 4px hsl(var(--accent) / 0.75);
   }
@@ -31,9 +32,9 @@
     background-color: hsl(var(--canvas));
     color: hsl(var(--ink));
     font-family: var(--font-sans);
-    font-size: 0.9375rem;
-    line-height: 1.5rem;
-    font-feature-settings: 'ss01' 1, 'cv01' 1;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    font-feature-settings: 'cv02' 1, 'cv03' 1, 'cv04' 1, 'cv11' 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -49,7 +50,8 @@
   h3,
   h4 {
     text-wrap: balance;
-    font-weight: 500;
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
 
   p {
@@ -108,27 +110,10 @@
 
   .app-grid {
     background-color: hsl(var(--canvas));
-    background-image: radial-gradient(hsl(var(--ink) / 0.055) 0.5px, transparent 0.5px);
-    background-size: 18px 18px;
-    background-position: -1px -1px;
   }
 
   .auth-grid {
     background-color: hsl(var(--surface-sunken));
-    background-image:
-      linear-gradient(to right, hsl(var(--ink) / 0.045) 1px, transparent 1px),
-      linear-gradient(to bottom, hsl(var(--ink) / 0.045) 1px, transparent 1px);
-    background-size: 44px 44px;
-    background-position: -1px -1px;
-  }
-
-  .grain::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0.5;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
   }
 
   .command-key {
@@ -176,10 +161,10 @@
 
   .section-label {
     font-family: var(--font-sans);
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    text-transform: none;
     color: hsl(var(--ink-muted));
   }
 }

@@ -78,8 +78,8 @@ function MilestoneTimeline({ component, tasks, milestones }: ViewRendererProps) 
       }
       footer={
         <ProvenanceNote>
-          Milestone records carry no dates in this API yet. This is the server&apos;s order and status,
-          not a time axis.
+          This declared view lists the server&apos;s order and status. Target dates are shown, and
+          edited, on the Roadmap and in the milestone list; a milestone without one is unscheduled.
           {matching.length > list.length
             ? ` Showing the first ${list.length} of ${matching.length} milestones; the workflow sets this limit.`
             : ''}
@@ -238,7 +238,7 @@ function ScheduleTimeline({ component }: ViewRendererProps) {
         <div className="flex flex-col gap-4">
           {groups.map((group) => (
             <section key={group.day} aria-label={formatDate(group.day)}>
-              <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+              <p className="text-2xs font-semibold tracking-label text-ink-faint">
                 {formatDate(group.day)}
               </p>
               <ul className="mt-1.5 flex flex-col gap-1">

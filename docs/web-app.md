@@ -128,9 +128,13 @@ successful sign-in resets the counter; restarting the server clears it, because 
 is in memory. The session travels only in the `orbit_session` cookie: `HttpOnly`,
 `SameSite=Strict`, `Path=/`, and `Secure` when `ORBIT_WEB_COOKIE_SECURE=1`. The token is never
 written to `localStorage`, `sessionStorage`, the URL or application state. The only durable
-browser preferences are the theme (`orbit.theme`) and the recently opened projects
-(`orbit.recent-projects`); neither is authority state. Closing a tab does not sign you out,
-while signing out from the sidebar clears the cookie and the server-side session row.
+browser facts are the theme (`orbit.theme`), recently opened projects
+(`orbit.recent-projects`) and a boolean `orbit.auth.seen` marker meaning "this browser signed
+in before"; none of them is a credential or authority state. That marker is why a first-time
+visitor sees a clean form while a genuine expiry or revocation is explained: the server returns
+the same `401` in both cases. An explicit sign-out clears the marker, so it never produces an
+expiry warning. Closing a tab does not sign you out, while signing out from the sidebar clears
+the cookie and the server-side session row.
 
 ### Session lifetime and revocation
 
@@ -255,17 +259,24 @@ navigates to it.
 
 ### A project's views
 
-A project page shows its name, status, pinned workflow, task and milestone counts and the
-project ID, then the views its workflow declares and two project tools: **Planning** and
-**Settings**. Basic declares Overview, Tasks, Board and Timeline; Development declares Overview,
-Board, Milestones and Agent jobs; Research, Learning and Habits declare their own mixes.
+A project page shows its name, status, pinned workflow, task, epic and milestone counts and a
+short display key, then a compact set of canonical sections: **Overview**, **List**, **Board**,
+**Backlog**, **Roadmap** and **Milestones**. A workflow keeps its own extra views after those:
+Development keeps Agent jobs, Research keeps Evidence, Workflow and References, Learning keeps
+Lessons and Progress. **Planning** and **Settings** are project tools, not workflow views.
 
-The renderer is chosen from the *component types a view declares*, not from the workflow id, so
-Basic, Development, Research, Learning and Habits share one code path. A declared panel this
-build does not render keeps its tab and shows a named panel that says what is missing and why;
-it is never a blank surface. Tabs that stand for a list carry its count badge. The header's
-primary action comes from the view too: **New task** on task surfaces, **New milestone** on
-milestone surfaces, **New work item** on Work Item surfaces, and nothing on a read-only panel.
+Canonical sections always have a stable route (`/list`, `/board`, `/backlog`, `/roadmap`,
+`/milestones`). Older deep links that used a declared view id (`/tasks`, `/timeline`) still
+resolve to the section that now owns them. A declared view is promoted only when it uses the
+conventional id (`overview`, `tasks`, `board`, `milestones` or `timeline`); a workflow's own
+kanban such as Research **Workflow** or Learning **Lessons** is never silently renamed Board.
+
+The renderer for a declared panel is chosen from the *component types a view declares*, not from
+the workflow id, so bundled workflows share one code path. A declared panel this build does not
+render keeps its tab and shows a named panel that says what is missing and why; it is never a
+blank surface. Tabs that stand for a list carry a count. The header always offers **New epic**
+and a create action for the current surface (**New task**, **New milestone** or **New work
+item**).
 
 Implemented component types: **text**, **list**, **table**, **metric**, **detail**, **kanban**
 (task or Work Item board), **task_list**, **timeline**, **milestone_progress**,
@@ -274,13 +285,18 @@ Implemented component types: **text**, **list**, **table**, **metric**, **detail
 - **Overview** — the workflow's own mix of metric tiles, project detail and a task or milestone
   summary. Metric counts are counts of rows the server returned; a metric filtered by readiness
   reads the server's readiness report instead of guessing.
-- **Tasks** — the full project task list (see below).
+- **List** — the full project task list with grouping, sorting, filters, columns and saved views
+  (see below).
 - **Board** — task columns in canonical status order, or Work Item columns by declared state
-  (see [Work Items](#work-items)).
-- **Timeline** — milestone status and task counts, plus saved calendar blocks. Milestone records
-  carry no dates in this API yet, so the milestone panel says that instead of drawing a fake
-  axis; schedule blocks do have real start and end times and are listed chronologically.
-- **Milestones** — create, rename and change the lifecycle of milestones (see below).
+  (see [Work Items](#work-items)). The project-level Epic filter narrows it.
+- **Backlog** — upcoming work in `inbox`, `planned` or `deferred`, grouped by epic by default,
+  with priority, estimate, dependencies and milestone assignment visible. Moving a task to
+  **Ready** from its status control starts delivery. There are no mandatory sprints.
+- **Roadmap** — a split timeline of epics, tasks and milestones with dependencies and
+  unscheduled work (see below).
+- **Milestones** — create, rename, target-date and lifecycle editing (see below). A declared
+  `timeline` keeps its own route but is presented as **Milestones**.
+- A workflow that declares no views still says so; it is not given a fabricated tab set.
 - **Knowledge references** — the declared `knowledge_refs` panel reads the server's note
   inventory, links each row to the note, and refuses a filter or sort it cannot evaluate.
 - **Agent jobs** — the declared `agent_jobs` panel reads the same device-scoped overview as the
@@ -299,11 +315,17 @@ The Tasks view is the shared task table with project-level state:
 - **URL-backed view state.** Search (`q`), status, priority, sort (`sort`/`dir`), page (`page`),
   visible columns (`cols`) and the selection (`sel`) are in the URL, so the view can be linked,
   shared and reloaded. The open task's `?task=` stays in the same URL.
-- **Column picker.** Title, status, priority, project, milestone, due, estimate, labels,
+- **Column picker.** Title, status, priority, project, epic, milestone, due, estimate, labels,
   readiness and dependencies. Title cannot be hidden; the workflow's declared table columns seed
   the initial set, and read-only **Readiness** and **Dependencies** columns are added from
   `/task-readiness` and `/task-graph`. They show the server's reason and counts; the title cell
   does not turn them into new rules.
+- **Grouping.** The toolbar groups by **Epic**, **Status** or **Priority**. Grouping is URL state
+  (`group=`), and each Epic group is an expandable section with its title, child count and the
+  server's progress bar. A task with no epic is grouped under **No epic**, never hidden.
+- **Human-readable rows.** The task title is the primary target; the raw UUID is shown only in
+  the drawer header as a short, stable reference. A project's display key is shortened the same
+  way. Immutable ids stay the authority identity.
 - **Bulk commands and selection.** Select rows with the checkbox, `x`, or select-all for the
   current page. Bulk status, project and priority send one command per task with the revision
   fence and idempotency key the rest of the app uses; a partial failure names the tasks and the
@@ -330,6 +352,8 @@ The Board is a task Kanban for the project.
 - Cards show the title, project, priority, labels and due date (or **No due date**).
 - `h`/`j`/`k`/`l` move focus between cards and columns, `Enter` opens the drawer, and `m` opens
   **Move to…** for the focused card.
+- The project-level **Epic** filter narrows the board without changing its columns or status
+  semantics. Filtering is presentation; the server still owns the card's state.
 - **Move to…** lists only the statuses the server reports as legal from the card's current
   status. If the edge read fails, every status except the current one is offered and the menu
   says so. The server decides whether the move is legal; a rejected move shows the server's
@@ -345,6 +369,53 @@ The Board is a task Kanban for the project.
   offering a pointer gesture, and a drag across ten horizontally scrolling columns could not be
   made reliable; the keyboard and the move menu are the complete interaction.
 
+### Epics
+
+An **Epic** is a substantial body of related work inside one project. It is not a milestone: a
+milestone is a checkpoint, an epic groups tasks and supported Work Items. An epic may span
+several milestones, a milestone may collect work from several epics, and a task can contribute
+to a milestone independently of its epic.
+
+- **Create and edit** from **New epic** in the project header. Title is required; description,
+  priority, owner, start date and target date are optional. Both ids are minted for the attempt,
+  so an unconfirmed retry cannot create a second epic.
+- **Assign work** from the task drawer's **Epic** field or by moving tasks between epics through
+  the same field. Membership is revision-fenced and server-validated: both sides must be in the
+  same project, and an epic can own at most one copy of a task. A Work Item can be associated
+  through the epic API and is listed in the epic's details.
+- **Progress** is computed by the server from non-cancelled child tasks (and completed workflow
+  items): total, completed, blocked and a percentage. An empty epic is 0% unless it was marked
+  completed. The list group header, epic details and roadmap bar all read that one number.
+- **Lifecycle** uses the checkpoint lifecycle (`planned`, `in_progress`, `blocked`, `completed`,
+  `cancelled`) with server-enforced edges. An epic with work cannot be deleted; complete or
+  cancel it, or move the work out first.
+- **Activity** records create, update, status and assignment events with the acting device.
+- Projects without epics are unchanged: no task is assigned automatically and milestones are
+  never converted into epics.
+
+### Roadmap
+
+The Roadmap is a planning and navigation surface, not a decorative Gantt chart.
+
+- **Split layout.** The left hierarchy lists epics and their child tasks (collapsible), plus
+  milestones and an **Unscheduled** section. Titles stay visible while the time axis scrolls
+  horizontally.
+- **Scales.** Week, month and quarter buttons change the axis; there is no zoom gesture. A red
+  line marks today.
+- **Bars.** An epic bar uses its own start/target dates; when those are absent, a dashed bar
+  derives the envelope from its scheduled children and says so. A task bar uses its planned
+  window (earliest start and deadline). A milestone is a single diamond marker, never a duration.
+- **No invented dates.** A task or milestone without dates is listed under **Unscheduled**.
+  Opening it leads to the drawer (task planning) or the target-date dialog (milestone). The
+  roadmap never paints a fake bar.
+- **Dependencies.** A task with prerequisites carries a link indicator; hovering or focusing it
+  highlights the prerequisite bars on the timeline. Blocked tasks use the warning tone. The
+  server's task graph is the source, not a client-side edge list.
+- **Filters and editing.** Status and milestone filters, plus the project-level Epic filter,
+  narrow the timeline. Clicking a task opens the shared drawer, clicking an epic opens epic
+  details, and clicking a milestone edits its target date. Drag-to-reschedule is not implemented;
+  dates change through the authoritative drawer/dialog so validation and conflicts stay correct.
+
 ### Milestones
 
 The Milestones view lists the project's milestones with their status, the tasks assigned to
@@ -352,9 +423,10 @@ each and a done percentage. **New milestone** appears in the page header when th
 surface is milestones, and in the panel on overviews that embed milestone progress.
 Rename edits in place; the status selector offers every lifecycle status and the server accepts
 or refuses each edge. A refusal is shown against the milestone and the stored status stays.
-**Delete** asks once and explains that the server refuses while tasks are attached. Milestone
-records have no start or end date in this API, so the view shows status and task progress and
-never invents dates.
+**Delete** asks once and explains that the server refuses while tasks are attached. **Set target
+date** stores one checkpoint instant (not a start/end period); clearing it returns the milestone
+to the roadmap's **Unscheduled** list. Milestone progress is counted from the tasks assigned to
+it, not from the target date.
 
 ### The task drawer
 
@@ -809,7 +881,7 @@ supports much of it:
 - **Installing or granting a capability from the product UI.** `capabilities/install`,
   `authorize` and `revoke` are operator routes (bearer credential); the browser can request and
   reconcile, not administer. Provider code runs only in an executor process.
-- Drag-and-drop on the board. Moving a task is the keyboard/`m` menu or the status control.
+- Drag-and-drop on the board or roadmap. Moving a task/card uses the keyboard/`m` menu or the status control; dates change in the drawer.
 - Workload, portfolio-capacity and scenario screens; planning focus, action menus and handoff
   previews. Their API reads exist but have no screen here.
 - Habit tracking and metric-history charts.

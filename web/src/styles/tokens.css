@@ -2,122 +2,126 @@
  * Orbit design tokens
  * Every colour is stored as raw HSL channels so Tailwind can compose alpha.
  * Light is the default; `[data-theme="dark"]` on <html> switches the palette.
+ *
+ * The palette is deliberately neutral and application-first: cool greys,
+ * white working surfaces, one primary blue, and semantic colours reserved for
+ * state. No warm paper tint, no decorative texture.
  * ------------------------------------------------------------------------- */
 
 :root {
   color-scheme: light;
 
-  /* Surfaces — warm paper neutrals, never pure grey */
-  --canvas: 42 26% 97%;
+  /* Surfaces */
+  --canvas: 220 15% 96.5%;
   --surface: 0 0% 100%;
-  --surface-sunken: 42 22% 94.5%;
+  --surface-sunken: 220 14% 94%;
   --surface-raised: 0 0% 100%;
-  --surface-hover: 42 18% 91.5%;
+  --surface-hover: 220 14% 92%;
 
   /* Text */
-  --ink: 225 14% 10%;
-  --ink-soft: 222 7% 31%;
-  --ink-muted: 220 5% 40%;
-  --ink-faint: 220 5% 44%;
+  --ink: 222 24% 12%;
+  --ink-soft: 220 12% 28%;
+  --ink-muted: 220 9% 40%;
+  --ink-faint: 220 9% 43%;
 
   /* Lines */
-  --line: 42 13% 87%;
-  --line-strong: 40 9% 76%;
+  --line: 220 14% 88%;
+  --line-strong: 220 11% 76%;
 
-  /* One accent: ultramarine */
-  --accent: 236 66% 52%;
-  --accent-hover: 236 68% 44%;
+  /* One accent: primary blue */
+  --accent: 221 83% 49%;
+  --accent-hover: 221 84% 42%;
   --accent-ink: 0 0% 100%;
-  --accent-soft: 236 100% 96%;
-  --accent-soft-ink: 236 52% 38%;
+  --accent-soft: 221 90% 96%;
+  --accent-soft-ink: 221 70% 38%;
 
   /* Semantic roles */
-  --success: 156 55% 30%;
-  --success-soft: 156 46% 94%;
-  --success-ink: 156 60% 22%;
+  --success: 152 60% 32%;
+  --success-soft: 152 55% 94%;
+  --success-ink: 152 65% 23%;
 
-  --warning: 32 84% 34%;
-  --warning-soft: 40 90% 93%;
-  --warning-ink: 30 80% 26%;
+  --warning: 32 88% 36%;
+  --warning-soft: 38 92% 94%;
+  --warning-ink: 30 85% 27%;
 
-  --danger: 356 65% 44%;
-  --danger-soft: 356 80% 96%;
-  --danger-ink: 356 70% 35%;
+  --danger: 356 68% 46%;
+  --danger-soft: 356 86% 96%;
+  --danger-ink: 356 72% 37%;
 
-  --info: 205 75% 38%;
-  --info-soft: 205 80% 95%;
-  --info-ink: 205 80% 28%;
+  --info: 205 78% 40%;
+  --info-soft: 205 84% 95%;
+  --info-ink: 205 82% 30%;
 
-  /* Elevation */
-  --shadow-soft: 0 1px 2px hsl(225 25% 12% / 0.05), 0 8px 24px -16px hsl(225 25% 12% / 0.22);
-  --shadow-lift: 0 2px 6px hsl(225 25% 12% / 0.06), 0 28px 64px -28px hsl(225 30% 12% / 0.35);
+  /* Elevation — flat by default, one step for overlays */
+  --shadow-soft: 0 1px 2px hsl(222 25% 12% / 0.06);
+  --shadow-lift: 0 8px 24px -12px hsl(222 25% 12% / 0.24);
 
   /* Layout */
-  --sidebar-width: 16.5rem;
-  --topbar-height: 3.5rem;
-  --page-pad-x: 1.25rem;
-  --page-pad-y: 1.75rem;
+  --sidebar-width: 15.5rem;
+  --topbar-height: 3rem;
+  --page-pad-x: 1rem;
+  --page-pad-y: 1.25rem;
 
   /* Motion */
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --duration-fast: 120ms;
-  --duration-base: 200ms;
-  --duration-slow: 420ms;
+  --duration-fast: 100ms;
+  --duration-base: 160ms;
+  --duration-slow: 320ms;
 }
 
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --canvas: 228 11% 7.5%;
-  --surface: 228 9% 10%;
-  --surface-sunken: 228 12% 6.5%;
-  --surface-raised: 228 8% 13%;
-  --surface-hover: 228 7% 16%;
+  --canvas: 222 22% 9%;
+  --surface: 222 20% 12%;
+  --surface-sunken: 222 24% 7%;
+  --surface-raised: 222 18% 15%;
+  --surface-hover: 222 16% 18%;
 
-  --ink: 40 18% 94%;
-  --ink-soft: 220 8% 76%;
-  --ink-muted: 220 7% 61%;
-  --ink-faint: 220 6% 56%;
+  --ink: 220 16% 94%;
+  --ink-soft: 220 10% 78%;
+  --ink-muted: 220 8% 64%;
+  --ink-faint: 220 7% 55%;
 
-  --line: 228 8% 18%;
-  --line-strong: 228 7% 29%;
+  --line: 222 14% 21%;
+  --line-strong: 222 12% 32%;
 
-  --accent: 233 100% 76%;
-  --accent-hover: 233 100% 83%;
-  --accent-ink: 235 52% 12%;
-  --accent-soft: 235 34% 19%;
-  --accent-soft-ink: 233 100% 86%;
+  --accent: 217 91% 66%;
+  --accent-hover: 217 94% 74%;
+  --accent-ink: 222 40% 10%;
+  --accent-soft: 221 40% 20%;
+  --accent-soft-ink: 217 95% 84%;
 
-  --success: 154 58% 54%;
-  --success-soft: 154 30% 16%;
-  --success-ink: 154 65% 74%;
+  --success: 152 55% 56%;
+  --success-soft: 152 34% 16%;
+  --success-ink: 152 62% 76%;
 
-  --warning: 38 90% 62%;
+  --warning: 38 92% 62%;
   --warning-soft: 38 42% 16%;
-  --warning-ink: 40 92% 76%;
+  --warning-ink: 40 94% 78%;
 
-  --danger: 356 78% 67%;
-  --danger-soft: 356 36% 18%;
-  --danger-ink: 356 92% 80%;
+  --danger: 356 82% 68%;
+  --danger-soft: 356 38% 18%;
+  --danger-ink: 356 94% 82%;
 
-  --info: 203 82% 66%;
-  --info-soft: 203 38% 17%;
-  --info-ink: 203 88% 80%;
+  --info: 203 84% 66%;
+  --info-soft: 203 40% 17%;
+  --info-ink: 203 90% 82%;
 
-  --shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.35), 0 10px 28px -18px hsl(0 0% 0% / 0.7);
-  --shadow-lift: 0 3px 8px hsl(0 0% 0% / 0.4), 0 32px 72px -30px hsl(0 0% 0% / 0.85);
+  --shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.4);
+  --shadow-lift: 0 12px 32px -16px hsl(0 0% 0% / 0.8);
 }
 
 @media (width >= 900px) {
   :root {
-    --page-pad-x: 2.5rem;
-    --page-pad-y: 2.25rem;
+    --page-pad-x: 1.5rem;
+    --page-pad-y: 1.5rem;
   }
 }
 
 @media (width >= 1200px) {
   :root {
-    --page-pad-x: 3.25rem;
+    --page-pad-x: 2rem;
   }
 }

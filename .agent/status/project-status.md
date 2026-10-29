@@ -33,22 +33,25 @@ replaced fail-closed, and the connected console covers the record grammar plus
 accepted routine/strategy/milestone/schedule/planning reads. Capability execution
 is local-authority only; connected mode refuses it explicitly (M25 EC-004).
 
-The web client is the reference product experience. Since M32 I1 it can rename a
-project and move it through the domain's legal status transitions, search
-projects, tasks and knowledge in one server query, save and restore personal
-task/board views, and show authoritative task Created/Updated times with an
-explicit unknown state. Since I2 it manages knowledge as a working surface:
-folders, note locations, links, project/task references and project-context
-knowledge, and since I3 it can launch an authorized agent job against a real
-executor and review the result without the job ever completing the task. M32 is
-complete (I1–I6); the next milestone is the TUI redesign from
-`docs/guides/tui-redesign-spec.md`, which is not yet defined in the roadmap. Per-device project ACLs, server attachment GC and live Herdr
-acceptance remain documented follow-ups.
+The web client is the reference product experience. M33 replaced the decorative
+serif system with Inter and a neutral application palette, fixed the false
+first-visit expiry warning, and gave projects canonical Overview, List, Board,
+Backlog, Roadmap and Milestones sections while preserving workflow extras. Epics
+are now an authoritative project-scoped family that groups Tasks and Workflow
+Work Items with server-computed progress, and milestones carry one optional target
+date. The roadmap plots authored epic/task windows, milestone diamonds,
+dependencies and unscheduled work at week/month/quarter scales. Real-browser
+acceptance is green; a human visual review (EC-008) is the remaining M33 gate.
+M32 remains complete, and the TUI redesign specification now includes the M33
+patterns. Per-device project ACLs, server attachment GC and live Herdr acceptance
+remain documented follow-ups.
 
 ## Current milestone
 
-MILESTONE-0032 — M32 Web Product Completeness, Agent Workflows & Extended
-Dogfooding, complete (I1–I6). MILESTONE-0031 is complete (I1–I6). M31
+MILESTONE-0033 — M33 Professional Web UX, Epic-Based Planning & Jira-Inspired
+Project Management, active. I1–I4 are implemented and the Rust/browser gates pass;
+EC-008 awaits a human visual/usability review. MILESTONE-0032 is complete (I1–I6).
+MILESTONE-0031 is complete (I1–I6). M31
 shipped the React client served by `orbit-server` with session authentication,
 Home, Inbox, project management, workflow-driven workspaces and a task inspector
 against the authoritative domain. MILESTONE-0030 is complete (I1–I4), and
@@ -56,6 +59,11 @@ MILESTONE-0025 EC-001..EC-007 remain satisfied. M27 remains blocked externally.
 
 ## Recently completed
 
+- M33 I1–I4: Inter/neutral design system; first-visit auth distinction; canonical
+  project sections; List epic grouping and column; Backlog; authoritative Epics
+  with Task and Work Item membership; milestone target dates; split roadmap with
+  dependencies and unscheduled work; 140 chromium + 6 mobile E2E and 410 unit
+  tests; captures under `web/evidence/m33/`.
 - M32 I5–I6 dogfooding and acceptance: nine automated interactive dogfooding
   sessions ran on one persistent workspace, appending work each time instead of
   resetting, and produced 23 captures plus a defects table. The blocker they found —

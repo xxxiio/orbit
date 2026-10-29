@@ -175,7 +175,7 @@ export function WorkItemBoardView(props: ViewRendererProps) {
     >
       {resolution.needsChoice && kinds.length > 1 ? (
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+          <span className="text-2xs font-semibold tracking-label text-ink-faint">
             Showing
           </span>
           <div className="flex flex-wrap gap-1">

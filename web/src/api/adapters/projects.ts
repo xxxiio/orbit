@@ -52,6 +52,8 @@ export interface Milestone {
   projectId: string
   name: string
   status: string
+  /** Checkpoint date, when scheduled. */
+  targetAtMs?: number | null
 }
 
 export function toMilestone(record: MilestoneRecord): Milestone {
@@ -60,6 +62,7 @@ export function toMilestone(record: MilestoneRecord): Milestone {
     projectId: record.project_id,
     name: record.name,
     status: record.status,
+    targetAtMs: record.target_at_ms ?? null,
   }
 }
 

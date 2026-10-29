@@ -21,11 +21,16 @@ import {
 import type { WorkItem, WorkItemField, WorkItemKind, Workflow } from '@/api/adapters'
 import {
   uncertainMessage,
+  useEpics,
   useUpdateWorkItemProperties,
   useWorkItemTransition,
   userMessage,
   type ApiError,
 } from '@/hooks'
+import {
+  EpicAssignmentField,
+  epicIdForWorkItem,
+} from '@/features/epics'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Drawer } from '@/components/ui/drawer'
@@ -371,6 +376,8 @@ export function WorkItemSheet({ item, workflow, onClose, onRefresh }: WorkItemSh
 function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemSheetProps & { item: WorkItem }) {
   const transition = useWorkItemTransition()
   const properties = useUpdateWorkItemProperties()
+  const epics = useEpics(item.projectId)
+  const epicId = epicIdForWorkItem(epics.data ?? [], item.id)
 
   const kind = workflow?.kinds.find((candidate) => candidate.id === item.kind)
   const kindName = kindLabel(kind, item.kind)
@@ -490,7 +497,7 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
                 {shortWorkItemId(item.id)}
               </span>
             </div>
-            <h2 className="mt-2 font-display text-xl font-medium leading-7 tracking-tight text-ink">
+            <h2 className="mt-2 font-sans text-xl font-medium leading-7 tracking-tight text-ink">
               {title}
             </h2>
             {!kind ? (
@@ -587,6 +594,19 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
               </Section>
 
               <Section
+                title="Epic"
+                description="Group this Work Item with related tasks and Work Items. Epic membership is separate from its workflow state and milestones."
+              >
+                <EpicAssignmentField
+                  epics={epics.data ?? []}
+                  selectedEpicId={epicId}
+                  taskId={item.id}
+                  kind="work_item"
+                  disabled={epics.isPending}
+                />
+              </Section>
+
+              <Section
                 title="Attachments"
                 description="Files stored by the server beside this work item. Uploads and removals are confirmed before they are shown."
               >
@@ -663,7 +683,7 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
                   <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
                     {kind.fields.map((field) => (
                       <div key={field.id} className="min-w-0">
-                        <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                        <dt className="text-2xs font-semibold tracking-label text-ink-faint">
                           {fieldLabel(field, field.id)}
                         </dt>
                         <dd className="break-words text-sm text-ink-soft">
@@ -672,13 +692,13 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
                       </div>
                     ))}
                     <div>
-                      <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                      <dt className="text-2xs font-semibold tracking-label text-ink-faint">
                         State
                       </dt>
                       <dd className="text-sm text-ink-soft">{stateLabel(item.state)}</dd>
                     </div>
                     <div>
-                      <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                      <dt className="text-2xs font-semibold tracking-label text-ink-faint">
                         Revision
                       </dt>
                       <dd className="font-mono text-sm text-ink-soft">{item.revision}</dd>

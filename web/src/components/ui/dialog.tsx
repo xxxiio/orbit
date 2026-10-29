@@ -61,7 +61,7 @@ export const DialogContent = forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line bg-surface p-6 text-ink shadow-lift',
+          'fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-line bg-surface p-6 text-ink shadow-lift',
           'data-[state=open]:animate-dialog-in data-[state=closed]:animate-dialog-out',
           'focus:outline-none',
           sizeClasses[size],
@@ -69,7 +69,7 @@ export const DialogContent = forwardRef<
         )}
         {...props}
       >
-        <DialogPrimitive.Title className={hideHeader ? 'sr-only' : 'pr-8 font-display text-xl font-medium tracking-tight'}>
+        <DialogPrimitive.Title className={hideHeader ? 'sr-only' : 'pr-8 font-sans text-xl font-medium tracking-tight'}>
           {title}
         </DialogPrimitive.Title>
         {description ? (

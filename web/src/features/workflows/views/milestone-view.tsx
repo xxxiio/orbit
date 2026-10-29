@@ -7,11 +7,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { IconButton } from '@/components/ui/icon-button'
-import { CloseIcon, LayersIcon, PlusIcon } from '@/components/ui/icons'
+import { CalendarIcon, CloseIcon, LayersIcon, PlusIcon } from '@/components/ui/icons'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
 import { MilestoneCreateDialog } from '../milestone-create-dialog'
+import { MilestoneTargetDialog } from '@/features/roadmap'
+import { formatEpicDate } from '@/features/epics'
 import { InlineTitle } from '@/components/forms'
 import { isTaskCompleted, milestoneStatusLabel } from '@/domain'
 import type { MilestoneCommandInput } from '@/hooks'
@@ -55,6 +57,7 @@ function MilestoneRow({
   onDelete: () => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editingTarget, setEditingTarget] = useState(false)
 
   const assigned = tasks.filter((task) => task.milestoneId === milestone.id)
   const done = assigned.filter((task) => isTaskCompleted(task.status)).length
@@ -118,7 +121,20 @@ function MilestoneRow({
                 <span className="text-2xs tabular-nums text-ink-faint">{progress}%</span>
               </span>
             ) : null}
+            <button
+              type="button"
+              onClick={() => setEditingTarget(true)}
+              className="inline-flex items-center gap-1 rounded-sm text-2xs font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            >
+              <CalendarIcon size={12} />
+              {milestone.targetAtMs ? `Target ${formatEpicDate(milestone.targetAtMs)}` : 'Set target date'}
+            </button>
           </div>
+          <MilestoneTargetDialog
+            milestone={milestone}
+            open={editingTarget}
+            onOpenChange={setEditingTarget}
+          />
 
           {error ? (
             <div className="mt-2">
@@ -273,8 +289,8 @@ export function MilestoneProgressView({ component, view, project, tasks, milesto
       footer={
         <ProvenanceNote>
           The server owns the milestone lifecycle: every status is offered, and a refused transition
-          leaves the stored value untouched. Milestone records have no dates in this API yet, so
-          progress is counted from the tasks assigned to each milestone.
+          leaves the stored value untouched. A milestone has a target date (not a duration), and its
+          progress is counted from the tasks assigned to it.
           {all.length > list.length
             ? ` Showing the first ${list.length} of ${all.length} milestones; the workflow sets this limit.`
             : ''}

@@ -28,7 +28,7 @@ export function TableHeadCell({ children }: { children: ReactNode }) {
   return (
     <th
       scope="col"
-      className="whitespace-nowrap px-4 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint"
+      className="whitespace-nowrap px-4 py-2 text-2xs font-semibold tracking-label text-ink-faint"
     >
       {children}
     </th>

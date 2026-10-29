@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { Milestone, Project, Task } from '@/api/adapters'
+import type { Epic, Milestone, Project, Task } from '@/api/adapters'
 import type { TaskPriority, TaskStatus } from '@/api/contracts'
 import type { ApiError } from '@/api/errors'
 import type { ReadinessEntry, TaskGraphNodeView } from '@/api/adapters'
@@ -33,6 +33,7 @@ export interface TaskTableProps {
   tasks: Task[]
   projects: Project[]
   milestones?: Milestone[]
+  epics?: Epic[]
   caption: string
   empty: ReactNode
   onOpen: (task: Task) => void
@@ -166,6 +167,7 @@ export function TaskTable({
   tasks,
   projects,
   milestones = [],
+  epics = [],
   caption,
   empty,
   onOpen,
@@ -189,6 +191,9 @@ export function TaskTable({
   showStatus = true,
 }: TaskTableProps) {
   const milestoneNames = new Map(milestones.map((milestone) => [milestone.id, milestone.name]))
+  const epicNames = new Map(epics.map((epic) => [epic.id, epic.title]))
+  const epicByTask = new Map<string, string>()
+  for (const epic of epics) for (const taskId of epic.taskIds) epicByTask.set(taskId, epic.id)
   // One read per distinct status on this page, shared by every row's control.
   // No status column means no read. The server's edge set is authoritative; a
   // failed read leaves `null` so the row keeps offering every status and the
@@ -213,6 +218,7 @@ export function TaskTable({
     project: columnSet ? columnSet.has('project') : showProject,
     priority: columnSet ? columnSet.has('priority') : showPriority && wide,
     milestone: columnSet ? columnSet.has('milestone') : showMilestone && wide,
+    epic: columnSet ? columnSet.has('epic') : false,
     labels: columnSet ? columnSet.has('labels') : showLabels && labelsVisible,
     due: columnSet ? columnSet.has('due') : wide,
     estimate: columnSet ? columnSet.has('estimate') : false,
@@ -223,7 +229,7 @@ export function TaskTable({
   const columnCount =
     (selection ? 1 : 0) +
     1 +
-    [show.status, show.project, show.priority, show.milestone, show.labels, show.due, show.estimate, show.readiness, show.dependencies].filter(
+    [show.status, show.project, show.priority, show.epic, show.milestone, show.labels, show.due, show.estimate, show.readiness, show.dependencies].filter(
       Boolean,
     ).length
 
@@ -276,6 +282,18 @@ export function TaskTable({
               {task.priority ? priorityLabels[task.priority] : 'No priority'}
             </span>
           )}
+        </td>
+      ) : null}
+      {show.epic ? (
+        <td className="px-3.5 py-2.5 align-top text-xs text-ink-muted">
+          {(() => {
+            const epicId = epicByTask.get(task.id)
+            return epicId ? (
+              <span className="line-clamp-2">{epicNames.get(epicId) ?? 'Unknown epic'}</span>
+            ) : (
+              <span className="text-ink-faint">No epic</span>
+            )
+          })()}
         </td>
       ) : null}
       {show.milestone ? (
@@ -389,6 +407,7 @@ export function TaskTable({
                   <SortHeader label="Priority" sortKey="priority" sort={sort} onSortChange={onSortChange} />
                 </th>
               ) : null}
+              {show.epic ? <PlainHeader label="Epic" width="9rem" /> : null}
               {show.milestone ? (
                 <th scope="col" className="w-[7rem] border-b border-line bg-surface-sunken/95 px-3.5 py-2 backdrop-blur">
                   <SortHeader label="Milestone" sortKey="milestone" sort={sort} onSortChange={onSortChange} />
@@ -513,6 +532,11 @@ export function TaskTable({
                   <div className="min-w-0 flex-1">
                     <RowTitle task={task} onOpen={onOpen} truncate={false} />
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">{rowMeta(task)}</div>
+                    {epicByTask.get(task.id) ? (
+                      <p className="mt-1 text-2xs text-ink-muted">
+                        Epic: {epicNames.get(epicByTask.get(task.id)!) ?? 'Unknown epic'}
+                      </p>
+                    ) : null}
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       {show.status ? (
                         <TaskStatusControl

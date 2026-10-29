@@ -102,7 +102,7 @@ export function NoteRelations({
             />
             {relationRows.unresolved.length > 0 ? (
               <div>
-                <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                <p className="text-2xs font-semibold tracking-label text-ink-faint">
                   Unresolved references
                 </p>
                 <ul
@@ -151,7 +151,7 @@ function RelationGroup({
 }) {
   return (
     <div>
-      <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">{label}</p>
+      <p className="text-2xs font-semibold tracking-label text-ink-faint">{label}</p>
       {ids.length === 0 ? (
         <p className="mt-1 text-xs leading-5 text-ink-muted">{empty}</p>
       ) : (

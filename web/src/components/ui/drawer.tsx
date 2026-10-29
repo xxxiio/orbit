@@ -55,6 +55,27 @@ export function Drawer({
       <DialogPrimitive.Portal>
         <DialogOverlay />
         <DialogPrimitive.Content
+          onInteractOutside={(event) => {
+            // Radix Select/Popover content is portaled beside the dialog, not
+            // inside it. Treat an interaction with that layer as part of the
+            // sheet rather than an outside click that would close it mid-edit.
+            const target = event.target
+            if (
+              target instanceof HTMLElement &&
+              target.closest('[data-radix-popper-content-wrapper]')
+            ) {
+              event.preventDefault()
+            }
+          }}
+          onFocusOutside={(event) => {
+            const target = event.target
+            if (
+              target instanceof HTMLElement &&
+              target.closest('[data-radix-popper-content-wrapper]')
+            ) {
+              event.preventDefault()
+            }
+          }}
           onOpenAutoFocus={() => {
             if (returnFocusRef.current && returnFocusRef.current !== document.body) return
             const active = document.activeElement

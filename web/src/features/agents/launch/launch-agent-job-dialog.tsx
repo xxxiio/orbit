@@ -510,7 +510,7 @@ function TaskSummary({ task, projectName }: { task: Task | null; projectName: st
 function SummaryRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="min-w-0">
-      <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">{label}</dt>
+      <dt className="text-2xs font-semibold tracking-label text-ink-faint">{label}</dt>
       <dd className={cn('break-words text-sm leading-5 text-ink-soft', mono && 'font-mono text-xs')}>
         {value}
       </dd>

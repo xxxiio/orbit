@@ -32,7 +32,7 @@ export function SortHeader<K extends string>({
         })
       }}
       className={cn(
-        'group inline-flex items-center gap-1 rounded-sm text-2xs font-semibold uppercase tracking-label',
+        'group inline-flex items-center gap-1 rounded-sm text-2xs font-semibold tracking-label',
         active ? 'text-ink' : 'text-ink-faint hover:text-ink-soft',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
       )}
@@ -58,7 +58,7 @@ export function PlainHeader({ label, width }: { label: string; width?: string })
     <th
       scope="col"
       style={width ? { width } : undefined}
-      className="border-b border-line bg-surface-sunken/95 px-3.5 py-2 text-2xs font-semibold uppercase tracking-label text-ink-faint backdrop-blur"
+      className="border-b border-line bg-surface-sunken/95 px-3.5 py-2 text-2xs font-semibold tracking-label text-ink-faint backdrop-blur"
     >
       {label}
     </th>

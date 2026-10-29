@@ -51,8 +51,8 @@ import {
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="bg-surface px-3 py-2.5" title={hint}>
-      <dt className="text-2xs font-semibold uppercase tracking-label text-ink-muted">{label}</dt>
-      <dd className="mt-1 whitespace-nowrap font-display text-lg tabular-nums leading-none text-ink">
+      <dt className="text-2xs font-semibold tracking-label text-ink-muted">{label}</dt>
+      <dd className="mt-1 whitespace-nowrap font-sans text-lg tabular-nums leading-none text-ink">
         {value}
       </dd>
     </div>
@@ -572,7 +572,7 @@ function SchedulePanel({
             </dl>
 
             <div className="flex flex-col gap-1.5">
-              <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">Free windows</p>
+              <p className="text-2xs font-semibold tracking-label text-ink-faint">Free windows</p>
               <FreeWindows plan={data} />
             </div>
 
@@ -588,7 +588,7 @@ function SchedulePanel({
               />
             ) : (
               <div className="flex flex-col gap-1.5">
-                <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                <p className="text-2xs font-semibold tracking-label text-ink-faint">
                   Proposed blocks
                 </p>
                 <ul className="divide-y divide-line rounded-lg border border-line">
@@ -618,7 +618,7 @@ function SchedulePanel({
 
             {data.unplaced.length > 0 ? (
               <div className="flex flex-col gap-1.5">
-                <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                <p className="text-2xs font-semibold tracking-label text-ink-faint">
                   Not placed
                 </p>
                 <ul className="flex flex-col gap-1">
@@ -721,13 +721,13 @@ function SchedulePanel({
 
             <dl className="grid gap-2 text-2xs sm:grid-cols-2">
               <div className="min-w-0 rounded-md border border-line bg-surface px-2.5 py-2">
-                <dt className="font-semibold uppercase tracking-label text-ink-faint">Fingerprint</dt>
+                <dt className="font-semibold tracking-label text-ink-faint">Fingerprint</dt>
                 <dd data-review-fingerprint="" className="mt-0.5 break-all font-mono text-ink-soft">
                   {reviewData.fingerprint}
                 </dd>
               </div>
               <div className="min-w-0 rounded-md border border-line bg-surface px-2.5 py-2">
-                <dt className="font-semibold uppercase tracking-label text-ink-faint">Command</dt>
+                <dt className="font-semibold tracking-label text-ink-faint">Command</dt>
                 <dd data-review-command="" className="mt-0.5 break-all font-mono text-ink-soft">
                   {reviewData.command_id}
                 </dd>
@@ -735,7 +735,7 @@ function SchedulePanel({
             </dl>
 
             <div className="flex flex-col gap-1.5" data-reviewed-items="">
-              <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+              <p className="text-2xs font-semibold tracking-label text-ink-faint">
                 Reviewed items
               </p>
               <ul className="divide-y divide-line rounded-md border border-line bg-surface">
@@ -837,13 +837,13 @@ function SchedulePanel({
             </div>
             <dl className="grid gap-2 text-2xs sm:grid-cols-2">
               <div className="min-w-0 rounded-md border border-line bg-surface px-2.5 py-2">
-                <dt className="font-semibold uppercase tracking-label text-ink-faint">Receipt fingerprint</dt>
+                <dt className="font-semibold tracking-label text-ink-faint">Receipt fingerprint</dt>
                 <dd data-receipt-fingerprint="" className="mt-0.5 break-all font-mono text-ink-soft">
                   {receipt.fingerprint}
                 </dd>
               </div>
               <div className="min-w-0 rounded-md border border-line bg-surface px-2.5 py-2">
-                <dt className="font-semibold uppercase tracking-label text-ink-faint">Command id</dt>
+                <dt className="font-semibold tracking-label text-ink-faint">Command id</dt>
                 <dd data-receipt-command="" className="mt-0.5 break-all font-mono text-ink-soft">
                   {receipt.commandId}
                 </dd>
@@ -986,7 +986,7 @@ export function ProjectPlanning({
   const header = (
     <div className="flex flex-col gap-1">
       <p className="section-label">Planning</p>
-      <h2 className="font-display text-2xl font-medium tracking-tight text-ink">
+      <h2 className="font-sans text-xl font-semibold tracking-tight text-ink">
         Plan {project.name}
       </h2>
       <p className="max-w-2xl text-pretty text-sm leading-6 text-ink-soft">

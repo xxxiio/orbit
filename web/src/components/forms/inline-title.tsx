@@ -87,7 +87,7 @@ export function InlineTitle({
       <button
         type="button"
         onClick={beginEdit}
-        className={className ?? 'mt-2 block w-full rounded-sm text-left font-display text-xl font-medium leading-7 tracking-tight text-ink transition-colors hover:text-accent-soft-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60'}
+        className={className ?? 'mt-2 block w-full rounded-sm text-left font-sans text-xl font-medium leading-7 tracking-tight text-ink transition-colors hover:text-accent-soft-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60'}
         aria-label={`Edit ${label}: ${value}`}
         disabled={disabled}
       >
@@ -145,7 +145,7 @@ export function InlineTitle({
         }
       }}
       aria-label={label.charAt(0).toUpperCase() + label.slice(1)}
-      className="mt-2 w-full rounded-sm border border-accent/50 bg-surface px-1 py-0.5 font-display text-xl font-medium leading-7 tracking-tight text-ink focus:outline-none focus:ring-2 focus:ring-accent/25"
+      className="mt-2 w-full rounded-sm border border-accent/50 bg-surface px-1 py-0.5 font-sans text-xl font-medium leading-7 tracking-tight text-ink focus:outline-none focus:ring-2 focus:ring-accent/25"
     />
   )
 }

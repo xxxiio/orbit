@@ -411,6 +411,8 @@ export interface MilestoneRecord {
   project_id: string
   name: string
   status: string
+  /** Checkpoint date; absent means unscheduled, not a zero-length period. */
+  target_at_ms?: number | null
 }
 
 export interface MilestoneSnapshot {
@@ -429,6 +431,7 @@ export type MilestoneAction =
   | { type: 'create'; milestone_id: string; project_id: string; name: string }
   | { type: 'rename'; milestone_id: string; name: string }
   | { type: 'change_status'; milestone_id: string; status: string }
+  | { type: 'set_target'; milestone_id: string; target_at_ms: number | null }
   | { type: 'move_project'; milestone_id: string; project_id: string }
   | { type: 'delete'; milestone_id: string }
 
@@ -436,6 +439,92 @@ export interface MilestoneCommand {
   command_id: string
   expected_revision: number
   action: MilestoneAction
+}
+
+/* ------------------------------------------------------------------ */
+/* Epics                                                               */
+/* ------------------------------------------------------------------ */
+
+export type EpicStatus = 'planned' | 'in_progress' | 'blocked' | 'completed' | 'cancelled'
+
+export interface EpicProgressRecord {
+  total: number
+  completed: number
+  blocked: number
+  percent: number
+}
+
+export interface EpicActivityRecord {
+  id: string
+  epic_id: string
+  kind: string
+  actor: string
+  occurred_at_ms: number
+  summary: string
+}
+
+export interface EpicRecord {
+  id: string
+  project_id: string
+  title: string
+  description: string
+  status: EpicStatus
+  priority: string | null
+  owner: string | null
+  start_at_ms: number | null
+  target_at_ms: number | null
+  created_at_ms: number
+  updated_at_ms: number
+  task_ids: string[]
+  work_item_ids: string[]
+  progress: EpicProgressRecord
+  activities: EpicActivityRecord[]
+}
+
+export interface EpicSnapshot {
+  revision: number
+  epics: EpicRecord[]
+}
+
+export interface EpicResult {
+  revision: number
+  duplicate: boolean
+  epic: EpicRecord | null
+}
+
+export type EpicAction =
+  | {
+      type: 'create'
+      epic_id: string
+      project_id: string
+      title: string
+      description?: string
+      priority?: string | null
+      owner?: string | null
+      start_at_ms?: number | null
+      target_at_ms?: number | null
+    }
+  | {
+      type: 'update'
+      epic_id: string
+      title: string
+      description?: string
+      priority?: string | null
+      owner?: string | null
+      start_at_ms?: number | null
+      target_at_ms?: number | null
+    }
+  | { type: 'change_status'; epic_id: string; status: EpicStatus }
+  | { type: 'assign_task'; epic_id: string; task_id: string }
+  | { type: 'unassign_task'; task_id: string }
+  | { type: 'assign_work_item'; epic_id: string; item_id: string }
+  | { type: 'unassign_work_item'; item_id: string }
+  | { type: 'delete'; epic_id: string }
+
+export interface EpicCommand {
+  command_id: string
+  expected_revision: number
+  action: EpicAction
 }
 
 /* ------------------------------------------------------------------ */

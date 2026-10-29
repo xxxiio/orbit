@@ -20,7 +20,7 @@ import { WorkItemDetailView } from './work-item-views'
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-start gap-3 border-b border-line py-2 last:border-b-0">
-      <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">{label}</dt>
+      <dt className="text-2xs font-semibold tracking-label text-ink-faint">{label}</dt>
       <dd className="min-w-0 text-sm leading-5 text-ink-soft">{children}</dd>
     </div>
   )

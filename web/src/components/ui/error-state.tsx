@@ -39,7 +39,7 @@ export function ErrorState({
       >
         <AlertTriangleIcon size={18} />
       </div>
-      <h2 className="font-display text-lg font-medium tracking-tight text-ink">{title}</h2>
+      <h2 className="font-sans text-lg font-medium tracking-tight text-ink">{title}</h2>
       <p className="mt-1.5 max-w-sm text-sm leading-6 text-ink-muted">{description}</p>
       {onRetry || action ? (
         <div className="mt-5 flex items-center gap-2">

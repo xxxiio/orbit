@@ -15,6 +15,10 @@
  * The guard makes repeated 401s (one per in-flight request) a no-op.
  */
 import type { QueryClient } from '@tanstack/react-query'
+import {
+  forgetAuthenticatedSession,
+  rememberAuthenticatedSession,
+} from './session-history'
 
 export type SessionStatus = 'unknown' | 'active' | 'signedOut'
 
@@ -47,10 +51,15 @@ function setState(next: SessionStoreState): void {
 
 /** Called after a successful session check or sign-in. */
 export function markSessionActive(): void {
+  // A successful read is proof of a real session, so the browser now counts as
+  // "previously authenticated" for the next expiry notice.
+  rememberAuthenticatedSession()
   setState({ status: 'active', reason: null })
 }
 
 export function markSessionSignedOut(reason: Exclude<SessionEndReason, null>): void {
+  // An explicit sign-out must not be explained as an expiry on the next visit.
+  if (reason === 'signed-out') forgetAuthenticatedSession()
   setState({ status: 'signedOut', reason })
 }
 

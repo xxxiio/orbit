@@ -145,19 +145,19 @@ export function ReviewSection({
       >
         <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
           <div className="min-w-0">
-            <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">Reviewer</dt>
+            <dt className="text-2xs font-semibold tracking-label text-ink-faint">Reviewer</dt>
             <dd className="font-mono text-xs text-ink-soft">{review.reviewer}</dd>
           </div>
           <div className="min-w-0">
-            <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">Recorded</dt>
+            <dt className="text-2xs font-semibold tracking-label text-ink-faint">Recorded</dt>
             <dd className="text-sm text-ink-soft">{formatMoment(review.reviewedAtMs)}</dd>
           </div>
           <div className="min-w-0 sm:col-span-2">
-            <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">Reason</dt>
+            <dt className="text-2xs font-semibold tracking-label text-ink-faint">Reason</dt>
             <dd className="whitespace-pre-wrap text-sm leading-6 text-ink-soft">{review.reason}</dd>
           </div>
           <div className="min-w-0 sm:col-span-2">
-            <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">Task effect</dt>
+            <dt className="text-2xs font-semibold tracking-label text-ink-faint">Task effect</dt>
             <dd className="text-sm leading-6 text-ink-soft">
               <Badge tone={review.taskCompleted ? 'danger' : 'neutral'}>
                 {review.taskCompleted ? 'Task completed' : 'Task not completed'}

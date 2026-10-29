@@ -58,10 +58,28 @@ test.describe('workflow view registry', () => {
       expect(manifest.views.length, `${projectId} declares views`).toBeGreaterThan(0)
 
       for (const view of manifest.views) {
+        const primary = view.components[0]?.type
+        const navLabel =
+          view.id === 'overview'
+            ? 'Overview'
+            : view.id === 'tasks'
+              ? 'List'
+              : view.id === 'board'
+                ? 'Board'
+                : view.id === 'timeline' || view.id === 'milestones'
+                  ? 'Milestones'
+                  : view.title
         await goto(page, server, `/projects/${projectId}/${view.id}`)
         await expect(
-          page.getByRole('link', { name: new RegExp(`^${view.title}`) }),
+          page.getByRole('link', { name: new RegExp(`^${navLabel}`) }),
         ).toHaveAttribute('aria-current', 'page')
+
+        // The canonical List replaces the declared table with the shared task
+        // list; its rows are the assertion, not a view-component wrapper.
+        if (view.id === 'tasks') {
+          await expect(page.locator('[data-row-list]').first()).toBeVisible()
+          continue
+        }
 
         // EC-004: every declared component is a real panel on the page, not a
         // blank surface behind the active tab. The wrapper carries the declared

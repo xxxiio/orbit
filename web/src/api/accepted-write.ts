@@ -58,6 +58,7 @@ export function acceptRevision(
 export function acceptLedgerRevision(queryClient: QueryClient, revision: number): void {
   acceptRevision(queryClient, queryKeys.snapshot(), revision)
   acceptRevision(queryClient, queryKeys.milestones(), revision)
+  acceptRevision(queryClient, queryKeys.epics(), revision)
   // An accepted ledger write can change the item set (and therefore the
   // upgrade fingerprint) any open preview was computed from. Refreshing it here
   // keeps Apply from ever confirming a comparison the person was not shown.

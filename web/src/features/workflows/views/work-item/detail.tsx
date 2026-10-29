@@ -133,13 +133,13 @@ export function WorkItemDetailView(props: ViewRendererProps) {
             <Badge tone="neutral">{stateLabel(selected.state)}</Badge>
             <span className="font-mono text-2xs text-ink-muted">Revision {selected.revision}</span>
           </div>
-          <h3 className="font-display text-xl font-medium tracking-tight text-ink">
+          <h3 className="font-sans text-xl font-medium tracking-tight text-ink">
             {workItemTitle(selected, kind)}
           </h3>
           <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
             {(kind?.fields ?? []).map((field) => (
               <div key={field.id} className="min-w-0">
-                <dt className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                <dt className="text-2xs font-semibold tracking-label text-ink-faint">
                   {fieldLabel(field, field.id)}
                 </dt>
                 <dd className="break-words text-sm text-ink-soft">

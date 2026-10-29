@@ -234,7 +234,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-ink">{defaultName}</span>
-                    <span className="text-2xs font-medium uppercase tracking-label text-accent-soft-ink">Default</span>
+                    <span className="text-2xs font-medium tracking-label text-accent-soft-ink">Default</span>
                     {workflowId === DEFAULT_WORKFLOW ? <CheckIcon size={13} className="text-accent" /> : null}
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-ink-muted">

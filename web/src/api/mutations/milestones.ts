@@ -14,6 +14,7 @@ import {
   deleteMilestone,
   moveMilestoneProject,
   renameMilestone,
+  setMilestoneTarget,
 } from '../endpoints/milestones'
 import type { MilestoneStatus } from '../contracts'
 import { toMilestoneResult, type MilestoneMutationOutcome } from '../adapters'
@@ -24,6 +25,7 @@ export type MilestoneCommandInput =
   | { type: 'create'; projectId: string; name: string; milestoneId: string }
   | { type: 'rename'; milestoneId: string; name: string }
   | { type: 'change_status'; milestoneId: string; status: MilestoneStatus }
+  | { type: 'set_target'; milestoneId: string; targetAtMs: number | null }
   | { type: 'move_project'; milestoneId: string; projectId: string }
   | { type: 'delete'; milestoneId: string }
 
@@ -49,6 +51,7 @@ export function useMilestoneCommand(): CommandMutation<
   createMilestone: (input: { projectId: string; name: string; milestoneId?: string }) => void
   renameMilestone: (input: { milestoneId: string; name: string }) => void
   changeMilestoneStatus: (input: { milestoneId: string; status: MilestoneStatus }) => void
+  setMilestoneTarget: (input: { milestoneId: string; targetAtMs: number | null }) => void
   moveMilestoneProject: (input: { milestoneId: string; projectId: string }) => void
   deleteMilestone: (input: { milestoneId: string }) => void
 } {
@@ -77,6 +80,12 @@ export function useMilestoneCommand(): CommandMutation<
         case 'change_status':
           return changeMilestoneStatus(
             { milestoneId: input.milestoneId, status: input.status },
+            expectedRevision,
+            commandId,
+          ).then(toMilestoneResult)
+        case 'set_target':
+          return setMilestoneTarget(
+            { milestoneId: input.milestoneId, targetAtMs: input.targetAtMs },
             expectedRevision,
             commandId,
           ).then(toMilestoneResult)
@@ -115,6 +124,7 @@ export function useMilestoneCommand(): CommandMutation<
       }),
     renameMilestone: (input) => send({ type: 'rename', ...input }),
     changeMilestoneStatus: (input) => send({ type: 'change_status', ...input }),
+    setMilestoneTarget: (input) => send({ type: 'set_target', ...input }),
     moveMilestoneProject: (input) => send({ type: 'move_project', ...input }),
     deleteMilestone: (input) => send({ type: 'delete', ...input }),
   }

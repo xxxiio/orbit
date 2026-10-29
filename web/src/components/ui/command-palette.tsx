@@ -279,7 +279,7 @@ export function CommandPalette({
                         >
                           <p
                             id={groupId}
-                            className="flex items-baseline justify-between gap-2 px-2.5 pb-0.5 pt-1.5 text-2xs font-semibold uppercase tracking-label text-ink-faint"
+                            className="flex items-baseline justify-between gap-2 px-2.5 pb-0.5 pt-1.5 text-2xs font-semibold tracking-label text-ink-faint"
                           >
                             <span>{group.label}</span>
                             <span className="tabular-nums font-normal normal-case tracking-normal">

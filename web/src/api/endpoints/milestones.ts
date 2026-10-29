@@ -45,6 +45,11 @@ export interface ChangeMilestoneStatusInput {
   status: MilestoneStatus
 }
 
+export interface SetMilestoneTargetInput {
+  milestoneId: string
+  targetAtMs: number | null
+}
+
 export interface MoveMilestoneProjectInput {
   milestoneId: string
   projectId: string
@@ -138,6 +143,24 @@ export function changeMilestoneStatus(
         type: 'change_status',
         milestone_id: requireNonEmpty('A milestone is required', input.milestoneId),
         status: input.status,
+      },
+      expectedRevision,
+      commandId,
+    ),
+  )
+}
+
+export function setMilestoneTarget(
+  input: SetMilestoneTargetInput,
+  expectedRevision: number,
+  commandId: string,
+): Promise<MilestoneResult> {
+  return sendMilestoneCommand(
+    buildMilestoneCommand(
+      {
+        type: 'set_target',
+        milestone_id: requireNonEmpty('A milestone is required', input.milestoneId),
+        target_at_ms: input.targetAtMs,
       },
       expectedRevision,
       commandId,

@@ -1204,6 +1204,113 @@ surface names the subject; the activity row need not.
 in a human sentence, and a test asserts the absence. This matters for the terminal more than for the
 browser: an 80-column activity row cannot afford a 36-character id in the middle of its prose.
 
+## M33 addendum — epics, planning and the issue-centric workspace
+
+M33 validated a project-management model in the browser. The terminal redesign should keep the
+*interaction model* and drop the browser-only mechanics.
+
+### The hierarchy the TUI must show
+
+```text
+Project
+├── Epic A                    (a body of work; status + progress)
+│   ├── Task 1
+│   ├── Task 2
+│   └── Work Item 3           (workflow-defined)
+├── Epic B
+├── Task 4                    (no epic; still valid)
+└── Milestones
+    ├── Checkpoint 1          (target date, no duration)
+    └── Checkpoint 2
+```
+
+- **Epic and Milestone are different nouns.** An epic groups work; a milestone is a checkpoint.
+  A task may belong to an epic *and* contribute to a milestone. The TUI must never nest a
+  milestone under an epic or present epic progress as milestone progress.
+- **Progress is read, not computed.** The authority returns total, completed, blocked and
+  percent for each epic. The TUI renders those numbers; it never derives progress from a partial
+  row set.
+- **Membership is a command.** Moving a task between epics is the epic `assign_task` command,
+  not an edit of a task field. The server refuses cross-project membership and keeps one epic per
+  task. The TUI should show the refusal in the inspector/status line and leave the row where the
+  accepted state put it.
+- **Dates are authored.** A milestone has one target instant. A task has an earliest start and a
+  deadline. An item with neither is **unscheduled**; the TUI must not invent a bar, duration or
+  "today" value to fill a timeline.
+
+### Surfaces to preserve
+
+| Browser surface | What the TUI should preserve | What it should not copy |
+| --- | --- | --- |
+| **List** | The default issue surface: key/title, status, priority, epic, milestone, due, estimate, dependencies; URL-equivalent grouping by epic/status/priority; inline status/priority; multiselect and bulk commands; saved views as presentation preferences. | Column pickers, hover menus, horizontal table scrolling. Use a fixed, dense column set and a column toggle overlay if needed. |
+| **Board** | Workflow-state columns, compact cards, epic filter, blocked indicator, keyboard move with the server's legal edges, refusal stays on the card. | Drag-and-drop, hover-only controls, per-column saved filters. |
+| **Backlog** | Unplanned work (`inbox`/`planned`/`deferred`), epic grouping, priority/estimate/dependency visibility, explicit move to Ready. No mandatory sprints. | The web's card toolbar; a single filter line is enough. |
+| **Roadmap** | Split hierarchy + time axis, week/month/quarter, today marker, epic bars, task windows, milestone diamonds, unscheduled section, focused dependency highlighting. | Zoom gestures, hundreds of connector lines, drag-to-reschedule. Selection + a date command is the path. |
+| **Epic details** | Title, description, status/priority/owner, start/target, progress, child tasks and Work Items, activity. | The web's modal proportions; an inspector overlay is closer to the rest of the TUI. |
+| **Task/Work Item inspector** | One shared inspector for List, Board, Backlog and Roadmap; epic and milestone association; planning dates; dependencies; acceptance criteria; activity; Workflow Actions. | A separate epic editor with its own transition table. Epics use the checkpoint lifecycle the server exposes. |
+| **Planning** | Capacity → server plan → review → apply with the existing approval gate. | Recomputing readiness, assignment or duration locally. |
+
+### Contextual details and navigation
+
+- Opening a task from any surface opens the *same* inspector, with the same commands and the same
+  conflict behavior. The TUI keeps one inspector, not one per surface.
+- Closing the inspector returns focus to the row/bar that opened it. The surface keeps its
+  selection, filter, grouping and scroll position. This is the terminal counterpart of the web's
+  `?task=` + focus-return contract.
+- The project frame names the project, status, pinned Workflow version and epic filter. The
+  canonical sections are **Overview, List, Board, Backlog, Roadmap, Milestones**, followed by the
+  workflow's extra views. A workflow without those views still gets the canonical sections; a
+  workflow with its own Lessons/Evidence/Workflow board keeps it under its own name rather than
+  being renamed Board.
+- A milestone target date and an epic target date are edited through one date field and a
+  command. There is no terminal date picker and no implicit "end of day" invention.
+
+### Workflow-defined Work Items
+
+Work Items keep their declared types, states, guards and transitions. In the issue hierarchy they
+are children of an epic exactly like tasks, but they do not become tasks. The inspector shows the
+declared fields and the transition/guard sentences; epic membership is a separate relationship.
+The TUI does not add an epic field to the manifest or reinterpret a Work Item state as done.
+
+### Dependencies and blockers
+
+The authority's task graph is the only edge source. The TUI should:
+
+- mark a task blocked when the graph says it has unfinished prerequisites or its status is
+  `blocked`;
+- show the prerequisite titles/count on the focused row;
+- highlight direct prerequisites when a row is selected (the terminal equivalent of the web's
+  focus highlight), not draw a connector for every edge;
+- keep the server's readiness reason in the inspector rather than re-deriving "actionable".
+
+### Browser-only mechanisms (do not port)
+
+These are deliberate web mechanics, not product behavior:
+
+- CSS theme tokens, Inter, responsive breakpoints, Radix dialogs/drawers, focus rings, skip links,
+  ARIA live regions and axe audits.
+- URL state for filters/grouping/saved views; the TUI equivalent is its own view state plus the
+  server's saved-view records.
+- The `orbit.auth.seen` browser marker. It exists because an HttpOnly cookie gives the SPA no
+  other way to distinguish a first visit from an expiry. A local TUI client knows whether it has a
+  session and does not need a browser-storage marker.
+- Modal epic/milestone dialogs. Use the TUI's overlay/status-line vocabulary.
+
+### Acceptance additions for the future redesign
+
+- **E1.** List, Board, Backlog and Roadmap are reachable for an ordinary project, and an extra
+  workflow view keeps its own name and route.
+- **E2.** An epic can be created, edited, assigned a task, completed, and read back with the
+  authority's progress after a restart.
+- **E3.** A milestone has at most one target date; clearing it moves the milestone to the
+  unscheduled list on the roadmap.
+- **E4.** A task with no dates appears as unscheduled, never as a fabricated bar; adding dates in
+  the inspector places it on the timeline.
+- **E5.** The same task opens the same inspector from all four surfaces, and closing it returns
+  focus and scroll to the origin.
+- **E6.** A cross-project epic assignment is refused by the authority and leaves no partial
+  membership on screen.
+
 ## Acceptance for a future redesign
 
 Measure the redesign against these. "Pass" requires the evidence named in the last two columns; taste

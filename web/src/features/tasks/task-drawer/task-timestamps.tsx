@@ -59,13 +59,13 @@ export function TaskTimestamps({
       className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-ink-muted"
     >
       <div className="flex min-w-0 items-center gap-1.5">
-        <dt className="font-semibold uppercase tracking-label text-ink-faint">Created</dt>
+        <dt className="font-semibold tracking-label text-ink-faint">Created</dt>
         <dd className="min-w-0 truncate">
           <TimestampValue value={createdAtMs} attribute="created" />
         </dd>
       </div>
       <div className="flex min-w-0 items-center gap-1.5">
-        <dt className="font-semibold uppercase tracking-label text-ink-faint">Updated</dt>
+        <dt className="font-semibold tracking-label text-ink-faint">Updated</dt>
         <dd className="min-w-0 truncate">
           <TimestampValue value={updatedAtMs} attribute="updated" />
         </dd>

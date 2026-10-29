@@ -306,7 +306,7 @@ function SavedViewsDialog({
             {mode === 'list' ? (
               <>
                 <div className="rounded-md border border-line bg-surface-sunken/40 px-3 py-2">
-                  <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                  <p className="text-2xs font-semibold tracking-label text-ink-faint">
                     Current view
                   </p>
                   <p className="mt-0.5 break-all text-xs leading-5 text-ink-soft">
@@ -475,7 +475,7 @@ function SavedViewsDialog({
                 }}
               >
                 <div className="rounded-md border border-line bg-surface-sunken/40 px-3 py-2">
-                  <p className="text-2xs font-semibold uppercase tracking-label text-ink-faint">
+                  <p className="text-2xs font-semibold tracking-label text-ink-faint">
                     {mode === 'save' ? 'Stores' : 'Stored configuration'}
                   </p>
                   <p className="mt-0.5 break-all text-xs leading-5 text-ink-soft">

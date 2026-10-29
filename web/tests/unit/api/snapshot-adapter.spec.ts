@@ -88,7 +88,7 @@ describe('snapshot adapters', () => {
     expect(adapted.tasks.map((task) => task.projectId)).toEqual(['p-1', null])
     expect(adapted.taskDependencies).toEqual([{ taskId: 't-2', prerequisiteId: 't-1' }])
     expect(adapted.milestones).toEqual([
-      { id: 'm-1', projectId: 'p-1', name: 'Beta', status: 'planned' },
+      { id: 'm-1', projectId: 'p-1', name: 'Beta', status: 'planned', targetAtMs: null },
     ])
   })
 })

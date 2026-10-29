@@ -32,10 +32,10 @@ export class AppErrorBoundary extends Component<Props, State> {
         <main role="alert" className="w-full max-w-md">
           <div className="mb-6 flex items-center gap-3">
             <OrbitMark size={32} />
-            <span className="font-display text-xl font-semibold tracking-tight">Orbit</span>
+            <span className="font-sans text-xl font-semibold tracking-tight">Orbit</span>
           </div>
           <p className="section-label mb-2">Unexpected error</p>
-          <h1 className="font-display text-2xl font-medium tracking-tight">This screen stopped working</h1>
+          <h1 className="font-sans text-2xl font-medium tracking-tight">This screen stopped working</h1>
           <p className="mt-2 text-sm leading-6 text-ink-soft">
             Something in the interface failed to render. Reloading usually restores the workspace; no
             changes were lost on this screen.

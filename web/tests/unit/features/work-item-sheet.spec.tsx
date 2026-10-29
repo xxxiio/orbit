@@ -71,6 +71,7 @@ function renderSheet(item: WorkItem, onRefresh?: () => void) {
   // The capability panel is a separate read of its own; seed it too so these
   // tests stay about the sheet's properties and moves. The panel's own
   // behaviour is covered by capability-panel.spec.tsx.
+  client.setQueryData(queryKeys.epics(), { revision: 0, epics: [] })
   client.setQueryData(queryKeys.capabilityStatus(item.projectId), [])
   client.setQueryData(queryKeys.capabilityOffers(item.id, item.revision), {
     itemId: item.id,

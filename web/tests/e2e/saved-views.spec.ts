@@ -22,7 +22,7 @@ import {
 } from './harness/authority'
 
 const PROJECT_ID = 'p-basic'
-const LIST_PATH = `/projects/${PROJECT_ID}/tasks`
+const LIST_PATH = `/projects/${PROJECT_ID}/list`
 const BOARD_PATH = `/projects/${PROJECT_ID}/board`
 /** The blocked task with high priority in the fixture (i=0 of the basic plan). */
 const FILTERED_TASK = 'Tidy the downloads folder'

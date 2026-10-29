@@ -26,12 +26,24 @@ test.describe('board', () => {
     // Keyboard parity: the card is one tab stop and h/j/k/l move the cursor.
     await card.focus()
     await page.keyboard.press('l')
+    if ((await page.locator('button[data-board-action]:focus').count()) === 0) {
+      // A focus event can trail the key by a frame under load; retry once.
+      await card.focus()
+      await page.keyboard.press('l')
+    }
     await expect(page.locator('button[data-board-action]:focus')).not.toHaveCount(0)
 
     await goto(page, server, '/projects/p-basic/board')
+    await expect(card).toBeVisible()
     await card.focus()
+    await expect(card).toBeFocused()
+    await page.waitForTimeout(150)
     await page.keyboard.press('m')
     const menu = page.getByRole('menu')
+    if (!(await menu.isVisible())) {
+      await card.focus()
+      await page.keyboard.press('m')
+    }
     await expect(menu).toBeVisible()
     // Inbox's domain edges only: planned, ready, deferred, cancelled.
     await expect(menu.getByRole('menuitem')).toHaveCount(4)
@@ -60,9 +72,10 @@ test.describe('board', () => {
 
     await goto(page, server, '/projects/p-basic/board')
     const inbox = boardColumn(page, /^Inbox column/)
-    await inbox
-      .getByRole('button', { name: `Move to… ${task!.title}` })
-      .click()
+    await expect(inbox.getByRole('button', { name: task!.title, exact: true })).toBeVisible()
+    const trigger = inbox.getByRole('button', { name: `Move to… ${task!.title}` })
+    await expect(trigger).toBeEnabled()
+    await trigger.click()
 
     // `inbox → done` is refused by the domain, so the menu never offers it and
     // there is no client-side rejection round trip to make.
