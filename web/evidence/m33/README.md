@@ -7,7 +7,7 @@ epics below were created through the same `epic-commands` family the UI uses.
 
 | Item | Value |
 | --- | --- |
-| Baseline | `06aad53` plus the M33 working tree |
+| Baseline | `06aad53`; captures are from M33 commit `048ce21` |
 | Build | `node node_modules/vite/bin/vite.js build` |
 | Browser | Playwright Chromium 1194, `LD_LIBRARY_PATH=/tmp/pwlibs/root/usr/lib/x86_64-linux-gnu` |
 | Server | `target/debug/orbit-server` on `127.0.0.1:8781` |
