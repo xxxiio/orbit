@@ -912,6 +912,7 @@ build and screens:
 | `web/evidence/i3/` | Work Item board, sheet, create dialog, actions, refusal, upgrade preview/receipt/blocked |
 | `web/evidence/i4/` | Knowledge note/create/search, attachments, agent overview/detail/review, Home attention, declared knowledge and agent panels |
 | `web/evidence/i5/` | The real dogfooding cycle: `README.md` generated from `run.json`, captures, and the database backup |
+| `web/evidence/m33/` | M33 login, List, Board, Backlog, Roadmap, epic editor and task drawer at 1440×900, 1280×800 and 390×844 in light and dark |
 
 Every one is a real browser capture against a real `orbit-server` seeded through the public
 API (no mocked responses, no preview server). The I2–I4 capture sets are produced by the
