@@ -193,12 +193,13 @@ and rendered by the registry in `features/workflows`.
 
 Tokens live in `src/styles/tokens.css`; Tailwind maps them in `tailwind.config.ts`.
 
-- Surfaces are warm neutral paper tones; a single ultramarine accent carries selection,
-  focus, and primary actions.
-- Type: **Fraunces** for display/headings, **Instrument Sans** for UI/body, **JetBrains
-  Mono** for identifiers. Fonts are self-hosted through Fontsource.
-- Spacing follows a 4px base scale; type steps run 11 → 60px with tighter tracking as size
-  increases.
+- Surfaces are neutral cool-grey working surfaces; a single primary blue carries
+  selection, focus, and primary actions. Light and dark share the same hierarchy.
+- Type: **Inter** everywhere a person reads or edits. **JetBrains Mono** is reserved for
+  identifiers, commands, code and logs. Both are self-hosted through Fontsource; there is
+  no font CDN.
+- Spacing follows a 4px base scale; the application scale is 12 → 24px (metadata → page
+  title), with 14px body text and 1.4–1.5 line height.
 - Semantic roles: success, warning, danger, info. Each has a soft surface and an ink colour
   for use on that surface.
 - Breakpoints: the sidebar is fixed above **900px**; below it, navigation becomes a Radix
