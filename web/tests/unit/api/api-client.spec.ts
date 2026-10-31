@@ -16,7 +16,17 @@ describe('apiRequest', () => {
   it('follows the cookie-session protocol for JSON requests and errors', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ device_id: 'dev-1', expires_at_ms: 1_700_000_000_000 }, 201))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            mode: 'authenticated',
+            device_id: 'dev-1',
+            display_name: null,
+            expires_at_ms: 1_700_000_000_000,
+          },
+          201,
+        ),
+      )
       .mockResolvedValueOnce(jsonResponse({ error: 'invalid device credentials' }, 401))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
 

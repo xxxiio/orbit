@@ -39,7 +39,12 @@ describe('unauthorized handling', () => {
 
   it('clears the session store and the query cache when a command comes back 401', async () => {
     const client = testQueryClient()
-    client.setQueryData(sessionQueryKey, { device_id: 'dev-1', expires_at_ms: 1_700_000_000_000 })
+    client.setQueryData(sessionQueryKey, {
+      mode: 'authenticated',
+      device_id: 'dev-1',
+      display_name: null,
+      expires_at_ms: 1_700_000_000_000,
+    })
     client.setQueryData(queryKeys.snapshot(), snapshotAt(3))
 
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ error: 'unauthorized' }, 401))
@@ -60,7 +65,12 @@ describe('unauthorized handling', () => {
 
   it('clears the session store when a read comes back 401, not only a command', async () => {
     const client = testQueryClient()
-    client.setQueryData(sessionQueryKey, { device_id: 'dev-1', expires_at_ms: 1_700_000_000_000 })
+    client.setQueryData(sessionQueryKey, {
+      mode: 'authenticated',
+      device_id: 'dev-1',
+      display_name: null,
+      expires_at_ms: 1_700_000_000_000,
+    })
 
     vi.mocked(fetch).mockResolvedValue(jsonResponse({ error: 'unauthorized' }, 401))
 

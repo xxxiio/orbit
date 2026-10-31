@@ -13,6 +13,7 @@ import {
   SearchIcon,
 } from '@/components/ui/icons'
 import { globalNav, type ProjectNavItem } from '@/components/navigation/nav'
+import type { WebSessionMode } from '@/api/session'
 import { ThemeToggle } from '@/components/theme/theme-toggle'
 
 export const commandShortcutLabel =
@@ -58,10 +59,14 @@ function ProjectGroup({
  * presentational module never reaches into a feature module for data.
  */
 export interface SidebarSession {
+  /** Server-selected auth mode; drives whether the footer is a session or a policy note. */
+  mode?: WebSessionMode
   deviceId?: string
   pending: boolean
   error: boolean
   signingOut: boolean
+  /** Sign-out only exists for cookie sessions; local-trusted has no session to end. */
+  canSignOut: boolean
   onSignOut: () => void
 }
 
@@ -87,6 +92,8 @@ export function Sidebar({
   const sessionPending = session?.pending ?? false
   const sessionError = session?.error ?? false
   const signingOut = session?.signingOut ?? false
+  const localTrusted = session?.mode === 'local-trusted'
+  const canSignOut = !localTrusted && (session?.canSignOut ?? true)
 
   const pinned = projects.filter((project) => project.pinned)
   const recent = projects.filter((project) => !project.pinned && project.recent).slice(0, 3)
@@ -234,38 +241,50 @@ export function Sidebar({
 
       <div className="border-t border-line px-3 py-3">
         <ThemeToggle className="px-2 pb-2" />
-        <div className="mt-1 flex items-center gap-2 rounded-md px-1.5 py-1.5">
-          <div
-            aria-hidden="true"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-line bg-surface-sunken text-[0.625rem] font-semibold text-ink-soft"
-          >
-            {session?.deviceId ? session.deviceId.slice(0, 2) : '··'}
+        {localTrusted ? (
+          // A policy note, not a device identity: there is no cookie, no device
+          // to name, and nothing to sign out of. It reserves the height of the
+          // device block (two leading-4 lines plus py-1.5) so the footer and the
+          // scroll area do not shift when the server changes auth mode.
+          <p className="mt-1 flex min-h-11 items-center px-1.5 text-xs leading-4 text-ink-muted">
+            Local trusted mode
+          </p>
+        ) : (
+          <div className="mt-1 flex items-center gap-2 rounded-md px-1.5 py-1.5">
+            <div
+              aria-hidden="true"
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-line bg-surface-sunken text-[0.625rem] font-semibold text-ink-soft"
+            >
+              {session?.deviceId ? session.deviceId.slice(0, 2) : '··'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium leading-4 text-ink">This device</p>
+              {sessionPending ? (
+                <Skeleton className="mt-1 h-2.5 w-24" />
+              ) : sessionError ? (
+                <p className="truncate text-xs text-ink-muted">Session unavailable</p>
+              ) : (
+                <p
+                  className="truncate font-mono text-[0.625rem] leading-4 text-ink-muted"
+                  title={session?.deviceId}
+                >
+                  {session?.deviceId}
+                </p>
+              )}
+            </div>
+            {canSignOut ? (
+              <Tooltip content="Sign out" side="top">
+                <IconButton
+                  label="Sign out"
+                  icon={signingOut ? <LoaderIcon size={16} className="animate-spin" /> : <LogOutIcon size={16} />}
+                  onClick={() => session?.onSignOut()}
+                  disabled={!session || signingOut}
+                  size="sm"
+                />
+              </Tooltip>
+            ) : null}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium leading-4 text-ink">This device</p>
-            {sessionPending ? (
-              <Skeleton className="mt-1 h-2.5 w-24" />
-            ) : sessionError ? (
-              <p className="truncate text-xs text-ink-muted">Session unavailable</p>
-            ) : (
-              <p
-                className="truncate font-mono text-[0.625rem] leading-4 text-ink-muted"
-                title={session?.deviceId}
-              >
-                {session?.deviceId}
-              </p>
-            )}
-          </div>
-          <Tooltip content="Sign out" side="top">
-            <IconButton
-              label="Sign out"
-              icon={signingOut ? <LoaderIcon size={16} className="animate-spin" /> : <LogOutIcon size={16} />}
-              onClick={() => session?.onSignOut()}
-              disabled={!session || signingOut}
-              size="sm"
-            />
-          </Tooltip>
-        </div>
+        )}
       </div>
     </aside>
   )

@@ -1415,10 +1415,12 @@ export interface QueueSessionPromptRequest {
 /* Web session                                                         */
 /* ------------------------------------------------------------------ */
 
-/** Returned by `POST /v1/web/session` (201) and `GET` (200). */
+/** Returned by `POST /v1/web/session` (201, authenticated only) and `GET` (200). */
 export interface WebSessionResponse {
+  mode: 'authenticated' | 'local-trusted'
   device_id: string
-  expires_at_ms: number
+  display_name: string | null
+  expires_at_ms: number | null
 }
 
 export interface WebSessionRequest {

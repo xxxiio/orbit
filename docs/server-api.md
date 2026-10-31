@@ -23,6 +23,21 @@ page does not claim that a public server deployment has been certified.
 
 ## Authentication
 
+`ORBIT_AUTH_MODE` selects the browser policy:
+
+- Unset or `authenticated` (the default): device authentication. A browser exchanges an enrolled
+  device ID and token once for an HttpOnly, SameSite=Strict session cookie.
+- `local-trusted`: an opt-in mode for a loopback-only personal installation. There is no Device
+  ID, device token, login screen or session cookie.
+
+Local-trusted refuses to start unless `ORBIT_SERVER_BIND` is a literal loopback address
+(`127.0.0.0/8` or `[::1]`). `0.0.0.0`, `[::]`, LAN addresses, IPv4-mapped IPv6 such as
+`[::ffff:127.0.0.1]`, `localhost`, and any other non-loopback value are rejected before the
+database is opened. In this mode browser calls need no bearer credential or cookie, but browser
+mutations still require the `x-orbit-csrf: 1` header, cross-site requests are rejected, and
+forwarded headers (`X-Forwarded-For`, `X-Real-IP`) never grant access. The server does not treat
+the request source address as authorization.
+
 Device requests use an enrolled device identity and token together:
 
 ```text
@@ -31,8 +46,32 @@ x-orbit-device-id: <device-id>
 ```
 
 Missing either half is an error. Administrator operations use the deployment's
-admin credential. Tokens are stored as hashes where applicable and must never be
-placed in URLs, committed files, logs or bug reports.
+`ORBIT_SERVER_ADMIN_KEY` in both modes. That key is required in both modes, guards the
+administrator endpoints only (device enrollment, revocation and rotation, admin proposals,
+automations), and is never sent to the browser. Capability install/authorize/revoke and executor
+enrollment are a separate privilege exercised by an enrolled *device* bearer token, not by the
+admin key. In local-trusted mode device enrollment returns `403 administrator credential required`
+without the admin key, and
+capability install/authorize/revoke and executor enrollment return `403` because the browser
+principal is not an enrolled device. Tokens are stored as hashes where
+applicable and must never be placed in URLs, committed files, logs or bug reports.
+
+`GET /v1/web/session` reports the browser policy and session state:
+
+```json
+{"mode":"authenticated","device_id":"browser-laptop","expires_at_ms":1767225600000}
+```
+
+`mode` is `authenticated` or `local-trusted`. In authenticated mode `device_id` is the signed-in
+device and `expires_at_ms` is the session expiry. In local-trusted mode there is no enrolled
+device: `device_id` is the reserved `local-trusted` principal and `expires_at_ms` is `null`:
+
+```json
+{"mode":"local-trusted","device_id":"local-trusted","expires_at_ms":null}
+```
+
+`POST /v1/web/session` exchanges device credentials for a session cookie in authenticated mode.
+In local-trusted mode it returns `409`, because there is no session to create.
 
 Use TLS for every non-loopback endpoint. Loopback cleartext HTTP is acceptable
 only for local development.

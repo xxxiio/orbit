@@ -636,6 +636,7 @@ none
 - [x] EC-008: The Roadmap shows one Milestone hierarchy with duration bars, checkpoints, unscheduled work, child task windows, progress and blocked/dependency cues; no Epic lanes exist.
 - [x] EC-009: Real-browser acceptance passes at 1440×900 and 390×844 in light and dark, including create → filter → switch → edit → status → roadmap → restart.
 - [ ] EC-010: A human reviews the running app and representative captures.
+- [ ] EC-011: `ORBIT_AUTH_MODE=local-trusted` is an explicit opt-in that refuses every non-loopback bind, opens the workspace with no Device ID, token or session cookie, keeps the product surface usable, leaves administrator, operator, executor, machine-transport and MCP surfaces separately authenticated, and requires normal sign-in after switching back to authenticated mode.
 
 #### Evidence
 
@@ -649,6 +650,7 @@ none
 - EC-008: `features/roadmap/**`; `roadmap.spec.ts` and `roadmap-view.spec.tsx`.
 - EC-009: Full Chromium suite 150 passed / 5 env-gated skips / 0 failed; 28 captures in `web/evidence/m33-corrective/`.
 - EC-010: open; `NEXT-0020` records the human review request.
+- EC-011: `crates/orbit-server/src/auth.rs`, `tests/local_trusted_startup.rs`; `web/tests/e2e/local-trusted.spec.ts`; `web/evidence/m33-auth/`; `docs/guides/local-web-quickstart.md`; Rust workspace 1883 passed / 0 failed, Chromium 152 passed / 6 skipped / 0 failed.
 
 #### Next milestone
 

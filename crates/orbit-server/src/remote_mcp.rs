@@ -2,7 +2,7 @@
 //! Mutations call exactly the same AuthorityStore methods as REST commands.
 use crate::authority_evidence::EvidenceCommand;
 use crate::domain_commands::{ProjectCommand, TaskCommand};
-use crate::{ApiError, AppState, admin, device, error};
+use crate::{ApiError, AppState, admin, enrolled_device, error};
 use axum::{
     Json,
     extract::State,
@@ -314,7 +314,7 @@ pub async fn endpoint(
         ));
     }
     // An administrator may inspect state, but only an enrolled device can mutate it.
-    let actor = match device(&state, &headers) {
+    let actor = match enrolled_device(&state, &headers) {
         Ok(id) => Some(id),
         Err(_) => {
             admin(&state, &headers)?;
@@ -383,6 +383,7 @@ mod tests {
             cookie_secure: false,
             admin_key_hash: vec![0; 32],
             attachment_body_limit: 64 * 1024 * 1024,
+            auth_mode: crate::auth::AuthenticationMode::Authenticated,
         };
         let r = dispatch(
             &state,
@@ -432,6 +433,7 @@ mod rich_domain_mcp_contract {
             cookie_secure: false,
             admin_key_hash: vec![0; 32],
             attachment_body_limit: 64 * 1024 * 1024,
+            auth_mode: crate::auth::AuthenticationMode::Authenticated,
         }
     }
 

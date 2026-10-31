@@ -85,6 +85,7 @@ Orbit task.
 - [Self-hosting](guides/self-hosting.md) — optional server deployment and TLS boundaries.
 - [The Orbit web app](web-app.md) — Home, Inbox, Projects, workflow views, Work Items, planning, knowledge, attachments, agents, settings and upgrades; includes the current limits.
 - [Web app quickstart for internal testers](guides/web-quickstart.md) — build the client, start the server, enrol a device, sign in, create the first project, run the dogfood cycle and acceptance suite.
+- [Local trusted web quickstart](guides/local-web-quickstart.md) — the opt-in, loopback-only mode with no device enrollment, plus its security boundary.
 - [Server API](server-api.md) — the current authority endpoints, not the retired relay.
 
 ## MCP and extensions

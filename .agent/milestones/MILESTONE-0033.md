@@ -62,6 +62,9 @@ any TUI redesign derived from the browser.
   progress, blocked work, dependency highlighting, week/month/quarter.
 - Retain typography, authentication, project sections, workflow-declared extra
   views and the authoritative command ledger.
+- Add an explicit, opt-in local-trusted browser mode for a personal loopback
+  installation. It is refused on non-loopback binds, keeps every privileged
+  surface separately authenticated, and never becomes a default.
 - Tests, documentation, real-browser acceptance and human-review handoff.
 
 ## Non-goals
@@ -82,9 +85,15 @@ any TUI redesign derived from the browser.
   `features/tasks/**` create dialog and unified workspace; `features/backlog/**`;
   `features/roadmap/**`; project navigation; board density.
 - Updated unit and Playwright suites, terminology check, `.agent` records.
+- `crates/orbit-server/src/auth.rs` authentication policy and principal;
+  `ORBIT_AUTH_MODE` startup validation; local-trusted session/CSRF/Host guards;
+  `crates/orbit-server/tests/local_trusted_startup.rs`.
 - `web/evidence/m33-corrective/**` light/dark desktop/phone captures and a
   restart-persistence proof.
-- `docs/web-app.md`, `docs/guides/tui-redesign-spec.md`, this milestone record.
+- `web/evidence/m33-auth/**` local-trusted workspace, sidebar and Roadmap captures
+  plus the scenario A/B/C results.
+- `docs/web-app.md`, `docs/guides/local-web-quickstart.md`,
+  `docs/guides/tui-redesign-spec.md`, this milestone record.
 
 ## Dependencies
 
@@ -141,13 +150,24 @@ any TUI redesign derived from the browser.
 - [x] EC-009: Real-browser acceptance passes at 1440×900 and 390×844 in light and
   dark, including create → filter → switch → edit → status → roadmap → restart.
 - [ ] EC-010: A human reviews the running app and representative captures.
+- [ ] EC-011: A personal local installation can be started with the explicit,
+  opt-in `ORBIT_AUTH_MODE=local-trusted`. Startup is refused on every
+  non-loopback bind; the workspace opens with no Device ID, device token or
+  session cookie; projects, tasks, Milestones, Workflows and agent operations
+  keep working. Administrator, operator, executor, machine-transport and MCP
+  surfaces stay separately authenticated, browser mutations keep a CSRF proof,
+  non-loopback `Host` values are refused, and switching the server back to
+  authenticated mode demands normal sign-in without a stale trusted UI.
 
 ## Evidence
 
 - `.slim/deepwork/m33-web-ux/progress.md`, `corrective-plan.md`, `acceptance.md`.
+- `.slim/deepwork/ses_e7076bbabffejijzQEfVyIuLrj.md` (authentication iteration).
 - `web/evidence/m33-corrective/` captures and README.
+- `web/evidence/m33-auth/` local-trusted captures, provenance and A/B/C results.
 - `.agent/current/acceptance.md`.
-- `docs/web-app.md` and `docs/guides/tui-redesign-spec.md`.
+- `docs/web-app.md`, `docs/guides/local-web-quickstart.md` and
+  `docs/guides/tui-redesign-spec.md`.
 
 ## Remaining work
 

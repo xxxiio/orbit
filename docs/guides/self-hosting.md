@@ -58,6 +58,11 @@ storing important data.
   server does not run arbitrary shell commands.
 - TLS is required for non-loopback endpoints. Loopback cleartext is for
   development only.
+- `ORBIT_AUTH_MODE=local-trusted` is a browser-only exception for a loopback-only personal
+  installation. It is accepted only with a literal loopback `ORBIT_SERVER_BIND`, refused on every
+  non-loopback bind, and must not be combined with a reverse proxy. It does not change
+  device-authentication trust for remotely reachable deployments; those keep device enrollment
+  and the TLS requirement above.
 
 ## Backup and upgrade
 

@@ -16,8 +16,9 @@ task_id: TASK-0015
 TASK-0015 — M33 corrective iteration: Milestone unification, full task creation,
 unified Tasks workspace, compact Board and Milestone Roadmap.
 
-M33 stays active. The corrective implementation and automated evidence are in place;
-EC-009's final full-suite rerun and the human review (EC-010) are the remaining gates.
+M33 stays active. The corrective implementation, the opt-in local-trusted
+authentication mode and the automated/browser evidence are in place; the human review
+(EC-010) and the authentication experience review (EC-011) remain the open gates.
 
 ## Acceptance evidence
 
@@ -33,19 +34,23 @@ EC-009's final full-suite rerun and the human review (EC-010) are the remaining 
 | EC-008 | pass | `features/roadmap/roadmap-model.ts`, `roadmap-view.tsx`; one Milestone hierarchy with duration/checkpoint/unscheduled shapes; `roadmap.spec.ts`. |
 | EC-009 | pass | Full Chromium suite: 150 passed, 5 env-gated skips, 0 failed. Targeted 29/29 and 9/9 after the final UI change. 28 captures at 1440×900 and 390×844, light and dark. |
 | EC-010 | not-run | No human has reviewed the corrected build or the corrective captures. |
+| EC-011 | pass | `crates/orbit-server/src/auth.rs` (mode, principal, bind and host validation) and the mode-aware guards in `main.rs`; `ORBIT_AUTH_MODE` is opt-in, fails closed, and local-trusted refuses every non-loopback bind before opening storage. `crates/orbit-server/tests/local_trusted_startup.rs` proves refusal and a working loopback listener. `web/tests/e2e/local-trusted.spec.ts` proves the open workspace, a fully configured task with a milestone, List/Board/Backlog, Roadmap, reload, second browser, server restart, the switch back to authenticated mode, and the administrator/operator/executor/machine/CSRF/Origin/Host boundary. `web/evidence/m33-auth/` holds 12 captures and the observed A/B/C results. |
 
 ## Quality gate evidence
 
 | Gate | Status | Command or artefact | Result |
 |---|---|---|---|
-| Rust workspace | pass | `cargo test --workspace --offline` | 31 test binaries, 1862 passed, 0 failed. |
+| Rust workspace | pass | `cargo test --workspace --offline` | 32 test binaries, 1883 passed, 0 failed. |
 | Rust lint/format | pass | `cargo clippy ... -D warnings`; `cargo fmt --all -- --check` | clean. |
 | TypeScript | pass | `node node_modules/typescript/bin/tsc --noEmit` | exit 0. |
-| Vitest | pass | `node node_modules/vitest/vitest.mjs run` | 72 files, 458 tests passed. |
+| Vitest | pass | `node node_modules/vitest/vitest.mjs run` | 75 files, 466 tests passed. |
 | Terminology | pass | `node scripts/check-terminology.mjs` | clean, 273 files. |
 | Production build | pass | `node node_modules/vite/bin/vite.js build` | clean `web/dist`. |
-| Chromium E2E | pass | `node node_modules/@playwright/test/cli.js test --project=chromium` | 150 passed, 5 env-gated skips, 0 failed. |
-| Visual captures | pass | `web/evidence/m33-corrective/` | 28 PNGs, light/dark, 1440×900 and 390×844, no page or console errors. |
+| Chromium E2E | pass | `node node_modules/@playwright/test/cli.js test --project=chromium` | 152 passed, 6 env-gated skips, 0 failed (25.7 min). |
+| Auth browser specs | pass | `local-trusted.spec.ts`, `auth.spec.ts` | 2 passed + 1 capture skip (3 with `ORBIT_CAPTURE=1`); 6 passed. |
+| Startup refusal | pass | `cargo test -p orbit-server --test local_trusted_startup` | 2 passed; manual `0.0.0.0` start exited 1 and created no database. |
+| Documentation suites | pass | `python3 -m unittest discover -s tests/documentation`; `pytest -q tests/documentation` | 39 passed each. |
+| Visual captures | pass | `web/evidence/m33-corrective/`, `web/evidence/m33-auth/` | 28 + 12 PNGs, light/dark, 1440×900 and 390×844, no page or console errors. |
 
 ## Checks not run
 

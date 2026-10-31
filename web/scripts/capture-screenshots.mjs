@@ -53,7 +53,9 @@ async function stubSession(page) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
+          mode: 'authenticated',
           device_id: 'evidence-workstation',
+          display_name: null,
           expires_at_ms: Date.now() + 12 * 60 * 60 * 1000,
         }),
       })

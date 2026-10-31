@@ -70,7 +70,7 @@ pub mod task_graph;
 pub mod task_impact;
 pub mod task_next;
 pub mod workload_insights;
-pub use store::{AuthorityError, AuthorityEvent, TaskTimestamps};
+pub use store::{AuthorityError, AuthorityEvent, RESERVED_LOCAL_PRINCIPAL_ID, TaskTimestamps};
 pub mod authority_evidence;
 pub mod folder_commands;
 pub mod habit_capability;
@@ -1673,6 +1673,31 @@ mod host_tests {
         assert!(host.authorize_device("device-1", second).unwrap());
         assert!(host.revoke_device("device-1").unwrap());
         assert!(!host.authorize_device("device-1", second).unwrap());
+    }
+
+    #[test]
+    fn reserved_local_principal_id_cannot_be_enrolled_or_rotated() {
+        let mut host = AuthoritativeHost::open(":memory:").unwrap();
+        let secret = "device-secret-reserved-0123456789ab";
+        for reserved in [RESERVED_LOCAL_PRINCIPAL_ID, " local-trusted "] {
+            let message = host
+                .enroll_device(reserved, secret)
+                .expect_err("reserved id must not enroll");
+            assert!(
+                format!("{message:?}").contains("reserved for the local-trusted principal"),
+                "{message:?}"
+            );
+        }
+        // A normal id still enrolls, and reserved ids cannot be rotated into
+        // existence either.
+        host.enroll_device("device-normal", secret).unwrap();
+        let message = host
+            .rotate_device_token(" local-trusted ", "device-secret-rotated-0123456789")
+            .expect_err("reserved id must not be rotated");
+        assert!(
+            format!("{message:?}").contains("reserved for the local-trusted principal"),
+            "{message:?}"
+        );
     }
 
     #[test]

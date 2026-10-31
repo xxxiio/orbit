@@ -7,6 +7,10 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+/// Device id reserved for the synthetic principal used by local-trusted mode.
+/// It is never a real enrolled device, so enrollment must reject it.
+pub const RESERVED_LOCAL_PRINCIPAL_ID: &str = "local-trusted";
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AuthorityEvent {
     pub cursor: i64,
@@ -745,6 +749,11 @@ impl AuthorityStore {
         if id.trim().is_empty() || token.len() < 32 {
             return Err(AuthorityError::Invalid("device id or token"));
         }
+        if id.trim() == RESERVED_LOCAL_PRINCIPAL_ID {
+            return Err(AuthorityError::Invalid(
+                "device id \"local-trusted\" is reserved for the local-trusted principal",
+            ));
+        }
         self.conn.execute(
             "INSERT INTO devices(id,token_hash) VALUES(?1,?2)",
             params![id, digest(token)],
@@ -756,6 +765,11 @@ impl AuthorityStore {
     pub fn rotate_token(&mut self, id: &str, token: &str) -> Result<bool, AuthorityError> {
         if id.trim().is_empty() || token.len() < 32 {
             return Err(AuthorityError::Invalid("device id or token"));
+        }
+        if id.trim() == RESERVED_LOCAL_PRINCIPAL_ID {
+            return Err(AuthorityError::Invalid(
+                "device id \"local-trusted\" is reserved for the local-trusted principal",
+            ));
         }
         Ok(self.conn.execute(
             "UPDATE devices SET token_hash=?2 WHERE id=?1 AND revoked=0",

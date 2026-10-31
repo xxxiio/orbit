@@ -1,4 +1,5 @@
 //! Optional self-hosted Orbit authoritative server. Local-only clients do not need it.
+mod auth;
 mod blueprints;
 mod authority_evidence {
     pub use orbit_runtime::authority_evidence::*;
@@ -12,6 +13,10 @@ mod remote_mcp;
 mod session;
 mod web;
 
+use auth::{
+    AuthenticationMode, LOCAL_TRUSTED_PRINCIPAL_ID, Principal, local_trusted_host_allowed,
+    origin_matches_host,
+};
 use automation::{AutomationStore, Job, JobInput, QueueError, Run, SettleInput};
 use axum::{
     Json, Router,
@@ -53,6 +58,7 @@ struct AppState {
     admin_key_hash: Vec<u8>,
     /// Upper bound for attachment import bodies, checked before buffering.
     attachment_body_limit: usize,
+    auth_mode: AuthenticationMode,
 }
 #[derive(Deserialize)]
 struct EnrollRequest {
@@ -1069,7 +1075,7 @@ async fn authoritative_agent_continue(
     headers: HeaderMap,
     Json(command): Json<orbit_runtime::agent_authority::QueueSessionPrompt>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let owner = device(&state, &headers)?;
+    let owner = enrolled_device(&state, &headers)?;
     let mut host = state
         .store
         .lock()
@@ -1083,7 +1089,7 @@ async fn authoritative_machine_prompts(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<serde_json::Value>>, ApiError> {
-    let machine = device(&state, &headers)?;
+    let machine = enrolled_device(&state, &headers)?;
     let host = state
         .store
         .lock()
@@ -1098,7 +1104,7 @@ async fn authoritative_machine_claim_prompt(
     headers: HeaderMap,
     Json(command): Json<orbit_runtime::agent_authority::ClaimSessionPrompt>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let machine = device(&state, &headers)?;
+    let machine = enrolled_device(&state, &headers)?;
     let mut host = state
         .store
         .lock()
@@ -1113,7 +1119,7 @@ async fn authoritative_machine_report_prompt(
     headers: HeaderMap,
     Json(command): Json<orbit_runtime::agent_authority::ReportSessionPrompt>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let machine = device(&state, &headers)?;
+    let machine = enrolled_device(&state, &headers)?;
     let mut host = state
         .store
         .lock()
@@ -1132,7 +1138,7 @@ async fn authoritative_machine_agent_inbox(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<orbit_runtime::agent_authority::AgentJobView>>, ApiError> {
-    let machine = device(&state, &headers)?;
+    let machine = enrolled_device(&state, &headers)?;
     let host = state
         .store
         .lock()
@@ -1147,7 +1153,7 @@ async fn authoritative_machine_agent_brief(
     headers: HeaderMap,
     Query(query): Query<AgentJobLookup>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let machine = device(&state, &headers)?;
+    let machine = enrolled_device(&state, &headers)?;
     let host = state
         .store
         .lock()
@@ -1162,7 +1168,7 @@ async fn authoritative_machine_agent_claim(
     headers: HeaderMap,
     Json(command): Json<orbit_runtime::agent_authority::ClaimMachineAgentJob>,
 ) -> Result<Json<orbit_runtime::agent_authority::MachineLaunchClaimReceipt>, ApiError> {
-    let machine = device(&state, &headers)?;
+    let machine = enrolled_device(&state, &headers)?;
     let mut host = state
         .store
         .lock()
@@ -1177,7 +1183,7 @@ async fn authoritative_machine_agent_launch_result(
     headers: HeaderMap,
     Json(command): Json<orbit_runtime::agent_authority::ReportMachineAgentLaunch>,
 ) -> Result<Json<orbit_runtime::agent_authority::AgentJobView>, ApiError> {
-    let machine = device(&state, &headers)?;
+    let machine = enrolled_device(&state, &headers)?;
     let mut host = state
         .store
         .lock()
@@ -1192,7 +1198,7 @@ async fn authoritative_machine_agent_observe(
     headers: HeaderMap,
     Json(command): Json<orbit_runtime::agent_authority::ReportMachineAgentObservation>,
 ) -> Result<Json<orbit_runtime::agent_authority::AgentJobView>, ApiError> {
-    let machine = device(&state, &headers)?;
+    let machine = enrolled_device(&state, &headers)?;
     let mut host = state
         .store
         .lock()
@@ -1207,7 +1213,7 @@ async fn authoritative_machine_agent_handoff(
     headers: HeaderMap,
     Json(command): Json<orbit_runtime::agent_authority::ReportMachineAgentHandoff>,
 ) -> Result<Json<Vec<serde_json::Value>>, ApiError> {
-    let machine = device(&state, &headers)?;
+    let machine = enrolled_device(&state, &headers)?;
     let mut host = state
         .store
         .lock()
@@ -2756,6 +2762,16 @@ fn bearer(headers: &HeaderMap) -> Result<&str, ApiError> {
         .ok_or_else(|| error(StatusCode::UNAUTHORIZED, "bearer token required"))
 }
 fn admin(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
+    // Local trust authenticates the browser but never grants administrator
+    // rights. Answer 403 so the web client does not treat it as a dead session.
+    if state.auth_mode == AuthenticationMode::LocalTrusted
+        && !headers.contains_key(header::AUTHORIZATION)
+    {
+        return Err(error(
+            StatusCode::FORBIDDEN,
+            "administrator credential required",
+        ));
+    }
     let token = bearer(headers)?;
     let hash = Sha256::digest(token.as_bytes());
     if bool::from(state.admin_key_hash.as_slice().ct_eq(hash.as_slice())) {
@@ -2764,9 +2780,15 @@ fn admin(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
         Err(error(StatusCode::UNAUTHORIZED, "unauthorized"))
     }
 }
-fn device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
+fn principal(state: &AppState, headers: &HeaderMap) -> Result<Principal, ApiError> {
     if headers.contains_key(header::AUTHORIZATION) {
-        return bearer_device(state, headers);
+        // A presented bearer token is decisive: a bad one is rejected rather
+        // than falling back to local trust.
+        return bearer_device(state, headers).map(Principal::device);
+    }
+    if state.auth_mode == AuthenticationMode::LocalTrusted {
+        // The synthetic principal is not tied to any cookie; ignore it.
+        return Ok(Principal::local_trusted());
     }
     // Browser sessions are the only alternative credential; absent a bearer
     // token there is nothing else to authenticate.
@@ -2792,10 +2814,27 @@ fn device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
         .device_active(&device_id)
         .map_err(map_error)?;
     if active {
-        Ok(device_id)
+        Ok(Principal::device(device_id))
     } else {
         Err(error(StatusCode::UNAUTHORIZED, "unauthorized"))
     }
+}
+/// Product routes accept any principal: an enrolled device or the local
+/// trusted user. Callers that only need the acting id use this.
+fn device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
+    principal(state, headers).map(|p| p.device_id().to_owned())
+}
+/// Machine transports move work between enrolled devices. Local trust never
+/// makes a browser a machine, so the local principal is refused.
+fn enrolled_device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
+    let principal = principal(state, headers)?;
+    if principal.is_local_trusted() {
+        return Err(error(
+            StatusCode::FORBIDDEN,
+            "enrolled device credential required",
+        ));
+    }
+    Ok(principal.device_id().to_owned())
 }
 fn bearer_device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
     let token = bearer(headers)?;
@@ -2906,8 +2945,10 @@ struct WebLogin {
 }
 #[derive(Serialize)]
 struct WebSessionResponse {
+    mode: String,
     device_id: String,
-    expires_at_ms: i64,
+    display_name: Option<String>,
+    expires_at_ms: Option<i64>,
 }
 
 /// Exchange device credentials for an HttpOnly cookie session. Failures never
@@ -2916,6 +2957,13 @@ async fn create_web_session(
     State(state): State<AppState>,
     Json(request): Json<WebLogin>,
 ) -> Result<Response, WebFailure> {
+    // There is nothing to log in to when the server already trusts the machine.
+    if state.auth_mode == AuthenticationMode::LocalTrusted {
+        return Err(web_error(
+            StatusCode::CONFLICT,
+            "server is in local trusted mode",
+        ));
+    }
     // Throttle buckets and the credential check must agree on the device id,
     // otherwise padding the claimed id sidesteps the failure series.
     let device_id = request.device_id.trim();
@@ -2975,8 +3023,10 @@ async fn create_web_session(
     let mut response = (
         StatusCode::CREATED,
         Json(WebSessionResponse {
+            mode: AuthenticationMode::Authenticated.as_str().to_owned(),
             device_id: device_id.to_owned(),
-            expires_at_ms,
+            display_name: None,
+            expires_at_ms: Some(expires_at_ms),
         }),
     )
         .into_response();
@@ -2991,6 +3041,36 @@ async fn get_web_session(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Response, WebFailure> {
+    if state.auth_mode == AuthenticationMode::LocalTrusted {
+        // A cookie issued by a previous authenticated run must not silently
+        // re-authenticate the browser if the operator switches back.
+        let stale_token = session_cookie(&headers);
+        let mut response = Json(WebSessionResponse {
+            mode: AuthenticationMode::LocalTrusted.as_str().to_owned(),
+            device_id: LOCAL_TRUSTED_PRINCIPAL_ID.to_owned(),
+            display_name: Some("Local browser".to_owned()),
+            expires_at_ms: None,
+        })
+        .into_response();
+        if let Some(token) = stale_token {
+            if let Ok(now) = now_ms()
+                && let Ok(mut sessions) = state.sessions.lock()
+            {
+                // Unknown or expired tokens are already invalid; revocation is
+                // best effort and must not change the local response.
+                let _ = sessions.revoke(&token, now);
+            }
+            response.headers_mut().insert(
+                header::SET_COOKIE,
+                axum::http::HeaderValue::from_static(CLEARED_SESSION_COOKIE),
+            );
+        }
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        );
+        return Ok(response);
+    }
     let now = now_ms().map_err(web_api_error)?;
     let Some(token) = session_cookie(&headers) else {
         return Err(web_session_unauthorized());
@@ -3022,8 +3102,10 @@ async fn get_web_session(
         return Err(web_session_unauthorized());
     }
     let mut response = Json(WebSessionResponse {
+        mode: AuthenticationMode::Authenticated.as_str().to_owned(),
         device_id,
-        expires_at_ms,
+        display_name: None,
+        expires_at_ms: Some(expires_at_ms),
     })
     .into_response();
     // Sliding renewal is reflected client-side: the browser keeps the cookie
@@ -3045,6 +3127,26 @@ async fn delete_web_session(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Response, WebFailure> {
+    // No session exists in local trusted mode; logout is still a successful
+    // no-op that always clears a stale cookie from a previous authenticated run.
+    if state.auth_mode == AuthenticationMode::LocalTrusted {
+        if let Some(token) = session_cookie(&headers)
+            && let Ok(now) = now_ms()
+            && let Ok(mut sessions) = state.sessions.lock()
+        {
+            let _ = sessions.revoke(&token, now);
+        }
+        let mut response = StatusCode::NO_CONTENT.into_response();
+        response.headers_mut().insert(
+            header::SET_COOKIE,
+            axum::http::HeaderValue::from_static(CLEARED_SESSION_COOKIE),
+        );
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        );
+        return Ok(response);
+    }
     let now = now_ms().map_err(web_api_error)?;
     if let Some(token) = session_cookie(&headers) {
         state
@@ -3066,15 +3168,42 @@ async fn delete_web_session(
     Ok(response)
 }
 
+async fn local_trusted_host_guard(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if state.auth_mode == AuthenticationMode::LocalTrusted
+        && !local_trusted_host_allowed(request.headers())
+    {
+        return error(
+            StatusCode::FORBIDDEN,
+            "host not allowed in local trusted mode",
+        )
+        .into_response();
+    }
+    next.run(request).await
+}
+
 /// Cookie-authenticated browser mutations need a custom header (impossible to
 /// set on a cross-site form post) and must not be cross-site fetches.
-async fn csrf_guard(State(_state): State<AppState>, request: Request, next: Next) -> Response {
-    if csrf_violation(request.method(), request.headers(), request.uri().path()) {
+async fn csrf_guard(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    if csrf_violation(
+        state.auth_mode,
+        request.method(),
+        request.headers(),
+        request.uri().path(),
+    ) {
         return error(StatusCode::FORBIDDEN, "csrf check failed").into_response();
     }
     next.run(request).await
 }
-fn csrf_violation(method: &Method, headers: &HeaderMap, path: &str) -> bool {
+fn csrf_violation(
+    mode: AuthenticationMode,
+    method: &Method,
+    headers: &HeaderMap,
+    path: &str,
+) -> bool {
     if matches!(method.as_str(), "GET" | "HEAD" | "OPTIONS") {
         return false;
     }
@@ -3083,7 +3212,30 @@ fn csrf_violation(method: &Method, headers: &HeaderMap, path: &str) -> bool {
         return false;
     }
     // Bearer clients (CLI, MCP workers) are not browsers and are unaffected.
-    if headers.contains_key(header::AUTHORIZATION) || session_cookie(headers).is_none() {
+    if headers.contains_key(header::AUTHORIZATION) {
+        return false;
+    }
+    if mode == AuthenticationMode::LocalTrusted {
+        // Local trust is ambient authority without a cookie, so every mutation
+        // needs the same browser-only proof even when no session exists.
+        if headers
+            .get("sec-fetch-site")
+            .and_then(|value| value.to_str().ok())
+            == Some("cross-site")
+        {
+            return true;
+        }
+        if !origin_matches_host(headers) {
+            return true;
+        }
+        return headers
+            .get("x-orbit-csrf")
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            != Some("1");
+    }
+    // Cookie-authenticated browser mutations need the custom header too.
+    if session_cookie(headers).is_none() {
         return false;
     }
     if headers
@@ -3270,7 +3422,7 @@ async fn claim_run(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Option<Run>>, ApiError> {
-    let worker = device(&state, &headers)?;
+    let worker = enrolled_device(&state, &headers)?;
     let mut queue = state
         .automation
         .lock()
@@ -3283,7 +3435,7 @@ async fn settle_run(
     axum::extract::Path(id): axum::extract::Path<i64>,
     Json(req): Json<SettleInput>,
 ) -> Result<StatusCode, ApiError> {
-    let worker = device(&state, &headers)?;
+    let worker = enrolled_device(&state, &headers)?;
     let mut queue = state
         .automation
         .lock()
@@ -3401,7 +3553,7 @@ async fn claim_proposal(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Option<Proposal>>, ApiError> {
-    let worker = device(&state, &headers)?;
+    let worker = enrolled_device(&state, &headers)?;
     let mut store = state
         .proposals
         .lock()
@@ -3421,7 +3573,7 @@ async fn settle_proposal(
     axum::extract::Path(id): axum::extract::Path<i64>,
     Json(req): Json<ProposalSettlement>,
 ) -> Result<StatusCode, ApiError> {
-    let worker = device(&state, &headers)?;
+    let worker = enrolled_device(&state, &headers)?;
     let mut store = state
         .proposals
         .lock()
@@ -3504,6 +3656,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if admin_key.len() < 32 {
         return Err("ORBIT_SERVER_ADMIN_KEY must be at least 32 characters".into());
     }
+    // Fail closed on an unrecognised mode, and validate a local-trusted bind
+    // before storage is opened so a misconfiguration never touches a database.
+    let auth_mode = AuthenticationMode::from_env()?;
+    let bind = std::env::var("ORBIT_SERVER_BIND").unwrap_or_else(|_| "127.0.0.1:8787".into());
+    let local_bind = match auth_mode {
+        AuthenticationMode::LocalTrusted => Some(auth::validate_local_trusted_bind(&bind)?),
+        AuthenticationMode::Authenticated => None,
+    };
     let database = std::env::var("ORBIT_SERVER_DB").unwrap_or_else(|_| "orbit-server.db".into());
     if let Some(parent) = Path::new(&database)
         .parent()
@@ -3537,6 +3697,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cookie_secure: std::env::var("ORBIT_WEB_COOKIE_SECURE").as_deref() == Ok("1"),
         admin_key_hash: Sha256::digest(admin_key.as_bytes()).to_vec(),
         attachment_body_limit,
+        auth_mode,
     };
     // A single scheduler writes durable due runs; no cloud service needed.
     let scheduler = state.automation.clone();
@@ -3556,9 +3717,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = routes(state);
     // Intentionally loopback by default. Put the service behind a TLS
     // reverse-proxy/private-network gate before making it remotely reachable.
-    let bind = std::env::var("ORBIT_SERVER_BIND").unwrap_or_else(|_| "127.0.0.1:8787".into());
-    let listener = tokio::net::TcpListener::bind(&bind).await?;
-    eprintln!("orbit-server authoritative runtime listening on {bind}");
+    let listener = match local_bind {
+        Some(address) => tokio::net::TcpListener::bind(address).await?,
+        None => tokio::net::TcpListener::bind(&bind).await?,
+    };
+    let local_addr = listener.local_addr()?;
+    if auth_mode == AuthenticationMode::LocalTrusted && !local_addr.ip().is_loopback() {
+        return Err(format!(
+            "local-trusted mode resolved to a non-loopback listener address: {local_addr}"
+        )
+        .into());
+    }
+    eprintln!("Orbit server listening on http://{local_addr}");
+    match auth_mode {
+        AuthenticationMode::LocalTrusted => {
+            eprintln!("Authentication: Local trusted mode");
+            eprintln!("Access: Local machine only");
+        }
+        AuthenticationMode::Authenticated => {
+            eprintln!("Authentication: Device authentication");
+            eprintln!("Access: Enrolled devices only");
+        }
+    }
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
@@ -3735,7 +3915,8 @@ fn executor_device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiE
     if headers.contains_key(header::AUTHORIZATION) {
         return bearer_device(state, headers);
     }
-    if session_cookie(headers).is_some() {
+    // Local trust authenticates the request but never makes it an executor.
+    if session_cookie(headers).is_some() || state.auth_mode == AuthenticationMode::LocalTrusted {
         return Err(error(StatusCode::FORBIDDEN, "executor credential required"));
     }
     Err(error(StatusCode::UNAUTHORIZED, "unauthorized"))
@@ -3747,7 +3928,8 @@ fn operator_device(state: &AppState, headers: &HeaderMap) -> Result<String, ApiE
     if headers.contains_key(header::AUTHORIZATION) {
         return bearer_device(state, headers);
     }
-    if session_cookie(headers).is_some() {
+    // Local trust authenticates the request but never makes it an operator.
+    if session_cookie(headers).is_some() || state.auth_mode == AuthenticationMode::LocalTrusted {
         return Err(error(StatusCode::FORBIDDEN, "operator credential required"));
     }
     Err(error(StatusCode::UNAUTHORIZED, "unauthorized"))
@@ -4462,6 +4644,10 @@ fn routes(state: AppState) -> Router {
         .route("/", get(web::index))
         .route("/{*path}", get(web::fallback))
         .layer(middleware::from_fn_with_state(state.clone(), csrf_guard))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            local_trusted_host_guard,
+        ))
         .with_state(state)
 }
 
@@ -4519,6 +4705,14 @@ mod tests {
     }
 
     fn test_state(dist: &TempDist) -> AppState {
+        test_state_with_mode(dist, AuthenticationMode::Authenticated)
+    }
+
+    fn test_state_local_trusted(dist: &TempDist) -> AppState {
+        test_state_with_mode(dist, AuthenticationMode::LocalTrusted)
+    }
+
+    fn test_state_with_mode(dist: &TempDist, auth_mode: AuthenticationMode) -> AppState {
         let state = AppState {
             store: Arc::new(Mutex::new(AuthoritativeHost::open(":memory:").unwrap())),
             automation: Arc::new(Mutex::new(
@@ -4535,6 +4729,7 @@ mod tests {
             cookie_secure: false,
             admin_key_hash: Sha256::digest(b"test-admin-key-0123456789abcdef").to_vec(),
             attachment_body_limit: 1024 * 1024,
+            auth_mode,
         };
         state
             .store
@@ -4607,7 +4802,7 @@ mod tests {
         send(
             address,
             &format!(
-                "POST {path} HTTP/1.1\r\nHost: orbit.test\r\nConnection: close\r\n\
+                "POST {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\
                  Content-Type: application/json\r\nContent-Length: {}\r\n{headers}\r\n{body}",
                 body.len()
             ),
@@ -4617,7 +4812,7 @@ mod tests {
         send(
             address,
             &format!(
-                "GET {path} HTTP/1.1\r\nHost: orbit.test\r\nConnection: close\r\n{headers}\r\n"
+                "GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n{headers}\r\n"
             ),
         )
     }
@@ -5571,7 +5766,7 @@ mod tests {
         let (status, raw) = send(
             &address,
             &format!(
-                "DELETE /v1/web/session HTTP/1.1\r\nHost: orbit.test\r\nConnection: close\r\n\
+                "DELETE /v1/web/session HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\
                  {cookie_header}x-orbit-csrf: 1\r\n\r\n"
             ),
         );
@@ -6537,22 +6732,36 @@ mod tests {
     fn csrf_applies_only_to_cookie_mutations() {
         let mut cookie = HeaderMap::new();
         cookie.insert(header::COOKIE, "orbit_session=abc".parse().unwrap());
+        let authenticated = AuthenticationMode::Authenticated;
         assert!(csrf_violation(
+            authenticated,
             &Method::POST,
             &cookie,
             "/v1/authoritative/projects"
         ));
         assert!(!csrf_violation(
+            authenticated,
             &Method::GET,
             &cookie,
             "/v1/authoritative/projects"
         ));
-        assert!(!csrf_violation(&Method::POST, &cookie, "/v1/web/session"));
+        assert!(!csrf_violation(
+            authenticated,
+            &Method::POST,
+            &cookie,
+            "/v1/web/session"
+        ));
         // Logout is a cookie mutation; the browser client sends the header.
-        assert!(csrf_violation(&Method::DELETE, &cookie, "/v1/web/session"));
+        assert!(csrf_violation(
+            authenticated,
+            &Method::DELETE,
+            &cookie,
+            "/v1/web/session"
+        ));
         let mut with_header = cookie.clone();
         with_header.insert("x-orbit-csrf", "1".parse().unwrap());
         assert!(!csrf_violation(
+            authenticated,
             &Method::POST,
             &with_header,
             "/v1/authoritative/projects"
@@ -6560,12 +6769,73 @@ mod tests {
         let mut cross_site = with_header;
         cross_site.insert("sec-fetch-site", "cross-site".parse().unwrap());
         assert!(csrf_violation(
+            authenticated,
             &Method::POST,
             &cross_site,
             "/v1/authoritative/projects"
         ));
         let bearer = HeaderMap::new();
         assert!(!csrf_violation(
+            authenticated,
+            &Method::POST,
+            &bearer,
+            "/v1/authoritative/projects"
+        ));
+    }
+
+    #[test]
+    fn csrf_local_trusted_needs_browser_proof_without_a_cookie() {
+        let local = AuthenticationMode::LocalTrusted;
+        let bare = HeaderMap::new();
+        assert!(csrf_violation(
+            local,
+            &Method::POST,
+            &bare,
+            "/v1/authoritative/projects"
+        ));
+        assert!(!csrf_violation(
+            local,
+            &Method::GET,
+            &bare,
+            "/v1/authoritative/projects"
+        ));
+        assert!(!csrf_violation(
+            local,
+            &Method::POST,
+            &bare,
+            "/v1/web/session"
+        ));
+        let mut cross_site = HeaderMap::new();
+        cross_site.insert("x-orbit-csrf", "1".parse().unwrap());
+        cross_site.insert("sec-fetch-site", "cross-site".parse().unwrap());
+        assert!(csrf_violation(
+            local,
+            &Method::POST,
+            &cross_site,
+            "/v1/authoritative/projects"
+        ));
+        let mut foreign = HeaderMap::new();
+        foreign.insert("x-orbit-csrf", "1".parse().unwrap());
+        foreign.insert(header::HOST, "127.0.0.1:8787".parse().unwrap());
+        foreign.insert(header::ORIGIN, "https://evil.example".parse().unwrap());
+        assert!(csrf_violation(
+            local,
+            &Method::POST,
+            &foreign,
+            "/v1/authoritative/projects"
+        ));
+        let mut same_origin = foreign;
+        same_origin.insert(header::ORIGIN, "http://127.0.0.1:8787".parse().unwrap());
+        assert!(!csrf_violation(
+            local,
+            &Method::POST,
+            &same_origin,
+            "/v1/authoritative/projects"
+        ));
+        let mut bearer = HeaderMap::new();
+        bearer.insert(header::AUTHORIZATION, "Bearer token".parse().unwrap());
+        assert!(!csrf_violation(
+            local,
             &Method::POST,
             &bearer,
             "/v1/authoritative/projects"
@@ -6758,5 +7028,412 @@ mod tests {
         let overview: serde_json::Value = serde_json::from_str(body_of(&raw)).unwrap();
         assert_eq!(overview[0]["next_action"], "await_executor");
         assert_eq!(overview[0]["needs_attention"], false);
+    }
+
+    fn delete(address: &str, path: &str, headers: &str) -> (u16, String) {
+        send(
+            address,
+            &format!(
+                "DELETE {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n{headers}\r\n"
+            ),
+        )
+    }
+
+    /// Authenticated mode never trusts the peer address, so proxy headers that
+    /// claim loopback are still anonymous.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn authenticated_mode_ignores_forwarded_loopback_claims() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        let (status, _) = get(
+            &address,
+            "/v1/authoritative/snapshot",
+            "X-Forwarded-For: 127.0.0.1\r\nX-Real-IP: 127.0.0.1\r\n",
+        );
+        assert_eq!(status, 401);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn local_trusted_product_surface_works_without_credentials() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state_local_trusted(&dist))).await;
+
+        let (status, raw) = get(&address, "/v1/authoritative/snapshot", "");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert!(header_value(&raw, "set-cookie").is_none());
+
+        let csrf = "x-orbit-csrf: 1\r\n";
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            csrf,
+            r#"{"command_id":"p-create","expected_revision":0,"project_id":"orbit","name":"Orbit"}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/task-commands",
+            csrf,
+            r#"{"command_id":"create-1","expected_revision":1,"action":{"type":"create","task_id":"task-1","title":"Ship it"}}"#,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn local_trusted_web_session_has_no_cookie() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state_local_trusted(&dist))).await;
+
+        let (status, raw) = get(&address, "/v1/web/session", "");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let body = json_of(&raw);
+        assert_eq!(body["mode"], "local-trusted");
+        assert_eq!(body["device_id"], "local-trusted");
+        assert_eq!(body["display_name"], "Local browser");
+        assert_eq!(body["expires_at_ms"], serde_json::Value::Null);
+        assert!(header_value(&raw, "set-cookie").is_none());
+        assert!(!body_of(&raw).contains(DEVICE_TOKEN));
+
+        let (status, raw) = post(
+            &address,
+            "/v1/web/session",
+            "",
+            r#"{"device_id":"device-1","token":"whatever"}"#,
+        );
+        assert_eq!(status, 409, "{}", body_of(&raw));
+        assert_eq!(
+            body_of(&raw),
+            r#"{"error":"server is in local trusted mode"}"#
+        );
+        assert!(header_value(&raw, "set-cookie").is_none());
+
+        let (status, raw) = delete(&address, "/v1/web/session", "x-orbit-csrf: 1\r\n");
+        assert_eq!(status, 204, "{}", body_of(&raw));
+        // Logout always clears any stale authenticated cookie.
+        let cleared = header_value(&raw, "set-cookie").expect("logout must clear the cookie");
+        assert!(cleared.starts_with("orbit_session=;"), "{cleared}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn local_trusted_still_requires_privileged_credentials() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state_local_trusted(&dist))).await;
+        let csrf = "x-orbit-csrf: 1\r\n";
+
+        let (status, raw) = post(
+            &address,
+            "/v1/devices",
+            csrf,
+            r#"{"device_id":"new-device","token":"new-device-token-0123456789abcdef"}"#,
+        );
+        assert_eq!(status, 403, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("administrator credential required"),
+            "{}",
+            body_of(&raw)
+        );
+
+        for (path, body) in [
+            (
+                "/v1/authoritative/capabilities/install",
+                r#"{"command_id":"install-1","capability_id":"orbit.reference.work-item-note"}"#,
+            ),
+            (
+                "/v1/authoritative/capabilities/authorize",
+                r#"{"command_id":"authorize-1","capability_id":"orbit.reference.work-item-note","project_id":"project-1","confirm":true}"#,
+            ),
+            (
+                "/v1/authoritative/capabilities/revoke",
+                r#"{"command_id":"revoke-1","capability_id":"orbit.reference.work-item-note","project_id":"project-1"}"#,
+            ),
+        ] {
+            let (status, raw) = post(&address, path, csrf, body);
+            assert_eq!(status, 403, "{path}: {}", body_of(&raw));
+            assert!(
+                body_of(&raw).contains("operator credential required"),
+                "{path}: {}",
+                body_of(&raw)
+            );
+        }
+
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/capability-executors/announce",
+            csrf,
+            r#"{"capability_ids":[]}"#,
+        );
+        assert_eq!(status, 403, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("executor credential required"),
+            "{}",
+            body_of(&raw)
+        );
+
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/agent-machines/claim",
+            csrf,
+            r#"{"job_id":"job-1","expected_revision":0,"claim_token":"token","at_ms":1000}"#,
+        );
+        assert_eq!(status, 403, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("enrolled device credential required"),
+            "{}",
+            body_of(&raw)
+        );
+
+        // `/mcp` has a device branch and an admin fallback; in local-trusted
+        // mode both refuse, and the last refusal names the missing credential.
+        let (status, raw) = post(
+            &address,
+            "/mcp",
+            csrf,
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+        );
+        assert_eq!(status, 403, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("administrator credential required"),
+            "{}",
+            body_of(&raw)
+        );
+
+        // Product capability requests pass the transport guard and are then
+        // judged by the capability authorization layer, as in authenticated mode.
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/capability-actions/request",
+            csrf,
+            r#"{"command_id":"cap-1","item_id":"missing-item","expected_revision":0,"action_id":"append_note","inputs":{}}"#,
+        );
+        assert_ne!(status, 401, "{}", body_of(&raw));
+        assert_ne!(status, 403, "{}", body_of(&raw));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn authenticated_privileged_guards_still_answer_401() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+
+        let (status, raw) = post(
+            &address,
+            "/v1/devices",
+            "",
+            r#"{"device_id":"new-device","token":"new-device-token-0123456789abcdef"}"#,
+        );
+        assert_eq!(status, 401, "{}", body_of(&raw));
+        assert!(
+            body_of(&raw).contains("bearer token required"),
+            "{}",
+            body_of(&raw)
+        );
+
+        for (path, body) in [
+            (
+                "/v1/authoritative/capabilities/install",
+                r#"{"command_id":"install-1","capability_id":"orbit.reference.work-item-note"}"#,
+            ),
+            (
+                "/v1/authoritative/capability-executors/announce",
+                r#"{"capability_ids":[]}"#,
+            ),
+            (
+                "/v1/authoritative/agent-machines/claim",
+                r#"{"job_id":"job-1","expected_revision":0,"claim_token":"token","at_ms":1000}"#,
+            ),
+            ("/mcp", r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#),
+        ] {
+            let (status, raw) = post(&address, path, "", body);
+            assert_eq!(status, 401, "{path}: {}", body_of(&raw));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn local_trusted_mutations_need_browser_proof() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state_local_trusted(&dist))).await;
+        let body = r#"{"command_id":"p-create","expected_revision":0,"project_id":"orbit","name":"Orbit"}"#;
+
+        let (status, raw) = post(&address, "/v1/authoritative/project-commands", "", body);
+        assert_eq!(status, 403, "{}", body_of(&raw));
+        assert!(body_of(&raw).contains("csrf check failed"));
+
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            "x-orbit-csrf: 1\r\nSec-Fetch-Site: cross-site\r\n",
+            body,
+        );
+        assert_eq!(status, 403, "{}", body_of(&raw));
+
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            "x-orbit-csrf: 1\r\nOrigin: https://evil.example\r\n",
+            body,
+        );
+        assert_eq!(status, 403, "{}", body_of(&raw));
+
+        let (status, raw) = post(
+            &address,
+            "/v1/authoritative/project-commands",
+            &format!("x-orbit-csrf: 1\r\nOrigin: http://{address}\r\n"),
+            body,
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn local_trusted_rejects_an_invalid_bearer_without_fallback() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state_local_trusted(&dist))).await;
+        let (status, raw) = get(
+            &address,
+            "/v1/authoritative/projects",
+            "Authorization: Bearer not-a-real-token\r\nx-orbit-device-id: device-1\r\n",
+        );
+        assert_eq!(status, 401, "{}", body_of(&raw));
+    }
+
+    fn raw_get_with_host(address: &str, path: &str, host: &str) -> (u16, String) {
+        send(
+            address,
+            &format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
+        )
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn local_trusted_host_guard_refuses_public_hosts_everywhere() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state_local_trusted(&dist))).await;
+        // DNS rebinding and a public reverse proxy both present a public Host;
+        // the API and the SPA shell must refuse before any route runs.
+        for path in ["/v1/authoritative/projects", "/"] {
+            let (status, raw) = raw_get_with_host(&address, path, "public.example.com");
+            assert_eq!(status, 403, "{path}: {}", body_of(&raw));
+            assert!(
+                body_of(&raw).contains("host not allowed in local trusted mode"),
+                "{path}: {}",
+                body_of(&raw)
+            );
+        }
+        let (status, _) = get(&address, "/v1/authoritative/projects", "");
+        assert_eq!(status, 200);
+        let (status, _) = get(&address, "/", "");
+        assert_eq!(status, 200);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn authenticated_mode_does_not_apply_the_host_rule() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state(&dist))).await;
+        // A foreign Host still reaches the normal credential path.
+        let (status, raw) =
+            raw_get_with_host(&address, "/v1/authoritative/projects", "public.example.com");
+        assert_eq!(status, 401, "{}", body_of(&raw));
+        // Static delivery is not gated by the host rule either.
+        let (status, raw) = raw_get_with_host(&address, "/", "public.example.com");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+    }
+
+    fn new_session_token(state: &AppState) -> String {
+        let mut sessions = state.sessions.lock().unwrap();
+        let now = now_ms().ok().unwrap();
+        let ttl = sessions.ttl_ms();
+        let absolute = sessions.absolute_ttl_ms();
+        sessions
+            .create("device-1", now, ttl, absolute)
+            .unwrap()
+            .token
+    }
+
+    fn session_cookie_headers(token: &str) -> String {
+        format!("Cookie: orbit_session={token}\r\nx-orbit-csrf: 1\r\n")
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn local_trusted_worker_transports_require_an_enrolled_device() {
+        let dist = TempDist::built();
+        let address = spawn(routes(test_state_local_trusted(&dist))).await;
+        let csrf = "x-orbit-csrf: 1\r\n";
+        for (path, body) in [
+            ("/v1/automation-runs/claim", ""),
+            (
+                "/v1/automation-runs/1/settle",
+                r#"{"succeeded":true,"result_json":null}"#,
+            ),
+            ("/v1/agent-proposals/claim", ""),
+            (
+                "/v1/agent-proposals/1/settle",
+                r#"{"succeeded":true,"result":{}}"#,
+            ),
+        ] {
+            let (status, raw) = post(&address, path, csrf, body);
+            assert_eq!(status, 403, "{path}: {}", body_of(&raw));
+            assert!(
+                body_of(&raw).contains("enrolled device credential required"),
+                "{path}: {}",
+                body_of(&raw)
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn authenticated_cookie_still_reaches_worker_transports() {
+        let dist = TempDist::built();
+        let state = test_state(&dist);
+        let cookie = session_cookie_headers(&new_session_token(&state));
+        let address = spawn(routes(state)).await;
+
+        let (status, raw) = post(&address, "/v1/automation-runs/claim", &cookie, "");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            &address,
+            "/v1/automation-runs/1/settle",
+            &cookie,
+            r#"{"succeeded":true,"result_json":null}"#,
+        );
+        assert_ne!(status, 403, "{}", body_of(&raw));
+
+        let (status, raw) = post(&address, "/v1/agent-proposals/claim", &cookie, "");
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        let (status, raw) = post(
+            &address,
+            "/v1/agent-proposals/1/settle",
+            &cookie,
+            r#"{"succeeded":true,"result":{}}"#,
+        );
+        assert_ne!(status, 403, "{}", body_of(&raw));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn local_trusted_clears_stale_sessions() {
+        let dist = TempDist::built();
+        let state = test_state_local_trusted(&dist);
+        let token = new_session_token(&state);
+        let address = spawn(routes(state.clone())).await;
+
+        let (status, raw) = get(
+            &address,
+            "/v1/web/session",
+            &format!("Cookie: orbit_session={token}\r\n"),
+        );
+        assert_eq!(status, 200, "{}", body_of(&raw));
+        assert_eq!(json_of(&raw)["mode"], "local-trusted");
+        let cleared = header_value(&raw, "set-cookie").expect("stale cookie must be cleared");
+        assert!(cleared.starts_with("orbit_session=;"), "{cleared}");
+        assert!(cleared.contains("Max-Age=0"), "{cleared}");
+        let still_active = state
+            .sessions
+            .lock()
+            .unwrap()
+            .authenticate(&token, now_ms().ok().unwrap())
+            .unwrap();
+        assert!(still_active.is_none(), "stale session must be revoked");
+
+        let token = new_session_token(&state);
+        let (status, raw) = delete(&address, "/v1/web/session", &session_cookie_headers(&token));
+        assert_eq!(status, 204, "{}", body_of(&raw));
+        let cleared = header_value(&raw, "set-cookie").expect("logout must clear the cookie");
+        assert!(cleared.starts_with("orbit_session=;"), "{cleared}");
     }
 }

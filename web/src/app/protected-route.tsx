@@ -24,10 +24,21 @@ export interface LoginRedirectState {
  */
 export function ProtectedRoute() {
   const location = useLocation()
-  const { isAuthenticated, isLoading, error, refetch } = useSession()
+  const { isAuthenticated, isLocalTrusted, isLoading, error, refetch } = useSession()
 
   if (isLoading) {
     return <SessionGate />
+  }
+
+  // Local-trusted is a server policy, not a credential: the workspace is open
+  // and there is nowhere to sign in to. Never explain it as an expired session.
+  // A failed re-read means the current policy is unknown, so show the retry
+  // surface instead of rendering the workspace on stale trust.
+  if (isLocalTrusted) {
+    if (error) {
+      return <SessionUnavailable onRetry={() => refetch()} retrying={false} />
+    }
+    return <Outlet />
   }
 
   // A 401 on the session read, or on any request that already marked the store

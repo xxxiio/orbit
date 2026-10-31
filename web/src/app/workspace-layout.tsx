@@ -28,13 +28,24 @@ function WorkspaceShell() {
 
   const session = useMemo<SidebarSession>(
     () => ({
+      mode: auth.mode,
       deviceId: auth.session?.device_id,
       pending: auth.isLoading,
       error: Boolean(auth.error),
       signingOut,
+      // Local-trusted has no cookie, so a sign-out control would be a lie.
+      canSignOut: !auth.isLocalTrusted,
       onSignOut: signOut,
     }),
-    [auth.session?.device_id, auth.isLoading, auth.error, signOut, signingOut],
+    [
+      auth.mode,
+      auth.session?.device_id,
+      auth.isLoading,
+      auth.error,
+      auth.isLocalTrusted,
+      signOut,
+      signingOut,
+    ],
   )
 
   const orderedProjects = useMemo(() => {

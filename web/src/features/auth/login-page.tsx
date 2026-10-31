@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useDocumentTitle } from '@/hooks'
 import { OrbitMark, Wordmark } from '@/components/ui/brand'
 import { Button } from '@/components/ui/button'
@@ -17,9 +17,10 @@ import {
 } from '@/components/ui/icons'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ThemeToggle } from '@/components/theme/theme-toggle'
+import { SessionGate } from '@/components/feedback/session-gate'
 import { cn } from '@/components/ui/utils'
 import { describeLoginError, type LoginErrorView } from './login-error'
-import { useSignIn } from './use-auth'
+import { useSession, useSignIn } from './use-auth'
 
 const toneClasses: Record<LoginErrorView['tone'], string> = {
   danger: 'border-danger/35 bg-danger-soft text-danger-ink',
@@ -47,6 +48,7 @@ export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const signIn = useSignIn()
+  const { isLocalTrusted, isLoading: sessionLoading } = useSession()
 
   const redirectTo = (() => {
     const state = location.state as { from?: unknown } | null
@@ -96,6 +98,16 @@ export function LoginPage() {
   }
 
   const ErrorIcon = formError ? toneIcons[formError.tone] : null
+
+  // A server in local-trusted mode has no device to enroll: entering the
+  // intended destination is the whole sign-in flow. The gate stays up while the
+  // session read is in flight so the form never flashes first.
+  if (sessionLoading) {
+    return <SessionGate />
+  }
+  if (isLocalTrusted) {
+    return <Navigate to={redirectTo} replace />
+  }
 
   return (
     <div className="flex min-h-dvh flex-col bg-canvas text-ink">

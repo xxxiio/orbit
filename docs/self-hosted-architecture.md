@@ -33,6 +33,14 @@ fail-closed uncertainty are required interfaces, not optional conveniences.
 The ordinary Orbit CLI is `orbit`; deployment scripts are not public CLI
 alternatives. Flutter integration remains in the separate Atomic App project.
 
+Browser access has one opt-in exception. `ORBIT_AUTH_MODE=local-trusted` exists
+only for a loopback-only personal installation where the server and browser run
+on the same machine. It is refused on every non-loopback bind, must not be
+combined with a reverse proxy, and does not change the single-user
+device-authentication trust described here for remotely reachable deployments.
+Those deployments keep device authentication, TLS and the existing enrollment
+and revocation rules.
+
 ## Ownership and acceptance
 
 - `orbit-application` owns use cases and ports.

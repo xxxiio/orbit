@@ -9,6 +9,25 @@ Every command below was run against this commit while the page was written. Wher
 machine's `npm` is the Windows interop build, the page uses the Linux `node` binary directly,
 because `npm run …` fails there before the script starts (`UNC paths are not supported`).
 
+## No device enrollment needed: local trusted mode
+
+If the server and the browser run on the same machine, local-trusted mode skips device enrollment
+and sign-in. Build the client and server as described below, then start the server with:
+
+```bash
+ORBIT_AUTH_MODE=local-trusted \
+ORBIT_SERVER_BIND=127.0.0.1:8787 \
+ORBIT_SERVER_ADMIN_KEY=local-development-only-not-a-secret-key \
+ORBIT_SERVER_DB=./orbit-local.db \
+cargo run -p orbit-server
+```
+
+The admin key above is a loopback-only placeholder, not a secret. Local-trusted mode refuses
+every non-loopback bind and trusts every process and browser on the machine that can reach the
+listener. Read [the local trusted web quickstart](local-web-quickstart.md) for the security
+boundary, the expected startup output, and what still needs a credential. If you use it, skip
+step 3 and the sign-in part of step 4 on this page; the project walkthrough still applies.
+
 ## 1. Build the client
 
 Dependencies live in `web/node_modules`; the install step is documented in

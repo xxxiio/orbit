@@ -13,7 +13,8 @@ build. For a one-page setup path aimed at a new internal tester, start with the
 [web quickstart](guides/web-quickstart.md).
 
 **Contents:** [What it is](#what-it-is-and-what-it-is-not) · [Build and run](#build-and-run) ·
-[Sign in](#sign-in) · [Everyday use](#everyday-use) · [Work Items](#work-items) ·
+[Authentication modes](#authentication-modes) · [Sign in](#sign-in) ·
+[Everyday use](#everyday-use) · [Work Items](#work-items) ·
 [Planning](#planning) · [Knowledge](#knowledge) · [Attachments](#attachments) ·
 [Agents](#agents) · [Workflow upgrades](#workflow-upgrades) ·
 [Bundled workflow install and update](#bundled-workflow-install-and-update) ·
@@ -78,6 +79,7 @@ $ target/debug/orbit-server
 | `ORBIT_SERVER_ADMIN_KEY` | required | Administrator bearer credential for `/v1/devices` and operator routes. At least 32 characters. |
 | `ORBIT_SERVER_DB` | `orbit-server.db` | SQLite file holding accepted state, devices, sessions, automations and proposals. |
 | `ORBIT_SERVER_BIND` | `127.0.0.1:8787` | Listen address. Loopback by default on purpose. |
+| `ORBIT_AUTH_MODE` | unset (`authenticated`) | `authenticated` requires a device ID and token; `local-trusted` is an opt-in, loopback-only mode with no browser sign-in. See [Authentication modes](#authentication-modes). |
 | `ORBIT_WEB_DIST` | `web/dist` | Directory with `index.html` and `assets/`. An absolute path avoids working-directory surprises. |
 | `ORBIT_WEB_COOKIE_SECURE` | unset | Set to `1` only behind HTTPS; see [Sign in](#sign-in). |
 | `ORBIT_ATTACHMENT_MAX_BYTES` | `67108864` (64 MiB) | Largest accepted upload body. The web app surfaces the server's refusal; it does not impose a smaller limit of its own. |
@@ -88,7 +90,59 @@ Session lifetimes are set with `ORBIT_WEB_SESSION_TTL_SECONDS` and
 If the page returns `503 Orbit web app is not built`, the server started without a readable
 build directory. See [Troubleshooting](#troubleshooting).
 
+## Authentication modes
+
+`orbit-server` selects its browser policy from `ORBIT_AUTH_MODE`. Unset or `authenticated` is the
+default device authentication. `local-trusted` is an explicit opt-in for one person on one
+machine.
+
+| Mode | Selected by | Browser access | Trust |
+| --- | --- | --- | --- |
+| Authenticated | `ORBIT_AUTH_MODE` unset or `authenticated` | Device ID and token, exchanged once for a session cookie | Enrolled devices only |
+| Local-trusted | `ORBIT_AUTH_MODE=local-trusted` | No device ID, token, login screen or session cookie | Every process and browser on this machine that can reach the loopback listener |
+
+**Loopback only.** Local-trusted refuses to start unless `ORBIT_SERVER_BIND` is a literal loopback
+address: `127.0.0.0/8` (for example `127.0.0.1:8787`) or `[::1]`. The refusal happens before the
+database is opened. `0.0.0.0`, `[::]`, LAN addresses, IPv4-mapped IPv6 such as
+`[::ffff:127.0.0.1]`, hostnames such as `localhost`, and any other non-loopback value are
+rejected.
+
+**Threat model.** In local-trusted mode every process and every browser on the machine that can
+reach the loopback listener is trusted. It does not defend against a malicious local process,
+another user session on a shared machine, or a reverse proxy that terminates on the same host.
+It is inappropriate on shared or untrusted development hosts and must never be used behind a
+public-facing reverse proxy. If the browser is not on the server's machine, use authenticated
+mode.
+
+The mode changes the startup banner: `Authentication: Local trusted mode` and
+`Access: Local machine only`, or `Authentication: Device authentication` and
+`Access: Enrolled devices only`. The sidebar follows the same policy: in local-trusted mode it
+shows **Local trusted mode** in place of a device ID and hides sign-out, because there is no
+session to end. Refreshes and restarts never prompt, and existing project data stays visible.
+
+`ORBIT_SERVER_ADMIN_KEY` is required in both modes and is never sent to the browser. In
+local-trusted mode the browser cannot use the privileged endpoints: device enrollment returns
+`403 administrator credential required` without the admin key, and capability
+install/authorize/revoke and executor enrollment return `403` because they require an enrolled
+device bearer token, not the browser principal. Automation-run and agent-proposal claim/settle
+routes are worker transports and refuse the local principal too; `/mcp` needs the admin key to
+read and an enrolled device to write. Browser mutations still require the `x-orbit-csrf: 1`
+header, cross-site requests are still rejected, and forwarded headers never grant access. The
+server does not treat the request source address as authorization.
+
+The server also rejects a request whose `Host` is not a loopback name. That stops DNS rebinding
+from a hostile page, but it is not a proxy filter: a reverse proxy that rewrites `Host` to the
+upstream address (the nginx default) passes it, so this mode must not be placed behind a public
+proxy at all.
+
+For the complete local walkthrough, see
+[the local trusted web quickstart](guides/local-web-quickstart.md).
+
 ## Sign in
+
+Everything in this section describes authenticated mode, the default. The enrollment, session
+lifetime, revocation and TLS guidance below does not apply to local-trusted mode, which has no
+device identity and no session cookie.
 
 There is no sign-up form and no administrator login in the product UI. A browser signs in with
 a device ID and a device token that an operator enrolls on the server; they are exchanged once
@@ -889,6 +943,8 @@ reachable from the sidebar; `g h` / `g i` / `g p` are the only letter shortcuts.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| Startup exits with a message that the bind is not loopback | `ORBIT_AUTH_MODE=local-trusted` was combined with `0.0.0.0`, `[::]`, a LAN address, an IPv4-mapped IPv6 address, `localhost`, or another non-loopback `ORBIT_SERVER_BIND`. | Use `ORBIT_SERVER_BIND=127.0.0.1:8787` or `[::1]:8787`, or unset `ORBIT_AUTH_MODE` and use device authentication. |
+| The sidebar says **Local trusted mode** and there is no sign-in form or sign-out control | The server started with `ORBIT_AUTH_MODE=local-trusted`. | Intended. See [Authentication modes](#authentication-modes), or restart with `ORBIT_AUTH_MODE` unset to return to device authentication. |
 | `503 Orbit web app is not built. Run: cd web && npm ci && npm run build (or set ORBIT_WEB_DIST).` | The server started without a readable `web/dist`. | Build the client, or set `ORBIT_WEB_DIST` to an absolute path, then restart it. The API and `/console` keep working meanwhile. |
 | Sign-in succeeds, then the app returns to the form; repeated `401` | The session expired, or the device was revoked or its token rotated. | Enroll the device again, or obtain the current token, and sign in. A revoked device cannot be reused. |
 | `429 Too many attempts` | Five consecutive failed sign-ins for the same device ID within five minutes. | Wait five minutes, confirm the device ID and token, then retry. A success resets the counter. |

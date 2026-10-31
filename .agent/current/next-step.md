@@ -8,7 +8,7 @@ record_schema_version: 1
 id: NEXT-0020
 status: ready
 milestone_id: MILESTONE-0033
-advances_exit_criteria: [EC-009, EC-010]
+advances_exit_criteria: [EC-010, EC-011]
 ---
 
 # Next Deterministic Step
@@ -16,17 +16,21 @@ advances_exit_criteria: [EC-009, EC-010]
 ## Objective
 
 Hand the corrected M33 build to a human for visual and usability review of the
-running app and the representative captures. M33 remains active until a person
-records that review; automated screenshots and DOM assertions are not approval.
+running app and the representative captures, including both browser authentication
+modes. M33 remains active until a person records that review; automated
+screenshots and DOM assertions are not approval.
 
 ## Why this is next
 
 The corrective implementation is complete: Milestone is the only grouping entity,
 Epic is removed, rich task creation is one accepted command, List/Board/Backlog share
 one Tasks tab, the Board is compact by default, and the Roadmap is a Milestone
-hierarchy. Rust and web gates are green, the legacy conversion and restart were
-exercised on a real database, and `web/evidence/m33-corrective/` holds 28 captures.
-The only open exit criterion is the human review (EC-010).
+hierarchy. Authentication now also offers an explicit opt-in local-trusted mode for
+a personal loopback install, while the default device authentication is unchanged.
+Rust and web gates are green, the legacy conversion and restart were exercised on a
+real database, and `web/evidence/m33-corrective/` plus `web/evidence/m33-auth/` hold
+the captures. The open exit criteria are the human review (EC-010) and the
+authentication experience review (EC-011).
 
 ## Preconditions
 
@@ -35,13 +39,18 @@ The only open exit criterion is the human review (EC-010).
   dependencies, unscheduled work and Work Items.
 - The browser-libraries bundle at `/tmp/pwlibs/root/usr/lib/x86_64-linux-gnu` for the
   Playwright Chromium build.
+- For the local-trusted half: a throwaway database copy and a loopback port, so the
+  review does not touch the dogfooding database.
 
 ## Inputs
 
 - `.slim/deepwork/m33-web-ux/progress.md`, `corrective-plan.md`, `p2-ui-briefs.md`.
-- `web/evidence/m33-corrective/README.md` and the 28 PNGs.
+- `.slim/deepwork/ses_e7076bbabffejijzQEfVyIuLrj.md` (authentication iteration).
+- `web/evidence/m33-corrective/README.md` and its PNGs.
+- `web/evidence/m33-auth/README.md` and its PNGs.
 - `.agent/current/acceptance.md`, `.agent/current/evidence.md`.
-- `docs/web-app.md`, `docs/guides/tui-redesign-spec.md`.
+- `docs/web-app.md`, `docs/guides/local-web-quickstart.md`,
+  `docs/guides/tui-redesign-spec.md`.
 
 ## Ordered actions
 
@@ -57,9 +66,18 @@ The only open exit criterion is the human review (EC-010).
    unscheduled work, child windows, progress and blocked cues.
 6. Review the same routes at 390px in light and dark for crowding, overflow and
    navigation friction.
-7. Record the findings and any defects in `.slim/deepwork/m33-web-ux/acceptance.md`.
-8. Fix only review findings; re-run the affected gates. Mark M33 complete only when
-   the human review is recorded and the remaining exit criteria still hold.
+7. Start a second server copy with `ORBIT_AUTH_MODE=local-trusted` on a loopback
+   port against a throwaway database and open a clean browser profile: confirm the
+   workspace opens with no Device ID, no token and no login screen, that the sidebar
+   shows only "Local trusted mode" and no sign-out, and that refresh, browser restart
+   and server restart never prompt.
+8. Review the authenticated mode on the normal server: confirm the sign-in form,
+   that a wrong token is refused, that a valid session survives refresh and browser
+   restart, and that sign-out returns to the form. Confirm `GET /v1/web/session`
+   reports `mode` in both modes.
+9. Record the findings and any defects in `.slim/deepwork/m33-web-ux/acceptance.md`.
+10. Fix only review findings; re-run the affected gates. Mark M33 complete only when
+    the human review is recorded and the remaining exit criteria still hold.
 
 ## Expected outputs
 
@@ -77,6 +95,13 @@ The only open exit criterion is the human review (EC-010).
   compact Board and authoritative commands, and the affected gates are re-run.
 - [ ] NS-004: M33 is marked complete only after the review and remains active
   otherwise.
+- [ ] NS-005: The reviewer has opened a local-trusted server in a clean browser
+  profile and confirmed the workspace enters without a Device ID, token or login
+  screen, with a plain mode note and no sign-out control, surviving refresh,
+  browser restart and server restart.
+- [ ] NS-006: The reviewer has confirmed the default authenticated mode still signs
+  in, survives refresh and browser restart, and signs out to the form, and that no
+  privileged operation became reachable from the local browser principal.
 
 ## Validation
 

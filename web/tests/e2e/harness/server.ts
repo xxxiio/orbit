@@ -53,8 +53,16 @@ export interface E2EServer {
    * nothing else does — the server keeps web sessions in memory, so callers
    * sign in again afterwards. Returns this handle, which now owns the new
    * process (the fixture's teardown still deletes the temp directory).
+   *
+   * `options.env` is an optional per-restart override merged into the base
+   * environment (the one `startServer` was called with). It is re-run through
+   * `cleanEnv`, so an empty string removes a variable —
+   * `restart({ env: { ORBIT_AUTH_MODE: '' } })` switches a `local-trusted`
+   * server back to the default authenticated policy on the same database. With
+   * no argument the new process gets exactly the environment the previous one
+   * had.
    */
-  restart(): Promise<E2EServer>
+  restart(options?: { env?: Record<string, string> }): Promise<E2EServer>
   /** Terminate and reap the process, then delete the temp directory. */
   stop(): Promise<void>
 }
@@ -86,13 +94,19 @@ export async function startServer(options: StartServerOptions = {}): Promise<E2E
   await mkdir(join(dataDir, 'data'), { recursive: true })
 
   const adminKey = randomBytes(32).toString('hex')
-  const env = cleanEnv({
+  /**
+   * The overrides `startServer` was configured with. Kept so a restart can
+   * merge a policy change into them instead of losing the database, bind and
+   * credentials; a restart without an argument reuses `env` untouched.
+   */
+  const baseEnv: Record<string, string> = {
     ...options.env,
     ORBIT_SERVER_DB: dbPath,
     ORBIT_SERVER_BIND: `127.0.0.1:${port}`,
     ORBIT_SERVER_ADMIN_KEY: adminKey,
     ORBIT_WEB_DIST: WEB_DIST,
-  })
+  }
+  let env = cleanEnv(baseEnv)
 
   const log = createWriteStream(logPath, { flags: 'a' })
   // Keep a small in-memory tail as well as the file: a process that dies before
@@ -151,12 +165,15 @@ export async function startServer(options: StartServerOptions = {}): Promise<E2E
       if (buffered.trim().length > 0) return lastLines(buffered, lines)
       return readLogTail(logPath, lines)
     },
-    restart: async () => {
+    restart: async (options?: { env?: Record<string, string> }) => {
       if (stopping) throw new Error('cannot restart a stopped harness server')
       restarting = true
       try {
         // The database, its vault and the enrolled credentials stay on disk.
         await stopProcess(child)
+        // Only a caller that asked for a policy change recomputes the
+        // environment; otherwise the new process inherits the old one exactly.
+        if (options?.env) env = cleanEnv({ ...baseEnv, ...options.env })
         const next = spawnChild()
         await waitForHealth(base, healthTimeoutMs, next, () => server.logTail(80))
       } catch (error) {

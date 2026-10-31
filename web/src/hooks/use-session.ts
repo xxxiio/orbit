@@ -8,7 +8,14 @@
  */
 import { useEffect, useSyncExternalStore } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createSession, deleteSession, fetchSession, sessionQueryKey, type WebSession } from '@/api/session'
+import {
+  createSession,
+  deleteSession,
+  fetchSession,
+  isLocalTrustedSession,
+  sessionQueryKey,
+  type WebSession,
+} from '@/api/session'
 import { ApiError, classifyError } from '@/api/errors'
 import { retryUnlessClientError } from '@/api/queries'
 import {
@@ -30,6 +37,10 @@ const SESSION_REFRESH_INTERVAL_MS = 10 * 60_000
 export interface UseSessionResult {
   session: WebSession | null
   isLoading: boolean
+  /** Server-selected authentication mode; `undefined` until the first read. */
+  mode: WebSession['mode'] | undefined
+  /** The server trusts the local network, so there is no sign-in and no sign-out. */
+  isLocalTrusted: boolean
   /** `false` as soon as a 401 was observed, even before the redirect renders. */
   isAuthenticated: boolean
   error: ApiError | null
@@ -43,7 +54,10 @@ export function useSession(): UseSessionResult {
   const query = useQuery<WebSession, ApiError>({
     queryKey: sessionQueryKey,
     queryFn: ({ signal }) => fetchSession(signal),
-    staleTime: 60_000,
+    // A local-trusted answer must never be treated as fresh: if the operator
+    // switches the server back to authenticated mode, the next mount or focus
+    // needs to re-ask rather than keep rendering the workspace.
+    staleTime: (query) => (isLocalTrustedSession(query.state.data) ? 0 : 60_000),
     retry: retryUnlessClientError,
     // The server slides the 12h TTL on every session read, but a tab left open
     // never sends one. Re-read at a low frequency (and whenever the tab becomes
@@ -64,8 +78,12 @@ export function useSession(): UseSessionResult {
   }, [refetchSession])
 
   useEffect(() => {
-    if (query.isSuccess) markSessionActive()
-  }, [query.isSuccess])
+    // `orbit.auth.seen` exists to tell "your session expired" apart from "you
+    // never signed in". Local-trusted has no sign-in, so it must not leave that
+    // marker behind: a later switch to authenticated mode has to show a clean
+    // first-visit form instead of a false expiry notice.
+    if (query.isSuccess && !isLocalTrustedSession(query.data)) markSessionActive()
+  }, [query.isSuccess, query.data])
 
   useEffect(() => {
     if (query.error && classifyError(query.error) === 'unauthorized') {
@@ -76,7 +94,12 @@ export function useSession(): UseSessionResult {
   return {
     session: query.data ?? null,
     isLoading: query.isPending,
-    isAuthenticated: query.isSuccess && store.status !== 'signedOut',
+    mode: query.data?.mode,
+    isLocalTrusted: isLocalTrustedSession(query.data),
+    // A local-trusted answer is the server saying "this browser may enter"; it
+    // is never a signed-out state.
+    isAuthenticated:
+      isLocalTrustedSession(query.data) || (query.isSuccess && store.status !== 'signedOut'),
     error: query.error ?? null,
     refetch: () => {
       void query.refetch()
