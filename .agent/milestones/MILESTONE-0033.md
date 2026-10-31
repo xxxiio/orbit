@@ -9,124 +9,152 @@ id: MILESTONE-0033
 status: active
 ---
 
-# Milestone: Professional Web UX, Epic-Based Planning & Jira-Inspired Project Management
+# Milestone: Professional Web UX, Milestone-Based Planning & Unified Project Work
 
 ## Intended outcome
 
-Orbit's browser client becomes a professional, issue-centric project-management
-surface: one application font system, a corrected first-visit sign-in experience,
-a compact project workspace with canonical List, Board, Backlog and Roadmap
-sections, first-class Epics that group Tasks and Workflow Work Items without
-becoming Milestones, milestone target dates, a usable dependency-aware roadmap,
-and real-browser evidence at desktop and phone sizes. The TUI is not redesigned;
-it receives a specification derived from the patterns the browser proved.
+Orbit's browser client becomes a professional project workspace with one
+grouping concept: **Milestone**. Users can create a fully configured task in one
+step, work with List, Board and Backlog as three presentations of one Tasks tab,
+read a calm compact board, and plan milestones and their child work on a Roadmap.
+Rust authority, revision fencing, receipts and persistence remain authoritative.
+The TUI is not redesigned in this corrective phase; it receives an updated
+specification only.
+
+### Correction notice (human review, 2026-10-30)
+
+The first M33 implementation introduced **Epic** as a second project work-grouping
+entity alongside Milestones. A human visual/product review rejected that model:
+Orbit already has Milestones, and Jira is a UX reference, not a domain
+specification. The Epic family (`authority_epics`, `/epics` routes, `features/epics`,
+Epic columns/filters/roadmap bars) is **superseded** and has been absorbed into the
+canonical Milestone aggregate.
+
+The successful I1 typography and authentication work is retained. The earlier
+Epic-based TUI specification text is removed/corrected. The previously checked
+criteria EC-003/EC-004/EC-006 of the Epic design are **not** accepted as proof of
+the corrected design; the corrected criteria below replace them. M33 stays active.
 
 ## Why this milestone matters
 
-M31 and M32 shipped substantial function, but the product still looked and read
-like a marketing dashboard, the project workspace was a set of workflow panels
-rather than a place to run work, and there was no way to express a body of
-related work. That left ordinary project management split between task rows,
-milestones and ad-hoc filters. M33 is the highest-priority unfinished user-facing
-work because the TUI redesign depends on a validated interaction model; building
-that model in the terminal first would encode guesses.
+M31/M32 made the browser capable but not professional. M33's first pass added
+Jira-style Epics, duplicating Milestones and making the product model harder.
+Correcting that is the highest-value user-facing work and the prerequisite for
+any TUI redesign derived from the browser.
 
 ## Scope
 
-- Inter-based typography, neutral application palette, restrained spacing and
-  removal of decorative serif/display type and excessive uppercase tracking.
-- First-visit vs expired/revoked session distinction with an explicit browser
-  marker that stores no credential material.
-- Canonical project sections: Overview, List, Board, Backlog, Roadmap, Milestones,
-  with workflow-declared extra views preserved.
-- Epic domain model in the authoritative Rust ledger: create/update/status,
-  task and Work Item membership, progress, activity, safe delete.
-- Milestone target dates as checkpoint instants, editable from the milestone list
-  and roadmap.
-- Splittable roadmap: week/month/quarter, epics, task windows, milestone markers,
-  dependencies, unscheduled work, current-date line.
-- List grouping by epic/status/priority, epic column, URL-backed state.
-- Shared inspector Epic field for tasks; Epic field for Workflow Work Items.
-- Real-browser dogfooding, screenshots at desktop/laptop/phone in light and dark,
-  and TUI specification addendum.
+- Remove Epic as an authoritative or user-facing concept. One-time deterministic
+  conversion of any local Epic data into Milestones; no permanent compatibility
+  layer. Preserve task, Work Item and Milestone identity.
+- Extend the canonical Milestone: description, status, optional priority/owner,
+  optional start and target dates, Tasks and Workflow Work Items, derived
+  progress, blockers, activity, safe delete/move guards.
+- Full task creation in one accepted operation: title, project, description,
+  milestone, initial status, priority, deadline, estimate, acceptance criteria,
+  dependencies. Keep lightweight quick capture for Inbox/keyboard.
+- One top-level **Tasks** entry with a URL-backed List | Board | Backlog
+  switcher and shared filters; legacy list/board/backlog links redirect.
+- Compact default board cards with a locally persisted Compact/Comfortable
+  density; details on demand in the existing inspector.
+- Milestone-based Roadmap: duration bars when start+target exist, checkpoint
+  markers when only a target exists, unscheduled otherwise; child task windows,
+  progress, blocked work, dependency highlighting, week/month/quarter.
+- Retain typography, authentication, project sections, workflow-declared extra
+  views and the authoritative command ledger.
+- Tests, documentation, real-browser acceptance and human-review handoff.
 
 ## Non-goals
 
-- Rebuilding the web application, a second TypeScript domain engine, or a generic
-  UI framework.
-- Jira branding or the full Scrum model; mandatory sprints; Story Points.
-- Renaming internal `blueprint` crates, routes or database fields.
-- A TUI redesign or any TUI feature change.
-- Reopening M31/M32; M27 public release work; Flutter; cloud services; mandatory
-  server for local CLI/TUI use.
+- A second grouping entity, Epic/Milestone distinction, Jira branding or Scrum
+  sprints/story points.
+- TUI implementation or any TUI feature change in this phase.
+- Frontend-only pseudo-state for membership or progress.
+- Permanent Epic compatibility infrastructure before public release.
+- Reopening M31/M32; M27 release work; Flutter; cloud dependencies.
 
 ## Deliverables
 
-- `web/src/styles/{tokens,globals}.css`, `web/tailwind.config.ts`, Inter font.
-- Auth distinction in `web/src/api/session-history.ts`, `session-store.ts`,
-  `protected-route.tsx`, with unit and Playwright coverage.
-- `crates/orbit-runtime/src/authority_epics.rs`, route handlers, milestone target
-  command, Rust tests.
-- `web/src/features/epics/**`, `roadmap/**`, `backlog/**`, canonical project
-  sections and List grouping.
-- `web/tests/e2e/{epics,roadmap,project-workspace-nav}.spec.ts`, updated suite.
-- `web/evidence/m33/**` real screenshots, `docs/web-app.md` and
-  `docs/guides/tui-redesign-spec.md` updates.
+- `crates/orbit-runtime/src/authority_milestones.rs` (rich aggregate, membership,
+  progress, activity), Epic removal and the open-migration in `store.rs`,
+  rich `TaskAction::Create`, server route updates, Rust tests.
+- `web/src/api/**` rich milestone and create contracts; `features/milestones/**`;
+  `features/tasks/**` create dialog and unified workspace; `features/backlog/**`;
+  `features/roadmap/**`; project navigation; board density.
+- Updated unit and Playwright suites, terminology check, `.agent` records.
+- `web/evidence/m33-corrective/**` light/dark desktop/phone captures and a
+  restart-persistence proof.
+- `docs/web-app.md`, `docs/guides/tui-redesign-spec.md`, this milestone record.
 
 ## Dependencies
 
 - MILESTONE-0031 and MILESTONE-0032 are complete.
-- The authoritative command ledger, task/milestone services and the Playwright harness.
-- No optional service, Python or Herdr process is required for the delivered UI.
+- Existing authority ledger, task/milestone services, Playwright harness.
+- No optional service or cloud dependency for the delivered UI.
 
 ## Risks
 
-- Epic membership could be mistaken for a task field; it is a separate fenced command family and the UI reads the epic snapshot.
-- A child-derived epic bar could be mistaken for an authored schedule; it is dashed/labelled derived and undated items stay unscheduled.
-- The browser cannot distinguish expiry from revocation at the HTTP level; both are explained as "session ended" rather than inventing a reason.
-- Screenshots cannot judge comfort or taste; EC-008 stays open until a human reviews.
+- A migration that overwrites an existing `tasks.milestone_id` would silently
+  move user work; the converter must let an existing assignment win.
+- Rich create that issues several commands could partially fail; it must be one
+  revision-fenced operation with one receipt.
+- A merged Tasks workspace could hide workflow-defined Work Item views; only the
+  conventional task List/Board/Backlog presentations are consolidated.
+- Compact cards could hide blocked/priority cues; those remain visible without
+  opening the inspector.
+- Screenshots cannot judge comfort or taste; the human gate stays open.
 
 ## Ordered implementation sequence
 
-1. Typography/tokens, Inter, auth first-visit distinction and tests.
-2. Canonical project sections, List grouping, Backlog and the shared inspector field.
-3. Authoritative Epic family, milestone target dates and Rust tests.
-4. Roadmap, epic editor, epic filter and Work Item field.
-5. Browser acceptance, captures, documentation and the TUI addendum.
+1. Milestone authority consolidation, Work Item membership, Epic conversion and
+   removal, rich atomic task create (Rust).
+2. Additive web API for rich milestones and create.
+3. Unified Tasks workspace, compact board, full create dialog, milestone detail
+   and milestone Roadmap (parallel UI lanes).
+4. Remove remaining Epic API/UI/tests; reconcile navigation and terminology.
+5. Browser acceptance, persistence restart, captures, documentation and human
+   review handoff.
 
 ## Exit criteria
 
-- [x] EC-001: Decorative serif/display typography is gone; the product uses one
-  sans-serif application face at a restrained scale.
-- [x] EC-002: A first-time visitor never sees an expired-session warning; a real
-  expiry or revocation is explained; sign-out stays quiet.
-- [x] EC-003: Ordinary projects expose Overview, List, Board, Backlog, Roadmap and
-  Milestones; workflow extras keep their own names and routes.
-- [x] EC-004: Epics are authoritative, project-scoped, revision-fenced, can group
-  Tasks and Work Items, report progress and survive restart.
-- [x] EC-005: Milestones remain checkpoints with one optional target date, not
-  durations or epic children.
-- [x] EC-006: The roadmap renders epics, task windows, milestone markers,
-  dependency indicators and unscheduled work at three time scales.
-- [x] EC-007: Real-browser acceptance and captures at 1440×900, 1280×800 and
-  390×844 in light and dark pass without page or console errors.
-- [ ] EC-008: A human evaluates the built app for visual and usability quality.
-- [x] EC-009: The full Rust workspace gate is green after the M33 changes.
+- [x] EC-001: The product uses one sans-serif application face at a restrained
+  scale (retained from the first M33 pass).
+- [x] EC-002: First visit shows no expiry warning; expiry/revocation is explained
+  and sign-out is quiet (retained).
+- [x] EC-003: Epic is not a create/edit/filter/column/roadmap concept anywhere;
+  no Epic route, dialog, API client or authority family remains.
+- [x] EC-004: One canonical Milestone family supports description, status,
+  optional priority/owner/start/target, Tasks and supported Work Items, derived
+  progress, blockers, activity and safe delete/move; membership survives restart
+  and rejects cross-project links atomically.
+- [x] EC-005: A full task create sets title, project, description, milestone,
+  status, priority, deadline, estimate, acceptance criteria and dependencies in
+  one accepted operation; quick capture still works; retry is idempotent.
+- [x] EC-006: Exactly one top-level Tasks entry presents List, Board and Backlog
+  with URL-backed switching and shared filters; legacy links redirect.
+- [x] EC-007: The Board is compact by default, readable at 100+ tasks, shows
+  title/priority/deadline/blocked at a glance, persists density, and keeps
+  authoritative movement and inspector access.
+- [x] EC-008: The Roadmap shows a single Milestone hierarchy with duration bars,
+  checkpoint markers, unscheduled work, child task windows, progress, blocked
+  work and dependency highlighting; no Epic lanes exist.
+- [x] EC-009: Real-browser acceptance passes at 1440×900 and 390×844 in light and
+  dark, including create → filter → switch → edit → status → roadmap → restart.
+- [ ] EC-010: A human reviews the running app and representative captures.
 
 ## Evidence
 
-- `.slim/deepwork/m33-web-ux/progress.md` and `acceptance.md`.
-- `web/evidence/m33/` screenshots and README.
-- `.agent/current/acceptance.md` and `.slim/deepwork/m33-web-ux/acceptance.md`.
-- Playwright: 141 passed / 5 skipped chromium, 6 passed mobile auth.
-- Rust: 1,848 passed / 0 failed across 31 test binaries; fmt/clippy on touched crates clean.
-- Unit: 63 files / 410 tests.
+- `.slim/deepwork/m33-web-ux/progress.md`, `corrective-plan.md`, `acceptance.md`.
+- `web/evidence/m33-corrective/` captures and README.
+- `.agent/current/acceptance.md`.
+- `docs/web-app.md` and `docs/guides/tui-redesign-spec.md`.
 
 ## Remaining work
 
-- EC-008: a human visual and usability review of the built app and `web/evidence/m33/`.
-- Optional follow-ups after that review: per-edge status explanations and drag-to-reschedule with conflict handling.
+- The corrected implementation, migration verification, browser acceptance and
+  human review are in progress. M33 is not complete.
 
 ## Next milestone
 
-None. M33 is the current milestone; the next milestone is chosen after the human review.
+None yet. M33 remains the current milestone; the next one is chosen after the
+corrected web UX has passed human review.

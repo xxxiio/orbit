@@ -1204,50 +1204,60 @@ surface names the subject; the activity row need not.
 in a human sentence, and a test asserts the absence. This matters for the terminal more than for the
 browser: an 80-column activity row cannot afford a 36-character id in the middle of its prose.
 
-## M33 addendum — epics, planning and the issue-centric workspace
+## M33 addendum — milestones, unified tasks and planning
 
-M33 validated a project-management model in the browser. The terminal redesign should keep the
-*interaction model* and drop the browser-only mechanics.
+M33 validated a project-management model in the browser. Human review removed the first pass's
+second grouping entity: **Milestone is the only project work-grouping unit**. This section
+describes the corrected model the terminal should follow. **No TUI implementation happened in
+this phase**; the TUI still runs the previous design and this addendum is a specification only.
 
 ### The hierarchy the TUI must show
 
 ```text
 Project
-├── Epic A                    (a body of work; status + progress)
-│   ├── Task 1
+├── Milestone A               (status, progress, start/target)
+│   ├── Task 1                (tasks.milestone_id)
 │   ├── Task 2
-│   └── Work Item 3           (workflow-defined)
-├── Epic B
-├── Task 4                    (no epic; still valid)
-└── Milestones
-    ├── Checkpoint 1          (target date, no duration)
-    └── Checkpoint 2
+│   └── Work Item 3           (workflow-defined, milestone membership)
+├── Milestone B
+│   └── Task 4
+├── Task 5                    (no milestone; still valid, listed as unassigned)
+└── Unscheduled               (milestones or tasks with no usable date)
 ```
 
-- **Epic and Milestone are different nouns.** An epic groups work; a milestone is a checkpoint.
-  A task may belong to an epic *and* contribute to a milestone. The TUI must never nest a
-  milestone under an epic or present epic progress as milestone progress.
-- **Progress is read, not computed.** The authority returns total, completed, blocked and
-  percent for each epic. The TUI renders those numbers; it never derives progress from a partial
-  row set.
-- **Membership is a command.** Moving a task between epics is the epic `assign_task` command,
-  not an edit of a task field. The server refuses cross-project membership and keeps one epic per
-  task. The TUI should show the refusal in the inspector/status line and leave the row where the
-  accepted state put it.
-- **Dates are authored.** A milestone has one target instant. A task has an earliest start and a
-  deadline. An item with neither is **unscheduled**; the TUI must not invent a bar, duration or
-  "today" value to fill a timeline.
+- **A milestone groups work and is a checkpoint or a window.** It carries a description, status,
+  optional priority and owner, optional start and target dates, child Tasks, supported Workflow
+  Work Items, derived progress, blockers and activity. There is no second grouping noun and no
+  second lifecycle for grouping.
+- **Progress is read, not computed.** The authority returns total, completed, blocked and percent
+  for each milestone. The TUI renders those numbers; it never derives progress from a partial row
+  set. Tasks that are `cancelled` do not count; `done` is complete; `blocked` is reported as
+  blocked. A Work Item counts complete in `done`, `completed` or `closed`.
+- **Membership is a command.** Moving a task into a milestone is `assign_task`; removing it is
+  `unassign_task`. Work Items use `assign_work_item`/`unassign_work_item`. The server refuses
+  cross-project membership, keeps one milestone per task, and leaves no partial state. The TUI
+  shows the refusal in the inspector/status line and leaves the row where the accepted state put
+  it.
+- **Dates are authored.** A milestone with a start and a target is a window; with only a target
+  it is a checkpoint; with no target it is **unscheduled**. A task has an earliest start and a
+  deadline. An item with no usable date is unscheduled; the TUI must not invent a bar, duration
+  or "today" value to fill a timeline.
+- **Delete and move are guarded.** A milestone that still owns Tasks or Work Items cannot be
+  deleted or moved between projects. Completing or cancelling is the safe way to retire it, and
+  the TUI quotes the authority's refusal rather than offering a destructive workaround.
 
 ### Surfaces to preserve
 
 | Browser surface | What the TUI should preserve | What it should not copy |
 | --- | --- | --- |
-| **List** | The default issue surface: key/title, status, priority, epic, milestone, due, estimate, dependencies; URL-equivalent grouping by epic/status/priority; inline status/priority; multiselect and bulk commands; saved views as presentation preferences. | Column pickers, hover menus, horizontal table scrolling. Use a fixed, dense column set and a column toggle overlay if needed. |
-| **Board** | Workflow-state columns, compact cards, epic filter, blocked indicator, keyboard move with the server's legal edges, refusal stays on the card. | Drag-and-drop, hover-only controls, per-column saved filters. |
-| **Backlog** | Unplanned work (`inbox`/`planned`/`deferred`), epic grouping, priority/estimate/dependency visibility, explicit move to Ready. No mandatory sprints. | The web's card toolbar; a single filter line is enough. |
-| **Roadmap** | Split hierarchy + time axis, week/month/quarter, today marker, epic bars, task windows, milestone diamonds, unscheduled section, focused dependency highlighting. | Zoom gestures, hundreds of connector lines, drag-to-reschedule. Selection + a date command is the path. |
-| **Epic details** | Title, description, status/priority/owner, start/target, progress, child tasks and Work Items, activity. | The web's modal proportions; an inspector overlay is closer to the rest of the TUI. |
-| **Task/Work Item inspector** | One shared inspector for List, Board, Backlog and Roadmap; epic and milestone association; planning dates; dependencies; acceptance criteria; activity; Workflow Actions. | A separate epic editor with its own transition table. Epics use the checkpoint lifecycle the server exposes. |
+| **Overview** | Project identity, status, pinned Workflow version, milestone summary and the work that is ready to move. | Metric tiles as decoration; counts the server did not return. |
+| **Tasks — List** | One Tasks destination: key/title, status, priority, milestone, due, estimate, dependencies; grouping by milestone/status/priority; inline status/priority; multiselect and bulk commands; saved views as presentation preferences. | Separate List/Board/Backlog destinations, column pickers, hover menus, horizontal table scrolling. Use a fixed, dense column set and a column toggle overlay if needed. |
+| **Tasks — Board** | Workflow-state columns, compact cards by default, milestone filter, priority/deadline/blocked cues, keyboard move with the server's legal edges, refusal stays on the card, inspector on demand. | Drag-and-drop, hover-only controls, per-column saved filters, a permanent side panel. |
+| **Tasks — Backlog** | Unplanned work (`inbox`/`planned`/`deferred`), milestone grouping, priority/estimate/dependency visibility, explicit move to Ready. No mandatory sprints. | The web's card toolbar; a single filter line is enough. |
+| **Roadmap** | One milestone hierarchy + time axis, week/month/quarter, today marker, duration bars, checkpoint markers, child task windows, progress, blocked work, focus highlighting, unscheduled section. | Zoom gestures, hundreds of connector lines, drag-to-reschedule, lanes for any second grouping entity. Selection + a date command is the path. |
+| **Milestone details** | Title, description, status/priority/owner, start/target, progress, child Tasks and Work Items, activity, task assign/unassign, Work Item membership, guarded delete. | The web's modal proportions; an inspector overlay is closer to the rest of the TUI. |
+| **Task/Work Item inspector** | One shared inspector for List, Board, Backlog and Roadmap; milestone association; planning dates; dependencies; acceptance criteria; activity; Workflow Actions. | A separate planner per surface, or a second grouping editor with its own transition table. |
+| **Full create** | Title, project, description, milestone, initial status, priority, deadline, estimate, acceptance criteria and dependencies in one accepted command; retry replays the receipt. | Multiple create steps that can partially fail, or a client-minted default state the server did not accept. |
 | **Planning** | Capacity → server plan → review → apply with the existing approval gate. | Recomputing readiness, assignment or duration locally. |
 
 ### Contextual details and navigation
@@ -1257,20 +1267,23 @@ Project
 - Closing the inspector returns focus to the row/bar that opened it. The surface keeps its
   selection, filter, grouping and scroll position. This is the terminal counterpart of the web's
   `?task=` + focus-return contract.
-- The project frame names the project, status, pinned Workflow version and epic filter. The
-  canonical sections are **Overview, List, Board, Backlog, Roadmap, Milestones**, followed by the
-  workflow's extra views. A workflow without those views still gets the canonical sections; a
-  workflow with its own Lessons/Evidence/Workflow board keeps it under its own name rather than
-  being renamed Board.
-- A milestone target date and an epic target date are edited through one date field and a
-  command. There is no terminal date picker and no implicit "end of day" invention.
+- The project frame names the project, status and pinned Workflow version. The canonical sections
+  are **Overview, Tasks, Roadmap, Milestones**, followed by the workflow's extra views. A
+  workflow without those views still gets the canonical sections; a workflow with its own
+  Lessons/Evidence/Workflow board keeps it under its own name rather than being renamed Board.
+- **One Tasks entry.** List, Board and Backlog are presentations of that entry, not three
+  destinations. The TUI equivalent of `?view=` may be a local view state, but a switched view
+  must keep the shared filter, selection and the open inspector.
+- A milestone start and target are edited through one date command. There is no terminal date
+  picker and no implicit "end of day" invention. Clearing a target moves the milestone to the
+  unscheduled list.
 
 ### Workflow-defined Work Items
 
-Work Items keep their declared types, states, guards and transitions. In the issue hierarchy they
-are children of an epic exactly like tasks, but they do not become tasks. The inspector shows the
-declared fields and the transition/guard sentences; epic membership is a separate relationship.
-The TUI does not add an epic field to the manifest or reinterpret a Work Item state as done.
+Work Items keep their declared types, states, guards and transitions. They can be children of a
+milestone exactly like tasks, but they do not become tasks. The inspector shows the declared
+fields and the transition/guard sentences; milestone membership is a separate relationship. The
+TUI does not add a grouping field to the manifest or reinterpret a Work Item state as done.
 
 ### Dependencies and blockers
 
@@ -1294,22 +1307,29 @@ These are deliberate web mechanics, not product behavior:
 - The `orbit.auth.seen` browser marker. It exists because an HttpOnly cookie gives the SPA no
   other way to distinguish a first visit from an expiry. A local TUI client knows whether it has a
   session and does not need a browser-storage marker.
-- Modal epic/milestone dialogs. Use the TUI's overlay/status-line vocabulary.
+- Modal milestone dialogs. Use the TUI's overlay/status-line vocabulary.
+- A permanent card toolbar or density switch on every board visit. Compact cards are the default;
+  a comfort toggle may be a setting, not chrome.
 
 ### Acceptance additions for the future redesign
 
-- **E1.** List, Board, Backlog and Roadmap are reachable for an ordinary project, and an extra
-  workflow view keeps its own name and route.
-- **E2.** An epic can be created, edited, assigned a task, completed, and read back with the
-  authority's progress after a restart.
-- **E3.** A milestone has at most one target date; clearing it moves the milestone to the
-  unscheduled list on the roadmap.
-- **E4.** A task with no dates appears as unscheduled, never as a fabricated bar; adding dates in
+- **E1.** Overview, Tasks, Roadmap and Milestones are reachable for an ordinary project, and an
+  extra workflow view keeps its own name and route. Exactly one Tasks entry exists.
+- **E2.** List, Board and Backlog are presentations of that one Tasks entry, and switching keeps
+  the shared filter, selection and open inspector.
+- **E3.** A milestone can be created, edited, assigned a task, completed, reopened and read back
+  with the authority's progress after a restart. Cross-project assignment is refused without
+  partial membership.
+- **E4.** A milestone with a start and target draws a window; with only a target it is a
+  checkpoint; with no target it is unscheduled and belongs to no invented bar.
+- **E5.** A full task create sets every documented field in one accepted command, quick capture
+  still works for Inbox, and an unconfirmed retry creates exactly one task.
+- **E6.** A task with no dates appears as unscheduled, never as a fabricated bar; adding dates in
   the inspector places it on the timeline.
-- **E5.** The same task opens the same inspector from all four surfaces, and closing it returns
+- **E7.** The same task opens the same inspector from all four surfaces, and closing it returns
   focus and scroll to the origin.
-- **E6.** A cross-project epic assignment is refused by the authority and leaves no partial
-  membership on screen.
+- **E8.** No second grouping entity exists in the navigation, inspector, roadmap or authority
+  commands the TUI calls.
 
 ## Acceptance for a future redesign
 

@@ -35,22 +35,23 @@ is local-authority only; connected mode refuses it explicitly (M25 EC-004).
 
 The web client is the reference product experience. M33 replaced the decorative
 serif system with Inter and a neutral application palette, fixed the false
-first-visit expiry warning, and gave projects canonical Overview, List, Board,
-Backlog, Roadmap and Milestones sections while preserving workflow extras. Epics
-are now an authoritative project-scoped family that groups Tasks and Workflow
-Work Items with server-computed progress, and milestones carry one optional target
-date. The roadmap plots authored epic/task windows, milestone diamonds,
-dependencies and unscheduled work at week/month/quarter scales. Real-browser
-acceptance is green; a human visual review (EC-008) is the remaining M33 gate.
-M32 remains complete, and the TUI redesign specification now includes the M33
-patterns. Per-device project ACLs, server attachment GC and live Herdr acceptance
-remain documented follow-ups.
+first-visit expiry warning, and consolidated the project workspace around
+Milestones. Milestones are the only work-grouping entity: they carry optional
+priority/owner/dates, group Tasks and supported Workflow Work Items, and report
+server-derived progress, blockers and activity. The first Epic-based pass was
+superseded and converted once into Milestones. One Tasks tab holds List, Board and
+Backlog through URL views; the Board is compact by default; the Roadmap is one
+Milestone hierarchy. Real-browser acceptance is green (150 passed, 5 skipped) and
+28 corrective captures exist; a human visual review (EC-010) is the remaining M33
+gate. M32 remains complete, and the TUI redesign specification now includes the
+corrected model. Per-device project ACLs, server attachment GC and live Herdr
+acceptance remain documented follow-ups.
 
 ## Current milestone
 
-MILESTONE-0033 — M33 Professional Web UX, Epic-Based Planning & Jira-Inspired
-Project Management, active. I1–I4 are implemented and the Rust/browser gates pass;
-EC-008 awaits a human visual/usability review. MILESTONE-0032 is complete (I1–I6).
+MILESTONE-0033 — M33 Professional Web UX, Milestone-Based Planning & Unified
+Project Work, active. The corrective implementation and automated gates pass;
+EC-010 awaits a human visual/usability review. MILESTONE-0032 is complete (I1–I6).
 MILESTONE-0031 is complete (I1–I6). M31
 shipped the React client served by `orbit-server` with session authentication,
 Home, Inbox, project management, workflow-driven workspaces and a task inspector
@@ -59,11 +60,12 @@ MILESTONE-0025 EC-001..EC-007 remain satisfied. M27 remains blocked externally.
 
 ## Recently completed
 
-- M33 I1–I4: Inter/neutral design system; first-visit auth distinction; canonical
-  project sections; List epic grouping and column; Backlog; authoritative Epics
-  with Task and Work Item membership; milestone target dates; split roadmap with
-  dependencies and unscheduled work; 140 chromium + 6 mobile E2E and 410 unit
-  tests; captures under `web/evidence/m33/`.
+- M33 corrective: Epic removed and converted once into Milestones; rich Milestone
+  fields, Task/Work Item membership, progress and activity; full task creation in one
+  accepted command; one Tasks tab with URL List/Board/Backlog views and shared
+  filters; compact Board with persisted density; Milestone Roadmap; 150 chromium
+  tests passed / 5 skipped / 0 failed, 458 unit tests, 28 corrective captures under
+  `web/evidence/m33-corrective/`; human review (EC-010) remains open.
 - M32 I5–I6 dogfooding and acceptance: nine automated interactive dogfooding
   sessions ran on one persistent workspace, appending work each time instead of
   resetting, and produced 23 captures plus a defects table. The blocker they found —

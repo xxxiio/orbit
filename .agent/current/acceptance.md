@@ -13,43 +13,55 @@ task_id: TASK-0015
 
 ## Task
 
-TASK-0015 — M33 I1–I4: professional UX, project workspace, epics and roadmap.
+TASK-0015 — M33 corrective iteration: Milestone unification, full task creation,
+unified Tasks workspace, compact Board and Milestone Roadmap.
+
+M33 remains **active**. The corrected implementation, legacy conversion, restart,
+targeted browser acceptance and representative captures are in place. The final full
+Chromium rerun and the human review (EC-010) are still owed, so this report does not
+claim completion or approval.
 
 ## Gate results
 
 | Gate ID | Gate | Status | Evidence |
 |---|---|---|---|
-| G-0001 | Typography and visual system | pass | Inter self-hosted, Fraunces/Instrument removed; neutral tokens; 14px body/24px titles; no decorative serif; captures in `web/evidence/m33/`. |
-| G-0002 | Auth first-visit/expiry/revocation | pass | Boolean `orbit.auth.seen` marker; unit 6 tests; Playwright first visit, sign-out, expiry and revocation pass on chromium and Pixel 7. |
-| G-0003 | Canonical project workspace | pass | One each of Overview/List/Board/Backlog/Roadmap/Milestones plus workflow extras; `/tasks` and `/timeline` aliases; tests in `project-workspace-nav.spec.ts` and the updated registry/saved-view suites. |
-| G-0004 | Epic authority family | pass | `authority_epics.rs` commands/snapshot/progress/activity; same-project and delete guards; Rust tests; Playwright create/assign/complete/restart and Work Item membership. |
-| G-0005 | Milestone target dates | pass | `set_target` on the authoritative milestone command; roadmap/milestone UI; Rust and Playwright tests. |
-| G-0006 | Roadmap | pass | Week/month/quarter, epic/task bars, milestone diamonds, dependency indicators, unscheduled work, current-date line; `roadmap-model.spec.ts` and `roadmap.spec.ts`. |
-| G-0007 | Full browser acceptance | pass | Chromium 141 passed / 5 skipped / 0 failed; mobile auth 6/6. |
-| G-0008 | Unit/build/terminology/Rust | pass | 63 unit files / 410 tests; build succeeds; 256 files terminology clean; Rust 1,848 passed / 0 failed; fmt and clippy on touched crates clean. |
-| G-0009 | Human visual review | not-run | A human must review the running build and `web/evidence/m33/`; this report does not claim approval. |
+| G-0001 | Typography and visual system | pass | Inter self-hosted, neutral tokens and restrained scale; retained from the first pass. |
+| G-0002 | Auth first-visit/expiry/revocation | pass | `orbit.auth.seen` marker plus the retained unit and Playwright auth coverage. |
+| G-0003 | Milestone authority consolidation | pass | Rich Milestone authority, Task/Work Item membership, progress, activity, guards and one-time conversion. Rust workspace 1862 passed / 0 failed; Oracle gate 1 resolved. |
+| G-0004 | Rich task creation | pass | One accepted command with every documented field, criteria and prerequisites; Rust `m33_rich_task_create`; `task-create-full.spec.ts`. |
+| G-0005 | Unified Tasks workspace | pass | One Tasks tab, `?view=list\|board\|backlog`, shared URL filters and legacy redirects; `project-workspace-nav` and `tasks-workspace` specs. |
+| G-0006 | Compact Board | pass | Compact default with `orbit.board.density`, priority/deadline/blocked cues, on-demand inspector, authoritative moves; `tasks-workspace.spec.ts`. |
+| G-0007 | Milestone Roadmap | pass | One Milestone hierarchy with duration/checkpoint/unscheduled shapes, child windows, progress/blocked/dependency cues; `roadmap.spec.ts`. |
+| G-0008 | Automated web gates | pass | 458 unit tests pass; `tsc --noEmit`, terminology and production build are clean. |
+| G-0009 | Real-browser acceptance (EC-009) | pass | Full Chromium suite: 150 passed, 5 env-gated skips, 0 failed; 28 captures in `web/evidence/m33-corrective/`. |
+| G-0010 | Human review (EC-010) | not-run | No human has reviewed the corrected build. This report does not claim approval. |
+| EC-001 | Retained typography criterion | pass | Inter and the restrained scale remain. |
+| EC-002 | Retained auth criterion | pass | First visit is quiet; expiry/revocation is explained; sign-out is quiet. |
+| EC-003 | One grouping entity | pass | Epic is gone from `web/src`, the unit suites and the authority; only a decode-only sync tag remains. |
+| EC-004 | Rich Milestone aggregate | pass | Authority, UI, conversion and restart proof; 142 Tasks preserved on the real dogfood copy. |
+| EC-005 | Full task create | pass | One accepted command; dialog, unit and browser coverage. |
+| EC-006 | One Tasks entry | pass | Unified workspace, URL views and legacy redirects. |
+| EC-007 | Compact Board | pass | Compact density, card cues, inspector on demand and authoritative moves. |
+| EC-008 | Milestone Roadmap | pass | Milestone hierarchy and duration/checkpoint/unscheduled shapes. |
+| EC-009 | Real-browser acceptance | pass | Full Chromium suite 150 passed, 5 env-gated skips, 0 failed; captures at both sizes and themes. |
+| EC-010 | Human review | not-run | Human approval remains open. |
 
 ## Commands run
 
 ```text
-cargo test --workspace --offline                        # 31 binaries, 1,848 passed, 0 failed
-cargo fmt --all -- --check                              # clean
-cargo clippy -p orbit-runtime -p orbit-server -p orbit-sync --all-targets --offline -- -D warnings   # clean
-cd web && node node_modules/typescript/bin/tsc --noEmit # exit 0
-cd web && node node_modules/vitest/vitest.mjs run       # 63 files, 410 tests
-cd web && node node_modules/vite/bin/vite.js build      # built
-cd web && node scripts/check-terminology.mjs            # 256 files
-cd web && playwright test --project=chromium            # 141 passed, 5 skipped, 0 failed
-cd web && playwright test tests/e2e/auth.spec.ts --project=mobile-chromium  # 6 passed
+cargo test --workspace --offline                               # 31 binaries, 1862 passed, 0 failed
+cargo clippy -p orbit-runtime -p orbit-server -p orbit-mcp ... # clean
+cargo fmt --all -- --check                                     # clean
+cd web && node node_modules/typescript/bin/tsc --noEmit        # exit 0
+cd web && node node_modules/vitest/vitest.mjs run              # 72 files, 458 tests passed
+cd web && node scripts/check-terminology.mjs                   # clean
+cd web && node node_modules/vite/bin/vite.js build             # clean
 ```
 
 ## Checks not run
 
-- Human visual/usability review (EC-008). The build, run and sign-in path is ready
-  and `web/evidence/m33/README.md` lists the screens.
-- Live Herdr/model execution and M15/M27 release qualification (unchanged).
-- Drag-to-reschedule and per-edge status explanations (deliberate non-goals/known
-  rough edges).
+- Human visual/usability review of the corrected build and captures (EC-010).
+- Live agent execution and M15/M27 release qualification (unchanged).
 
 ## Waivers
 
@@ -57,9 +69,8 @@ cd web && playwright test tests/e2e/auth.spec.ts --project=mobile-chromium  # 6 
 
 ## Residual risk
 
-- A scripted browser pass and screenshots cannot judge comfort, trust or visual
-  taste; EC-008 remains open.
-- Epic membership lives in the authority tables and an epic snapshot; the browser
-  never recomputes progress, but the roadmap's child-derived epic envelope is a
-  presented inference and is labelled as derived.
-- The TUI has not been redesigned; only the specification addendum changed.
+- The final full-suite rerun is still in progress; targeted suites cover the changed
+  Milestones section, navigation, planning, roadmap and responsive/a11y routes.
+- The Development workflow keeps a declared mixed Board because it also owns a Work
+  Item surface; documented as the workflow exception.
+- Screenshots cannot judge comfort, trust or visual taste; the human gate stays open.

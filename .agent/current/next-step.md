@@ -8,85 +8,99 @@ record_schema_version: 1
 id: NEXT-0020
 status: ready
 milestone_id: MILESTONE-0033
-advances_exit_criteria: [EC-008, EC-009]
+advances_exit_criteria: [EC-009, EC-010]
 ---
 
 # Next Deterministic Step
 
 ## Objective
 
-Close M33 with the evidence it still lacks: the full Rust workspace gate and a
-human visual/usability review of the built app. Then run the persistent-workspace
-dogfooding script against the final build and record any defects it finds.
+Hand the corrected M33 build to a human for visual and usability review of the
+running app and the representative captures. M33 remains active until a person
+records that review; automated screenshots and DOM assertions are not approval.
 
 ## Why this is next
 
-The implementation and automated acceptance are complete enough to review. M33
-must not be called complete from DOM assertions and my own screenshots; the
-definition of done requires a person to judge the actual interface, and the Rust
-workspace gate has not yet been recorded after the Epic module landed.
+The corrective implementation is complete: Milestone is the only grouping entity,
+Epic is removed, rich task creation is one accepted command, List/Board/Backlog share
+one Tasks tab, the Board is compact by default, and the Roadmap is a Milestone
+hierarchy. Rust and web gates are green, the legacy conversion and restart were
+exercised on a real database, and `web/evidence/m33-corrective/` holds 28 captures.
+The only open exit criterion is the human review (EC-010).
 
 ## Preconditions
 
-- M33 I1–I4 changes in the working tree; `web/dist` built from them.
-- A local server with a device credential and the persistent dogfooding database.
-- The browser-libraries bundle at `/tmp/pwlibs/root/usr/lib/x86_64-linux-gnu`.
+- `target/debug/orbit-server` and `web/dist` are built from the current tree.
+- A device credential for a project with several milestones, 100+ tasks, deadlines,
+  dependencies, unscheduled work and Work Items.
+- The browser-libraries bundle at `/tmp/pwlibs/root/usr/lib/x86_64-linux-gnu` for the
+  Playwright Chromium build.
 
 ## Inputs
 
-- `web/evidence/m33/` captures and README.
-- `web/tests/e2e/{epics,roadmap,project-workspace-nav}.spec.ts`.
-- `crates/orbit-runtime/src/authority_epics.rs` and its tests.
+- `.slim/deepwork/m33-web-ux/progress.md`, `corrective-plan.md`, `p2-ui-briefs.md`.
+- `web/evidence/m33-corrective/README.md` and the 28 PNGs.
+- `.agent/current/acceptance.md`, `.agent/current/evidence.md`.
 - `docs/web-app.md`, `docs/guides/tui-redesign-spec.md`.
 
 ## Ordered actions
 
-1. Run `cargo test --workspace --offline` and record the exact totals; fix any
-   failure in the owning layer.
-2. Run `cargo fmt --all -- --check` and clippy on the touched crates.
-3. Give a human the exact build/run/sign-in commands and ask them to review the
-   light and dark desktop, laptop and phone captures against the running app.
-4. Run the persistent dogfooding flow (create two epics, assign tasks and a Work
-   Item, set milestone targets, edit dates, complete a task, restart) and record
-   the steps and findings under `.slim/deepwork/m33-web-ux/`.
-5. Fix only defects the review or session exposes; re-run the affected gates.
-6. Update the M33 milestone status and acceptance record honestly.
+1. Start the server against a copy of the dogfooding database and open the built SPA.
+2. Review Tasks List, Board (compact and comfortable), Backlog and the view switcher;
+   confirm filters survive switching and the URL carries the view.
+3. Create a fully configured task (title, description, priority, deadline, estimate,
+   milestone, two acceptance criteria, one dependency) and confirm every value is
+   present without a second edit.
+4. Review a milestone card, its details, child tasks, Work Items, progress and
+   activity; change a status and reload.
+5. Review the Roadmap at week/month/quarter: duration bars, checkpoint markers,
+   unscheduled work, child windows, progress and blocked cues.
+6. Review the same routes at 390px in light and dark for crowding, overflow and
+   navigation friction.
+7. Record the findings and any defects in `.slim/deepwork/m33-web-ux/acceptance.md`.
+8. Fix only review findings; re-run the affected gates. Mark M33 complete only when
+   the human review is recorded and the remaining exit criteria still hold.
 
 ## Expected outputs
 
-- Rust workspace test output with a pass/fail count.
-- A human review note naming what they inspected and any issues.
-- A dogfooding record with screenshots and persistence proof.
-- M33 marked completed only when EC-008 and EC-009 are satisfied.
+- A human review note naming what was inspected, at which sizes/themes, and any
+  issues found.
+- Defect fixes (if any) with focused re-validation.
+- An honest M33 status: complete only after EC-010 is satisfied.
 
 ## Acceptance criteria
 
-- [ ] NS-001: `cargo test --workspace --offline` passes, or every failure is
-  recorded with an owner and a waiver.
-- [ ] NS-002: A human has reviewed the built app at desktop and phone sizes in
-  both themes and their findings are recorded.
-- [ ] NS-003: The persistent dogfooding flow passes its create/assign/progress/
-  date/restart steps on one database.
-- [ ] NS-004: M33 milestone progress reflects actual exit criteria, not line count.
+- [ ] NS-001: A human has reviewed the running app at 1440×900 and 390×844 in light
+  and dark, plus the representative captures.
+- [ ] NS-002: The review note records what was inspected and every material issue.
+- [ ] NS-003: Any review-driven fix preserves the Milestone model, one Tasks tab,
+  compact Board and authoritative commands, and the affected gates are re-run.
+- [ ] NS-004: M33 is marked complete only after the review and remains active
+  otherwise.
 
 ## Validation
 
 ```sh
+cargo build -p orbit-server --offline
+cd web && node node_modules/vite/bin/vite.js build
 cargo test --workspace --offline
-cargo fmt --all -- --check
 cd web && node node_modules/typescript/bin/tsc --noEmit
 cd web && node node_modules/vitest/vitest.mjs run
-cd web && node scripts/check-terminology.mjs
+cd web && LD_LIBRARY_PATH=/tmp/pwlibs/root/usr/lib/x86_64-linux-gnu \
+  node node_modules/@playwright/test/cli.js test --project=chromium
 ```
 
 ## Stop conditions
 
-- A human review cannot be performed in this environment: record the manual steps
-  and leave EC-008 open rather than claiming approval.
-- A workspace failure points at an unrelated pre-existing area: record it, do not
-  waive it silently.
+- No human is available to review: keep EC-010 open and do not claim approval.
+- A review finding requires a product-model change: record it and return to planning
+  rather than patching around it.
+- A failure points at an unrelated pre-existing area: record it, do not waive it
+  silently.
 
 ## Out of scope
 
-- TUI implementation, public release, or redesigning M31/M32 screens that M33 did
-  not touch.
+- TUI implementation; the specification is updated, but no TUI feature change is part
+  of this phase.
+- New milestones, public release work, or reopening M31/M32 areas M33 did not touch.
+- A permanent compatibility layer for the removed grouping tables.

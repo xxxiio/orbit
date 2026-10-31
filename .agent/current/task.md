@@ -10,82 +10,96 @@ status: active
 milestone_id: MILESTONE-0033
 ---
 
-# Task: M33 I1–I4 — professional UX, project workspace, epics and roadmap
+# Task: M33 corrective — Milestone unification, task creation UX, unified Tasks workspace
 
 ## Objective
 
-Replace Orbit's decorative web typography, fix the false expired-session warning,
-build a coherent issue-centric project workspace, introduce authoritative Epics
-that group Tasks and Workflow Work Items, give Milestones target dates, and prove
-the result with real-browser tests and captures.
+Correct the rejected Epic-based M33 design: make Milestone the only project
+work-grouping entity, remove Epic, let users configure a task fully before creating
+it, place List/Board/Backlog under one Tasks tab, make the Board compact and
+readable, and rebuild the Roadmap around Milestones. Keep the retained typography
+and authentication work.
 
 ## Current behaviour
 
-The browser used Fraunces/Instrument Sans and editorial headings, a warm paper
-palette and oversized panels. A missing first-visit session was reported as an
-expiry because `ProtectedRoute` could not distinguish "never authenticated" from
-"session ended". Projects were workflow-panel collections with no List, Backlog
-or Roadmap sections and no Epic concept; milestones had status and name only.
+The first M33 pass added a second grouping entity (Epic) beside Milestones, a
+single-field task create dialog, three top-level task presentations, crowded board
+cards and an Epic-based roadmap. A human review rejected that product model. The
+corrected tree has one Milestone aggregate, one accepted rich-create command, one
+Tasks tab with URL views, compact board cards and a Milestone hierarchy on the
+roadmap. A human visual/usability review has not yet been recorded.
 
 ## Desired behaviour
 
-A neutral, compact application UI in Inter; a clean first visit and honest expiry
-and revocation copy; canonical List, Board, Backlog, Roadmap and Milestones
-sections that preserve workflow-declared extras; Epics as a first-class
-authoritative grouping with progress, activity and same-project enforcement;
-milestone target dates as checkpoints; a roadmap that shows scheduled work and
-never invents dates.
+Milestones group Tasks and supported Workflow Work Items with rich optional fields,
+derived progress, activity and safe guards. Existing Epic data converts once,
+deterministically, without losing task identity or an existing milestone assignment.
+A task can be created with every supported property in one accepted operation, while
+quick capture stays lightweight. List, Board and Backlog share the Tasks tab and its
+filters. The Board defaults to compact cards and opens details on demand. The Roadmap
+shows Milestone duration bars, checkpoints, child work and unscheduled work without
+inventing dates. Rust remains authoritative; no TUI feature changes.
 
 ## Scope
 
-- Typography/design tokens, Inter, neutral light/dark palette.
-- Auth marker and redirect-state fix, unit and browser tests.
-- Canonical project navigation, List grouping/epic column, Backlog, Roadmap.
-- Rust Epic command/snapshot family, task and Work Item membership, progress and
-  activity; milestone `set_target`.
-- Epic dialogs, epic filter, shared task-drawer field, Work Item sheet field.
-- E2E coverage, evidence captures and documentation.
+- Rich Milestone authority, Task and Work Item membership, progress, activity,
+  guards, one-time Epic conversion and Epic removal.
+- Atomic rich task creation with criteria and dependencies; quick capture retained.
+- One Tasks tab with URL-backed List/Board/Backlog and shared filters.
+- Compact Board density, priority/deadline/blocked cues and authoritative moves.
+- Milestone dialogs/list, task and Work Item Milestone fields.
+- Milestone Roadmap with duration/checkpoint/unscheduled semantics.
+- Tests, documentation, real-browser acceptance, captures and human handoff.
 
 ## Out of scope
 
-- TUI redesign, Jira branding, mandatory sprints, Story Points, public release.
-- A second frontend domain engine or client-side hierarchy calculation.
+- TUI implementation; Jira branding; mandatory sprints; Story Points; public release.
+- A second grouping entity, a permanent Epic compatibility layer, or a second
+  frontend domain engine.
+- Reopening M31/M32 areas M33 did not touch.
 
 ## Dependencies
 
-- M31/M32 web client, authoritative command ledger, task/milestone services,
+- M31/M32 web client, authoritative command ledger, task/milestone services and the
   Playwright harness.
+- A legacy database copy for the conversion check and a browser-libraries bundle for
+  Playwright Chromium.
 
 ## Risks
 
-- Epic membership could be mistaken for a task field; it is a separate fenced
-  command family and the UI reads the epic snapshot.
-- Derived epic bars could be mistaken for authored schedules; they are dashed and
-  labelled derived, and undated items stay unscheduled.
-- The browser cannot distinguish expiry from revocation at the HTTP level; both
-  are explained as "session ended" rather than inventing a reason.
+- Conversion could overwrite an existing task milestone; the existing assignment
+  wins and the result is recorded.
+- Rich create could partially fail; it is one transaction with one receipt.
+- Canonicalising Milestones could strand workflow panels; non-milestone panels stay
+  reachable below the cards.
+- Screenshots cannot judge comfort or taste; human approval stays open.
 
 ## Acceptance criteria
 
-- [x] AC-001: No Fraunces/Instrument Sans imports or decorative serif headings remain.
-- [x] AC-002: First visit, sign-out, expiry and revocation each render the correct
-  login state; no credential is stored in browser storage.
-- [x] AC-003: A project exposes one canonical Overview/List/Board/Backlog/Roadmap/
-  Milestones set plus its own extra views; old `/tasks` and `/timeline` links resolve.
-- [x] AC-004: Epic create/edit/status/assign/unassign/delete/progress/activity work
-  through Rust authority commands and survive restart.
-- [x] AC-005: Cross-project epic assignment is refused and leaves no partial state.
-- [x] AC-006: Milestone target dates can be set and cleared; milestones are not
-  epics and have no duration.
-- [x] AC-007: Roadmap supports week/month/quarter, current date, dependencies,
-  unscheduled work and click-through to task/epic/milestone.
-- [x] AC-008: Full chromium suite 141 passed / 5 skipped; mobile auth 6 passed.
-- [x] AC-009: Unit suite 63 files / 410 tests; terminology and typecheck pass.
-- [ ] AC-010: A human has reviewed the built UI and screenshots.
+- [x] AC-001: Epic is not a domain, route, dialog, filter, column or roadmap concept.
+- [x] AC-002: One Milestone family supports rich fields, Task and Work Item
+  membership, derived progress, activity and safe guards; conversion preserves
+  identity and restart state.
+- [x] AC-003: A fully configured task is created in one accepted operation; quick
+  capture remains; retry is idempotent.
+- [x] AC-004: One Tasks tab presents List, Board and Backlog with URL state and
+  shared filters; legacy links redirect.
+- [x] AC-005: The Board is compact by default, persists density, opens details on
+  demand and keeps authoritative moves.
+- [x] AC-006: The Roadmap is one Milestone hierarchy with duration, checkpoint and
+  unscheduled shapes.
+- [x] AC-007: Rust workspace, clippy, fmt, web typecheck, unit, terminology and build
+  gates pass.
+- [x] AC-008: Full Chromium suite passes (150 passed, 5 env-gated skips, 0 failed).
+- [x] AC-009: 28 corrective captures exist at desktop/phone in light and dark.
+- [ ] AC-010: A human has reviewed the running app and corrective captures.
 
 ## Validation
 
 ```sh
+cargo test --workspace --offline
+cargo clippy -p orbit-runtime -p orbit-server -p orbit-mcp --all-targets --offline -- -D warnings
+cargo fmt --all -- --check
 cd web
 node node_modules/typescript/bin/tsc --noEmit
 node node_modules/vitest/vitest.mjs run
@@ -93,8 +107,4 @@ node node_modules/vite/bin/vite.js build
 node scripts/check-terminology.mjs
 LD_LIBRARY_PATH=/tmp/pwlibs/root/usr/lib/x86_64-linux-gnu \
   node node_modules/@playwright/test/cli.js test --project=chromium
-LD_LIBRARY_PATH=/tmp/pwlibs/root/usr/lib/x86_64-linux-gnu \
-  node node_modules/@playwright/test/cli.js test tests/e2e/auth.spec.ts --project=mobile-chromium
-cd ..
-cargo test -p orbit-runtime authority_epics authority_milestones --offline
 ```
