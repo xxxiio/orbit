@@ -410,6 +410,15 @@ mod tests {
                 task_id: "task-1".into(),
                 title: "Task".into(),
                 project_id: Some("project-1".into()),
+                milestone_id: None,
+                description: String::new(),
+                status: None,
+                priority: None,
+                estimated_minutes: None,
+                deadline_at_ms: None,
+                earliest_start_at_ms: None,
+                acceptance_criteria: Vec::new(),
+                prerequisite_ids: Vec::new(),
             },
         };
         assert_eq!(client.task_command(task).unwrap().revision, 2);
@@ -425,7 +434,16 @@ mod tests {
                 action: TaskAction::Create {
                     task_id: "task-2".into(),
                     title: "Late".into(),
-                    project_id: None
+                    project_id: None,
+                    milestone_id: None,
+                    description: String::new(),
+                    status: None,
+                    priority: None,
+                    estimated_minutes: None,
+                    deadline_at_ms: None,
+                    earliest_start_at_ms: None,
+                    acceptance_criteria: Vec::new(),
+                    prerequisite_ids: Vec::new(),
                 }
             }),
             Err(AuthorityError::StaleRevision)

@@ -2,7 +2,7 @@
 //! The command ledger, receipts, and entity tables share a transaction boundary.
 #[cfg(test)]
 use orbit_sync::{ChangeEnvelope, ConflictResolution};
-use orbit_sync::{ChangeId, DeviceId};
+use orbit_sync::{ChangeId, DeviceId, FieldMutation};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -50,6 +50,353 @@ impl From<rusqlite::Error> for AuthorityError {
 
 pub fn digest(value: &str) -> Vec<u8> {
     Sha256::digest(value.as_bytes()).to_vec()
+}
+
+fn table_exists(conn: &Connection, name: &str) -> Result<bool, AuthorityError> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+        [name],
+        |row| row.get(0),
+    )?)
+}
+
+/// Stable short hash used only to keep generated legacy-conversion ids unique
+/// and bounded; it is not a security primitive.
+fn short_hash(value: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{:08x}", (hash ^ (hash >> 32)) as u32)
+}
+
+fn collision_milestone_id(epic_id: &str, attempt: u32) -> String {
+    let hash = short_hash(&format!("{epic_id}:{attempt}"));
+    let suffix = if attempt == 0 {
+        "--epic".to_owned()
+    } else {
+        format!("--epic-{hash}")
+    };
+    if epic_id.len() + suffix.len() <= 128 {
+        return format!("{epic_id}{suffix}");
+    }
+    let suffix = format!("--epic-{hash}");
+    let keep = 128usize.saturating_sub(suffix.len());
+    let mut value: String = epic_id.chars().take(keep).collect();
+    value.push_str(&suffix);
+    value
+}
+
+fn milestone_exists(conn: &Connection, id: &str) -> Result<bool, AuthorityError> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM milestones WHERE id=?1)",
+        [id],
+        |row| row.get(0),
+    )?)
+}
+
+fn activity_id_exists(conn: &Connection, id: &str) -> Result<bool, AuthorityError> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM activities WHERE id=?1)",
+        [id],
+        |row| row.get(0),
+    )?)
+}
+
+fn ensure_milestone_schema(conn: &mut Connection) -> Result<(), AuthorityError> {
+    // A milestone may carry a target checkpoint date. Existing rows stay
+    // dateless (NULL), which the roadmap renders as "unscheduled".
+    let columns = {
+        let mut stmt = conn.prepare("PRAGMA table_info(milestones)")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for (name, definition) in [
+        ("target_at_ms", "INTEGER"),
+        ("description", "TEXT NOT NULL DEFAULT ''"),
+        ("priority", "TEXT"),
+        ("owner", "TEXT"),
+        ("start_at_ms", "INTEGER"),
+        ("created_at_ms", "INTEGER NOT NULL DEFAULT 0"),
+        ("updated_at_ms", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
+        if !columns.iter().any(|column| column == name) {
+            conn.execute(
+                &format!("ALTER TABLE milestones ADD COLUMN {name} {definition}"),
+                [],
+            )?;
+        }
+    }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS milestone_work_items (
+            item_id TEXT PRIMARY KEY NOT NULL,
+            milestone_id TEXT NOT NULL REFERENCES milestones(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_milestone_work_items_milestone
+            ON milestone_work_items(milestone_id);",
+    )?;
+    migrate_epics(conn)
+}
+
+struct LegacyEpic {
+    id: String,
+    project_id: String,
+    title: String,
+    description: String,
+    status: String,
+    priority: Option<String>,
+    owner: Option<String>,
+    start_at_ms: Option<i64>,
+    target_at_ms: Option<i64>,
+    created_at_ms: i64,
+    updated_at_ms: i64,
+}
+
+/// Convert pre-release epics into milestones exactly once. The whole conversion
+/// runs in one immediate transaction; if the legacy `epics` table is absent it
+/// is a no-op. Existing task and work-item assignments always win.
+fn migrate_epics(conn: &mut Connection) -> Result<(), AuthorityError> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    if !table_exists(&tx, "epics")? {
+        tx.commit()?;
+        return Ok(());
+    }
+    let epics = {
+        let mut stmt = tx.prepare(
+            "SELECT id,project_id,title,description,status,priority,owner,start_at_ms,target_at_ms,created_at_ms,updated_at_ms FROM epics ORDER BY id",
+        )?;
+        stmt.query_map([], |row| {
+            Ok(LegacyEpic {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                title: row.get(2)?,
+                description: row.get(3)?,
+                status: row.get(4)?,
+                priority: row.get(5)?,
+                owner: row.get(6)?,
+                start_at_ms: row.get(7)?,
+                target_at_ms: row.get(8)?,
+                created_at_ms: row.get(9)?,
+                updated_at_ms: row.get(10)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?
+    };
+
+    for epic in epics {
+        let target = if milestone_exists(&tx, &epic.id)? {
+            let mut attempt = 0u32;
+            loop {
+                let candidate = collision_milestone_id(&epic.id, attempt);
+                if !milestone_exists(&tx, &candidate)? {
+                    break candidate;
+                }
+                attempt = attempt.saturating_add(1);
+            }
+        } else {
+            epic.id.clone()
+        };
+
+        let mut epic_task_ids = Vec::new();
+        if table_exists(&tx, "epic_tasks")? {
+            let mut stmt = tx.prepare("SELECT task_id FROM epic_tasks WHERE epic_id=?1")?;
+            epic_task_ids = stmt
+                .query_map([&epic.id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+        }
+        let mut epic_work_item_ids = Vec::new();
+        if table_exists(&tx, "epic_work_items")? {
+            let mut stmt = tx.prepare("SELECT item_id FROM epic_work_items WHERE epic_id=?1")?;
+            epic_work_item_ids = stmt
+                .query_map([&epic.id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+        }
+
+        let mut copied_tasks = Vec::new();
+        let mut dropped_tasks = Vec::new();
+        let mut unfinished = false;
+        for task_id in &epic_task_ids {
+            let task: Option<(Option<String>, Option<String>, String)> = tx
+                .query_row(
+                    "SELECT milestone_id,project_id,status FROM tasks WHERE id=?1",
+                    [task_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()?;
+            let Some((milestone_id, project_id, status)) = task else {
+                continue;
+            };
+            if project_id.as_deref() != Some(epic.project_id.as_str()) {
+                continue;
+            }
+            if milestone_id.is_some() {
+                dropped_tasks.push(task_id.clone());
+                continue;
+            }
+            copied_tasks.push(task_id.clone());
+            if !matches!(status.as_str(), "done" | "cancelled") {
+                unfinished = true;
+            }
+        }
+
+        let mut copied_work_items = Vec::new();
+        let mut kept_work_items = Vec::new();
+        for item_id in &epic_work_item_ids {
+            let assigned: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM milestone_work_items WHERE item_id=?1)",
+                [item_id],
+                |row| row.get(0),
+            )?;
+            if assigned {
+                kept_work_items.push(item_id.clone());
+                continue;
+            }
+            copied_work_items.push(item_id.clone());
+            let state: Option<String> = tx
+                .query_row(
+                    "SELECT state FROM orbit_blueprint_work_items WHERE id=?1",
+                    [item_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if !state.is_some_and(|state| matches!(state.as_str(), "done" | "completed" | "closed"))
+            {
+                unfinished = true;
+            }
+        }
+
+        let converted_status = if epic.status == "cancelled" {
+            "cancelled".to_owned()
+        } else if epic.status == "completed" {
+            // A completed epic with no copied work used to be downgraded to
+            // `planned`, which silently reopened it. Only unfinished copied
+            // members justify a downgrade; an empty epic stays completed.
+            if unfinished {
+                "in_progress".to_owned()
+            } else {
+                "completed".to_owned()
+            }
+        } else {
+            epic.status.clone()
+        };
+
+        tx.execute(
+            "INSERT INTO milestones(id,project_id,name,description,status,priority,owner,start_at_ms,target_at_ms,created_at_ms,updated_at_ms) \
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![
+                target,
+                epic.project_id,
+                epic.title,
+                epic.description,
+                converted_status,
+                epic.priority,
+                epic.owner,
+                epic.start_at_ms,
+                epic.target_at_ms,
+                epic.created_at_ms,
+                epic.updated_at_ms
+            ],
+        )?;
+
+        for task_id in &copied_tasks {
+            tx.execute(
+                "UPDATE tasks SET milestone_id=?1 WHERE id=?2 AND milestone_id IS NULL AND project_id=?3",
+                params![target, task_id, epic.project_id],
+            )?;
+        }
+        for item_id in &copied_work_items {
+            tx.execute(
+                "INSERT INTO milestone_work_items(item_id,milestone_id) VALUES(?1,?2) \
+                 ON CONFLICT(item_id) DO NOTHING",
+                params![item_id, target],
+            )?;
+        }
+
+        if table_exists(&tx, "epic_activities")? {
+            let mut stmt = tx.prepare(
+                "SELECT id,kind,actor,occurred_at_ms,summary FROM epic_activities WHERE epic_id=?1",
+            )?;
+            let activities = stmt
+                .query_map([&epic.id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            for (id, kind, actor, occurred_at_ms, summary) in activities {
+                let mut copied_id = id.clone();
+                if activity_id_exists(&tx, &copied_id)? {
+                    copied_id = format!("epic-{id}");
+                }
+                let mut attempt = 0u32;
+                while activity_id_exists(&tx, &copied_id)? {
+                    copied_id = format!("epic-{id}-{}", short_hash(&format!("{target}:{attempt}")));
+                    attempt = attempt.saturating_add(1);
+                }
+                tx.execute(
+                    "INSERT INTO activities(id,subject_kind,subject_id,activity_kind,activity_kind_value,origin_kind,origin_value,occurred_at_ms,summary) \
+                     VALUES(?1,'milestone',?2,?3,NULL,'external',?4,?5,?6)",
+                    params![copied_id, target, kind, actor, occurred_at_ms, summary],
+                )?;
+            }
+        }
+
+        if converted_status != epic.status
+            || !dropped_tasks.is_empty()
+            || !kept_work_items.is_empty()
+        {
+            let mut summary = String::new();
+            if converted_status != epic.status {
+                summary.push_str(&format!(
+                    "Epic conversion changed status from {} to {}",
+                    epic.status, converted_status
+                ));
+            }
+            if !dropped_tasks.is_empty() {
+                if !summary.is_empty() {
+                    summary.push_str("; ");
+                }
+                summary.push_str(&format!(
+                    "existing milestone assignment won for tasks {}",
+                    dropped_tasks.join(",")
+                ));
+            }
+            if !kept_work_items.is_empty() {
+                if !summary.is_empty() {
+                    summary.push_str("; ");
+                }
+                summary.push_str(&format!(
+                    "existing work-item assignment kept for items {}",
+                    kept_work_items.join(",")
+                ));
+            }
+            tx.execute(
+                "INSERT INTO activities(id,subject_kind,subject_id,activity_kind,activity_kind_value,origin_kind,origin_value,occurred_at_ms,summary) \
+                 VALUES(?1,'milestone',?2,'converted',NULL,'external','system',?3,?4)",
+                params![
+                    format!("milestone-activity-convert-{target}"),
+                    target,
+                    epic.updated_at_ms.max(epic.created_at_ms),
+                    summary
+                ],
+            )?;
+        }
+    }
+
+    // Drop child tables before the parent so foreign keys stay satisfied.
+    tx.execute_batch(
+        "DROP TABLE IF EXISTS epic_activities;
+         DROP TABLE IF EXISTS epic_work_items;
+         DROP TABLE IF EXISTS epic_tasks;
+         DROP TABLE IF EXISTS epics;",
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 
 /// Honest created/updated moments for one task, derived from its recorded
@@ -139,7 +486,7 @@ impl AuthorityStore {
                 ));
             }
         }
-        let conn = if path == Path::new(":memory:") {
+        let mut conn = if path == Path::new(":memory:") {
             orbit_storage::SqliteStore::in_memory()
         } else {
             orbit_storage::SqliteStore::open(path)
@@ -206,22 +553,10 @@ impl AuthorityStore {
         // every existing database gains them on open, but they stay outside the
         // semantic ledger: saving a view is not an authority change.
         crate::saved_views::schema(&conn)?;
-        // Epics are an additive authority family: older databases gain the
-        // tables on open and keep every existing task untouched.
-        crate::authority_epics::ensure_epic_schema(&conn)?;
-        // A milestone may carry a target checkpoint date. Existing rows stay
-        // dateless (NULL), which the roadmap renders as "unscheduled".
-        let milestone_columns = {
-            let mut stmt = conn.prepare("PRAGMA table_info(milestones)")?;
-            let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
-            rows.collect::<Result<Vec<_>, _>>()?
-        };
-        if !milestone_columns
-            .iter()
-            .any(|column| column == "target_at_ms")
-        {
-            conn.execute("ALTER TABLE milestones ADD COLUMN target_at_ms INTEGER", [])?;
-        }
+        // Milestones are the only project work-grouping entity. Existing
+        // databases gain the rich columns and work-item membership table, then
+        // any pre-release epic rows are converted and their tables removed.
+        ensure_milestone_schema(&mut conn)?;
         // A single projects/tasks record is authoritative for both local and
         // HTTP transports. Revision metadata is attached to the same tasks row.
         let task_columns = {
@@ -1224,55 +1559,287 @@ impl AuthorityStore {
                 task_id,
                 title,
                 project_id,
+                milestone_id,
+                description,
+                status,
+                priority,
+                estimated_minutes,
+                deadline_at_ms,
+                earliest_start_at_ms,
+                acceptance_criteria,
+                prerequisite_ids,
             } => {
-                let scope = if let Some(project_id) = project_id {
-                    let id = orbit_domain::ProjectId::new(project_id.clone())
-                        .map_err(|_| AuthorityError::Invalid("invalid project id"))?;
-                    let exists: bool = tx.query_row(
-                        "SELECT EXISTS(SELECT 1 FROM projects WHERE id=?1)",
-                        [project_id],
-                        |r| r.get(0),
-                    )?;
-                    if !exists {
-                        return Err(AuthorityError::Invalid("project does not exist"));
+                // Resolve placement first. A milestone is never valid without
+                // its parent project, and the pair must name existing rows.
+                let resolved_project = match project_id {
+                    Some(id) => {
+                        let project = orbit_domain::ProjectId::new(id.clone())
+                            .map_err(|_| AuthorityError::Invalid("invalid project id"))?;
+                        let exists: bool = tx.query_row(
+                            "SELECT EXISTS(SELECT 1 FROM projects WHERE id=?1)",
+                            [id],
+                            |r| r.get(0),
+                        )?;
+                        if !exists {
+                            return Err(AuthorityError::Invalid("project does not exist"));
+                        }
+                        Some(project)
                     }
-                    TaskScope::in_project(id)
-                } else {
-                    TaskScope::standalone()
+                    None => None,
                 };
+                let resolved_milestone = match milestone_id {
+                    Some(id) => Some(
+                        orbit_domain::MilestoneId::new(id.clone())
+                            .map_err(|_| AuthorityError::Invalid("invalid milestone id"))?,
+                    ),
+                    None => None,
+                };
+                let scope = TaskScope::try_new(resolved_project, resolved_milestone)
+                    .map_err(|_| AuthorityError::Invalid("milestone requires a project"))?;
                 if task_id.len() > 256 || title.len() > 4096 {
                     return Err(AuthorityError::Invalid("task field too long"));
                 }
-                let task = Task::new(
+                let mut task = Task::new(
                     TaskId::new(task_id.clone())
                         .map_err(|_| AuthorityError::Invalid("invalid task id"))?,
                     title.clone(),
                     scope,
                 )
                 .map_err(|_| AuthorityError::Invalid("invalid task"))?;
-                let record = TaskRecord {
-                    id: task.id().as_str().into(),
-                    title: task.title().into(),
-                    status: task.status().as_str().into(),
-                    project_id: project_id.clone(),
-                    milestone_id: None,
-                    estimated_minutes: None,
-                    earliest_start_at_ms: None,
-                    deadline_at_ms: None,
-                    description: String::new(),
-                    priority: None,
-                    labels: Vec::new(),
+                // New tasks start in inbox. Any other initial state must still be
+                // a real edge of the domain graph, so the transition table stays
+                // the single source of truth for lifecycle rules.
+                let initial_status = match status.as_deref() {
+                    None => orbit_domain::TaskStatus::Inbox,
+                    Some(value) => {
+                        let parsed = crate::domain_commands::parse_status(value)
+                            .ok_or(AuthorityError::Invalid("invalid initial status"))?;
+                        if !matches!(
+                            parsed,
+                            orbit_domain::TaskStatus::Inbox
+                                | orbit_domain::TaskStatus::Planned
+                                | orbit_domain::TaskStatus::Ready
+                                | orbit_domain::TaskStatus::Deferred
+                        ) || !orbit_domain::TaskStatus::Inbox.can_transition_to(parsed)
+                        {
+                            return Err(AuthorityError::Invalid("invalid initial status"));
+                        }
+                        parsed
+                    }
                 };
-                let changed=tx.execute("INSERT OR IGNORE INTO tasks(id,title,status,status_sequence,project_id) VALUES(?1,?2,?3,?4,?5)", params![record.id,record.title,record.status,sequence,record.project_id])?;
+                task.transition_to(initial_status)
+                    .map_err(|_| AuthorityError::Invalid("invalid initial status"))?;
+                if earliest_start_at_ms.is_some_and(|value| value < 0)
+                    || deadline_at_ms.is_some_and(|value| value < 0)
+                {
+                    return Err(AuthorityError::Invalid("invalid planning window"));
+                }
+                // Same bound as `SetPlanning`: zero or an out-of-range estimate
+                // would make create accept a planning value the update path
+                // refuses, so one task could hold two different truths.
+                if estimated_minutes.is_some_and(|value| value <= 0 || value > 525_600) {
+                    return Err(AuthorityError::Invalid("invalid task estimate"));
+                }
+                let estimate = match estimated_minutes {
+                    Some(value) => Some(
+                        u32::try_from(*value)
+                            .map_err(|_| AuthorityError::Invalid("invalid task estimate"))?,
+                    ),
+                    None => None,
+                };
+                let planning = orbit_domain::TaskPlanning::new(
+                    estimate,
+                    *earliest_start_at_ms,
+                    *deadline_at_ms,
+                )
+                .map_err(|_| AuthorityError::Invalid("invalid planning window"))?;
+                task.set_planning(planning);
+                let parsed_priority = match priority {
+                    Some(value) => Some(
+                        orbit_domain::TaskPriority::from_str_checked(value)
+                            .map_err(|_| AuthorityError::Invalid("invalid task priority"))?,
+                    ),
+                    None => None,
+                };
+                // Persist the canonical spelling (`" High "` becomes `"high"`)
+                // so the create ledger and the stored row agree with every
+                // later `SetDetails` write.
+                let canonical_priority = parsed_priority.map(|value| value.as_str().to_owned());
+                let details = orbit_domain::TaskDetails::new(
+                    description.clone(),
+                    parsed_priority,
+                    std::iter::empty::<String>(),
+                )
+                .map_err(|_| AuthorityError::Invalid("invalid task details"))?;
+                task.set_details(details);
+                // Criteria identities are derived from the task identity and the
+                // list position so a replay of the same command id is stable.
+                if acceptance_criteria.len() > orbit_domain::MAX_ACCEPTANCE_CRITERIA {
+                    return Err(AuthorityError::Invalid("too many acceptance criteria"));
+                }
+                let criteria = acceptance_criteria
+                    .iter()
+                    .enumerate()
+                    .map(|(position, text)| {
+                        let id = orbit_domain::AcceptanceCriterionId::new(format!(
+                            "{task_id}-ac-{}",
+                            position + 1
+                        ))
+                        .map_err(|_| AuthorityError::Invalid("invalid criterion id"))?;
+                        orbit_domain::AcceptanceCriterion::new(id, text.clone())
+                            .map_err(|_| AuthorityError::Invalid("invalid acceptance criterion"))
+                    })
+                    .collect::<Result<Vec<_>, AuthorityError>>()?;
+                let criteria = orbit_domain::AcceptanceCriteria::from_ordered(criteria)
+                    .map_err(|_| AuthorityError::Invalid("invalid acceptance criteria"))?;
+                // Prerequisites are trimmed and deduped before any row is written.
+                // A fresh task has no inbound edges yet, so accepting these edges
+                // cannot introduce a dependency cycle; later AddPrerequisite
+                // commands still run the recursive ancestor guard.
+                let mut prerequisites: Vec<String> = Vec::new();
+                for raw in prerequisite_ids {
+                    let id = raw.trim();
+                    if id.is_empty() {
+                        return Err(AuthorityError::Invalid("invalid prerequisite id"));
+                    }
+                    if id == task_id {
+                        return Err(AuthorityError::Invalid("self dependency"));
+                    }
+                    if prerequisites.iter().any(|existing| existing == id) {
+                        continue;
+                    }
+                    let found: Option<Option<String>> = tx
+                        .query_row("SELECT project_id FROM tasks WHERE id=?1", [id], |row| {
+                            row.get(0)
+                        })
+                        .optional()?;
+                    let Some(prerequisite_project) = found else {
+                        return Err(AuthorityError::Invalid("prerequisite task not found"));
+                    };
+                    // Both tasks must be standalone or share one project.
+                    if prerequisite_project.as_deref() != project_id.as_deref() {
+                        return Err(AuthorityError::Invalid(
+                            "prerequisite must belong to the task project",
+                        ));
+                    }
+                    prerequisites.push(id.to_owned());
+                }
+                let changed = tx.execute(
+                    "INSERT OR IGNORE INTO tasks(id,title,status,status_sequence,project_id,milestone_id,estimated_minutes,earliest_start_at_ms,deadline_at_ms,description,priority) \
+                     VALUES(?1,?2,?3,?4,?5,NULL,?6,?7,?8,?9,?10)",
+                    params![
+                        task_id,
+                        title,
+                        initial_status.as_str(),
+                        sequence,
+                        project_id,
+                        estimated_minutes,
+                        earliest_start_at_ms,
+                        deadline_at_ms,
+                        description,
+                        canonical_priority.as_deref()
+                    ],
+                )?;
                 if changed != 1 {
                     return Err(AuthorityError::ImmutableConflict);
                 }
+                // Reuse the shared milestone guard so the create path enforces the
+                // exact same project membership and identifier rules.
+                let milestone_mutation = assign_task_milestone(
+                    &tx,
+                    task_id,
+                    project_id.as_deref(),
+                    milestone_id.as_deref(),
+                )?;
+                for (position, criterion) in criteria.items().iter().enumerate() {
+                    tx.execute(
+                        "INSERT INTO task_acceptance_criteria(task_id,criterion_id,position,text,completed_at_ms) \
+                         VALUES(?1,?2,?3,?4,NULL)",
+                        params![
+                            task_id,
+                            criterion.id().as_str(),
+                            i64::try_from(position)
+                                .map_err(|_| AuthorityError::Invalid("invalid position"))?,
+                            criterion.text()
+                        ],
+                    )?;
+                }
+                for prerequisite in &prerequisites {
+                    tx.execute(
+                        "INSERT INTO task_prerequisites(task_id,prerequisite_id) VALUES(?1,?2)",
+                        params![task_id, prerequisite],
+                    )?;
+                }
+                // The same accepted change must carry the ordered criteria and
+                // the sorted prerequisite edge set, exactly as the dedicated
+                // update actions encode them, so replay and offline replicas
+                // observe the whole aggregate created by this command.
+                let criteria_payload = serde_json::to_string(
+                    &criteria
+                        .items()
+                        .iter()
+                        .enumerate()
+                        .map(|(position, criterion)| {
+                            serde_json::json!({
+                                "criterion_id": criterion.id().as_str(),
+                                "text": criterion.text(),
+                                "position": position,
+                                "completed_at_ms": serde_json::Value::Null,
+                            })
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .map_err(|_| AuthorityError::Invalid("criteria serialization"))?;
+                let stored_prerequisites = {
+                    let mut stmt = tx.prepare(
+                        "SELECT prerequisite_id FROM task_prerequisites WHERE task_id=?1 ORDER BY prerequisite_id",
+                    )?;
+                    stmt.query_map([task_id], |row| row.get::<_, String>(0))?
+                        .collect::<Result<Vec<_>, _>>()?
+                };
+                let prerequisites_payload = serde_json::to_string(&stored_prerequisites)
+                    .map_err(|_| AuthorityError::Invalid("prerequisite serialization"))?;
+                let field_mutation =
+                    |field: &str, value: Option<String>| -> Result<FieldMutation, AuthorityError> {
+                        let base = latest_task_field_version(&tx, task_id, field)?;
+                        FieldMutation::new(field, value, base)
+                            .map_err(|_| AuthorityError::Invalid("invalid task mutation"))
+                    };
                 (
-                    record,
+                    TaskRecord {
+                        id: task.id().as_str().into(),
+                        title: task.title().into(),
+                        status: task.status().as_str().into(),
+                        project_id: project_id.clone(),
+                        milestone_id: milestone_id.clone(),
+                        estimated_minutes: *estimated_minutes,
+                        earliest_start_at_ms: *earliest_start_at_ms,
+                        deadline_at_ms: *deadline_at_ms,
+                        description: description.clone(),
+                        priority: canonical_priority.clone(),
+                        labels: Vec::new(),
+                    },
                     vec![
-                        FieldMutation::new("title", Some(title.clone()), None).unwrap(),
-                        FieldMutation::new("status", Some("inbox".into()), None).unwrap(),
-                        FieldMutation::new("project_id", project_id.clone(), None).unwrap(),
+                        field_mutation("title", Some(title.clone()))?,
+                        field_mutation("status", Some(initial_status.as_str().into()))?,
+                        field_mutation("project_id", project_id.clone())?,
+                        milestone_mutation,
+                        field_mutation("description", Some(description.clone()))?,
+                        field_mutation("priority", canonical_priority.clone())?,
+                        field_mutation(
+                            "estimated_minutes",
+                            estimated_minutes.map(|value| value.to_string()),
+                        )?,
+                        field_mutation(
+                            "earliest_start_at_ms",
+                            earliest_start_at_ms.map(|value| value.to_string()),
+                        )?,
+                        field_mutation(
+                            "deadline_at_ms",
+                            deadline_at_ms.map(|value| value.to_string()),
+                        )?,
+                        field_mutation("prerequisites", Some(prerequisites_payload))?,
+                        field_mutation("criteria", Some(criteria_payload))?,
                     ],
                 )
             }
@@ -1394,32 +1961,11 @@ impl AuthorityStore {
                     .optional()?;
                 let (title, status, project_id) =
                     prior.ok_or(AuthorityError::Invalid("task does not exist"))?;
-                if let Some(id) = milestone_id {
-                    if id.is_empty()
-                        || id.len() > 128
-                        || !id
-                            .bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-                    {
-                        return Err(AuthorityError::Invalid("invalid milestone ID"));
-                    }
-                    let matches_project: bool = tx.query_row(
-                        "SELECT EXISTS(SELECT 1 FROM milestones WHERE id=?1 AND project_id IS ?2)",
-                        params![id, project_id],
-                        |row| row.get(0),
-                    )?;
-                    if !matches_project {
-                        return Err(AuthorityError::Invalid(
-                            "milestone must belong to the task project",
-                        ));
-                    }
-                }
-                let base = latest_task_field_version(&tx, task_id, "milestone_id")?;
-                let mutation = FieldMutation::new("milestone_id", milestone_id.clone(), base)
-                    .map_err(|_| AuthorityError::Invalid("invalid milestone mutation"))?;
-                tx.execute(
-                    "UPDATE tasks SET milestone_id=?1 WHERE id=?2",
-                    params![milestone_id, task_id],
+                let mutation = assign_task_milestone(
+                    &tx,
+                    task_id,
+                    project_id.as_deref(),
+                    milestone_id.as_deref(),
                 )?;
                 (
                     TaskRecord {
@@ -1906,6 +2452,45 @@ fn append_command_activity(
         ],
     )?;
     Ok(())
+}
+
+/// Validate and apply one task-to-milestone membership change. Both the task
+/// command and the milestone command share this exact rule so the two entry
+/// points cannot drift.
+pub(crate) fn assign_task_milestone(
+    tx: &rusqlite::Transaction<'_>,
+    task_id: &str,
+    project_id: Option<&str>,
+    milestone_id: Option<&str>,
+) -> Result<FieldMutation, AuthorityError> {
+    if let Some(id) = milestone_id {
+        if id.is_empty()
+            || id.len() > 128
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return Err(AuthorityError::Invalid("invalid milestone ID"));
+        }
+        let matches_project: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM milestones WHERE id=?1 AND project_id IS ?2)",
+            params![id, project_id],
+            |row| row.get(0),
+        )?;
+        if !matches_project {
+            return Err(AuthorityError::Invalid(
+                "milestone must belong to the task project",
+            ));
+        }
+    }
+    let base = latest_task_field_version(tx, task_id, "milestone_id")?;
+    let mutation = FieldMutation::new("milestone_id", milestone_id.map(str::to_owned), base)
+        .map_err(|_| AuthorityError::Invalid("invalid milestone mutation"))?;
+    tx.execute(
+        "UPDATE tasks SET milestone_id=?1 WHERE id=?2",
+        params![milestone_id, task_id],
+    )?;
+    Ok(mutation)
 }
 
 /// Resolve optimistic semantic field bases for task edits using accepted history.

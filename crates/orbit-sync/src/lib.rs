@@ -76,6 +76,7 @@ impl ChangeId {
 pub enum EntityKind {
     Project,
     Milestone,
+    /// Decode-only legacy tag for pre-release history. No code emits it.
     Epic,
     Task,
     Habit,

@@ -25,7 +25,6 @@ use domain_commands::{ProjectRecord, ProjectResult, TaskCommand, TaskRecord, Tas
 use orbit_application::ApplicationError;
 use orbit_runtime::AuthoritativeHost;
 use orbit_runtime::AuthorityError;
-use orbit_runtime::authority_epics::{EpicCommand, EpicResult, EpicSnapshot};
 use orbit_runtime::authority_milestones::{MilestoneCommand, MilestoneResult, MilestoneSnapshot};
 use orbit_runtime::authority_routines::{RoutineCommand, RoutineResult, RoutineSnapshot};
 use orbit_runtime::authority_schedule::{ScheduleCommand, ScheduleResult, ScheduleSnapshot};
@@ -189,32 +188,6 @@ async fn authoritative_strategy_command(
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
     Ok(Json(
         store.strategy_command(&actor, command).map_err(map_error)?,
-    ))
-}
-
-async fn authoritative_epics(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<EpicSnapshot>, ApiError> {
-    device(&state, &headers)?;
-    let store = state
-        .store
-        .lock()
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
-    Ok(Json(store.epics().map_err(map_error)?))
-}
-async fn authoritative_epic_command(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(command): Json<EpicCommand>,
-) -> Result<Json<EpicResult>, ApiError> {
-    let actor = device(&state, &headers)?;
-    let mut store = state
-        .store
-        .lock()
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "storage lock error"))?;
-    Ok(Json(
-        store.epic_command(&actor, command).map_err(map_error)?,
     ))
 }
 
@@ -4124,11 +4097,6 @@ fn routes(state: AppState) -> Router {
         .route(
             "/v1/authoritative/strategy-commands",
             post(authoritative_strategy_command),
-        )
-        .route("/v1/authoritative/epics", get(authoritative_epics))
-        .route(
-            "/v1/authoritative/epic-commands",
-            post(authoritative_epic_command),
         )
         .route(
             "/v1/authoritative/milestones",

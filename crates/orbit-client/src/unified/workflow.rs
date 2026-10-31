@@ -120,6 +120,15 @@ impl ProjectBootstrap {
                     task_id: task.task_id,
                     title: task.title,
                     project_id: Some(self.project_id.clone()),
+                    milestone_id: None,
+                    description: String::new(),
+                    status: None,
+                    priority: None,
+                    estimated_minutes: None,
+                    deadline_at_ms: None,
+                    earliest_start_at_ms: None,
+                    acceptance_criteria: Vec::new(),
+                    prerequisite_ids: Vec::new(),
                 },
             }));
         }

@@ -178,6 +178,15 @@ mod tests {
                 task_id: entity.into(),
                 title: format!("Task {entity}"),
                 project_id: project.map(str::to_owned),
+                milestone_id: None,
+                description: String::new(),
+                status: None,
+                priority: None,
+                estimated_minutes: None,
+                deadline_at_ms: None,
+                earliest_start_at_ms: None,
+                acceptance_criteria: Vec::new(),
+                prerequisite_ids: Vec::new(),
             },
         }
     }

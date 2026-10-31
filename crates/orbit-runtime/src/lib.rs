@@ -34,7 +34,6 @@ use std::path::Path;
 pub mod agent_authority;
 pub mod application_services;
 pub mod attachment_store;
-pub mod authority_epics;
 pub mod authority_milestones;
 pub mod authority_routines;
 pub mod authority_schedule;
@@ -1403,17 +1402,6 @@ impl AuthoritativeHost {
         command: authority_strategy::StrategyCommand,
     ) -> Result<authority_strategy::StrategyResult, store::AuthorityError> {
         self.authority.authority_strategy_command(actor, command)
-    }
-
-    pub fn epics(&self) -> Result<authority_epics::EpicSnapshot, store::AuthorityError> {
-        self.authority.authority_epics()
-    }
-    pub fn epic_command(
-        &mut self,
-        actor: &str,
-        command: authority_epics::EpicCommand,
-    ) -> Result<authority_epics::EpicResult, store::AuthorityError> {
-        self.authority.authority_epic_command(actor, command)
     }
 
     pub fn milestones(

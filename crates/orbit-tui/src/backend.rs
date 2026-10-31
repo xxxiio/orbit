@@ -1429,6 +1429,15 @@ impl Backend {
                             task_id: id.clone(),
                             title: request.title.clone(),
                             project_id: request.project_id.clone(),
+                            milestone_id: None,
+                            description: String::new(),
+                            status: None,
+                            priority: None,
+                            estimated_minutes: None,
+                            deadline_at_ms: None,
+                            earliest_start_at_ms: None,
+                            acceptance_criteria: Vec::new(),
+                            prerequisite_ids: Vec::new(),
                         },
                     })
                     .map_err(mapped)?;

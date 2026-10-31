@@ -273,8 +273,34 @@ impl ConnectedMcp {
                 self.allow_project(project_id)?;
                 self.check_existing_milestone(milestone_id)
             }
-            _ => self.check_existing_milestone(action.milestone_id()),
+            // Unassign actions carry no milestone id, so the authority command
+            // alone cannot authorize them: resolve the owned entity and allow
+            // the project it actually belongs to.
+            MilestoneAction::UnassignTask { task_id } => self.check_existing_task(task_id),
+            MilestoneAction::UnassignWorkItem { item_id } => self.check_work_item_scope(item_id),
+            _ => action
+                .milestone_id()
+                .map_or(Ok(()), |id| self.check_existing_milestone(id)),
         }
+    }
+
+    /// Resolve a work item's project from the accepted milestone snapshot, the
+    /// same source `check_existing_milestone` uses. An item that is not visible
+    /// there cannot be authorized, so the mutation is refused rather than
+    /// queued on the client's unverified assertion.
+    fn check_work_item_scope(&self, id: &str) -> Result<(), String> {
+        let rows = self.client.milestones().map_err(debug_err)?;
+        let project = rows
+            .iter()
+            .find(|row| {
+                row.get("work_item_ids")
+                    .and_then(Value::as_array)
+                    .is_some_and(|ids| ids.iter().any(|item| item.as_str() == Some(id)))
+            })
+            .and_then(|row| row.get("project_id"))
+            .and_then(Value::as_str)
+            .ok_or("work item cannot be resolved from the last accepted snapshot; refresh first")?;
+        self.allow_project(project)
     }
     fn check_existing_milestone(&self, id: &str) -> Result<(), String> {
         let rows = self.client.milestones().map_err(debug_err)?;

@@ -1406,6 +1406,15 @@ mod connected_authority_mcp_tests {
                             task_id: id.into(),
                             title: id.into(),
                             project_id: None,
+                            milestone_id: None,
+                            description: String::new(),
+                            status: None,
+                            priority: None,
+                            estimated_minutes: None,
+                            deadline_at_ms: None,
+                            earliest_start_at_ms: None,
+                            acceptance_criteria: Vec::new(),
+                            prerequisite_ids: Vec::new(),
                         },
                     },
                 )
@@ -1556,6 +1565,15 @@ mod connected_authority_mcp_tests {
                             task_id: id.into(),
                             title: id.into(),
                             project_id: Some(project.into()),
+                            milestone_id: None,
+                            description: String::new(),
+                            status: None,
+                            priority: None,
+                            estimated_minutes: None,
+                            deadline_at_ms: None,
+                            earliest_start_at_ms: None,
+                            acceptance_criteria: Vec::new(),
+                            prerequisite_ids: Vec::new(),
                         },
                     },
                 )
@@ -1613,6 +1631,15 @@ mod connected_authority_mcp_tests {
                     task_id: id.into(),
                     title: title.into(),
                     project_id: None,
+                    milestone_id: None,
+                    description: String::new(),
+                    status: None,
+                    priority: None,
+                    estimated_minutes: None,
+                    deadline_at_ms: None,
+                    earliest_start_at_ms: None,
+                    acceptance_criteria: Vec::new(),
+                    prerequisite_ids: Vec::new(),
                 },
             };
             server.authority.task_command("setup", command).unwrap();
@@ -1687,6 +1714,15 @@ mod connected_authority_mcp_tests {
                             task_id: id.into(),
                             title: id.into(),
                             project_id: None,
+                            milestone_id: None,
+                            description: String::new(),
+                            status: None,
+                            priority: None,
+                            estimated_minutes: None,
+                            deadline_at_ms: None,
+                            earliest_start_at_ms: None,
+                            acceptance_criteria: Vec::new(),
+                            prerequisite_ids: Vec::new(),
                         },
                     },
                 )
@@ -2456,6 +2492,93 @@ mod connected_rich_task_mcp_tests {
         drop(server);
         let _ = std::fs::remove_file(&path);
     }
+
+    #[test]
+    fn milestone_unassign_scope_resolves_the_owned_entity_project() {
+        let mut scope = snapshot();
+        scope["projects"] = json!([
+            {"id":"visible","name":"Visible","status":"active"},
+            {"id":"hidden","name":"Hidden","status":"active"},
+        ]);
+        scope["tasks"] = json!([
+            {"id":"task-visible","title":"Visible","status":"inbox",
+             "project_id":"visible","milestone_id":"m1","estimated_minutes":null,
+             "earliest_start_at_ms":null,"deadline_at_ms":null,"description":"",
+             "priority":null,"labels":[]},
+            {"id":"task-hidden","title":"Hidden","status":"inbox",
+             "project_id":"hidden","milestone_id":null,"estimated_minutes":null,
+             "earliest_start_at_ms":null,"deadline_at_ms":null,"description":"",
+             "priority":null,"labels":[]},
+        ]);
+        scope["milestones"] = json!([
+            {"id":"m1","project_id":"visible","name":"M","status":"planned",
+             "work_item_ids":["wi-1"]},
+        ]);
+        let authority = Authority::start(vec![("/v1/authoritative/snapshot", scope)]);
+        let path = scratch_path("milestone-scope");
+        let mut server = ConnectedMcp {
+            client: AuthorityConnection::remote(
+                &path,
+                &authority.base,
+                Some(("device-1", "token")),
+            )
+            .expect("remote client"),
+            policy: AgentPolicy {
+                agent_id: "scope-agent".into(),
+                session_id: "test".into(),
+                mode: Mode::Developer,
+                projects: ["visible".to_owned()].into_iter().collect(),
+                allow_unscoped_execution: false,
+                allow_unscoped_knowledge: false,
+            },
+        };
+        server.dispatch("authority.refresh", &json!({})).unwrap();
+
+        // Both unassign actions resolve the entity's accepted project instead of
+        // being skipped as "no milestone id".
+        for (command_id, action) in [
+            (
+                "unassign-task",
+                json!({"type":"unassign_task","task_id":"task-visible"}),
+            ),
+            (
+                "unassign-work",
+                json!({"type":"unassign_work_item","item_id":"wi-1"}),
+            ),
+        ] {
+            let receipt = server
+                .dispatch(
+                    "milestone.command",
+                    &json!({"command_id":command_id,"expected_revision":4,"action":action}),
+                )
+                .unwrap();
+            assert_eq!(receipt["disposition"], "pending", "{receipt}");
+        }
+
+        for (command_id, action, message) in [
+            (
+                "hidden-task",
+                json!({"type":"unassign_task","task_id":"task-hidden"}),
+                "project outside agent scope",
+            ),
+            (
+                "ghost-work",
+                json!({"type":"unassign_work_item","item_id":"ghost"}),
+                "work item cannot be resolved",
+            ),
+        ] {
+            let error = server
+                .dispatch(
+                    "milestone.command",
+                    &json!({"command_id":command_id,"expected_revision":4,"action":action}),
+                )
+                .unwrap_err();
+            assert!(error.contains(message), "{command_id}: {error}");
+        }
+
+        drop(server);
+        let _ = std::fs::remove_file(&path);
+    }
 }
 
 #[cfg(test)]
@@ -2824,6 +2947,15 @@ mod planning_scenario_mcp_contract_tests {
                         task_id: "plan-task".into(),
                         title: "Plan work".into(),
                         project_id: None,
+                        milestone_id: None,
+                        description: String::new(),
+                        status: None,
+                        priority: None,
+                        estimated_minutes: None,
+                        deadline_at_ms: None,
+                        earliest_start_at_ms: None,
+                        acceptance_criteria: Vec::new(),
+                        prerequisite_ids: Vec::new(),
                     },
                 },
             )
@@ -3025,6 +3157,15 @@ mod planning_scenario_mcp_contract_tests {
                         task_id: "external".into(),
                         title: "Other".into(),
                         project_id: None,
+                        milestone_id: None,
+                        description: String::new(),
+                        status: None,
+                        priority: None,
+                        estimated_minutes: None,
+                        deadline_at_ms: None,
+                        earliest_start_at_ms: None,
+                        acceptance_criteria: Vec::new(),
+                        prerequisite_ids: Vec::new(),
                     },
                 },
             )

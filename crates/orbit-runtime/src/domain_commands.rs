@@ -39,11 +39,40 @@ pub enum AcceptanceCriteriaAction {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TaskAction {
+    /// Create the whole task aggregate in one accepted command.
+    ///
+    /// Every rich field is serde-defaulted so the historical
+    /// `{task_id, title, project_id}` payload keeps deserializing unchanged.
+    /// New fields are also skipped when empty so re-serializing a legacy wire
+    /// reproduces the pre-upgrade payload byte-for-byte; otherwise a retried
+    /// command id would be refused as an `ImmutableConflict` instead of
+    /// returning its stored receipt.
     Create {
         task_id: String,
         title: String,
         #[serde(default)]
         project_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        milestone_id: Option<String>,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        description: String,
+        /// Initial lifecycle state. Absent means `inbox`; only states reachable
+        /// from `inbox` are accepted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        priority: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        estimated_minutes: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        deadline_at_ms: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        earliest_start_at_ms: Option<i64>,
+        /// Ordered criterion texts. Positions come from the list order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        acceptance_criteria: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        prerequisite_ids: Vec<String>,
     },
     ChangeStatus {
         task_id: String,

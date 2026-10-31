@@ -315,6 +315,15 @@ mod authoritative_task_tests {
                 task_id: "t1".into(),
                 title: "Alpha".into(),
                 project_id: None,
+                milestone_id: None,
+                description: String::new(),
+                status: None,
+                priority: None,
+                estimated_minutes: None,
+                deadline_at_ms: None,
+                earliest_start_at_ms: None,
+                acceptance_criteria: Vec::new(),
+                prerequisite_ids: Vec::new(),
             },
         );
         let first = store
@@ -360,7 +369,16 @@ mod authoritative_task_tests {
                     TaskAction::Create {
                         task_id: "t2".into(),
                         title: "Later".into(),
-                        project_id: None
+                        project_id: None,
+                        milestone_id: None,
+                        description: String::new(),
+                        status: None,
+                        priority: None,
+                        estimated_minutes: None,
+                        deadline_at_ms: None,
+                        earliest_start_at_ms: None,
+                        acceptance_criteria: Vec::new(),
+                        prerequisite_ids: Vec::new(),
                     }
                 )
             ),
@@ -385,6 +403,15 @@ mod authoritative_task_tests {
                         task_id: "t1".into(),
                         title: "Alpha".into(),
                         project_id: None,
+                        milestone_id: None,
+                        description: String::new(),
+                        status: None,
+                        priority: None,
+                        estimated_minutes: None,
+                        deadline_at_ms: None,
+                        earliest_start_at_ms: None,
+                        acceptance_criteria: Vec::new(),
+                        prerequisite_ids: Vec::new(),
                     },
                 ),
             )
@@ -480,6 +507,15 @@ mod authoritative_task_tests {
                         task_id: "task-1".into(),
                         title: "Original".into(),
                         project_id: None,
+                        milestone_id: None,
+                        description: String::new(),
+                        status: None,
+                        priority: None,
+                        estimated_minutes: None,
+                        deadline_at_ms: None,
+                        earliest_start_at_ms: None,
+                        acceptance_criteria: Vec::new(),
+                        prerequisite_ids: Vec::new(),
                     },
                 ),
             )
@@ -599,6 +635,11 @@ mod authoritative_task_tests {
                     milestone_id: "m1".into(),
                     project_id: "one".into(),
                     name: "Ship".into(),
+                    description: String::new(),
+                    priority: None,
+                    owner: None,
+                    start_at_ms: None,
+                    target_at_ms: None,
                 },
             },
         )
@@ -612,6 +653,15 @@ mod authoritative_task_tests {
                     task_id: "t".into(),
                     title: "Deliver".into(),
                     project_id: Some("one".into()),
+                    milestone_id: None,
+                    description: String::new(),
+                    status: None,
+                    priority: None,
+                    estimated_minutes: None,
+                    deadline_at_ms: None,
+                    earliest_start_at_ms: None,
+                    acceptance_criteria: Vec::new(),
+                    prerequisite_ids: Vec::new(),
                 },
             ),
         )
@@ -738,7 +788,16 @@ mod authoritative_task_tests {
                     TaskAction::Create {
                         task_id: "t2".into(),
                         title: "New".into(),
-                        project_id: None
+                        project_id: None,
+                        milestone_id: None,
+                        description: String::new(),
+                        status: None,
+                        priority: None,
+                        estimated_minutes: None,
+                        deadline_at_ms: None,
+                        earliest_start_at_ms: None,
+                        acceptance_criteria: Vec::new(),
+                        prerequisite_ids: Vec::new(),
                     }
                 )
             ),
@@ -786,6 +845,15 @@ mod authoritative_project_tests {
                 task_id: "t1".into(),
                 title: "Work".into(),
                 project_id: None,
+                milestone_id: None,
+                description: String::new(),
+                status: None,
+                priority: None,
+                estimated_minutes: None,
+                deadline_at_ms: None,
+                earliest_start_at_ms: None,
+                acceptance_criteria: Vec::new(),
+                prerequisite_ids: Vec::new(),
             },
         };
         assert_eq!(
@@ -802,6 +870,15 @@ mod authoritative_project_tests {
                 task_id: "t2".into(),
                 title: "Project task".into(),
                 project_id: Some("p1".into()),
+                milestone_id: None,
+                description: String::new(),
+                status: None,
+                priority: None,
+                estimated_minutes: None,
+                deadline_at_ms: None,
+                earliest_start_at_ms: None,
+                acceptance_criteria: Vec::new(),
+                prerequisite_ids: Vec::new(),
             },
         };
         let added = store
@@ -821,6 +898,15 @@ mod authoritative_project_tests {
                 task_id: "t3".into(),
                 title: "Invalid".into(),
                 project_id: Some("absent".into()),
+                milestone_id: None,
+                description: String::new(),
+                status: None,
+                priority: None,
+                estimated_minutes: None,
+                deadline_at_ms: None,
+                earliest_start_at_ms: None,
+                acceptance_criteria: Vec::new(),
+                prerequisite_ids: Vec::new(),
             },
         };
         assert!(matches!(
@@ -893,6 +979,15 @@ mod authority_snapshot_tests {
                         task_id: "t".into(),
                         title: "Task".into(),
                         project_id: Some("p".into()),
+                        milestone_id: None,
+                        description: String::new(),
+                        status: None,
+                        priority: None,
+                        estimated_minutes: None,
+                        deadline_at_ms: None,
+                        earliest_start_at_ms: None,
+                        acceptance_criteria: Vec::new(),
+                        prerequisite_ids: Vec::new(),
                     },
                 },
             )
@@ -984,6 +1079,15 @@ mod verified_authority_snapshot_tests {
                         task_id: "t1".into(),
                         title: "Task".into(),
                         project_id: Some("p1".into()),
+                        milestone_id: None,
+                        description: String::new(),
+                        status: None,
+                        priority: None,
+                        estimated_minutes: None,
+                        deadline_at_ms: None,
+                        earliest_start_at_ms: None,
+                        acceptance_criteria: Vec::new(),
+                        prerequisite_ids: Vec::new(),
                     },
                 },
             )
@@ -1084,6 +1188,15 @@ mod m20_task_planning_acceptance {
                         task_id: "task".into(),
                         title: "Prepare".into(),
                         project_id: None,
+                        milestone_id: None,
+                        description: String::new(),
+                        status: None,
+                        priority: None,
+                        estimated_minutes: None,
+                        deadline_at_ms: None,
+                        earliest_start_at_ms: None,
+                        acceptance_criteria: Vec::new(),
+                        prerequisite_ids: Vec::new(),
                     },
                 ),
             )
@@ -1210,6 +1323,8 @@ mod authoritative_task_detail_tests {
     use crate::AuthoritativeHost;
     use crate::AuthorityError;
     use crate::domain_commands::{AcceptanceCriteriaAction, TaskAction, TaskCommand, TaskRecord};
+    use crate::store::AuthorityStore;
+    use std::path::Path;
 
     fn command(id: &str, revision: i64, action: TaskAction) -> TaskCommand {
         TaskCommand {
@@ -1229,6 +1344,15 @@ mod authoritative_task_detail_tests {
                     task_id: id.into(),
                     title: "Original".into(),
                     project_id: None,
+                    milestone_id: None,
+                    description: String::new(),
+                    status: None,
+                    priority: None,
+                    estimated_minutes: None,
+                    deadline_at_ms: None,
+                    earliest_start_at_ms: None,
+                    acceptance_criteria: Vec::new(),
+                    prerequisite_ids: Vec::new(),
                 },
             ),
         )
@@ -1565,5 +1689,905 @@ mod authoritative_task_detail_tests {
         assert_eq!(json["description"], "Body");
         assert_eq!(json["priority"], "low");
         assert_eq!(json["labels"], serde_json::json!(["one"]));
+    }
+
+    fn migration_path(label: &str) -> std::path::PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "orbit-migration-{label}-{}-{unique}.db",
+            std::process::id()
+        ))
+    }
+
+    fn remove_migration_db(path: &Path) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    fn epic_tables_exist(db: &AuthorityStore) -> bool {
+        db.conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name IN ('epics','epic_tasks','epic_work_items','epic_activities'))",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn opening_without_epic_tables_changes_nothing() {
+        use crate::authority_milestones::{MilestoneAction, MilestoneCommand};
+        let path = migration_path("noop");
+        {
+            let mut db = AuthorityStore::open(&path).unwrap();
+            db.authority_project_command(
+                "user",
+                crate::domain_commands::ProjectCommand {
+                    workflow_id: None,
+                    command_id: "project".into(),
+                    expected_revision: 0,
+                    project_id: "p".into(),
+                    name: "Project".into(),
+                },
+            )
+            .unwrap();
+            db.authority_milestone_command(
+                "user",
+                MilestoneCommand {
+                    command_id: "milestone".into(),
+                    expected_revision: 1,
+                    action: MilestoneAction::Create {
+                        milestone_id: "m".into(),
+                        project_id: "p".into(),
+                        name: "Kept".into(),
+                        description: "unchanged".into(),
+                        priority: None,
+                        owner: None,
+                        start_at_ms: None,
+                        target_at_ms: None,
+                    },
+                },
+            )
+            .unwrap();
+            assert!(!epic_tables_exist(&db));
+        }
+        {
+            let db = AuthorityStore::open(&path).unwrap();
+            assert!(!epic_tables_exist(&db));
+            let snapshot = db.authority_milestones().unwrap();
+            assert_eq!(snapshot.milestones.len(), 1);
+            assert_eq!(snapshot.milestones[0].name, "Kept");
+            assert_eq!(snapshot.milestones[0].description, "unchanged");
+        }
+        remove_migration_db(&path);
+    }
+
+    #[test]
+    fn legacy_epics_convert_to_rich_milestones_and_tables_disappear() {
+        let path = migration_path("convert");
+        {
+            let db = AuthorityStore::open(&path).unwrap();
+            db.conn
+                .execute_batch(
+                    "INSERT INTO projects(id,name,status) VALUES('p','P','active'),('q','Q','active');
+                     INSERT INTO milestones(id,project_id,name,status) VALUES('e1','p','Existing','planned');",
+                )
+                .unwrap();
+            db.conn
+                .execute_batch(
+                    "CREATE TABLE epics (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                        title TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL,
+                        priority TEXT,
+                        owner TEXT,
+                        start_at_ms INTEGER,
+                        target_at_ms INTEGER,
+                        created_at_ms INTEGER NOT NULL,
+                        updated_at_ms INTEGER NOT NULL
+                    );
+                    CREATE TABLE epic_tasks (
+                        task_id TEXT PRIMARY KEY NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                        epic_id TEXT NOT NULL REFERENCES epics(id) ON DELETE CASCADE
+                    );
+                    CREATE TABLE epic_work_items (
+                        item_id TEXT PRIMARY KEY NOT NULL,
+                        epic_id TEXT NOT NULL REFERENCES epics(id) ON DELETE CASCADE
+                    );
+                    CREATE TABLE epic_activities (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        epic_id TEXT NOT NULL REFERENCES epics(id) ON DELETE CASCADE,
+                        kind TEXT NOT NULL,
+                        actor TEXT NOT NULL,
+                        occurred_at_ms INTEGER NOT NULL,
+                        summary TEXT NOT NULL
+                    );",
+                )
+                .unwrap();
+            db.conn
+                .execute_batch(
+                    "INSERT OR IGNORE INTO orbit_blueprints(id,version,manifest_json) VALUES('blueprint',1,'{}');
+                    INSERT INTO orbit_blueprint_work_items(id,project_id,kind,state,properties_json,revision,blueprint_id,blueprint_version) VALUES
+                        ('w-existing','p','task','open','{}',0,'blueprint',1),
+                        ('w-new','p','task','open','{}',0,'blueprint',1);
+                    INSERT INTO milestone_work_items(item_id,milestone_id) VALUES('w-existing','e1');
+                    INSERT INTO tasks(id,title,status,project_id,milestone_id) VALUES
+                        ('t-assigned','Assigned','ready','p','e1'),
+                        ('t-free','Free','ready','p',NULL),
+                        ('t-other','Other','ready','q',NULL);
+                    INSERT INTO epics(id,project_id,title,description,status,priority,owner,start_at_ms,target_at_ms,created_at_ms,updated_at_ms) VALUES
+                        ('e1','p','Legacy title','legacy description','completed','high','owner',1000,2000,10,20),
+                        ('e2','p','Cancelled legacy','','cancelled',NULL,NULL,NULL,NULL,30,40),
+                        ('e3','p','Empty completed','','completed',NULL,NULL,NULL,NULL,50,60);
+                    INSERT INTO epic_tasks(task_id,epic_id) VALUES
+                        ('t-assigned','e1'),('t-free','e1'),('t-other','e1');
+                    INSERT INTO epic_work_items(item_id,epic_id) VALUES
+                        ('w-existing','e1'),('w-new','e1');
+                    INSERT INTO epic_activities(id,epic_id,kind,actor,occurred_at_ms,summary) VALUES
+                        ('epic-activity-old','e1','created','user',123,'old activity');
+                    INSERT INTO activities(id,subject_kind,subject_id,activity_kind,activity_kind_value,origin_kind,origin_value,occurred_at_ms,summary) VALUES
+                        ('epic-activity-old','task','t-free','created',NULL,'external','user',1,'pre-existing');",
+                )
+                .unwrap();
+        }
+        {
+            let db = AuthorityStore::open(&path).unwrap();
+            assert!(!epic_tables_exist(&db));
+            let snapshot = db.authority_milestones().unwrap();
+            let existing = snapshot
+                .milestones
+                .iter()
+                .find(|milestone| milestone.id == "e1")
+                .unwrap();
+            assert_eq!(existing.name, "Existing");
+            let converted = snapshot
+                .milestones
+                .iter()
+                .find(|milestone| milestone.id == "e1--epic")
+                .unwrap();
+            assert_eq!(converted.name, "Legacy title");
+            assert_eq!(converted.description, "legacy description");
+            assert_eq!(
+                converted.status, "in_progress",
+                "completed epic with unfinished copied work must not stay completed"
+            );
+            assert_eq!(converted.priority.as_deref(), Some("high"));
+            assert_eq!(converted.owner.as_deref(), Some("owner"));
+            assert_eq!(converted.task_ids, vec!["t-free"]);
+            assert_eq!(converted.work_item_ids, vec!["w-new"]);
+            let cancelled = snapshot
+                .milestones
+                .iter()
+                .find(|milestone| milestone.id == "e2")
+                .unwrap();
+            assert_eq!(cancelled.status, "cancelled");
+            // A completed epic with nothing to copy was not reopened: only
+            // unfinished copied work justifies downgrading the status.
+            let empty_completed = snapshot
+                .milestones
+                .iter()
+                .find(|milestone| milestone.id == "e3")
+                .unwrap();
+            assert_eq!(empty_completed.status, "completed");
+            assert!(empty_completed.task_ids.is_empty());
+            assert!(empty_completed.work_item_ids.is_empty());
+
+            let tasks = db.tasks().unwrap().1;
+            let task = |id: &str| tasks.iter().find(|task| task.id == id).unwrap();
+            assert_eq!(task("t-assigned").milestone_id.as_deref(), Some("e1"));
+            assert_eq!(task("t-free").milestone_id.as_deref(), Some("e1--epic"));
+            assert_eq!(task("t-other").milestone_id, None);
+            let work_item: String = db
+                .conn
+                .query_row(
+                    "SELECT milestone_id FROM milestone_work_items WHERE item_id='w-existing'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(work_item, "e1");
+            let copied_activity: (String, String) = db
+                .conn
+                .query_row(
+                    "SELECT subject_kind,subject_id FROM activities WHERE id='epic-epic-activity-old'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(copied_activity, ("milestone".into(), "e1--epic".into()));
+            let conversion_summary: String = db
+                .conn
+                .query_row(
+                    "SELECT summary FROM activities WHERE id='milestone-activity-convert-e1--epic'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(conversion_summary.contains("from completed to in_progress"));
+            assert!(conversion_summary.contains("t-assigned"));
+            assert!(conversion_summary.contains("w-existing"));
+        }
+        // A second open is a no-op because there are no epic tables left.
+        {
+            let db = AuthorityStore::open(&path).unwrap();
+            assert!(!epic_tables_exist(&db));
+            assert_eq!(db.authority_milestones().unwrap().milestones.len(), 4);
+        }
+        remove_migration_db(&path);
+    }
+
+    #[test]
+    fn long_colliding_epic_ids_stay_bounded() {
+        let path = migration_path("long-collision");
+        let epic_id = "e".repeat(128);
+        {
+            let db = AuthorityStore::open(&path).unwrap();
+            db.conn
+                .execute_batch(&format!(
+                    "INSERT INTO projects(id,name,status) VALUES('p','P','active');
+                     INSERT INTO milestones(id,project_id,name,status) VALUES('{epic_id}','p','Existing','planned');
+                     CREATE TABLE epics (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        project_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL,
+                        priority TEXT,
+                        owner TEXT,
+                        start_at_ms INTEGER,
+                        target_at_ms INTEGER,
+                        created_at_ms INTEGER NOT NULL,
+                        updated_at_ms INTEGER NOT NULL
+                     );
+                     INSERT INTO epics VALUES('{epic_id}','p','Long legacy','','planned',NULL,NULL,NULL,NULL,1,2);"
+                ))
+                .unwrap();
+        }
+        {
+            let db = AuthorityStore::open(&path).unwrap();
+            let snapshot = db.authority_milestones().unwrap();
+            assert_eq!(
+                snapshot
+                    .milestones
+                    .iter()
+                    .find(|milestone| milestone.id == epic_id)
+                    .unwrap()
+                    .name,
+                "Existing"
+            );
+            let converted = snapshot
+                .milestones
+                .iter()
+                .find(|milestone| milestone.name == "Long legacy")
+                .unwrap();
+            assert_ne!(converted.id, epic_id);
+            assert_eq!(converted.id.len(), 128);
+            assert!(!epic_tables_exist(&db));
+        }
+        remove_migration_db(&path);
+    }
+}
+
+/// M33 P1b: one revision-fenced `create` command carries the whole task
+/// aggregate (identity, placement, details, planning, criteria, prerequisites).
+#[cfg(test)]
+mod m33_rich_task_create {
+    use crate::authority_milestones::{MilestoneAction, MilestoneCommand};
+    use crate::domain_commands::{ProjectCommand, TaskAction, TaskCommand};
+    use crate::store::AuthorityStore;
+    use std::path::{Path, PathBuf};
+
+    fn command(id: &str, revision: i64, action: TaskAction) -> TaskCommand {
+        TaskCommand {
+            command_id: id.into(),
+            expected_revision: revision,
+            action,
+        }
+    }
+
+    fn create(task_id: &str, title: &str, project_id: Option<&str>) -> TaskAction {
+        TaskAction::Create {
+            task_id: task_id.into(),
+            title: title.into(),
+            project_id: project_id.map(str::to_owned),
+            milestone_id: None,
+            description: String::new(),
+            status: None,
+            priority: None,
+            estimated_minutes: None,
+            deadline_at_ms: None,
+            earliest_start_at_ms: None,
+            acceptance_criteria: Vec::new(),
+            prerequisite_ids: Vec::new(),
+        }
+    }
+
+    fn project(db: &mut AuthorityStore, id: &str) {
+        db.authority_project_command(
+            "user",
+            ProjectCommand {
+                workflow_id: None,
+                command_id: format!("project-{id}"),
+                expected_revision: db.tip().unwrap(),
+                project_id: id.into(),
+                name: format!("project {id}"),
+            },
+        )
+        .unwrap();
+    }
+
+    fn milestone(db: &mut AuthorityStore, id: &str, project_id: &str) {
+        db.authority_milestone_command(
+            "user",
+            MilestoneCommand {
+                command_id: format!("milestone-{id}"),
+                expected_revision: db.tip().unwrap(),
+                action: MilestoneAction::Create {
+                    milestone_id: id.into(),
+                    project_id: project_id.into(),
+                    name: format!("milestone {id}"),
+                    description: String::new(),
+                    priority: None,
+                    owner: None,
+                    start_at_ms: None,
+                    target_at_ms: None,
+                },
+            },
+        )
+        .unwrap();
+    }
+
+    fn criteria(db: &AuthorityStore, task_id: &str) -> Vec<(String, i64, String)> {
+        let mut stmt = db
+            .conn
+            .prepare(
+                "SELECT criterion_id,position,text FROM task_acceptance_criteria \
+                 WHERE task_id=?1 ORDER BY position",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([task_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap();
+        rows.collect::<Result<Vec<_>, _>>().unwrap()
+    }
+
+    fn prerequisites(db: &AuthorityStore, task_id: &str) -> Vec<String> {
+        let mut stmt = db
+            .conn
+            .prepare(
+                "SELECT prerequisite_id FROM task_prerequisites WHERE task_id=?1 \
+                 ORDER BY prerequisite_id",
+            )
+            .unwrap();
+        let rows = stmt.query_map([task_id], |row| row.get(0)).unwrap();
+        rows.collect::<Result<Vec<_>, _>>().unwrap()
+    }
+
+    fn task_rows(db: &AuthorityStore, task_id: &str) -> i64 {
+        db.conn
+            .query_row("SELECT COUNT(*) FROM tasks WHERE id=?1", [task_id], |row| {
+                row.get(0)
+            })
+            .unwrap()
+    }
+
+    fn receipts(db: &AuthorityStore, command_id: &str) -> i64 {
+        db.conn
+            .query_row(
+                "SELECT COUNT(*) FROM authority_commands WHERE command_id=?1",
+                [command_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn temp_path(label: &str) -> PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "orbit-rich-create-{label}-{}-{unique}.db",
+            std::process::id()
+        ))
+    }
+
+    fn remove_db(path: &Path) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn every_field_is_created_atomically_and_survives_a_reopen() {
+        let path = temp_path("persist");
+        {
+            let mut db = AuthorityStore::open(&path).unwrap();
+            project(&mut db, "p1");
+            milestone(&mut db, "m1", "p1");
+            db.authority_task_command(
+                "user",
+                command(
+                    "prereq",
+                    db.tip().unwrap(),
+                    create("prereq", "Call the vendor", Some("p1")),
+                ),
+            )
+            .unwrap();
+            let rich = command(
+                "rich",
+                db.tip().unwrap(),
+                TaskAction::Create {
+                    task_id: "task-rich".into(),
+                    title: "Ship rich create".into(),
+                    project_id: Some("p1".into()),
+                    milestone_id: Some("m1".into()),
+                    description: "# Body\n\nMarkdown description".into(),
+                    status: Some("ready".into()),
+                    priority: Some("high".into()),
+                    estimated_minutes: Some(90),
+                    deadline_at_ms: Some(2_000),
+                    earliest_start_at_ms: Some(1_000),
+                    acceptance_criteria: vec![
+                        "Writes one task".into(),
+                        "Writes ordered criteria".into(),
+                    ],
+                    prerequisite_ids: vec![" prereq ".into(), "prereq".into()],
+                },
+            );
+            let accepted = db.authority_task_command("user", rich).unwrap();
+            assert!(!accepted.duplicate);
+            let task = &accepted.task;
+            assert_eq!(task.id, "task-rich");
+            assert_eq!(task.status, "ready");
+            assert_eq!(task.project_id.as_deref(), Some("p1"));
+            assert_eq!(task.milestone_id.as_deref(), Some("m1"));
+            assert_eq!(task.description, "# Body\n\nMarkdown description");
+            assert_eq!(task.priority.as_deref(), Some("high"));
+            assert_eq!(task.estimated_minutes, Some(90));
+            assert_eq!(task.earliest_start_at_ms, Some(1_000));
+            assert_eq!(task.deadline_at_ms, Some(2_000));
+            assert_eq!(
+                criteria(&db, "task-rich"),
+                vec![
+                    ("task-rich-ac-1".to_owned(), 0, "Writes one task".to_owned()),
+                    (
+                        "task-rich-ac-2".to_owned(),
+                        1,
+                        "Writes ordered criteria".to_owned()
+                    ),
+                ]
+            );
+            // The duplicated prerequisite is trimmed and folded into one edge.
+            assert_eq!(prerequisites(&db, "task-rich"), vec!["prereq"]);
+            assert_eq!(receipts(&db, "rich"), 1);
+            assert_eq!(db.tip().unwrap(), accepted.revision);
+            // One accepted semantic change carries every created field exactly once.
+            let wire: String = db
+                .conn
+                .query_row(
+                    "SELECT wire FROM authority_history WHERE sequence=?1",
+                    [accepted.revision],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let envelope = orbit_sync::ChangeEnvelope::from_wire_json(&wire).unwrap();
+            let fields: Vec<&str> = envelope
+                .change
+                .mutations
+                .iter()
+                .map(|mutation| mutation.field.as_str())
+                .collect();
+            assert_eq!(
+                fields,
+                vec![
+                    "criteria",
+                    "deadline_at_ms",
+                    "description",
+                    "earliest_start_at_ms",
+                    "estimated_minutes",
+                    "milestone_id",
+                    "prerequisites",
+                    "priority",
+                    "project_id",
+                    "status",
+                    "title",
+                ]
+            );
+            let mutation = |field: &str| {
+                envelope
+                    .change
+                    .mutations
+                    .iter()
+                    .find(|mutation| mutation.field == field)
+                    .unwrap_or_else(|| panic!("missing {field} mutation"))
+            };
+            assert_eq!(
+                mutation("prerequisites").value.as_deref(),
+                Some(r#"["prereq"]"#)
+            );
+            let criteria_json: serde_json::Value =
+                serde_json::from_str(mutation("criteria").value.as_deref().unwrap()).unwrap();
+            assert_eq!(
+                criteria_json,
+                serde_json::json!([
+                    {"criterion_id":"task-rich-ac-1","text":"Writes one task","position":0,"completed_at_ms":null},
+                    {"criterion_id":"task-rich-ac-2","text":"Writes ordered criteria","position":1,"completed_at_ms":null},
+                ])
+            );
+        }
+        {
+            let db = AuthorityStore::open(&path).unwrap();
+            let task = db.task_record("task-rich").unwrap().unwrap();
+            assert_eq!(task.status, "ready");
+            assert_eq!(task.milestone_id.as_deref(), Some("m1"));
+            assert_eq!(task.priority.as_deref(), Some("high"));
+            assert_eq!(task.estimated_minutes, Some(90));
+            assert_eq!(criteria(&db, "task-rich").len(), 2);
+            assert_eq!(prerequisites(&db, "task-rich"), vec!["prereq"]);
+        }
+        remove_db(&path);
+    }
+
+    #[test]
+    fn invalid_creates_are_refused_without_rows_or_a_receipt() {
+        let mut db = AuthorityStore::open(Path::new(":memory:")).unwrap();
+        project(&mut db, "p1");
+        project(&mut db, "p2");
+        milestone(&mut db, "m1", "p1");
+        milestone(&mut db, "m2", "p2");
+        db.authority_task_command(
+            "user",
+            command(
+                "prereq",
+                db.tip().unwrap(),
+                create("prereq", "Eligible prerequisite", Some("p1")),
+            ),
+        )
+        .unwrap();
+        db.authority_task_command(
+            "user",
+            command(
+                "foreign",
+                db.tip().unwrap(),
+                create("foreign", "Other project", Some("p2")),
+            ),
+        )
+        .unwrap();
+        let baseline = db.tip().unwrap();
+        #[derive(Default)]
+        struct Draft {
+            project_id: Option<String>,
+            milestone_id: Option<String>,
+            status: Option<String>,
+            priority: Option<String>,
+            estimated_minutes: Option<i64>,
+            deadline_at_ms: Option<i64>,
+            earliest_start_at_ms: Option<i64>,
+            acceptance_criteria: Vec<String>,
+            prerequisite_ids: Vec<String>,
+        }
+        impl Draft {
+            fn action(self, task_id: &str) -> TaskAction {
+                TaskAction::Create {
+                    task_id: task_id.into(),
+                    title: "Refused".into(),
+                    project_id: self.project_id,
+                    milestone_id: self.milestone_id,
+                    description: String::new(),
+                    status: self.status,
+                    priority: self.priority,
+                    estimated_minutes: self.estimated_minutes,
+                    deadline_at_ms: self.deadline_at_ms,
+                    earliest_start_at_ms: self.earliest_start_at_ms,
+                    acceptance_criteria: self.acceptance_criteria,
+                    prerequisite_ids: self.prerequisite_ids,
+                }
+            }
+        }
+        let base = || Draft {
+            project_id: Some("p1".into()),
+            ..Draft::default()
+        };
+        let cases: Vec<(&str, TaskAction)> = vec![
+            (
+                "bad-status",
+                Draft {
+                    status: Some("in_progress".into()),
+                    ..base()
+                }
+                .action("bad-status"),
+            ),
+            (
+                "bad-window",
+                Draft {
+                    earliest_start_at_ms: Some(2_000),
+                    deadline_at_ms: Some(1_000),
+                    ..base()
+                }
+                .action("bad-window"),
+            ),
+            (
+                "bad-milestone",
+                Draft {
+                    milestone_id: Some("m2".into()),
+                    ..base()
+                }
+                .action("bad-milestone"),
+            ),
+            (
+                "missing-prereq",
+                Draft {
+                    prerequisite_ids: vec!["ghost".into()],
+                    ..base()
+                }
+                .action("missing-prereq"),
+            ),
+            (
+                "foreign-prereq",
+                Draft {
+                    prerequisite_ids: vec!["foreign".into()],
+                    ..base()
+                }
+                .action("foreign-prereq"),
+            ),
+            (
+                "blank-criterion",
+                Draft {
+                    acceptance_criteria: vec!["   ".into()],
+                    ..base()
+                }
+                .action("blank-criterion"),
+            ),
+            (
+                "bad-priority",
+                Draft {
+                    priority: Some("whenever".into()),
+                    ..base()
+                }
+                .action("bad-priority"),
+            ),
+            (
+                "orphan-milestone",
+                Draft {
+                    project_id: None,
+                    milestone_id: Some("m1".into()),
+                    ..Draft::default()
+                }
+                .action("orphan-milestone"),
+            ),
+        ];
+        for (command_id, action) in cases {
+            let task_id = match &action {
+                TaskAction::Create { task_id, .. } => task_id.clone(),
+                _ => unreachable!(),
+            };
+            let refused = db.authority_task_command("user", command(command_id, baseline, action));
+            assert!(refused.is_err(), "{command_id} should be refused");
+            assert_eq!(db.tip().unwrap(), baseline, "{command_id} advanced");
+            assert_eq!(task_rows(&db, &task_id), 0, "{command_id} wrote a task");
+            assert!(
+                criteria(&db, &task_id).is_empty(),
+                "{command_id} wrote criteria"
+            );
+            assert!(
+                prerequisites(&db, &task_id).is_empty(),
+                "{command_id} wrote prerequisites"
+            );
+            assert_eq!(receipts(&db, command_id), 0, "{command_id} wrote a receipt");
+        }
+        // The refused attempts changed nothing about the accepted work.
+        assert_eq!(db.tasks().unwrap().1.len(), 2);
+    }
+
+    #[test]
+    fn retrying_a_rich_create_is_a_duplicate_without_second_rows() {
+        let mut db = AuthorityStore::open(Path::new(":memory:")).unwrap();
+        project(&mut db, "p1");
+        milestone(&mut db, "m1", "p1");
+        db.authority_task_command(
+            "user",
+            command(
+                "prereq",
+                db.tip().unwrap(),
+                create("prereq", "Eligible prerequisite", Some("p1")),
+            ),
+        )
+        .unwrap();
+        let rich = command(
+            "rich",
+            db.tip().unwrap(),
+            TaskAction::Create {
+                task_id: "task-rich".into(),
+                title: "Ship rich create".into(),
+                project_id: Some("p1".into()),
+                milestone_id: Some("m1".into()),
+                description: "Body".into(),
+                status: Some("planned".into()),
+                priority: Some("urgent".into()),
+                estimated_minutes: Some(30),
+                deadline_at_ms: None,
+                earliest_start_at_ms: None,
+                acceptance_criteria: vec!["One".into(), "Two".into()],
+                prerequisite_ids: vec!["prereq".into()],
+            },
+        );
+        let first = db.authority_task_command("user", rich.clone()).unwrap();
+        let revision = first.revision;
+        let retried = db.authority_task_command("user", rich).unwrap();
+        assert!(retried.duplicate);
+        assert_eq!(retried.revision, revision);
+        assert_eq!(retried.task.id, "task-rich");
+        assert_eq!(db.tip().unwrap(), revision);
+        assert_eq!(task_rows(&db, "task-rich"), 1);
+        assert_eq!(criteria(&db, "task-rich").len(), 2);
+        assert_eq!(prerequisites(&db, "task-rich"), vec!["prereq"]);
+        assert_eq!(receipts(&db, "rich"), 1);
+    }
+
+    #[test]
+    fn minimal_legacy_create_defaults_to_inbox_and_empty_fields() {
+        let mut db = AuthorityStore::open(Path::new(":memory:")).unwrap();
+        let created = db
+            .authority_task_command(
+                "user",
+                command("legacy", 0, create("task-legacy", "Legacy create", None)),
+            )
+            .unwrap();
+        let task = &created.task;
+        assert_eq!(task.status, "inbox");
+        assert_eq!(task.project_id, None);
+        assert_eq!(task.milestone_id, None);
+        assert_eq!(task.description, "");
+        assert_eq!(task.priority, None);
+        assert_eq!(task.estimated_minutes, None);
+        assert_eq!(task.earliest_start_at_ms, None);
+        assert_eq!(task.deadline_at_ms, None);
+        assert!(task.labels.is_empty());
+        assert_eq!(db.tip().unwrap(), 1);
+        assert!(criteria(&db, "task-legacy").is_empty());
+        assert!(prerequisites(&db, "task-legacy").is_empty());
+
+        // The historical wire payload keeps deserializing with the new fields
+        // defaulted, so older clients cannot observe a breaking change.
+        let old: TaskCommand = serde_json::from_value(serde_json::json!({
+            "command_id": "legacy-wire",
+            "expected_revision": 1,
+            "action": {
+                "type": "create",
+                "task_id": "task-wire",
+                "title": "Legacy wire"
+            }
+        }))
+        .unwrap();
+        match old.action {
+            TaskAction::Create {
+                project_id,
+                milestone_id,
+                description,
+                status,
+                priority,
+                estimated_minutes,
+                deadline_at_ms,
+                earliest_start_at_ms,
+                acceptance_criteria,
+                prerequisite_ids,
+                ..
+            } => {
+                assert_eq!(project_id, None);
+                assert_eq!(milestone_id, None);
+                assert_eq!(description, "");
+                assert_eq!(status, None);
+                assert_eq!(priority, None);
+                assert_eq!(estimated_minutes, None);
+                assert_eq!(deadline_at_ms, None);
+                assert_eq!(earliest_start_at_ms, None);
+                assert!(acceptance_criteria.is_empty());
+                assert!(prerequisite_ids.is_empty());
+            }
+            other => panic!("unexpected action: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_canonicalizes_priority_and_enforces_the_planning_estimate_cap() {
+        let mut db = AuthorityStore::open(Path::new(":memory:")).unwrap();
+        project(&mut db, "p1");
+        let created = db
+            .authority_task_command(
+                "user",
+                command(
+                    "canonical-priority",
+                    db.tip().unwrap(),
+                    TaskAction::Create {
+                        task_id: "canonical".into(),
+                        title: "Canonical".into(),
+                        project_id: Some("p1".into()),
+                        milestone_id: None,
+                        description: String::new(),
+                        status: None,
+                        priority: Some(" High ".into()),
+                        estimated_minutes: Some(525_600),
+                        deadline_at_ms: None,
+                        earliest_start_at_ms: None,
+                        acceptance_criteria: Vec::new(),
+                        prerequisite_ids: Vec::new(),
+                    },
+                ),
+            )
+            .unwrap();
+        assert_eq!(created.task.priority.as_deref(), Some("high"));
+        let stored: String = db
+            .conn
+            .query_row(
+                "SELECT priority FROM tasks WHERE id='canonical'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "high");
+        assert_eq!(created.task.estimated_minutes, Some(525_600));
+
+        for (command_id, minutes) in [("zero-estimate", 0_i64), ("overflow-estimate", 525_601)] {
+            let baseline = db.tip().unwrap();
+            let refused = db.authority_task_command(
+                "user",
+                command(
+                    command_id,
+                    baseline,
+                    TaskAction::Create {
+                        task_id: command_id.into(),
+                        title: "Refused estimate".into(),
+                        project_id: Some("p1".into()),
+                        milestone_id: None,
+                        description: String::new(),
+                        status: None,
+                        priority: None,
+                        estimated_minutes: Some(minutes),
+                        deadline_at_ms: None,
+                        earliest_start_at_ms: None,
+                        acceptance_criteria: Vec::new(),
+                        prerequisite_ids: Vec::new(),
+                    },
+                ),
+            );
+            assert!(refused.is_err(), "{command_id} should be refused");
+            assert_eq!(db.tip().unwrap(), baseline, "{command_id} advanced");
+            assert_eq!(task_rows(&db, command_id), 0, "{command_id} wrote a row");
+        }
+    }
+
+    #[test]
+    fn legacy_create_wire_reserializes_identically_and_retries_as_duplicate() {
+        let mut db = AuthorityStore::open(Path::new(":memory:")).unwrap();
+        // The exact payload an older binary wrote before the rich fields
+        // existed. Retry admission compares the serialized payload string, so
+        // the new fields must be skipped when they hold their defaults.
+        let legacy = r#"{"command_id":"legacy-create","expected_revision":0,"action":{"type":"create","task_id":"legacy","title":"Legacy","project_id":"p"}}"#;
+        let decoded: TaskCommand = serde_json::from_str(legacy).unwrap();
+        assert_eq!(
+            serde_json::to_string(&decoded).unwrap(),
+            legacy,
+            "a legacy create wire must serialize back to its exact pre-upgrade bytes"
+        );
+        let receipt = r#"{"revision":1,"duplicate":false,"task":{"id":"legacy","title":"Legacy","status":"inbox","project_id":"p"}}"#;
+        db.conn
+            .execute(
+                "INSERT INTO authority_commands(command_id,actor,payload,result_json) VALUES(?1,'user',?2,?3)",
+                rusqlite::params!["legacy-create", legacy, receipt],
+            )
+            .unwrap();
+        let retried = db.authority_task_command("user", decoded).unwrap();
+        assert!(retried.duplicate);
+        assert_eq!(retried.revision, 1);
+        assert_eq!(retried.task.id, "legacy");
     }
 }

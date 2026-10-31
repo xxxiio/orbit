@@ -285,6 +285,15 @@ fn task_timestamps_come_from_history_or_report_unknown() {
             task_id: "task-1".into(),
             title: "Fix the login form".into(),
             project_id: Some("orbit".into()),
+            milestone_id: None,
+            description: String::new(),
+            status: None,
+            priority: None,
+            estimated_minutes: None,
+            deadline_at_ms: None,
+            earliest_start_at_ms: None,
+            acceptance_criteria: Vec::new(),
+            prerequisite_ids: Vec::new(),
         },
     };
     store.authority_task_command("device-a", task).unwrap();
