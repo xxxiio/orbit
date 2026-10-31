@@ -160,6 +160,68 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8787/v1/devic
 201
 ```
 
+## Back up before you experiment
+
+A personal loopback workspace is still the only copy of its projects, notes and
+attachments. Before you experiment with modes, upgrades or agent work, take one
+verified workspace backup (database, Markdown vault, attachment objects and
+normalized non-secret configuration in a single `.orbitbak` archive):
+
+```sh
+# Label it, and keep it outside the workspace directory you are testing.
+orbit backup create --db ./orbit-local.db --output ./orbit-backups --label "before experiments"
+orbit backup list --output ./orbit-backups
+orbit backup verify ./orbit-backups/NEWEST.orbitbak
+orbit backup inspect ./orbit-backups/NEWEST.orbitbak
+```
+
+`orbit backup create` takes a consistent online snapshot, verifies the archive
+before publishing it and never modifies the workspace. `verify` re-checks the
+archive structure, manifest, per-file hashes and SQLite integrity; verification
+is **not** a restore test.
+
+To rehearse recovery, restore into an isolated directory and open it there — the
+active workspace is never touched:
+
+```sh
+orbit backup restore ./orbit-backups/NEWEST.orbitbak --dry-run --to ./orbit-restored
+orbit backup restore ./orbit-backups/NEWEST.orbitbak --to ./orbit-restored
+orbit --db ./orbit-restored/orbit.db status
+```
+
+Confirm the projects, tasks, notes and one attachment you expect, then discard
+the rehearsal copy.
+
+The same workflow is available in the browser under **Settings → Backup &
+Restore** (`/settings/backup`, also in the sidebar footer and the command
+palette as **Go to Backup & Restore**):
+
+1. Check **Last verified backup** and **Server backup folder** (Writable or Not
+   writable). The page warns when no verified backup exists yet.
+2. In **Create a backup**, type an optional label and press **Create backup**; it
+   shows **Creating and verifying…**, then **Verification passed**.
+3. Use **Backup history** → **Inspect** (the **Backup details** drawer),
+   **Verify** and **Download**. A skipped-archive panel names files that could
+   not be read. Downloads are memory-buffered and capped (default 512 MiB); a
+   larger archive gets `413`, so copy very large archives from the server's
+   backup folder.
+4. In **Restore**, choose **Isolated copy** (Recommended), type `RESTORE` and
+   press **Create isolated copy**. The copy is verified and created under the
+   server's restore root; the active workspace is not modified. **Replace
+   authority** is maintenance-only: it takes the administrator key and only
+   prepares an offline replacement plan — the live workspace is never replaced
+   from the browser.
+
+For the full screen contract see [the web app guide](../web-app.md#backup-and-restore).
+
+> **A backup on the same disk is not protection against disk failure.** Point
+> `--output` at a different physical device or copy verified archives to one.
+> Orbit makes no zero-data-loss or zero-downtime claim.
+
+Do not copy a live WAL-mode SQLite file with `cp` as a backup: use the built-in
+backup (or SQLite's online backup API). The `-wal`/`-shm` sidecars are only part
+of a valid copy when every writer is stopped and the files are copied as a set.
+
 ## Stop and where data lives
 
 Stop the server with `Ctrl+C`. With the command above, state lives beside your working directory:
@@ -169,7 +231,7 @@ Stop the server with `Ctrl+C`. With the command above, state lives beside your w
 - `./attachments/objects/`, the attachment object store.
 
 Deleting those paths starts an empty workspace. That is destructive and is not an upgrade path;
-back up the database first if the data matters. See
+take a verified workspace backup first if the data matters. See
 [backup and recovery](backup-and-recovery.md).
 
 ## Troubleshooting

@@ -1,0 +1,15 @@
+[package]
+name = "orbit-backup"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+orbit-storage = { path = "../orbit-storage" }
+rusqlite = { version = "0.32", features = ["backup", "bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"

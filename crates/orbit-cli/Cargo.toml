@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 orbit-runtime = { path = "../orbit-runtime" }
+orbit-backup = { path = "../orbit-backup" }
 orbit-blueprint = { path = "../orbit-blueprint" }
 clap = { version = "4.5", features = ["derive", "env"] }
 orbit-domain = { path = "../orbit-domain" }

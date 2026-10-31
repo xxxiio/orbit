@@ -120,32 +120,31 @@ impl AuthoritativeHost {
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, store::AuthorityError> {
         let path = path.as_ref();
-        let vault_root = if path == Path::new(":memory:") {
-            std::env::temp_dir().join(format!(
-                "orbit-ephemeral-knowledge-{}-{}",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_err(|_| store::AuthorityError::Invalid("clock"))?
-                    .as_nanos()
-            ))
+        // One shared layout rule keeps the runtime and the backup service in
+        // agreement about which vault and attachment store belong to this
+        // database. Never duplicate this derivation.
+        let (vault_root, attachment_root) = if path == Path::new(":memory:") {
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| store::AuthorityError::Invalid("clock"))?
+                .as_nanos();
+            (
+                std::env::temp_dir().join(format!(
+                    "orbit-ephemeral-knowledge-{}-{unique}",
+                    std::process::id()
+                )),
+                std::env::temp_dir().join(format!(
+                    "orbit-ephemeral-attachments-{}-{unique}",
+                    std::process::id()
+                )),
+            )
         } else {
-            path.with_extension("knowledge")
-        };
-        let attachment_root = if path == Path::new(":memory:") {
-            std::env::temp_dir().join(format!(
-                "orbit-ephemeral-attachments-{}-{}",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_err(|_| store::AuthorityError::Invalid("clock"))?
-                    .as_nanos()
-            ))
-        } else {
-            path.parent()
-                .unwrap_or_else(|| Path::new("."))
-                .join("attachments")
-                .join("objects")
+            let layout = orbit_backup::WorkspaceLayout::for_database(path)
+                .map_err(|_| store::AuthorityError::Invalid("workspace layout"))?;
+            (
+                layout.knowledge_vault().to_path_buf(),
+                layout.attachment_store().to_path_buf(),
+            )
         };
         let max_bytes = std::env::var("ORBIT_ATTACHMENT_MAX_BYTES")
             .ok()

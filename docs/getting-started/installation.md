@@ -208,10 +208,12 @@ Options:
 | `--force` | Reinstall even when the target version is already installed |
 
 `orbit update` verifies release checksums before replacing the binary, refuses
-an installation that lacks the M26 installation manifest, backs up the SQLite
-database under `~/.orbit/backups/` before replacement, and preserves the prior
-binary and data if the update fails. Downgrades are refused unless explicitly
-allowed. `--check` is read-only.
+an installation that lacks the M26 installation manifest, creates a complete,
+verified workspace recovery point (database, Markdown vault, referenced
+attachments and normalized non-secret configuration) under
+`~/.orbit/backups/`, fails closed before replacing binaries if it cannot, and
+preserves the prior binary and data if the update fails. Downgrades are refused
+unless explicitly allowed. `--check` is read-only.
 
 Before updating, read [upgrades and recovery](../releasing/upgrades-and-recovery.md).
 Binary rollback is not database schema rollback.

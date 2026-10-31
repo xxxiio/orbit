@@ -88,8 +88,10 @@ orbit update
 ```
 
 Update verifies checksums, refuses installations without the M26 manifest,
-backs up the database under `~/.orbit/backups/`, and preserves the prior
-binary/data on failure.
+creates a complete, verified workspace recovery point (database, Markdown vault,
+referenced attachments and normalized non-secret configuration) under
+`~/.orbit/backups/`, fails closed before replacing binaries if it cannot, and
+preserves the prior binary/data on failure.
 
 ## Supported and verified matrix
 

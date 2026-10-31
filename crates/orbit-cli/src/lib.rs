@@ -60,6 +60,9 @@ use serde::Serialize;
 
 static ID_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+mod backup_commands;
+mod backup_policy_commands;
+mod backup_restore_commands;
 mod commands;
 pub use commands::*;
 
@@ -118,6 +121,21 @@ pub fn run(cli: Cli) -> Result<String, CliError> {
     let db_path = match &deployment {
         orbit_client::deployment::Deployment::Local { database } => database.clone(),
         orbit_client::deployment::Deployment::Connected { replica, .. } => replica.clone(),
+    };
+    // Backup and restore resolve their own workspace layout from the effective
+    // database. They never open the workspace for writes and never fall back to
+    // a second authority.
+    let command = match command {
+        Command::Backup(backup) => {
+            return backup_commands::run(
+                backup.command,
+                &deployment,
+                &db_path,
+                resolved.as_ref(),
+                json,
+            );
+        }
+        other => other,
     };
     let default_agent_provider = resolved
         .as_ref()
@@ -1190,6 +1208,8 @@ pub enum CliError {
     /// An already-rendered diagnostic report that must exit non-zero without
     /// being wrapped in the usual `orbit:` error prefix.
     Diagnostics(String),
+    /// A workspace backup, verification or recovery failure.
+    Backup(String),
 }
 
 impl CliError {
@@ -1241,6 +1261,7 @@ impl CliError {
             Self::Sync(_) => "sync_error",
             Self::Serialization(_) => "serialization_error",
             Self::Diagnostics(_) => "diagnostics_failed",
+            Self::Backup(_) => "backup_error",
         }
     }
 
@@ -1249,6 +1270,7 @@ impl CliError {
             Self::Usage(_) | Self::Domain(_) => 2,
             Self::Application(_) => 3,
             Self::Io(_) | Self::Repository(_) => 4,
+            Self::Backup(_) => 4,
             Self::Sync(_) => 5,
             Self::Serialization(_) => 70,
             Self::Diagnostics(_) => 1,
@@ -1264,6 +1286,9 @@ impl CliError {
                 Some("Check the workspace path and run storage diagnostics when available.")
             }
             Self::Sync(_) => Some("Inspect `orbit sync replica status` and pending commands."),
+            Self::Backup(_) => Some(
+                "Run `orbit backup verify <file>` and inspect the reported problems;                  the workspace itself is never modified by a failed backup or restore.",
+            ),
             _ => None,
         }
     }
@@ -1279,7 +1304,8 @@ impl std::fmt::Display for CliError {
             | Self::Repository(message)
             | Self::Sync(message)
             | Self::Serialization(message)
-            | Self::Diagnostics(message) => formatter.write_str(message),
+            | Self::Diagnostics(message)
+            | Self::Backup(message) => formatter.write_str(message),
         }
     }
 }

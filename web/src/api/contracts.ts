@@ -1434,3 +1434,9 @@ export interface WebSessionRequest {
 
 export * from './contracts/planning'
 
+/* ------------------------------------------------------------------ */
+/* Backup and restore domain (split for size; same import path)        */
+/* ------------------------------------------------------------------ */
+
+export * from './contracts/backup'
+

@@ -41,6 +41,52 @@ device-authentication trust described here for remotely reachable deployments.
 Those deployments keep device authentication, TLS and the existing enrollment
 and revocation rules.
 
+## Backup and recovery boundary
+
+A server workspace backup is one portable `.orbitbak` archive of the server's
+authoritative SQLite database, its Markdown vault, the referenced attachment
+objects and normalized non-secret configuration. The server and the CLI call the
+same `orbit-backup` service; the browser is a transport over it.
+
+- The server backup directory is `ORBIT_BACKUP_DIR` (default `<server database
+  parent>/backups`); isolated restores are created under
+  `ORBIT_BACKUP_RESTORE_ROOT` (default `<server database parent>/restores`). The
+  archive download response is bounded by `ORBIT_BACKUP_DOWNLOAD_MAX_BYTES`
+  (default 512 MiB) and answers `413` above it.
+- Ordinary authenticated product principals may list, create, inspect, verify,
+  download and perform isolated restores. Producing a **replacement plan** is
+  the only administrator-credential route, and it only writes a pending offline
+  plan: the running server never replaces its live database from a browser
+  request. An operator performs the maintenance replacement from the server
+  shell with writers stopped.
+- A server-mode archive records `source.excluded_client_pending_data: true` and
+  a `client_pending_data` exclusion: it does **not** contain what clients hold —
+  a replica's accepted snapshot, its unresolved outbox commands and its
+  `attachment-staging/` directory. Client replica snapshots are also rejected as
+  a recovery point (`--source-mode replica` fails closed); a replica is not an
+  authority. Preserve each replica and reconcile through the supported
+  convergence/conflict workflow after a server restore; never replay pending
+  commands automatically and never delete outbox data to silence a warning.
+- The long-running server spawns the backup scheduler. It re-reads
+  `<ORBIT_BACKUP_DIR>/policy.json` every 15 minutes (first check about 30 seconds
+  after startup) and creates a verified automatic backup when a `daily`/`weekly`
+  policy is due, then applies retention while protecting the new archive. A
+  policy change takes effect without a restart; `disabled`/`before-upgrade` never
+  run on a timer.
+- Also outside the boundary: external Herdr sessions and their working
+  directories, running processes, Git worktrees/branches and other repositories,
+  external credentials, and actions that already executed outside Orbit. A
+  restore never re-executes those actions; uncertain external execution is
+  marked for reconciliation.
+- Isolated restore writes a new workspace copy under the restore root and never
+  touches the active server workspace. Replacement is a maintenance operation
+  that stages, verifies and preserves the previous database/vault plus a
+  recovery journal for rollback.
+- Credentials and enrollment material are separate secrets and are never in the
+  archive. A backup on the same disk as the server database is not protection
+  against disk failure; copy verified archives to another device or location.
+  No zero-data-loss or zero-downtime claim is made.
+
 ## Ownership and acceptance
 
 - `orbit-application` owns use cases and ports.

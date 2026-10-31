@@ -8,6 +8,7 @@ license.workspace = true
 orbit-blueprint = { path = "../orbit-blueprint" }
 orbit-application = { path = "../orbit-application" }
 orbit-runtime = { path = "../orbit-runtime" }
+orbit-backup = { path = "../orbit-backup" }
 orbit-domain = { path = "../orbit-domain" }
 orbit-sync = { path = "../orbit-sync" }
 axum = { version = "0.8", features = ["json"] }

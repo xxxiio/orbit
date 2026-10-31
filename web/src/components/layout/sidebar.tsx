@@ -11,6 +11,7 @@ import {
   LogOutIcon,
   PlusIcon,
   SearchIcon,
+  SettingsIcon,
 } from '@/components/ui/icons'
 import { globalNav, type ProjectNavItem } from '@/components/navigation/nav'
 import type { WebSessionMode } from '@/api/session'
@@ -240,6 +241,14 @@ export function Sidebar({
       </ScrollAreaPrimitive.Root>
 
       <div className="border-t border-line px-3 py-3">
+        <NavLink
+          to="/settings/backup"
+          onClick={onNavigate}
+          className="nav-item mb-1 py-1.5 text-[0.8125rem]"
+        >
+          <SettingsIcon size={16} className="shrink-0 opacity-80" />
+          <span>Backup &amp; Restore</span>
+        </NavLink>
         <ThemeToggle className="px-2 pb-2" />
         {localTrusted ? (
           // A policy note, not a device identity: there is no cookie, no device

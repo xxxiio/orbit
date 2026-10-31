@@ -1,5 +1,7 @@
 //! Optional self-hosted Orbit authoritative server. Local-only clients do not need it.
 mod auth;
+mod backup_api;
+mod backup_scheduler;
 mod blueprints;
 mod authority_evidence {
     pub use orbit_runtime::authority_evidence::*;
@@ -58,6 +60,8 @@ struct AppState {
     admin_key_hash: Vec<u8>,
     /// Upper bound for attachment import bodies, checked before buffering.
     attachment_body_limit: usize,
+    /// Filesystem locations for the shared backup/restore service.
+    backup: Arc<backup_api::BackupPaths>,
     auth_mode: AuthenticationMode,
 }
 #[derive(Deserialize)]
@@ -3697,6 +3701,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cookie_secure: std::env::var("ORBIT_WEB_COOKIE_SECURE").as_deref() == Ok("1"),
         admin_key_hash: Sha256::digest(admin_key.as_bytes()).to_vec(),
         attachment_body_limit,
+        backup: Arc::new(backup_api::BackupPaths::from_env(Path::new(&database))),
         auth_mode,
     };
     // A single scheduler writes durable due runs; no cloud service needed.
@@ -3714,6 +3719,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
+    // Optional automatic workspace backups. The policy lives in the backup
+    // directory and is re-read on every tick, so CLI/Web changes take effect
+    // without a restart. Disabled by default.
+    let scheduler_database = std::path::PathBuf::from(&database);
+    let scheduler_backups = backup_scheduler::backup_directory_for(&scheduler_database);
+    backup_scheduler::spawn(
+        scheduler_database,
+        scheduler_backups,
+        backup_scheduler::DEFAULT_CHECK_INTERVAL,
+    );
     let app = routes(state);
     // Intentionally loopback by default. Put the service behind a TLS
     // reverse-proxy/private-network gate before making it remotely reachable.
@@ -4188,6 +4203,33 @@ fn routes(state: AppState) -> Router {
         .route("/v1/devices", post(enroll))
         .route("/v1/devices/{id}", axum::routing::delete(revoke))
         .route("/v1/devices/{id}/token", post(rotate_token))
+        // Workspace backup and restore. The replacement plan is the only
+        // administrator-credential route; every other handler accepts any
+        // product principal and never receives a filesystem path from the
+        // browser.
+        .route(
+            "/v1/backups",
+            get(backup_api::list_backups).post(backup_api::create_backup),
+        )
+        .route(
+            "/v1/backups/schedule",
+            get(backup_api::get_schedule).put(backup_api::update_schedule),
+        )
+        .route("/v1/backups/{id}", get(backup_api::inspect_backup))
+        .route("/v1/backups/{id}/verify", post(backup_api::verify_backup))
+        .route(
+            "/v1/backups/{id}/download",
+            get(backup_api::download_backup),
+        )
+        .route(
+            "/v1/restores/preflight",
+            post(backup_api::restore_preflight),
+        )
+        .route("/v1/restores/isolated", post(backup_api::restore_isolated))
+        .route(
+            "/v1/restores/replace-plan",
+            post(backup_api::replacement_plan),
+        )
         .route("/v1/authoritative/snapshot", get(authoritative_snapshot))
         .route(
             "/v1/authoritative/history-prefix",
@@ -4729,6 +4771,7 @@ mod tests {
             cookie_secure: false,
             admin_key_hash: Sha256::digest(b"test-admin-key-0123456789abcdef").to_vec(),
             attachment_body_limit: 1024 * 1024,
+            backup: Arc::new(backup_api::BackupPaths::for_tests()),
             auth_mode,
         };
         state

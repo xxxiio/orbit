@@ -1,0 +1,623 @@
+{
+  "schema": "orbit.m34.failure-injection/1",
+  "generated_by": "tests/acceptance/m34_backup_cli.py",
+  "result": "PASS",
+  "started_at": "2026-10-31T10:36:48.079319+00:00",
+  "finished_at": "2026-10-31T10:36:52.292+00:00",
+  "binary": "/home/xliu/dev/orbit/target/debug/orbit",
+  "binaries": {
+    "orbit_cli": {
+      "path": "/home/xliu/dev/orbit/target/debug/orbit",
+      "size_bytes": 217098400,
+      "mtime_iso": "2026-10-31T10:06:41+00:00",
+      "sha256": "ad31c0360b1dc16ee946caf996ae2f88bcd6a967245d0035f332f267b5a83c80",
+      "version": "orbit 0.1.0"
+    },
+    "orbit_server": {
+      "path": "/home/xliu/dev/orbit/target/debug/orbit-server",
+      "size_bytes": 182233640,
+      "mtime_iso": "2026-10-31T10:06:40+00:00",
+      "sha256": "9bbf52de263fc1cbcc149bddf8f082df0f54954a89c4d86bfd96f90bb0db92f8"
+    },
+    "orbit_mcp": {
+      "path": "/home/xliu/dev/orbit/target/debug/orbit-mcp",
+      "size_bytes": 180374616,
+      "mtime_iso": "2026-10-27T19:59:57+00:00",
+      "sha256": "3c805e95202ad2ff84637d8483e5d78646081bcd3c29ec31189eed5c37d15104"
+    }
+  },
+  "host": "linux",
+  "case_summary": {
+    "PASS": 22,
+    "NOT_APPLICABLE": 1
+  },
+  "cases": [
+    {
+      "name": "create \u2014 default destination",
+      "expected": "a verified archive lands in the configured backups directory with a verification sidecar",
+      "observed": "created orbit-20261031T103648Z-backup.orbitbak (732672 bytes), verified=True, sidecar present",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "command": [
+          "--db",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/workspace/orbit.db",
+          "--config",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/workspace/orbit.config.toml",
+          "backup",
+          "create"
+        ],
+        "archive": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/workspace/home/.orbit/backups/orbit-20261031T103648Z-backup.orbitbak",
+        "components": [
+          "database",
+          "knowledge",
+          "attachments",
+          "configuration"
+        ],
+        "archive_bytes": 732672,
+        "default_directory": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/workspace/home/.orbit/backups"
+      },
+      "duration_ms": 411.7
+    },
+    {
+      "name": "create \u2014 --output and --label",
+      "expected": "the archive is written to the external directory and the manifest records the label, format and inventory",
+      "observed": "archive orbit-20261031T103649Z-nightly-acceptance.orbitbak labelled 'nightly acceptance', format 1, inventory kinds ['attachment_object', 'configuration', 'database', 'knowledge_note']",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "archive": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/external-backups/orbit-20261031T103649Z-nightly-acceptance.orbitbak",
+        "manifest_label": "nightly acceptance",
+        "counts": {
+          "knowledge_notes": 2,
+          "knowledge_folders": 1,
+          "attachment_objects": 2,
+          "attachment_associations": 2,
+          "tables": {
+            "activities": 11,
+            "agent_job_briefs": 0,
+            "agent_job_commands": 0,
+            "agent_job_events": 0,
+            "agent_job_execution_options": 0,
+            "agent_job_handoffs": 0,
+            "agent_job_launch_claims": 0,
+            "agent_job_owners": 0,
+            "agent_job_reviews": 0,
+            "agent_jobs": 0,
+            "agent_session_prompts": 0,
+            "attachment_objects": 2,
+            "attachments": 2,
+            "authority_commands": 9,
+            "authority_history": 9,
+            "authority_identity": 1,
+            "authority_projection": 1,
+            "devices": 1,
+            "habit_occurrences": 0,
+            "habits": 0,
+            "markdown_command_log": 2,
+            "markdown_folder_commands": 0,
+            "markdown_folder_creates": 0,
+            "markdown_note_index": 2,
+            "markdown_note_revisions": 2,
+            "markdown_reference_commands": 0,
+            "metric_observations": 0,
+            "metric_targets": 0,
+            "milestone_work_items": 0,
+            "milestones": 0,
+            "orbit_blueprint_action_receipts": 0,
+            "orbit_blueprint_action_requests": 0,
+            "orbit_blueprint_command_receipts": 0,
+            "orbit_blueprint_item_dependencies": 0,
+            "orbit_blueprint_work_items": 0,
+            "orbit_blueprints": 1,
+            "orbit_capability_executors": 0,
+            "orbit_capability_grants": 0,
+            "orbit_capability_installations": 0,
+            "orbit_project_blueprints": 1,
+            "orbit_reference_work_item_notes": 0,
+            "orbit_schema": 1,
+            "project_evidence_bindings": 0,
+            "project_success_criteria": 0,
+            "projects": 1,
+            "routine_habits": 0,
+            "routines": 0,
+            "schedule_blocks": 0,
+            "sync_field_versions": 0,
+            "sync_local_state": 0,
+            "sync_outbox": 0,
+            "sync_outbox_fields": 0,
+            "sync_resolution_outbox": 0,
+            "task_acceptance_criteria": 0,
+            "task_labels": 0,
+            "task_prerequisites": 1,
+            "tasks": 5,
+            "web_saved_view_commands": 0,
+            "web_saved_views": 0
+          }
+        },
+        "inventory_files": 6
+      },
+      "duration_ms": 417.71
+    },
+    {
+      "name": "list \u2014 default and external directories",
+      "expected": "both listings derive entries from the archives themselves and report verification status",
+      "observed": "default dir: 1 archive(s); external dir: 2 archive(s), 2 verified",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "default": {
+          "directory": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/workspace/home/.orbit/backups",
+          "count": 1
+        },
+        "external": {
+          "directory": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/external-backups",
+          "count": 2
+        }
+      },
+      "duration_ms": 12.8
+    },
+    {
+      "name": "verify \u2014 passing archive",
+      "expected": "verify exits zero, reports ok and lists checks",
+      "observed": "ok=true, 8 checks: {'structure': 'pass', 'manifest': 'pass', 'paths': 'pass', 'file_hashes': 'pass', 'sqlite_integrity': 'pass', 'schema_compatibility': 'pass', 'attachment_presence': 'pass', 'vault_consistency': 'pass'}",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "checks": {
+          "structure": "pass",
+          "manifest": "pass",
+          "paths": "pass",
+          "file_hashes": "pass",
+          "sqlite_integrity": "pass",
+          "schema_compatibility": "pass",
+          "attachment_presence": "pass",
+          "vault_consistency": "pass"
+        },
+        "problems": [],
+        "warnings": []
+      },
+      "duration_ms": 20.43
+    },
+    {
+      "name": "verify \u2014 corrupted archive",
+      "expected": "verify exits nonzero and the corruption is reported",
+      "observed": "nonzero exit 1, corrupt byte at offset 366336 detected; original workspace unchanged",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "returncode": 1,
+        "diagnostic_excerpt": "  \"sync_field_versions\": 0,\n        \"sync_local_state\": 0,\n        \"sync_outbox\": 0,\n        \"sync_outbox_fields\": 0,\n        \"sync_resolution_outbox\": 0,\n        \"task_acceptance_criteria\": 0,\n        \"task_labels\": 0,\n        \"task_prerequisites\": 1,\n        \"tasks\": 5,\n        \"web_saved_view_commands\": 0,\n        \"web_saved_views\": 0\n      }\n    }\n  },\n  \"verified_files\": [\n    {\n      \"path\": \"attachments/objects/ae/ae8cb81f47d93dd2e91ef76759364f0aee40c2d1a98dfcf0b2f03f08d8d7cfb9\",\n      \"kind\": \"attachment_object\",\n      \"size_bytes\": 36,\n      \"sha256\": \"ae8cb81f47d93dd2e91ef76759364f0aee40c2d1a98dfcf0b2f03f08d8d7cfb9\"\n    },\n    {\n      \"path\": \"attachments/objects/de/deea9dc7152ae0621c5909852c1a33b1d8ea522abef8f4dc9e2a384781390b09\",\n      \"kind\": \"attachment_object\",\n      \"size_bytes\": 8192,\n      \"sha256\": \"deea9dc7152ae0621c5909852c1a33b1d8ea522abef8f4dc9e2a384781390b09\"\n    },\n    {\n      \"path\": \"config/config.json\",\n      \"kind\": \"configuration\",\n      \"size_bytes\": 55,\n      \"sha256\": \"03f21cff9ae784b53742f5baaee3e5f754d5e0084c85d233c77ed44e04af4c1d\"\n    },\n    {\n      \"path\": \"knowledge/note-acceptance-log.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 90,\n      \"sha256\": \"b6124e280ab7dc577bac4649e9ee2ab323e6f0ee317ce2f5c84194e49ef9f2e8\"\n    },\n    {\n      \"path\": \"knowledge/note-acceptance-plan.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 87,\n      \"sha256\": \"7045377b2284aec2f45d0add87bec9c1fa41d39070de621c6cd01b7a27f4549d\"\n    }\n  ]\n}\n"
+      },
+      "duration_ms": 72.59
+    },
+    {
+      "name": "restore --dry-run",
+      "expected": "a preflight plan is reported and nothing in the workspace changes (strict file list and hashes)",
+      "observed": "admissible preflight, no destination created, workspace file list and hashes unchanged (12 files)",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "admissible": true,
+        "plan_mode": "isolated",
+        "target": {
+          "database": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/dry-run-target/orbit.db",
+          "knowledge_vault": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/dry-run-target/orbit.knowledge",
+          "attachment_store": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/dry-run-target/attachments/objects",
+          "exists": false,
+          "active": false,
+          "pending_outbox_rows": 0
+        },
+        "blockers": [],
+        "warnings": [
+          {
+            "code": "free_space_unknown",
+            "detail": "free space on the destination filesystem could not be measured portably; extraction fails closed on a full disk and the active workspace is never touched"
+          }
+        ]
+      },
+      "duration_ms": 49.56
+    },
+    {
+      "name": "restore --to \u2014 isolated workspace opens",
+      "expected": "a separate workspace is created, verifies and opens through the CLI with the same tasks/notes",
+      "observed": "restored orbit.db, CLI status/list open it, 5 tasks and 2 notes readable, active workspace unchanged",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "response": {
+          "type": "restore_complete",
+          "mode": "isolated",
+          "database": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/isolated-restore/orbit.db",
+          "knowledge_vault": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/isolated-restore/orbit.knowledge",
+          "attachment_store": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/isolated-restore/attachments/objects",
+          "activated": true,
+          "preserved": null,
+          "journal": null,
+          "verified": true,
+          "counts": {
+            "knowledge_notes": 2,
+            "knowledge_folders": 1,
+            "attachment_objects": 2,
+            "attachment_associations": 2,
+            "tables": {
+              "activities": 11,
+              "agent_job_briefs": 0,
+              "agent_job_commands": 0,
+              "agent_job_events": 0,
+              "agent_job_execution_options": 0,
+              "agent_job_handoffs": 0,
+              "agent_job_launch_claims": 0,
+              "agent_job_owners": 0,
+              "agent_job_reviews": 0,
+              "agent_jobs": 0,
+              "agent_session_prompts": 0,
+              "attachment_objects": 2,
+              "attachments": 2,
+              "authority_commands": 9,
+              "authority_history": 9,
+              "authority_identity": 1,
+              "authority_projection": 1,
+              "devices": 1,
+              "habit_occurrences": 0,
+              "habits": 0,
+              "markdown_command_log": 2,
+              "markdown_folder_commands": 0,
+              "markdown_folder_creates": 0,
+              "markdown_note_index": 2,
+              "markdown_note_revisions": 2,
+              "markdown_reference_commands": 0,
+              "metric_observations": 0,
+              "metric_targets": 0,
+              "milestone_work_items": 0,
+              "milestones": 0,
+              "orbit_blueprint_action_receipts": 0,
+              "orbit_blueprint_action_requests": 0,
+              "orbit_blueprint_command_receipts": 0,
+              "orbit_blueprint_item_dependencies": 0,
+              "orbit_blueprint_work_items": 0,
+              "orbit_blueprints": 1,
+              "orbit_capability_executors": 0,
+              "orbit_capability_grants": 0,
+              "orbit_capability_installations": 0,
+              "orbit_project_blueprints": 1,
+              "orbit_reference_work_item_notes": 0,
+              "orbit_schema": 1,
+              "project_evidence_bindings": 0,
+              "project_success_criteria": 0,
+              "projects": 1,
+              "routine_habits": 0,
+              "routines": 0,
+              "schedule_blocks": 0,
+              "sync_field_versions": 0,
+              "sync_local_state": 0,
+              "sync_outbox": 0,
+              "sync_outbox_fields": 0,
+              "sync_resolution_outbox": 0,
+              "task_acceptance_criteria": 0,
+              "task_labels": 0,
+              "task_prerequisites": 1,
+              "tasks": 5,
+              "web_saved_view_commands": 0,
+              "web_saved_views": 0
+            }
+          }
+        },
+        "task_count": 5,
+        "note_ids": [
+          "note-acceptance-log",
+          "note-acceptance-plan"
+        ],
+        "restored_counts_tasks": 5
+      },
+      "duration_ms": 138.01
+    },
+    {
+      "name": "restore --replace \u2014 confirmation required",
+      "expected": "replace is refused without the exact confirmation, then activates and preserves the previous workspace",
+      "observed": "without/wrong --confirm refused; REPLACE activated, preserved .orbit-preserved-20261031T103650Z and journal restore-journal.json; preserved copy opens (workspace_status)",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "no_confirm_returncode": 4,
+        "wrong_confirm_returncode": 4,
+        "preserved": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/replace-target/.orbit-preserved-20261031T103650Z",
+        "journal": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/replace-target/.orbit-preserved-20261031T103650Z/restore-journal.json"
+      },
+      "duration_ms": 194.92
+    },
+    {
+      "name": "restore --replace \u2014 active target refused",
+      "expected": "a workspace held by a writer is not replaced and stays intact",
+      "observed": "nonzero exit 4 while a writer held the target; target intact",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "returncode": 4,
+        "diagnostic_excerpt": "{\n  \"type\": \"error\",\n  \"code\": \"backup_error\",\n  \"message\": \"restore refused: the target workspace became active while the archive was staged (another process held the write lock for longer than 250 ms); stop every Orbit process and retry. Nothing was changed.\",\n  \"recoverable\": true,\n  \"hint\": \"Run `orbit backup verify <file>` and inspect the reported problems;                  the workspace itself is never modified by a failed backup or restore.\"\n}\n"
+      },
+      "duration_ms": 323.61
+    },
+    {
+      "name": "schedule + retention",
+      "expected": "the policy round-trips and retention never removes the last verified recovery point",
+      "observed": "schedule stored 'daily'; retention kept 1 archive(s), last verified present",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "policy": {
+          "version": 1,
+          "schedule": "daily",
+          "max_retained": 1,
+          "min_retention_days": 0
+        },
+        "retention": {
+          "type": "backup_retention",
+          "directory": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/policy-backups",
+          "dry_run": false,
+          "policy": {
+            "version": 1,
+            "schedule": "daily",
+            "max_retained": 1,
+            "min_retention_days": 0
+          },
+          "outcome": {
+            "removed": [
+              "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/policy-backups/orbit-20261031T103650Z-retention-1.orbitbak"
+            ],
+            "retained": 1,
+            "protected": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/policy-backups/orbit-20261031T103650Z-retention-2.orbitbak",
+            "bytes_before": 1465344,
+            "bytes_after": 732672,
+            "retained_reasons": [
+              "orbit-20261031T103650Z-retention-2.orbitbak: protected recovery point (never removed)"
+            ]
+          }
+        },
+        "remaining": [
+          "orbit-20261031T103650Z-retention-2.orbitbak"
+        ]
+      },
+      "duration_ms": 827.94
+    },
+    {
+      "name": "interrupted backup",
+      "expected": "SIGKILL mid-create leaves no partial archive, no staging artifacts and an unchanged workspace",
+      "observed": "SIGKILL after staging activity (rc -9); no partial .orbitbak published, no staging artifacts, workspace intact",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "attempts": [
+          {
+            "returncode": -9,
+            "killed_after_staging": true,
+            "activity": {
+              "directory": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/workspace",
+              "entries": [
+                "orbit.db-shm",
+                "orbit.db-wal"
+              ]
+            }
+          }
+        ],
+        "staging_artifacts": [],
+        "published": []
+      },
+      "duration_ms": 21.5
+    },
+    {
+      "name": "corrupted archive",
+      "expected": "byte corruption is rejected by verify and restore; workspace intact",
+      "observed": "verify exit 1, restore exit 1; target not populated; workspace intact",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "verify_returncode": 1,
+        "restore_returncode": 1
+      },
+      "duration_ms": 61.41
+    },
+    {
+      "name": "truncated archive",
+      "expected": "a truncated archive is rejected; workspace intact",
+      "observed": "truncated archive rejected with exit 1; workspace intact",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "returncode": 1,
+        "diagnostic_excerpt": "  \"projects\": 1,\n        \"routine_habits\": 0,\n        \"routines\": 0,\n        \"schedule_blocks\": 0,\n        \"sync_field_versions\": 0,\n        \"sync_local_state\": 0,\n        \"sync_outbox\": 0,\n        \"sync_outbox_fields\": 0,\n        \"sync_resolution_outbox\": 0,\n        \"task_acceptance_criteria\": 0,\n        \"task_labels\": 0,\n        \"task_prerequisites\": 1,\n        \"tasks\": 5,\n        \"web_saved_view_commands\": 0,\n        \"web_saved_views\": 0\n      }\n    }\n  },\n  \"verified_files\": [\n    {\n      \"path\": \"attachments/objects/ae/ae8cb81f47d93dd2e91ef76759364f0aee40c2d1a98dfcf0b2f03f08d8d7cfb9\",\n      \"kind\": \"attachment_object\",\n      \"size_bytes\": 36,\n      \"sha256\": \"ae8cb81f47d93dd2e91ef76759364f0aee40c2d1a98dfcf0b2f03f08d8d7cfb9\"\n    },\n    {\n      \"path\": \"attachments/objects/de/deea9dc7152ae0621c5909852c1a33b1d8ea522abef8f4dc9e2a384781390b09\",\n      \"kind\": \"attachment_object\",\n      \"size_bytes\": 8192,\n      \"sha256\": \"deea9dc7152ae0621c5909852c1a33b1d8ea522abef8f4dc9e2a384781390b09\"\n    },\n    {\n      \"path\": \"config/config.json\",\n      \"kind\": \"configuration\",\n      \"size_bytes\": 55,\n      \"sha256\": \"03f21cff9ae784b53742f5baaee3e5f754d5e0084c85d233c77ed44e04af4c1d\"\n    }\n  ]\n}\n"
+      },
+      "duration_ms": 54.54
+    },
+    {
+      "name": "missing attachment object",
+      "expected": "a referenced attachment object missing from the archive is detected; workspace intact",
+      "observed": "dropped attachments/objects/ae/ae8cb81f47d93dd2e91ef76759364f0aee40c2d1a98dfcf0b2f03f08d8d7cfb9; verify exit 1, restore exit 1; workspace intact",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "dropped_entry": "attachments/objects/ae/ae8cb81f47d93dd2e91ef76759364f0aee40c2d1a98dfcf0b2f03f08d8d7cfb9",
+        "verify_returncode": 1,
+        "restore_returncode": 1,
+        "diagnostic_excerpt": "   \"task_prerequisites\": 1,\n        \"tasks\": 5,\n        \"web_saved_view_commands\": 0,\n        \"web_saved_views\": 0\n      }\n    }\n  },\n  \"verified_files\": [\n    {\n      \"path\": \"attachments/objects/de/deea9dc7152ae0621c5909852c1a33b1d8ea522abef8f4dc9e2a384781390b09\",\n      \"kind\": \"attachment_object\",\n      \"size_bytes\": 8192,\n      \"sha256\": \"deea9dc7152ae0621c5909852c1a33b1d8ea522abef8f4dc9e2a384781390b09\"\n    },\n    {\n      \"path\": \"config/config.json\",\n      \"kind\": \"configuration\",\n      \"size_bytes\": 55,\n      \"sha256\": \"03f21cff9ae784b53742f5baaee3e5f754d5e0084c85d233c77ed44e04af4c1d\"\n    },\n    {\n      \"path\": \"database/orbit.db\",\n      \"kind\": \"database\",\n      \"size_bytes\": 712704,\n      \"sha256\": \"2992a101c2a08f8c80c38da425b6a0effdb78b60adf744d5afd1b8f0c9bb6ae4\"\n    },\n    {\n      \"path\": \"knowledge/note-acceptance-log.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 90,\n      \"sha256\": \"b6124e280ab7dc577bac4649e9ee2ab323e6f0ee317ce2f5c84194e49ef9f2e8\"\n    },\n    {\n      \"path\": \"knowledge/note-acceptance-plan.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 87,\n      \"sha256\": \"7045377b2284aec2f45d0add87bec9c1fa41d39070de621c6cd01b7a27f4549d\"\n    }\n  ]\n}\n"
+      },
+      "duration_ms": 72.6
+    },
+    {
+      "name": "unreadable vault file",
+      "expected": "an unreadable Markdown file fails creation cleanly with no partial archive",
+      "observed": "note note-acceptance-log.md made unreadable; create failed with exit 4; no archive published; workspace intact",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "returncode": 4,
+        "diagnostic_excerpt": "{\n  \"type\": \"error\",\n  \"code\": \"backup_error\",\n  \"message\": \"open note /home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/workspace/orbit.knowledge/note-acceptance-log.md: Permission denied (os error 13)\",\n  \"recoverable\": true,\n  \"hint\": \"Run `orbit backup verify <file>` and inspect the reported problems;                  the workspace itself is never modified by a failed backup or restore.\"\n}\n"
+      },
+      "duration_ms": 380.9
+    },
+    {
+      "name": "disk-full / permission failure",
+      "expected": "a destination that cannot be created fails cleanly with no partial archive",
+      "observed": "permission-denied create failed with exit 4; no destination, no archive; workspace intact",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "returncode": 4,
+        "diagnostic_excerpt": "{\n  \"type\": \"error\",\n  \"code\": \"backup_error\",\n  \"message\": \"create /home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq/locked-parent/backups: Permission denied (os error 13)\",\n  \"recoverable\": true,\n  \"hint\": \"Run `orbit backup verify <file>` and inspect the reported problems;                  the workspace itself is never modified by a failed backup or restore.\"\n}\n"
+      },
+      "duration_ms": 29.67
+    },
+    {
+      "name": "destination permissions preserved",
+      "expected": "an existing non-writable destination is never silently widened and fails cleanly",
+      "observed": "non-writable destination refused cleanly (exit 4), mode 0o500 preserved",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "mode_before": "0o500",
+        "mode_after": "0o500",
+        "returncode": 4
+      },
+      "duration_ms": 27.52
+    },
+    {
+      "name": "unsupported manifest version",
+      "expected": "a newer format is rejected with an actionable upgrade message",
+      "observed": "format v999 rejected by verify/inspect/restore with an upgrade message; workspace intact",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "verify_returncode": 1,
+        "inspect_returncode": 4,
+        "restore_returncode": 4,
+        "diagnostic_excerpt": "deea9dc7152ae0621c5909852c1a33b1d8ea522abef8f4dc9e2a384781390b09\",\n      \"kind\": \"attachment_object\",\n      \"size_bytes\": 8192,\n      \"sha256\": \"deea9dc7152ae0621c5909852c1a33b1d8ea522abef8f4dc9e2a384781390b09\"\n    },\n    {\n      \"path\": \"config/config.json\",\n      \"kind\": \"configuration\",\n      \"size_bytes\": 55,\n      \"sha256\": \"03f21cff9ae784b53742f5baaee3e5f754d5e0084c85d233c77ed44e04af4c1d\"\n    },\n    {\n      \"path\": \"database/orbit.db\",\n      \"kind\": \"database\",\n      \"size_bytes\": 712704,\n      \"sha256\": \"2992a101c2a08f8c80c38da425b6a0effdb78b60adf744d5afd1b8f0c9bb6ae4\"\n    },\n    {\n      \"path\": \"knowledge/note-acceptance-log.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 90,\n      \"sha256\": \"b6124e280ab7dc577bac4649e9ee2ab323e6f0ee317ce2f5c84194e49ef9f2e8\"\n    },\n    {\n      \"path\": \"knowledge/note-acceptance-plan.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 87,\n      \"sha256\": \"7045377b2284aec2f45d0add87bec9c1fa41d39070de621c6cd01b7a27f4549d\"\n    }\n  ]\n}\n"
+      },
+      "duration_ms": 76.59
+    },
+    {
+      "name": "wrong destination",
+      "expected": "restoring onto the active workspace, a file, or with mixed modes is refused",
+      "observed": "active-workspace target exit 1, file target exit 1, mixed modes exit 2; workspace intact",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "into_workspace_returncode": 1,
+        "into_file_returncode": 1,
+        "mixed_modes_returncode": 2
+      },
+      "duration_ms": 73.65
+    },
+    {
+      "name": "interrupted restoration",
+      "expected": "SIGKILL mid-restore leaves the original workspace intact and never produces a silently usable partial target",
+      "observed": "killed mid-restore (attempts=1, activity_detected=True); no complete target produced; follow-up restore succeeded",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "attempts": [
+          {
+            "returncode": -9,
+            "killed_after_staging": true,
+            "activity": {
+              "directory": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-cli-3r5yfoeq",
+              "entries": [
+                ".orbit-restore-1869522-1793443012163-163790366-3"
+              ]
+            }
+          }
+        ],
+        "followup_returncode": 0,
+        "followup_ok": true
+      },
+      "duration_ms": 133.08
+    },
+    {
+      "name": "replica snapshots unsupported",
+      "expected": "a client-replica snapshot is refused with an actionable 'use the server workspace' message from both local and connected deployments, publishing nothing",
+      "observed": "local deployment exit 2, connected deployment exit 4; both refused as unsupported recovery points with no archive/staging; workspace intact",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "local_returncode": 2,
+        "local_message": "{\n  \"type\": \"error\",\n  \"code\": \"usage_error\",\n  \"message\": \"--source-mode replica requires a connected deployment\",\n  \"recoverable\": true,\n  \"hint\": \"run `orbit --help` or the subcommand help for valid arguments.\"\n}\n",
+        "connected_returncode": 4,
+        "connected_message": "{\n  \"type\": \"error\",\n  \"code\": \"backup_error\",\n  \"message\": \"unavailable: connected client replica snapshots are not supported as a recovery point in this build; back up the server workspace on the server host instead (`orbit backup create --source-mode server`), and keep each replica's own pending outbox/staging directory with that replica\",\n  \"recoverable\": true,\n  \"hint\": \"run `orbit backup verify <file>` and inspect the reported problems;                  the workspace itself is never modified by a failed backup or restore.\"\n}\n"
+      },
+      "duration_ms": 36.73
+    },
+    {
+      "name": "missing external agent session",
+      "expected": "external-boundary scenario: restored reserved jobs stay queued and no launch is attempted",
+      "observed": "external-boundary scenario: the rehearsal's restored instance keeps the reserved agent jobs queued with runtime_session_ref=null and makes no launch attempt (rehearsal steps 11 and 12)",
+      "original_intact": "yes",
+      "status": "PASS",
+      "details": {
+        "rehearsal_steps": [
+          11,
+          12
+        ],
+        "agent_jobs": [
+          {
+            "job_id": "job-alpha-001",
+            "state": "queued",
+            "claim_state": null,
+            "runtime_session_ref": null,
+            "task_id": "task-alpha-001"
+          },
+          {
+            "job_id": "job-alpha-002",
+            "state": "queued",
+            "claim_state": null,
+            "runtime_session_ref": null,
+            "task_id": "task-alpha-004"
+          }
+        ],
+        "no_external_launch": true
+      },
+      "duration_ms": 1.26
+    },
+    {
+      "name": "pending connected-client outbox",
+      "expected": "connected-client reconciliation is an external boundary for this CLI suite",
+      "observed": "The CLI accepts neither a connected replica as a restore target nor a server outbox; pending connected-client reconciliation is enforced by the server/preflight (I2 restore-engine's pending-outbox blocker test) and is outside this CLI failure suite. A replica-only workspace is not a supported recovery point in this build, so it is never presented as one.",
+      "original_intact": "yes",
+      "status": "NOT_APPLICABLE",
+      "details": {},
+      "duration_ms": 0.0
+    }
+  ],
+  "limitations": [
+    "Disk-full is not simulated with a size-limited tmpfs (that requires mount privileges this harness does not have). Permission denial is injected two real ways instead: a destination under a read-only parent, and an existing non-writable destination directory (which also asserts the operator's mode is preserved).",
+    "Interrupted backup/restore use SIGKILL at the first observable staging activity, retried up to four times; if every attempt lands after the operation completed, the case is reported INCONCLUSIVE instead of a false pass. The recorded attempts make the timing visible.",
+    "A failure *after* activation started (preserved-copy rollback path) has no supported fault-injection hook from outside the product. The successful replacement path is asserted to activate, write a recovery journal and preserve the previous workspace, and the active-target/refused paths are asserted to leave the target intact; deeper post-activation rollback injection belongs to the restore service's own tests.",
+    "Pending connected-client outbox reconciliation needs a connected replica target, which the CLI deliberately refuses to replace; it is enforced by the server/preflight and is outside this CLI-only suite.",
+    "The suite touches no repository state: every workspace, archive and kill target is created under a fresh temporary directory and removed afterwards.",
+    "KNOWN LIMITATION (non-blocking, P3 backlog): re-enrolling an already-enrolled device on a database restored from an archive returns HTTP 500 {\"error\":\"storage error\"} instead of a clean conflict or idempotent success. Repro: restore an archive containing an enrolled device, start orbit-server on the restored database, then POST /v1/devices with the same device id and token using the administrator key => 500. The restored bearer credential itself authenticates (200), so recovery is unaffected; this harness therefore relies on the restored credential and never re-enrolls."
+  ],
+  "defects": [],
+  "git": {
+    "commit": "f82e3fa13d4f1fe4ca216aeed105e6efdd5ad250",
+    "branch": "main",
+    "dirty": true,
+    "changed_path_count": 74
+  },
+  "dataset": {
+    "project_id": "project-1793443008168-1869400-0",
+    "tasks": [
+      "task-acceptance-001",
+      "task-acceptance-002",
+      "task-acceptance-003",
+      "task-acceptance-004",
+      "task-acceptance-005"
+    ],
+    "attachments": {
+      "binary_sha256": "deea9dc7152ae0621c5909852c1a33b1d8ea522abef8f4dc9e2a384781390b09",
+      "notes_sha256": "ae8cb81f47d93dd2e91ef76759364f0aee40c2d1a98dfcf0b2f03f08d8d7cfb9"
+    },
+    "notes": [
+      "note-acceptance-plan",
+      "note-acceptance-log"
+    ]
+  },
+  "acceptance_commands": []
+}

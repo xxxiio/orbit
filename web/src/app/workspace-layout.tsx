@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useProjects } from '@/hooks'
 import type { Command } from '@/components/ui/command-palette'
-import { FolderIcon, HomeIcon, InboxIcon, PlusIcon, BookIcon, AgentsIcon } from '@/components/ui/icons'
+import { FolderIcon, HomeIcon, InboxIcon, PlusIcon, BookIcon, AgentsIcon, SettingsIcon } from '@/components/ui/icons'
 import type { ProjectNavItem } from '@/components/navigation/nav'
 import { AppShell } from './app-shell'
 import type { SidebarSession } from '@/components/layout/sidebar'
@@ -124,6 +124,13 @@ function WorkspaceShell() {
         icon: <AgentsIcon size={15} />,
         keywords: 'jobs handoff review',
         onSelect: () => navigate('/agents'),
+      },
+      {
+        id: 'go-backup',
+        label: 'Go to Backup & Restore',
+        icon: <SettingsIcon size={15} />,
+        keywords: 'backup restore recovery archive settings export',
+        onSelect: () => navigate('/settings/backup'),
       },
       ...orderedProjects.map((project) => ({
         id: `open-project-${project.id}`,

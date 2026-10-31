@@ -131,6 +131,9 @@ database instead.
 | `ORBIT_MCP_PROJECTS` | `orbit-mcp` | Allowed project IDs |
 | `ORBIT_DEVICE_ID` / `ORBIT_DEVICE_TOKEN` | `orbit-mcp` connected | Connected device credentials |
 | `ORBIT_ATTACHMENT_MAX_BYTES` | CLI/TUI/MCP local | Maximum attachment size in bytes; default 64 MiB |
+| `ORBIT_BACKUP_DIR` | `orbit-server` | Backup directory scanned for `.orbitbak` archives and the schedule/retention `policy.json`; default `<server database parent>/backups` |
+| `ORBIT_BACKUP_RESTORE_ROOT` | `orbit-server` | Root under which isolated restores create workspace copies; default `<server database parent>/restores` |
+| `ORBIT_BACKUP_DOWNLOAD_MAX_BYTES` | `orbit-server` | Cap for the memory-buffered browser archive download; default 512 MiB; above it the API answers `413` |
 | `ORBIT_VIEWER` | `orbit-tui` | External viewer command for attachment open |
 | `ORBIT_VERSION` | `install.sh` | Requested install version |
 | `ORBIT_INSTALL_PREFIX` | `install.sh` | Install prefix |
@@ -150,7 +153,7 @@ the target.
 | Attachment objects | `<database directory>/attachments/objects/` | Content-addressed; back up with the database |
 | Logs | `~/.orbit/logs/` | Created by `orbit init` |
 | State | `~/.orbit/state/` | Created by `orbit init` |
-| Backups | `~/.orbit/backups/` | Used by `orbit update` |
+| Backups | `~/.orbit/backups/` | Default `.orbitbak` destination and pre-update backups |
 
 `orbit init` creates layout directories with user-only permissions on Unix and
 refuses symlinked layout directories.

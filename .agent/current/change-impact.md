@@ -6,63 +6,67 @@ project_owned: true
 record_contract: change-impact
 record_schema_version: 1
 status: current
-task_id: TASK-0015
+task_id: TASK-0020
 ---
 
 # Change Impact Declaration
 
 ## Task
 
-TASK-0015 — M33 authentication UX: opt-in local trusted browser mode, with the
-default device authentication retained.
+TASK-0020 — M34 final acceptance (I5): MCP/Herdr record coverage, failure
+injection, real recovery rehearsal, documentation and honest milestone acceptance.
+This declaration covers the complete M34 work delivered by I1–I5: the shared
+`orbit-backup` service and `.orbitbak` format, restore engine, server/Web GUI
+management, automatic lifecycle and the rehearsal/acceptance evidence.
 
 ## Impact classification
 
 | Impact | Value | Reason | Activated gate |
 |---|---|---|---|
-| public_api | yes | `GET /v1/web/session` now returns `mode` and `display_name` and a nullable `expires_at_ms`; `POST /v1/web/session` returns `409` in local-trusted mode and `DELETE` is a no-op there. No other route shape changed. | Compatibility gate: server HTTP tests, web unit session tests, `auth.spec.ts`, local-trusted browser suite. |
-| persisted_data | no | No schema change. Sessions, devices and the authoritative database keep their existing tables; local-trusted mode reuses the same database and writes no new credential row. | none |
-| configuration | yes | New `ORBIT_AUTH_MODE` (`authenticated` default, `local-trusted` opt-in), validated at startup; local-trusted requires a literal loopback `ORBIT_SERVER_BIND` and refuses to start otherwise. `ORBIT_SERVER_ADMIN_KEY` stays mandatory. | Configuration gate: `crates/orbit-server/tests/local_trusted_startup.rs`, `auth.rs` bind matrix, quickstart documentation tests. |
-| dependencies | no | No new crate or npm dependency; the process test uses `std` only and the browser suite uses the existing Playwright harness. | none |
-| security_boundary | yes | New authorization policy and principal, mode-aware CSRF, a loopback `Host` allowlist, and an explicit split between product routes and administrator/operator/executor/machine/MCP routes. Local trust never grants those privileges and never derives from the peer address or forwarded headers. | Security gate: Rust guard tests, browser scenario C, Oracle review, `docs/web-app.md` and `docs/guides/local-web-quickstart.md`. |
-| concurrency | no | No new shared mutable state beyond the existing `AppState`; the mode is copied at startup and read-only afterwards. | none |
-| performance_sensitive | no | One additional header comparison per request; no measured or plausible cost at loopback scale. | none |
-| user_interface | yes | Local-trusted enters the workspace directly, `/login` redirects in, the sidebar replaces the device identity and sign-out with a plain mode note. Authenticated UI is unchanged. | UI gate: unit tests, `local-trusted.spec.ts`, light/dark desktop/phone captures in `web/evidence/m33-auth/`. |
-| deployment | yes | A new documented startup mode with a hard loopback requirement; existing deployments are unaffected because the default is unchanged. | Deployment gate: startup refusal test, local quickstart, self-hosting and API docs. |
+| public_api | yes | New CLI commands (`orbit backup create`, `list`, `inspect`, `verify`, later `restore`) and new `.orbitbak` archive/manifest format contracts; later slices also add server HTTP endpoints. No existing CLI or HTTP contract is changed. | Compatibility gate: CLI contract tests, archive format-version and manifest compatibility tests, server HTTP tests in I3. |
+| persisted_data | no | No authority database schema change. The work adds archive artefacts (`.orbitbak` files) and later backup configuration, but no migrated table or changed stored record shape. | none |
+| configuration | yes | New backup configuration in I4: mode (disabled/daily/weekly/pre-upgrade), destination and retention policy, validated at startup with safe defaults. | Configuration gate: configuration parsing/validation tests and fail-closed startup cases. |
+| dependencies | no | No new external crate, service or cloud dependency is expected; the archive and snapshot work uses the existing SQLite API and standard library. | none |
+| security_boundary | yes | Restore is destructive and administrative: it must require explicit authorization and a maintenance boundary, reject path traversal, and exclude secrets from the archive by an allow-list. The Web GUI must not accept arbitrary browser-supplied server paths. | Security gate: restore authorization tests, traversal/version rejection tests, secret-exclusion tests, local-trusted privilege checks. |
+| concurrency | yes | A bounded writer fence defines the snapshot window across the database, vault and attachment references; creation and restore must be safe against concurrent writers and a target-active restore. | Concurrency gate: writer-fence and snapshot-window tests, interrupted-create and target-active restore tests. |
+| performance_sensitive | yes | Archiving and verification stream a potentially large vault and attachment store; bounded memory and archive streaming are required. | Performance gate: streaming archive creation/verification checks and a large-attachment fixture. |
+| user_interface | yes | I3 adds a Backup & Restore settings section (overview, history, verification, schedule, restore preflight and separated controlled recovery). No accepted M33 surface is redesigned. | UI gate: web unit tests, Playwright backup spec, light/dark desktop and phone captures. |
+| deployment | yes | Operators gain a restore/maintenance path and a pre-upgrade recovery point; `orbit update` must fail closed when it cannot create one. | Deployment gate: maintenance/restore runbook, `orbit update` pre-upgrade recovery tests and documentation. |
 
 ## Assumptions and unknowns
 
-- Local-trusted trust is machine-level: every process and browser that can reach
-  the loopback listener is trusted. That limitation is documented and not
-  defended against; it is not a shared-host or remote-deployment mode.
-- Authenticated mode keeps its existing semantics byte for byte: device sign-in,
-  HttpOnly SameSite=Strict cookie, 12-hour sliding / 7-day absolute session,
-  revocation, CSRF, sign-out.
-- Request source addresses and `X-Forwarded-*`/`X-Real-IP` headers are never
-  authorization inputs; the `Host` allowlist is the only request-header trust
-  check, and only in local-trusted mode.
-- Human visual/usability review (EC-010) remains owed; automated captures are not
-  approval.
+- The bundled SQLite build exposes the supported online backup API; if not, the
+  slice stops rather than copying a live main file.
+- Referenced attachment objects can be enumerated from authoritative records inside
+  the writer fence; the exact store abstraction is confirmed in I1.
+- Normalized configuration is rebuilt from an explicit non-secret allow-list, not
+  copied raw.
+- Connected-client outbox and staged uploads are server-backup exclusions and must
+  be reported and reconciled; they are not silently guaranteed.
+- The host currently has no automated backup/restore test suite; I1 establishes the
+  first one.
+- Whether `orbit update` already exposes a hook for a pre-upgrade recovery point is
+  an open implementation question for I4.
+- No public-release, M15 or M27 claim is made or implied by this milestone.
 
 ## Required outputs
 
-- `crates/orbit-server/src/auth.rs` (mode, principal, bind and host validation),
-  guard wiring in `main.rs`, and the session/CSRF contract changes.
-- Server tests at unit, router and real-process level, including the refusal to
-  start on a non-loopback bind.
-- Web session handling, login redirect and sidebar mode note with unit and browser
-  coverage.
-- `web/evidence/m33-auth/` captures plus scenario A/B/C results.
-- Documentation: `docs/guides/local-web-quickstart.md`, `docs/web-app.md`,
-  `docs/guides/web-quickstart.md`, `docs/server-api.md`,
-  `docs/self-hosted-architecture.md`, `docs/guides/self-hosting.md`.
-- Milestone criterion EC-011, the acceptance report, the evidence manifest, the
-  next step and a journal entry.
+- Shared Rust backup crate/service and `.orbitbak` v1 format, manifest and
+  component inventory.
+- Fenced online SQLite snapshot and failure-safe archive creation.
+- CLI `orbit backup create|list|inspect|verify` (and `restore` in I2).
+- Archive-format documentation and path/version/secret rules.
+- Unit, integration and failure tests with recorded evidence.
+- Later slices: restore engine, server endpoints and Web GUI section, schedules and
+  retention, `orbit update` recovery point, rehearsal and documentation.
+- MILESTONE-0034 evidence updates, TASK-0016 acceptance/evidence, and journal
+  entries as each slice lands.
 
 ## Test tier
 
-- Tier 4: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets
-  --locked -- -D warnings`, `cargo test --workspace`, the TypeScript check, the
-  Vitest suite, the terminology check, the production build, the full Chromium
-  suite including the new local-trusted spec, the documentation suites and
-  `getdone-validate-project`.
+- Tier 4 for the milestone overall: new backup/restore tests plus
+  `cargo test --workspace --offline`, clippy `-D warnings`, fmt, the web typecheck,
+  unit and build gates, the full Chromium suite when I3 lands, the documentation
+  suites, and `getdone-validate-project`.
+- Tier 3 for I1 alone: the new backup crate tests plus the affected workspace Rust
+  gates.

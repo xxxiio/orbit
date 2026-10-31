@@ -884,6 +884,62 @@ what the server ships and pin what the server has already published.
 Workflow authoring and publishing remain console features. This screen only pins a version the
 server has already published.
 
+## Backup and restore
+
+**Backup & Restore** is a global settings page at `/settings/backup`, reachable from the sidebar
+footer and the command palette (**Go to Backup & Restore**). It is backed by the same
+`orbit-backup` Rust service as the CLI: one verified `.orbitbak` archive holds the database, the
+knowledge vault, referenced attachment objects and normalized non-secret configuration.
+
+The page header says *Backup & Restore* with the description: "A backup is one verified file
+containing the database, knowledge vault and attachments. A copy on this disk does not survive
+disk failure." Its panels are:
+
+- **Last verified backup** — created time, label, size, format, archive id and verification
+  state. With no verified backup it says so instead of pretending; a corrupt or unknown archive
+  is flagged by its verification state.
+- **Server backup folder** — the destination directory and whether it is **Writable** or
+  **Not writable**. The browser gets a label, never an absolute server path.
+- **Automatic backups** — the policy editor (disabled/daily/weekly/before-upgrade plus retention
+  limits) backed by `policy.json`; **Save policy** writes it. The long-running server applies the
+  schedule and retention from that file without a restart.
+- **Create a backup** — an optional **Label**, a **Create backup** action that becomes **Creating
+  and verifying…**, and a success badge **Verification passed** (or **Verification failed** with
+  the report). Two concurrent creations never compete: the second request gets `409`.
+- **Backup history** — Created / Label / Size / Format / Verification columns with **Inspect**,
+  **Verify** and **Download** actions. Inspect opens the **Backup details** drawer (manifest,
+  totals, counts, inventory, creation verification, **Verify archive**). A skipped-archive panel
+  names archives that could not be read.
+- **Restore** — a distinct **Destructive action** panel that says restoring is not the same as
+  verifying. Mode **Isolated copy** is labelled **Recommended** and requires typing `RESTORE`
+  exactly before **Create isolated copy**; the copy is created and verified under the server's
+  restore root and the active workspace is not modified. Mode **Replace authority** is
+  **Maintenance**: it takes the administrator key, **Prepare replacement plan** only writes an
+  offline maintenance plan (`<db>.restore-pending.json`) and shows **Offline replacement plan** /
+  **Maintenance required** with the operator commands. The live workspace is **not** replaced
+  from the browser.
+
+Authorization follows the existing architecture: ordinary product principals may list, create,
+inspect, verify, download, edit the schedule, and run preflight/isolated restores; the
+replacement plan is the only administrator route (local-trusted without an admin bearer gets
+`403`). Product responses are path-free; isolated targets are generated under
+`ORBIT_BACKUP_RESTORE_ROOT`; the browser never supplies a server filesystem path. Downloads are
+memory-buffered and capped by `ORBIT_BACKUP_DOWNLOAD_MAX_BYTES` (default 512 MiB) — a larger
+archive answers `413 Archive too large for a browser download`, so copy large archives from the
+server's backup folder.
+
+States to expect: backup in progress (`409`), verification failed, incompatible schema,
+insufficient space, and recovery failed with the original workspace preserved. A verified
+archive is still not a successful restore, and a restore does not include external Herdr
+sessions, processes, Git worktrees, external repositories or credentials. Connected clients'
+pending outbox commands and staged uploads are excluded from server backups (the manifest records
+`source.excluded_client_pending_data: true` and a `client_pending_data` exclusion) and require
+explicit reconciliation after a recovery. Client replica snapshots are rejected as a backup
+source: back up the server authority instead.
+
+**A backup on the same disk is not protection against disk failure**, and Orbit makes no
+zero-data-loss or zero-downtime claim.
+
 ## Changes the server refuses
 
 The browser never decides whether a status change, transition, dependency or edit is legal, and
@@ -996,6 +1052,9 @@ supports much of it:
 - Moving a milestone to another project from the browser. The authority command exists
   (`move_project`) and refuses while work is attached, but no screen offers it.
 - Device enrollment, revocation, automation and proposal review in the product UI.
+- Client replica snapshots as a backup source. `orbit backup create --source-mode replica` fails
+  closed; back up the server authority on the server host and keep each replica's outbox and
+  staging directory with that replica.
 - Offline use, background sync, or a browser-side command queue.
 
 Known rough edges inside shipped screens (recorded in the I5 cycle, not hidden):
@@ -1021,10 +1080,13 @@ build and screens:
 | `web/evidence/i5/` | The real dogfooding cycle: `README.md` generated from `run.json`, captures, and the database backup |
 | `web/evidence/m33/` | The first M33 pass at 1440×900, 1280×800 and 390×844 in light and dark; retained as history and superseded by the corrected Milestone design, so these captures are not acceptance evidence for the current model |
 | `web/evidence/m33-corrective/` | The corrected M33 design: Tasks List/Board/Backlog, full create, Milestones, milestone details and the Milestone Roadmap at 1440×900 and 390×844 in light and dark, captured from a real legacy database after the one-time conversion |
+| `web/evidence/m34-recovery/` | The M34 real recovery rehearsal (14/14 checks) and CLI failure-injection matrix (21 pass / 1 not applicable) on a deterministic 103-task dataset, with before/after counts, table equality and archive hashes |
 
 The corrective set has 28 real captures and its own `README.md`, including the legacy
-conversion and restart-persistence result. Human review of the running app and those
-captures is still required; the directory is evidence, not approval.
+conversion and restart-persistence result. On 2026-10-31 the project maintainer reviewed the
+running app and those captures and accepted M33 for **internal dogfooding** — internal-use
+acceptance only, not public-release certification. The directory is evidence, not an
+accessibility or release review.
 
 Every one is a real browser capture against a real `orbit-server` seeded through the public
 API (no mocked responses, no preview server). The I2–I4 capture sets are produced by the

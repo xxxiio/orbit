@@ -92,7 +92,6 @@ class M27DocumentationTests(unittest.TestCase):
             "orbit project switch",
             "orbit milestone",
             "orbit priority",
-            "orbit backup",
         )
         for page in CURRENT_DOCS:
             body = text(page)
@@ -102,6 +101,25 @@ class M27DocumentationTests(unittest.TestCase):
                     body,
                     f"{page.relative_to(ROOT)} presents fictional command {command!r}",
                 )
+
+    def test_documented_backup_commands_are_real(self):
+        """The documented `orbit backup` family must exist in the CLI source.
+
+        `orbit backup` was fictional when this test was written; M34 makes it a
+        real command group, so it is now checked positively against the source
+        registration instead of being forbidden.
+        """
+        commands = text(ROOT / "crates" / "orbit-cli" / "src" / "commands.rs")
+        backup = text(ROOT / "crates" / "orbit-cli" / "src" / "backup_commands.rs")
+        policy = text(ROOT / "crates" / "orbit-cli" / "src" / "backup_policy_commands.rs")
+        self.assertIn("Backup(BackupArgs)", commands)
+        for name in ("Create", "List", "Inspect", "Verify", "Restore", "Schedule", "Retention"):
+            self.assertIn(f"\n    {name}(", backup, f"backup {name.lower()} is not in the CLI source")
+        for name in ("Show", "Set"):
+            self.assertIn(f"\n    {name}(", policy, f"backup schedule {name.lower()} is not in the CLI source")
+        reference = text(DOCS / "reference" / "cli.md")
+        for command in ("create", "list", "inspect", "verify", "restore"):
+            self.assertIn(f"orbit backup {command}", reference)
 
     def test_no_unverified_macos_or_release_claims(self):
         combined = "\n".join(text(page) for page in CURRENT_DOCS)

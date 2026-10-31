@@ -112,10 +112,14 @@ or `-shm` files from a live database. Run `orbit doctor` and
 - database: `~/.orbit/orbit.db` by default, or the configured path;
 - vault: `<database>.knowledge/`;
 - config: `~/.orbit/config.toml`;
-- update backups: `~/.orbit/backups/`.
+- workspace backups: `~/.orbit/backups/` (also used for the pre-update backup).
 
-There is no dedicated backup subcommand. Use the documented SQLite and vault
-procedure.
+Use `orbit backup create` to capture the database, vault, attachments and
+normalized non-secret configuration in one verified `.orbitbak` archive, and
+`orbit backup verify` before relying on it; `orbit backup restore` recovers an
+isolated copy or a maintenance-replacement workspace. The server applies the
+automatic schedule and retention from `policy.json`. See
+[backup and recovery](backup-and-recovery.md).
 
 ## Projects, tasks and planning
 
@@ -250,7 +254,9 @@ The following are **not** working commands or features in this build:
 - sync init/http/push/pull relay commands (use `orbit sync replica` and
   `orbit sync authority`);
 - a project-switch command (select a workspace with `--db`/`ORBIT_DB`);
-- milestone CRUD, task priority and a dedicated backup command;
+- milestone CRUD and task priority;
+- connected-client replica snapshots as a recovery point (`orbit backup create
+  --source-mode replica` fails closed; back up the server authority instead);
 - executable blueprint capability actions.
 
 If a guide or older milestone note shows one of these, treat the current

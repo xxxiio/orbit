@@ -169,7 +169,9 @@ integrity, SQLite policy and entity counts.
 - There is no project-switch command and no global "active project". Select a
   project with `--project` on commands that support it, and select a workspace
   with `--db` or `ORBIT_DB`.
-- There is no dedicated backup subcommand. Use the procedure in
+- Backups use `orbit backup create|list|inspect|verify|restore`; the Web GUI
+  page is at **Settings → Backup & Restore**, and a running server applies the
+  configured automatic schedule. See
   [backup and recovery](../guides/backup-and-recovery.md).
 
 ## Next

@@ -30,7 +30,7 @@ Next: orbit task add "My first task"
 | `~/.orbit/orbit.knowledge/` | File-authoritative Markdown vault created by storage |
 | `~/.orbit/logs/` | Reserved for local logs |
 | `~/.orbit/state/` | Reserved for local state |
-| `~/.orbit/backups/` | Database backups taken before updates |
+| `~/.orbit/backups/` | Default workspace-backup destination and pre-update backups |
 
 Directories are created with user-only permissions on Unix. Init refuses to
 follow a symlinked layout directory and refuses a path that exists as a regular

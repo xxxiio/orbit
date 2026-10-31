@@ -1,4 +1,5 @@
 //! Stable CLI argument model; public types are re-exported from the crate root.
+pub use super::backup_commands::BackupArgs;
 pub use super::blueprint_commands::{BlueprintCommand, BlueprintSubcommand};
 use super::*;
 
@@ -66,6 +67,8 @@ pub enum Command {
     Today,
     /// Check for or install a verified Orbit GitHub release update.
     Update(UpdateArgs),
+    /// Create, list, inspect, verify and restore authoritative workspace backups.
+    Backup(BackupArgs),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

@@ -9,6 +9,7 @@ import { ProjectWorkspacePage } from './pages/project-workspace-page'
 import { ProjectsPage } from './pages/projects-page'
 import { KnowledgePage } from '@/features/knowledge'
 import { AgentJobPage, AgentsOverviewPage } from '@/features/agents'
+import { BackupSettingsPage } from '@/features/backup'
 
 export function AppRoutes() {
   return (
@@ -24,6 +25,7 @@ export function AppRoutes() {
           <Route path="knowledge/*" element={<KnowledgePage />} />
           <Route path="agents" element={<AgentsOverviewPage />} />
           <Route path="agents/:jobId" element={<AgentJobPage />} />
+          <Route path="settings/backup" element={<BackupSettingsPage />} />
         </Route>
       </Route>
 

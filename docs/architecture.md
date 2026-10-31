@@ -170,25 +170,75 @@ Desktop/headless only: CLI, TUI, Git-specific desktop integration as needed, MCP
 
 ## Backup and local recovery
 
-Orbit distinguishes recovery artifacts from synchronization artifacts.
+Orbit distinguishes recovery artifacts from synchronization artifacts. The
+shared `orbit-backup` crate owns the recovery artifact and protocol; the CLI and
+the self-hosted server are thin transports over the same service.
 
-- A local workspace backup comprises three together: the SQLite database, the
-  Markdown knowledge vault (`<database>.knowledge/`) and the content-addressed
-  attachment object store (`attachments/objects/` beside the database).
-- The connected server has the same three parts: its authoritative SQLite
-  database, its Markdown vault and its attachment object store beside the
-  server database. A client replica additionally owns `attachment-staging/`
-  for uploads the server has not accepted; preserve it with the replica when
-  pending uploads matter.
-- `SqliteStore::export_backup` creates a validated point-in-time SQLite snapshot for user-owned backup and portability.
-- Attachment metadata is inside SQLite; attachment bytes are immutable objects addressed by SHA-256. A database-only restore therefore preserves associations but not content.
-- Backups are written to a sibling temporary file, fsynced, then renamed into place.
-- `SqliteStore::restore_backup` never mutates the source backup and never overwrites an existing destination.
-- Restore copies into a temporary sibling, applies supported migrations to that copy, runs integrity checks, fsyncs it, and only then publishes it with a rename.
-- Newer unsupported schema versions fail closed and leave the requested destination absent.
-- A live SQLite database or backup snapshot is never a sync merge unit. Sync operates on semantic Orbit changes/events.
-
-Replacing an existing live workspace is intentionally not part of the primitive restore API. A future higher-level recovery workflow must explicitly close the live store, preserve or move the existing database, and then invoke restore. This prevents accidental destructive recovery.
+- A workspace comprises three resources that must stay in step: the SQLite
+  database, the Markdown knowledge vault (`<database>.knowledge/`) and the
+  content-addressed attachment object store (`attachments/objects/` beside the
+  database), plus normalized non-secret configuration. The connected server has
+  the same three parts; a client replica additionally owns `attachment-staging/`
+  for uploads the server has not accepted.
+- `orbit-backup` modules: `format`/`tar_fmt` and `manifest` (versioned `.orbitbak`
+  ustar container and manifest), `layout` (workspace resources),
+  `snapshot` (fence + online SQLite backup), `create` (staging, assemble,
+  verify-before-publish), `verify`, `inspect`, `list`, `restore` and
+  `retention`, plus `policy` for the schedule and retention file. The archive
+  format is specified separately in
+  [the backup format reference](reference/backup-format.md).
+- **Fenced snapshot protocol.** Creation opens a bounded writer fence
+  (`BEGIN IMMEDIATE` with the existing busy timeout), takes the SQLite snapshot
+  with the online backup API on a separate read-only connection, stages the
+  Markdown vault and hardlinks/copies the immutable content-addressed attachment
+  objects the snapshot references, then releases the fence. The database, vault
+  and attachment references therefore describe one snapshot instant. WAL mode is
+  handled by SQLite's backup API; a live main database file is never copied.
+- **Failure-safe publish.** The archive is written to a temporary staging path,
+  fsynced, fully verified, then renamed into place under a name that never
+  overwrites an existing archive. A failure cleans up staging, returns a clear
+  nonzero error and never mutates the source workspace.
+- **Verification** checks archive structure, manifest completeness and versions,
+  relative-path safety and uniqueness, per-file size and SHA-256, SQLite
+  integrity and schema compatibility, referenced attachment presence and vault
+  inventory consistency. Verification is not restoration: it proves the archive
+  is intact, not that the workspace opens with all external dependencies.
+- **Restore** stages and verifies into an isolated destination before it is
+  usable. Replacement is an explicit maintenance path: it refuses an active or
+  live database target, preserves the previous database/vault and writes a
+  recovery journal, and never deletes the preserved copy automatically. A
+  connected client replica cannot be replaced from an authority backup; the
+  server fails closed on incompatible replica state and requires explicit
+  reconciliation rather than replaying pending commands.
+- **Automatic lifecycle.** The long-running server spawns a scheduler that
+  re-reads `policy.json` every 15 minutes (first check about 30 seconds after
+  startup) and creates a verified `automatic-<schedule>` archive when a
+  `daily`/`weekly` backup is due, without duplicating a daily backup within the
+  same UTC day. `disabled`/`before-upgrade` never run on a timer;
+  `before-upgrade` is exercised by `orbit update`. A policy change through the
+  CLI or Web GUI takes effect without a restart.
+- **Retention** cleanup runs only after a verified creation, never removes the
+  newest verified recovery point and never reaches user-managed external copies.
+  The policy is stored as `policy.json` in the backup directory so the local CLI
+  and a server with the same directory read one file.
+- **Connected-mode boundary.** A server-mode archive records
+  `source.excluded_client_pending_data: true` plus a `client_pending_data`
+  exclusion because unaccepted client commands and staged uploads are not in the
+  server store. Client replica snapshots are rejected as a recovery point in
+  this build: a replica is not an authority, and an older authority archive
+  restored over newer client state is the dangerous case that must fail closed.
+  Backups of connected deployments come from the server host; each replica keeps
+  its own outbox and `attachment-staging/` directory.
+- The older database-only primitives (`SqliteStore::export_backup` and
+  `restore_backup`) remain for SQLite portability. They are not the workspace
+  recovery path: a database-only restore preserves attachment associations but
+  not attachment bytes, and it does not carry the vault.
+- Backups are never a sync merge unit. Sync operates on semantic Orbit
+  changes/events, and a live SQLite database is never merged by copying a
+  snapshot over it.
+- Newer unsupported schema versions fail closed and leave the requested
+  destination absent. An older Orbit binary must never be assumed to open a newer
+  database schema; the archive is the recovery path, not a downgrade mechanism.
 
 ## Local SQLite concurrency policy
 

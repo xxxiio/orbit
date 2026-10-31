@@ -12,6 +12,105 @@ status: current
 
 ## Active
 
+### TODO-0015 — Local-trusted per-device agent-job visibility
+- **Status:** ready
+- **Priority:** P2
+- **Milestone:** MILESTONE-0033
+- **Reason:** Agent jobs keep the pre-existing per-device ownership rule; after switching an existing database to local-trusted mode, jobs started by a device are not listed for the local principal. They return when signing back in as that device, so the data is not lost, but the local-trusted experience hides prior agent work.
+- **Depends on:** an accepted ownership model for agent jobs across the local principal and enrolled devices
+- **Blocks:** complete local-trusted agent workflow visibility
+- **Unblock condition:** none
+- **Acceptance:** The local-trusted principal can list agent jobs created by any enrolled device according to an explicit, tested ownership rule, with no privilege escalation to machine or executor routes.
+- **Source:** M33 residual risk (2026-10-31 internal acceptance)
+
+### TODO-0016 — Explicit read-only `/mcp` boundary in local-trusted mode
+- **Status:** ready
+- **Priority:** P2
+- **Milestone:** MILESTONE-0033
+- **Reason:** `/mcp` writes need an enrolled device, so in local-trusted mode with the admin key the endpoint is effectively read-only. The refusal is documented, but the boundary follows from the guard split rather than an explicit read-only contract.
+- **Depends on:** a server authorization policy for MCP reads and writes in local-trusted mode
+- **Blocks:** an explicit, testable MCP boundary for personal installs
+- **Unblock condition:** none
+- **Acceptance:** Local-trusted MCP reads are explicitly allowed and mutations are refused with a stable, documented error; the boundary is covered by tests.
+- **Source:** M33 residual risk (2026-10-31 internal acceptance)
+
+### TODO-0017 — Residual M33 visual/comfort polish
+- **Status:** ready
+- **Priority:** P3
+- **Milestone:** MILESTONE-0033
+- **Reason:** The internal-use acceptance judged the app "generally good enough to begin internal use" and explicitly did not certify comfort or visual taste; screenshots cannot judge comfort. Residual visual/comfort observations should be collected during real internal use rather than reopening the accepted M33 design.
+- **Depends on:** a short real-use review list from internal dogfooding
+- **Blocks:** none
+- **Unblock condition:** none
+- **Acceptance:** A recorded internal-use review names any concrete visual or comfort issue with its screen and viewport; each issue is fixed in its owning layer without reopening typography, Milestone, Epic-removal, unified Tasks, compact Board or authentication decisions.
+- **Source:** M33 residual risk (2026-10-31 internal acceptance)
+
+### TODO-0018 — Restored-database re-enrollment of an existing device returns HTTP 500
+- **Status:** ready
+- **Priority:** P3
+- **Milestone:** MILESTONE-0034
+- **Reason:** Post-restore acceptance found that re-enrolling an existing device against the restored database returns HTTP 500 instead of a 409/idempotent answer. Recovery is unaffected; the device enrollment path handles the restored state poorly.
+- **Depends on:** none
+- **Blocks:** a clean post-restore device re-enrollment flow
+- **Unblock condition:** none
+- **Acceptance:** Re-enrolling an existing device against a restored workspace returns a stable 409 (or an explicit idempotent success) with a clear message, covered by a regression test; no server error is logged as a crash.
+- **Source:** M34 I5 acceptance/failure-injection evidence (`web/evidence/m34-recovery/`)
+
+### TODO-0019 — Connected client replica snapshot support
+- **Status:** ready
+- **Priority:** P2
+- **Milestone:** MILESTONE-0034
+- **Reason:** The `.orbitbak` format reserves `source.mode: replica`, but current builds fail closed and refuse replica snapshots as a recovery point. A safe create/restore story must be designed before enabling it.
+- **Depends on:** an accepted restore semantics for client replicas (outbox/staged-upload reconciliation; authority relationship)
+- **Blocks:** connected-mode client-side recovery points
+- **Unblock condition:** a documented replica create/restore design is approved
+- **Acceptance:** A design records when a replica snapshot is a valid recovery artifact and how outbox/staged uploads reconcile; if enabled, creation and restore are tested end to end; otherwise the refusal stays documented and tested.
+- **Source:** M34 I5 acceptance evidence and `docs/reference/backup-format.md`
+
+### TODO-0020 — Streaming backup download instead of a 512 MiB memory buffer
+- **Status:** ready
+- **Priority:** P3
+- **Milestone:** MILESTONE-0034
+- **Reason:** The browser download endpoint buffers the whole archive in memory and caps it with `ORBIT_BACKUP_DOWNLOAD_MAX_BYTES` (default 512 MiB); larger archives must be copied from the server's backup folder.
+- **Depends on:** a streaming response helper without adding an external dependency
+- **Blocks:** browser download of large workspaces
+- **Unblock condition:** none
+- **Acceptance:** The download streams the archive with bounded memory and produces identical bytes/checksum for a large archive; the cap/`413` limitation is removed or explicitly retained with a reasoned policy.
+- **Source:** M34 I3 acceptance evidence
+
+### TODO-0021 — Optional live-server replacement activation on restart
+- **Status:** ready
+- **Priority:** P2
+- **Milestone:** MILESTONE-0034
+- **Reason:** Server replacement is deliberately offline: the Web GUI only writes `<db>.restore-pending.json` and an operator runs the maintenance commands. A reviewed activation-on-restart path could make recovery more convenient without pretending to be a live overwrite.
+- **Depends on:** an accepted maintenance-window/authorization design
+- **Blocks:** smoother operator recovery on a server deployment
+- **Unblock condition:** a design is approved that keeps the maintenance boundary and rollback preservation
+- **Acceptance:** A server restart detects an approved pending replacement plan, refuses if writers are active, stages/verifies before switching, preserves the previous workspace and journal, and is covered by tests.
+- **Source:** M34 I3 acceptance evidence
+
+### TODO-0022 — Preflight free-space measurement and early disk-full refusal
+- **Status:** ready
+- **Priority:** P3
+- **Milestone:** MILESTONE-0034
+- **Reason:** Restore preflight reports free space as `None`; a full disk surfaces during extraction. Extraction fails closed and the original workspace is preserved, but an early refusal would be clearer.
+- **Depends on:** a portable free-space check for the target filesystem
+- **Blocks:** clearer large-restore preflight
+- **Unblock condition:** none
+- **Acceptance:** Preflight reports free space when measurable and blocks an insufficient target with a clear message; when unmeasurable it states why and extraction still fails closed.
+- **Source:** M34 I2/I5 acceptance evidence (`free_space_unknown` warning)
+
+### TODO-0023 — `knowledge_folders` counts include internal `.orbit-operations` directories
+- **Status:** ready
+- **Priority:** P4
+- **Milestone:** MILESTONE-0034
+- **Reason:** The backup manifest's `knowledge_folders` count includes internal `.orbit-operations` directories, so the reported folder count can exceed the user-visible folders.
+- **Depends on:** none
+- **Blocks:** none
+- **Unblock condition:** none
+- **Acceptance:** Manifest folder counts either exclude internal operational directories or label them separately, with a test proving the user-visible folder count.
+- **Source:** M34 I5 rehearsal evidence
+
 ### TODO-0013 — Per-device project authorization for connected attachments
 - **Status:** ready
 - **Priority:** P1

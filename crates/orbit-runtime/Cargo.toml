@@ -12,6 +12,7 @@ orbit-habit-capability = { path = "../orbit-habit-capability" }
 orbit-planner = { path = "../orbit-planner" }
 orbit-progress = { path = "../orbit-progress" }
 orbit-storage = { path = "../orbit-storage" }
+orbit-backup = { path = "../orbit-backup" }
 orbit-sync = { path = "../orbit-sync" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

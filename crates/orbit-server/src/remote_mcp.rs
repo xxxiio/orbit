@@ -383,6 +383,7 @@ mod tests {
             cookie_secure: false,
             admin_key_hash: vec![0; 32],
             attachment_body_limit: 64 * 1024 * 1024,
+            backup: std::sync::Arc::new(crate::backup_api::BackupPaths::for_tests()),
             auth_mode: crate::auth::AuthenticationMode::Authenticated,
         };
         let r = dispatch(
@@ -433,6 +434,7 @@ mod rich_domain_mcp_contract {
             cookie_secure: false,
             admin_key_hash: vec![0; 32],
             attachment_body_limit: 64 * 1024 * 1024,
+            backup: std::sync::Arc::new(crate::backup_api::BackupPaths::for_tests()),
             auth_mode: crate::auth::AuthenticationMode::Authenticated,
         }
     }

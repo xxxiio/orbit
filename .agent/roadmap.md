@@ -6,7 +6,7 @@ project_owned: true
 record_contract: roadmap
 record_schema_version: 1
 status: current
-current_milestone: MILESTONE-0033
+current_milestone: null
 ---
 
 # Project Roadmap
@@ -600,8 +600,8 @@ none
 
 ### MILESTONE-0033 — M33 Professional Web UX, Milestone-Based Planning & Unified Project Work
 
-- **Status:** active
-- **Outcome:** Orbit's browser client becomes a professional project workspace with one application typeface, a corrected first-visit sign-in state, Milestones as the only work-grouping entity, full task creation, one Tasks tab for List/Board/Backlog, a compact Board and a Milestone Roadmap. The TUI is not redesigned; it receives a corrected specification.
+- **Status:** completed
+- **Outcome:** Orbit's browser client becomes a professional project workspace with one application typeface, a corrected first-visit sign-in state, Milestones as the only work-grouping entity, full task creation, one Tasks tab for List/Board/Backlog, a compact Board and a Milestone Roadmap. The TUI is not redesigned; it receives a corrected specification. The corrected build was accepted by the project maintainer on 2026-10-31 for internal dogfooding; that is internal-use acceptance, not public-release certification.
 - **Why now:** M31/M32 shipped operations without a coherent management surface. The first M33 pass added Jira-style Epics and duplicated Milestones; human review rejected that model. The TUI redesign depends on the corrected, validated model, so it must wait for the browser model and its review.
 - **Depends on:** MILESTONE-0031, MILESTONE-0032
 
@@ -635,8 +635,8 @@ none
 - [x] EC-007: The Board is compact by default, readable at 100+ tasks, persists density and keeps authoritative movement and inspector access.
 - [x] EC-008: The Roadmap shows one Milestone hierarchy with duration bars, checkpoints, unscheduled work, child task windows, progress and blocked/dependency cues; no Epic lanes exist.
 - [x] EC-009: Real-browser acceptance passes at 1440×900 and 390×844 in light and dark, including create → filter → switch → edit → status → roadmap → restart.
-- [ ] EC-010: A human reviews the running app and representative captures.
-- [ ] EC-011: `ORBIT_AUTH_MODE=local-trusted` is an explicit opt-in that refuses every non-loopback bind, opens the workspace with no Device ID, token or session cookie, keeps the product surface usable, leaves administrator, operator, executor, machine-transport and MCP surfaces separately authenticated, and requires normal sign-in after switching back to authenticated mode.
+- [x] EC-010: A human reviewed the running app and representative captures on 2026-10-31 and accepted the corrected build for internal dogfooding (internal-use acceptance, not public-release certification).
+- [x] EC-011: `ORBIT_AUTH_MODE=local-trusted` is an explicit opt-in that refuses every non-loopback bind, opens the workspace with no Device ID, token or session cookie, keeps the product surface usable, leaves administrator, operator, executor, machine-transport and MCP surfaces separately authenticated, and requires normal sign-in after switching back to authenticated mode.
 
 #### Evidence
 
@@ -649,8 +649,127 @@ none
 - EC-007: `task-board.tsx`, `components/surface/board.tsx`; compact density and `tasks-workspace.spec.ts`.
 - EC-008: `features/roadmap/**`; `roadmap.spec.ts` and `roadmap-view.spec.tsx`.
 - EC-009: Full Chromium suite 150 passed / 5 env-gated skips / 0 failed; 28 captures in `web/evidence/m33-corrective/`.
-- EC-010: open; `NEXT-0020` records the human review request.
+- EC-010: On 2026-10-31 the project maintainer reviewed the running corrected build and the representative captures and accepted it for internal dogfooding; internal-use acceptance only, not public-release certification; `.agent/journal/2026-10-31-m33-internal-acceptance.md`.
 - EC-011: `crates/orbit-server/src/auth.rs`, `tests/local_trusted_startup.rs`; `web/tests/e2e/local-trusted.spec.ts`; `web/evidence/m33-auth/`; `docs/guides/local-web-quickstart.md`; Rust workspace 1883 passed / 0 failed, Chromium 152 passed / 6 skipped / 0 failed.
+
+#### Next milestone
+
+MILESTONE-0034
+
+### MILESTONE-0034 — M34 Reliable Workspace Backup & Restore
+
+- **Status:** completed
+- **Outcome:** Orbit can create a complete, consistent, portable, verifiable workspace backup of its authoritative state and restore it safely, through CLI and Web GUI, backed by one shared Rust service — good enough for Orbit to become the source of truth for its own development, including MCP/Herdr agent work.
+- **Why now:** Orbit is about to become the authoritative workspace for its own development, MCP and Herdr will initiate real agent work, long-lived records must survive upgrades and operational failures, the existing manual backup procedure (`sqlite3 .backup` plus copying vault/attachments/config by hand) is not a convenient repeatable recovery path, and the web experience is now usable enough (M33 internal-dogfooding acceptance) to defer a standalone redesign.
+- **Depends on:** MILESTONE-0033
+
+#### Scope
+
+- Versioned `.orbitbak` archive format with a complete manifest of paths, sizes, SHA-256, total size and component inventory.
+- Consistent SQLite online snapshot plus Markdown vault, attachment object store and normalized non-secret configuration.
+- One shared Rust `BackupService`/`RestoreService` with create, list, inspect, verify, preflight and restore, used by CLI and server.
+- CLI `orbit backup create|list|inspect|verify|restore`.
+- Safe restore: isolated-workspace path and maintenance replacement path; failure-safe creation and restore.
+- Web GUI Backup & Restore settings section backed by the same service.
+- Optional automatic backups and retention (disabled/daily/weekly/pre-upgrade) protecting the last verified recovery point.
+- Connected-mode limitations (client outbox and staged uploads are not in a server backup; reconciliation; fail closed).
+- MCP/Herdr data coverage (agent jobs, receipts, handoffs, workflow/capability metadata, MCP-made task/milestone changes, events) and documented external-boundary exclusions.
+- No automatic re-execution of external actions after recovery; real recovery rehearsal, failure injection and documentation.
+
+#### Non-goals
+
+- TUI redesign or TUI feature work.
+- Broad release qualification or public-readiness claims.
+- Unrelated infrastructure hardening.
+- Cloud, Redis or broker dependencies.
+- Deduplication or incremental backup.
+- Encrypting or embedding credentials in the archive.
+- Live active-server database replacement pretending to be safe.
+
+#### Exit criteria
+
+- [x] EC-001: `orbit backup create` produces a versioned `.orbitbak` containing a consistent SQLite snapshot, the Markdown vault, referenced attachment objects, normalized non-secret config and a manifest with file paths/sizes/SHA-256, total size and component inventory.
+- [x] EC-002: Snapshot creation uses SQLite's supported online backup API and a bounded writer fence so database, vault and attachment references correspond to one snapshot instant; WAL-mode databases are handled without copying a live main file.
+- [x] EC-003: Backup creation is failure-safe: staging, verification before publish, atomic publish, nonzero/clear errors, temporary cleanup, and the original workspace is never mutated.
+- [x] EC-004: `orbit backup list|inspect|verify` operate on the default and external directories; verify checks archive structure, manifest completeness, per-file hashes, SQLite integrity, schema compatibility, referenced attachment presence and vault manifest consistency, and exits nonzero on failure.
+- [x] EC-005: `orbit backup restore --dry-run` reports target workspace, backup source, schema compatibility, objects replaced, preservation plan, required downtime, connected-client warnings and non-restorable external dependencies, and mutates nothing.
+- [x] EC-006: Isolated restore into a new location verifies and opens successfully as a working Orbit instance and never overwrites the active workspace.
+- [x] EC-007: Replacing an existing workspace requires explicit authorization/confirmation and a maintenance boundary (no live-database overwrite), stages and verifies before switching, preserves the previous workspace for rollback, and fails closed on incompatible connected-replica state.
+- [x] EC-008: The backup format is documented with manifest fields, relative-path-only rules, traversal rejection, explicit format-version validation that rejects newer formats with an actionable message, and default secret exclusion.
+- [x] EC-009: The Web GUI exposes a Backup & Restore settings section (overview, last backup, destination, schedule, history, verification status/errors; create, download/export, inspect, verify, schedule configuration, restore preflight, isolated restore, controlled recovery for replacement) using the same Rust service and the existing authorization architecture, without accepting arbitrary browser-supplied server paths, with destructive restore clearly separated and confirmed.
+- [x] EC-010: Optional automatic backups (disabled/daily/weekly/pre-upgrade) and retention (max retained, minimum retention period, optional max storage) work; cleanup runs only after a verified creation and never removes the last verified recovery point or the user's external copies.
+- [x] EC-011: `orbit update` creates a complete pre-upgrade recovery point (not database-only) when a workspace is present, and fails closed if it cannot.
+- [x] EC-012: Agent-job records, reviews/receipts/handoffs, workflow definitions, installed capability metadata, MCP-made task/milestone changes and activity/event records survive restoration; external-boundary exclusions are documented; recovery never automatically re-executes external agent/capability actions, and uncertain external execution is marked for reconciliation.
+- [x] EC-013: A real recovery rehearsal with a deterministic realistic dataset (multiple projects, several Milestones, 100+ Tasks, dependencies, acceptance criteria, workflow Work Items, Markdown notes, knowledge links, attachments with real content, agent-job records, capability authorization/execution history, activity events) passes: create → verify → disposable changes → isolated restore → isolated instance opens → earlier data/relationships/activity present → later changes absent → agent records readable → no automatic external execution → disposable write → restart persistence, with recorded before/after counts and content hashes.
+- [x] EC-014: Failure injection is tested (interrupted backup, corrupted archive, missing attachment, unreadable vault file, disk-full/permission failure, unsupported manifest version, wrong destination, restore while target active, interrupted restoration, missing external agent session, pending connected-client outbox) and the original workspace remains recoverable in every case.
+- [x] EC-015: Documentation is updated (backup-and-recovery guide, upgrades-and-recovery, local web quickstart, self-hosting, CLI reference, Web GUI guide, architecture, records) covering backup scope, excluded secrets, format, verification semantics, restore steps, recovery limitations, connected-mode and external-agent limits, and storage practice; it must state that a backup on the same disk is not protection against disk failure and must not claim zero data loss or zero downtime.
+
+#### Evidence
+
+- EC-001: TASK-0016 — verified `.orbitbak` with SQLite snapshot, vault, referenced attachments, normalized non-secret config and SHA-256 manifest (relative paths/totals/inventory); disposable-workspace CLI E2E (default dir, `--output`, `--label`, `--json`) + `create_verify` 14 / `inspect_list` 9 tests; Lead live-server smoke.
+- EC-002: TASK-0016 — online backup API under a bounded writer fence with vault/attachment materialization in the window; snapshot/fence tests in the 49-test lib target; live-server WAL smoke released the fence with the server healthy; no live main-file copy.
+- EC-003: TASK-0016 — staging, verify-before-publish, atomic publish, cleanup and nonzero errors; `create_verify` failure tests; tampered verify exits `1`; permission-denied destination (`0500`) exits `4`, keeps the mode and publishes nothing; source workspace never mutated; `create_private_dir` defect fixed with regression test `existing_directory_permissions_are_never_rewritten`.
+- EC-004: TASK-0016 — `list`/`inspect` on default and external directories (copied = `unknown`, corrupt skipped, non-`.orbitbak` ignored); deep `verify` 8/8 (structure, manifest, paths, hashes, SQLite integrity 59 tables, schema, attachment presence, vault consistency) and `--structural-only`; `verify_integrity` 9 tests + CLI E2E.
+- EC-005: TASK-0017 — `restore --dry-run` strict non-mutation (recursive file list/hashes unchanged, no destination created) and required plan fields; `restore_preflight` 13 tests + CLI acceptance.
+- EC-006: TASK-0017 — isolated restore verifies and opens as a working instance via the CLI with expected tasks/notes, never modifying the active workspace (`restore_isolated` 6 tests + rehearsal).
+- EC-007: TASK-0017 — replacement requires `--confirm`, preserves the previous workspace + recovery journal that reopens, refuses an active target (exit `4`), interrupted restore leaves no usable partial target (`restore_replace` 7 / `restore_rollback` 4 tests); replica recovery targets refused and connected state fails closed.
+- EC-008: TASK-0016 — `docs/reference/backup-format.md` covers container, layout, manifest fields, version compatibility, relative-path rules, traversal rejection, default secret exclusion, verification semantics and sidecar; rejection paths covered by `verify_integrity`/`manifest` tests.
+- EC-009: TASK-0018 — server 95 tests; Playwright `backup-restore.spec.ts` 4/4 (create→verification→inspect→download, typed isolated restore, admin-only offline plan, corrupted archive with no restore); full Chromium 156 passed / 6 skipped; path-free responses, generated isolated targets, admin-only replace-plan; web tsc/Vitest 490/terminology 286/build clean; manual API smoke.
+- EC-010: TASK-0019 — wired scheduler (15-min policy re-read) created a verified `automatic-daily` archive ~30 s after startup, no duplicate on a second same-UTC-day tick, missing-attachment workspace failed closed, retention protected the last verified point (`policy` 7 / `retention` 8 tests + CLI acceptance).
+- EC-011: TASK-0019 — `orbit update` creates a complete verified recovery point (label `before-update-<from>-to-<to>`), deep-verifies after publish, fails closed with "refusing to update" and replaces no binaries when it cannot, applies retention after verification, `--check` read-only; helper-level evidence only (full network update flow not run offline).
+- EC-012: TASK-0020 — rehearsal restored 2 reserved-only agent jobs (queued, never launched), a capability install+grant+real execution receipt (`succeeded`, work_item_note), 6 Work Items, 6 notes + typed references and an MCP-authored task change accepted via `authority.flush` (`Accepted(1)`); exclusions documented and no external action re-executed.
+- EC-013: TASK-0020 — rehearsal 14/14 PASS on a deterministic 103-task dataset; archive SHA-256 `953cb9b22b4ca43be1b45115d111bceb8d64b95247416da8fbeece124c62c874`; all 64 tables equal before/after, DB snapshot SHA-256 identical, vault/attachment tree hashes identical; earlier data present, later changes absent, agent records readable, write + restart persistence proven.
+- EC-014: TASK-0020 — CLI acceptance + failure injection 22 PASS / 1 NOT_APPLICABLE / 0 defects (`web/evidence/m34-recovery/failure-injection.json`): interrupted backup, corrupt/truncated archive, missing attachment, unreadable vault, permission/mode-preserving destination, format v999, wrong destination/mixed modes, active-target refusal, interrupted restore, replica refusal; original workspace recoverable throughout; NA = pending connected-client outbox case.
+- EC-015: TASK-0020 — `docs/reference/backup-format.md`, backup/upgrades guides, local web quickstart, self-hosting, CLI reference, Web GUI guide and architecture updated; documentation suites 40/40; same-disk warning and no zero-loss/zero-downtime claims present.
+
+#### Next milestone
+
+MILESTONE-0035
+
+### MILESTONE-0035 — M35 Orbit Self-Dogfooding: MCP, Workflows and Herdr
+
+- **Status:** proposed
+- **Outcome:** Orbit is used as the persistent project-management system for its own development: its current milestones and tasks are registered in an "Orbit Development" project, an authorized MCP client creates and updates real work through Orbit, and a Herdr-managed coding agent completes one bounded task through create → launch → evidence → in-Orbit review → explicit accept/reject, with the whole record present in a verified backup and surviving an isolated restore.
+- **Why now:** M34 makes workspace backup and recovery reliable, and MCP/agent-job/Herdr interfaces exist. The mission requires Orbit to manage its own development; interface existence is not proof of a working live integration, so the real loop must be exercised against actual MCP and Herdr processes and recorded honestly. M35 must not start until the maintainer reviews M34 and approves.
+- **Depends on:** MILESTONE-0034
+
+#### Scope
+
+- Maintainer review of the M34 evidence and documentation walkthrough, then explicit approval to start.
+- Create an "Orbit Development" project in a persistent workspace; register current milestones/tasks; take a verified backup.
+- Connect an authorized MCP client; create/update a real task through MCP with an auditable accepted receipt.
+- Launch a Herdr-managed coding agent for one bounded task in an isolated branch/worktree; record launch/monitoring/handoff/review without automatic task completion.
+- Collect implementation/test evidence into Orbit; review the agent result and record an explicit accept/reject.
+- Verify the complete M35 record in a workspace backup and isolated restore; record honestly what was live-tested versus interface-only.
+
+#### Non-goals
+
+- Public-release qualification or claims that live MCP/Herdr are generally supported.
+- TUI redesign; cloud/Redis/broker dependencies; multi-tenant work.
+- Automatic task completion from agent completion, or automatic external re-execution after recovery.
+- Reopening accepted M33/M34 scope or expanding MCP/Herdr interfaces beyond the dogfooding loop.
+
+#### Exit criteria
+
+- [ ] EC-001: The maintainer has reviewed the M34 completion evidence and the documentation walkthrough and explicitly approved starting M35; no M35 implementation began before that approval.
+- [ ] EC-002: A persistent Orbit workspace contains an "Orbit Development" project with the current milestones and tasks registered from the real project records, and a verified backup of it exists.
+- [ ] EC-003: An explicitly authorized MCP client creates or updates at least one real task through Orbit; the accepted change and receipt are readable and auditable in Orbit.
+- [ ] EC-004: A Herdr-managed coding agent is launched from an authorized, bounded Orbit agent-job record and works in an isolated branch/worktree; launch/monitoring/handoff/review states are recorded and agent completion does not complete the Orbit task.
+- [ ] EC-005: Implementation and test evidence produced by the bounded task is collected into Orbit and reviewable there.
+- [ ] EC-006: The reviewer records an explicit accept or reject decision in Orbit; the task state reflects the human decision rather than agent completion.
+- [ ] EC-007: The complete M35 record — project, tasks, agent jobs, handoffs/reviews, receipts and activity — is present in a verified workspace backup and survives an isolated restore.
+- [ ] EC-008: M35 acceptance states honestly which capabilities were exercised against actual MCP/Herdr processes and which remain interface-only or external boundaries; no claim rests on interface existence alone.
+
+#### Evidence
+
+- EC-001: Not yet produced — awaiting the maintainer review/approval recorded by NEXT-0023.
+- EC-002: Not yet produced — planned persistent project/milestone/task records plus a verified backup.
+- EC-003: Not yet produced — planned recorded MCP authorization, a real created/updated task, accepted receipt and read-back.
+- EC-004: Not yet produced — planned a real Herdr agent-job lifecycle transcript with bounded branch/worktree evidence and no automatic task completion.
+- EC-005: Not yet produced — planned implementation/test evidence attached to the bounded task and visible in Orbit.
+- EC-006: Not yet produced — planned explicit review decision recorded in Orbit with the resulting task state.
+- EC-007: Not yet produced — planned verified backup of the M35 record plus an isolated-restore proof.
+- EC-008: Not yet produced — planned acceptance separating live-tested behaviour from interface-only capabilities and external boundaries.
 
 #### Next milestone
 

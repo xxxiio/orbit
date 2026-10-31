@@ -17,3 +17,11 @@ deploy/server/.env
 /orbit.knowledge/
 
 .slim/deepwork/
+
+# M34 local backup, verification sidecars and recovery staging artifacts
+*.orbitbak
+*.orbitbak.verify.json
+/orbit-backups/
+.orbit-restore-*/
+.orbit-preserved-*/
+.orbit-staging-*/

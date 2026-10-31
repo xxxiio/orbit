@@ -1,9 +1,14 @@
 //! Safe GitHub release update workflow.
 //!
 //! `orbit update` discovers a release, verifies its checksum and metadata,
-//! backs up the effective database through the read-only SQLite backup API,
+//! creates a complete, verified workspace recovery point (database, vault,
+//! attachments, configuration and manifest) through the shared backup service,
 //! then reuses the embedded M26 installer for the binary transaction. When the
 //! post-install version probe fails, the previous managed binaries are restored.
+//!
+//! The recovery point is a hard gate: if it cannot be created and verified, the
+//! update aborts before any managed binary is replaced. `orbit update --check`
+//! stays read-only and never creates a backup.
 //!
 //! Release checksums come from the same origin as the archive. They prove
 //! download integrity; they are not a publisher signature.
@@ -17,9 +22,13 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use orbit_storage::{
-    SUPPORTED_SCHEMA_VERSION, backup_database_readonly, inspect_database_readonly,
+use orbit_backup::{
+    BackupConfigSnapshot, BackupOptions, BackupService, BackupSourceMode, VerifyOptions,
+    WorkspaceLayout, inspect_archive, verify_archive as verify_backup_archive,
 };
+use orbit_client::config::Resolved;
+use orbit_client::deployment::Deployment;
+use orbit_storage::{SUPPORTED_SCHEMA_VERSION, inspect_database_readonly};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -96,6 +105,8 @@ pub(crate) fn run(
             check: true,
             action: "checked",
             backup_path: None,
+            backup_bytes: None,
+            backup_retention_removed: 0,
             installed_version: None,
         };
         return render(report, json);
@@ -114,6 +125,8 @@ pub(crate) fn run(
             check: false,
             action: "up_to_date",
             backup_path: None,
+            backup_bytes: None,
+            backup_retention_removed: 0,
             installed_version: None,
         };
         return render(report, json);
@@ -190,8 +203,15 @@ fn install(
         .ok_or_else(|| CliError::Usage("unexpected release archive name".to_owned()))?;
     verify_archive(&archive_path, root, &release.version, target)?;
 
-    // Data safety: inspect and back up before any managed binary is replaced.
-    let backup_path = backup_effective_database(db_override, config_override, current)?;
+    // Data safety: create and verify a complete workspace recovery point before
+    // any managed binary is replaced. A failure here aborts the update.
+    let recovery_point = create_pre_upgrade_recovery_point(
+        db_override,
+        config_override,
+        current,
+        &release.version.to_string(),
+        json,
+    )?;
 
     let previous_dir = workspace.path.join("previous-bin");
     let saved = save_binaries(prefix, binaries, &previous_dir)?;
@@ -263,7 +283,14 @@ fn install(
         update_available: true,
         check: false,
         action: "installed",
-        backup_path,
+        backup_path: recovery_point
+            .as_ref()
+            .map(|point| point.archive.display().to_string()),
+        backup_bytes: recovery_point.as_ref().map(|point| point.archive_bytes),
+        backup_retention_removed: recovery_point
+            .as_ref()
+            .map(|point| point.removed_by_retention)
+            .unwrap_or(0),
         installed_version: Some(version_text),
     };
     render(report, json)
@@ -292,7 +319,18 @@ struct UpdateReport {
     check: bool,
     action: &'static str,
     backup_path: Option<String>,
+    /// Exact size of the pre-upgrade workspace recovery point.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    backup_bytes: Option<u64>,
+    /// Old backups removed by the stored retention policy after the recovery
+    /// point verified.
+    #[serde(skip_serializing_if = "is_zero")]
+    backup_retention_removed: usize,
     installed_version: Option<String>,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 impl UpdateReport {
@@ -334,8 +372,25 @@ impl UpdateReport {
                     format!("Prefix: {}", self.prefix),
                 ];
                 match &self.backup_path {
-                    Some(path) => lines.push(format!("Database backup: {path}")),
-                    None => lines.push("Database backup: skipped (no database)".to_owned()),
+                    Some(path) => {
+                        lines.push(format!("Workspace recovery point: {path}"));
+                        if let Some(bytes) = self.backup_bytes {
+                            lines.push(format!("Recovery point size: {bytes} bytes"));
+                        }
+                        lines.push(
+                            "The recovery point was verified before binaries were replaced."
+                                .to_owned(),
+                        );
+                        if self.backup_retention_removed > 0 {
+                            lines.push(format!(
+                                "Retention removed {} older backup(s); the new recovery point is protected.",
+                                self.backup_retention_removed
+                            ));
+                        }
+                    }
+                    None => lines.push(
+                        "Workspace recovery point: skipped (no workspace database)".to_owned(),
+                    ),
                 }
                 lines.push(CHECKSUM_CAVEAT.to_owned());
                 lines.join("\n")
@@ -755,21 +810,192 @@ fn verify_archive(
 }
 
 // ---------------------------------------------------------------------------
-// Database safety
+// Pre-upgrade workspace recovery point
 // ---------------------------------------------------------------------------
 
-fn backup_effective_database(
+/// A complete, verified workspace recovery point created before binaries change.
+#[derive(Debug)]
+struct RecoveryPoint {
+    /// Published `.orbitbak` archive.
+    archive: PathBuf,
+    /// Exact archive size in bytes.
+    archive_bytes: u64,
+    /// Old backups removed by the stored retention policy after the backup
+    /// verified. The new recovery point is always protected.
+    removed_by_retention: usize,
+}
+
+/// Create a complete workspace backup when the effective database exists.
+///
+/// This is the last data-safety step before managed binaries are replaced. Any
+/// failure (unreadable database, missing attachment object, failed archive
+/// verification) is returned as an error, which aborts the update: the caller
+/// only saves and replaces binaries after this function succeeds.
+///
+/// `None` means the host has no workspace database yet (a fresh installation),
+/// so there is nothing to recover.
+///
+/// The previous DB-only `backup_database_readonly` copy was deliberately
+/// removed: a lone SQLite file is not a workspace (it cannot be restored as
+/// one), and a database that is not an Orbit workspace now aborts the update
+/// instead of being copied into a false sense of safety.
+fn create_pre_upgrade_recovery_point(
     db_override: Option<&Path>,
     config_override: Option<&Path>,
-    current_version: &str,
-) -> Result<Option<String>, CliError> {
-    let resolved = orbit_client::config::resolve(db_override, config_override)
-        .map_err(|error| CliError::Usage(format!("configuration error: {error}")))?;
-    let database = resolved.database.clone();
+    from_version: &str,
+    to_version: &str,
+    quiet: bool,
+) -> Result<Option<RecoveryPoint>, CliError> {
+    let resolved = match orbit_client::config::resolve(db_override, config_override) {
+        Ok(resolved) => Some(resolved),
+        // A home-less process with an explicit --db still has a workspace; keep
+        // its recovery point beside that database instead of refusing to update.
+        Err(orbit_client::config::ConfigError::NoHome) if db_override.is_some() => None,
+        Err(error) => return Err(CliError::Usage(format!("configuration error: {error}"))),
+    };
+    let database = match (&resolved, db_override) {
+        (Some(resolved), _) => resolved.database.clone(),
+        (None, Some(override_path)) => override_path.to_path_buf(),
+        (None, None) => return Ok(None),
+    };
     if !database.exists() {
         return Ok(None);
     }
-    let inspection = inspect_database_readonly(&database).map_err(|error| {
+    let layout = WorkspaceLayout::for_database(&database)
+        .map_err(|error| CliError::Usage(error.to_string()))?;
+    let backups_dir = match &resolved {
+        Some(resolved) => resolved.paths.backups_dir.clone(),
+        None => layout.parent().join("backups"),
+    };
+    // The effective database of a connected deployment is a client replica; the
+    // manifest must say so, because it is not an authority snapshot.
+    let source_mode = match resolved.as_ref().map(|resolved| &resolved.deployment) {
+        Some(Deployment::Connected { .. }) => BackupSourceMode::Replica,
+        _ => BackupSourceMode::Local,
+    };
+    let config = resolved.as_ref().map(config_snapshot);
+    create_workspace_recovery_point(
+        &layout,
+        &backups_dir,
+        source_mode,
+        config,
+        from_version,
+        to_version,
+        quiet,
+    )
+}
+
+/// Create, verify and publish one complete workspace recovery point.
+///
+/// Kept separate from configuration resolution so it is directly testable
+/// offline with a disposable workspace.
+fn create_workspace_recovery_point(
+    layout: &WorkspaceLayout,
+    backups_dir: &Path,
+    source_mode: BackupSourceMode,
+    config: Option<BackupConfigSnapshot>,
+    from_version: &str,
+    to_version: &str,
+    quiet: bool,
+) -> Result<Option<RecoveryPoint>, CliError> {
+    if !layout.database_exists() {
+        return Ok(None);
+    }
+    validate_workspace_database(layout.database())?;
+    fs::create_dir_all(backups_dir).map_err(|error| {
+        CliError::Io(format!(
+            "cannot create backup directory {}: {error}",
+            backups_dir.display()
+        ))
+    })?;
+    restrict_backup_dir(backups_dir)?;
+
+    let label = format!("before-update-{from_version}-to-{to_version}");
+    if !quiet {
+        eprintln!("Preparing a complete workspace recovery point before updating...");
+    }
+    let options = BackupOptions {
+        source_mode,
+        label: Some(label),
+        include_config: config.is_some(),
+        config,
+        fence_timeout: Duration::from_secs(30),
+        keep_staging: false,
+    };
+    let service = BackupService::new(layout.clone());
+    let mut progress = |event: &orbit_backup::BackupProgress| {
+        if !quiet {
+            eprintln!("{}", recovery_progress_line(event));
+        }
+    };
+    let outcome = service
+        .create(backups_dir, options, &mut progress)
+        .map_err(|error| {
+            CliError::Repository(format!(
+                "refusing to update: cannot create a complete, verified workspace backup before \
+             replacing binaries: {error}"
+            ))
+        })?;
+    if !outcome.verification.ok {
+        return Err(CliError::Repository(format!(
+            "refusing to update: the pre-upgrade workspace backup {} did not verify ({}); \
+             no binaries were replaced",
+            outcome.archive.display(),
+            outcome.verification.summary()
+        )));
+    }
+    let inspection = verify_published_recovery_point(&outcome.archive)?;
+    let removed_by_retention = apply_pre_upgrade_retention(backups_dir, &outcome.archive, quiet);
+    if !quiet {
+        eprintln!(
+            "Recovery point ready: {} ({} bytes, format v{}, schema {}).",
+            outcome.archive.display(),
+            inspection.archive_bytes,
+            inspection.manifest.format_version,
+            inspection.manifest.schema_version
+        );
+    }
+    Ok(Some(RecoveryPoint {
+        archive: outcome.archive,
+        archive_bytes: inspection.archive_bytes,
+        removed_by_retention,
+    }))
+}
+
+/// Read a published recovery point back through the same paths a restore uses.
+///
+/// A verified stream is not enough for an upgrade gate: the archive must be
+/// inspectable as a complete workspace recovery point and pass deep
+/// verification (SQLite integrity, hashes, attachment coverage and schema).
+fn verify_published_recovery_point(
+    archive: &Path,
+) -> Result<orbit_backup::BackupInspection, CliError> {
+    let inspection = inspect_archive(archive).map_err(|error| {
+        CliError::Repository(format!(
+            "refusing to update: the published pre-upgrade backup {} cannot be inspected: {error}",
+            archive.display()
+        ))
+    })?;
+    let report = verify_backup_archive(archive, &VerifyOptions::default()).map_err(|error| {
+        CliError::Repository(format!(
+            "refusing to update: the published pre-upgrade backup {} cannot be verified: {error}",
+            archive.display()
+        ))
+    })?;
+    if !report.ok {
+        return Err(CliError::Repository(format!(
+            "refusing to update: the published pre-upgrade backup {} failed deep verification ({}); \
+             no binaries were replaced",
+            archive.display(),
+            report.summary()
+        )));
+    }
+    Ok(inspection)
+}
+
+/// Validate that a database is a healthy Orbit workspace this build can open.
+fn validate_workspace_database(database: &Path) -> Result<(), CliError> {
+    let inspection = inspect_database_readonly(database).map_err(|error| {
         CliError::Repository(format!(
             "refusing to update: database {} is unreadable or corrupt: {error}",
             database.display()
@@ -777,47 +1003,113 @@ fn backup_effective_database(
     })?;
     if !inspection.orbit_schema_present || inspection.schema_version.is_none() {
         return Err(CliError::Usage(format!(
-            "refusing to update: {} is not an Orbit database",
+            "refusing to update: {} is not an Orbit workspace database; refusing to replace \
+             binaries without a recovery point",
             database.display()
         )));
     }
     if !inspection.integrity_ok {
         return Err(CliError::Repository(format!(
-            "refusing to update: database {} failed its integrity check",
+            "refusing to update: database {} failed its integrity check; repair it before updating",
             database.display()
         )));
     }
     let schema_version = inspection.schema_version.unwrap_or_default();
     if schema_version > SUPPORTED_SCHEMA_VERSION {
         return Err(CliError::Usage(format!(
-            "refusing to update: database {} uses schema version {schema_version}, newer than this build supports ({SUPPORTED_SCHEMA_VERSION}); install the matching newer Orbit release instead of downgrading",
+            "refusing to update: database {} uses schema version {schema_version}, newer than \
+             this build supports ({SUPPORTED_SCHEMA_VERSION}); install the matching newer Orbit \
+             release instead of downgrading",
             database.display()
         )));
     }
+    Ok(())
+}
 
-    fs::create_dir_all(&resolved.paths.backups_dir).map_err(|error| {
-        CliError::Io(format!(
-            "cannot create backup directory {}: {error}",
-            resolved.paths.backups_dir.display()
-        ))
-    })?;
-    restrict_backup_dir(&resolved.paths.backups_dir)?;
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let destination = resolved
-        .paths
-        .backups_dir
-        .join(format!("orbit-pre-update-{current_version}-{timestamp}.db"));
-    backup_database_readonly(&database, &destination).map_err(|error| {
-        CliError::Repository(format!(
-            "cannot back up database {} before updating: {error}",
-            database.display()
-        ))
-    })?;
-    restrict_backup_file(&destination)?;
-    Ok(Some(destination.display().to_string()))
+/// Apply the stored retention policy after the recovery point verified.
+///
+/// Retention is best-effort here: the recovery point already exists and is
+/// protected, so a cleanup failure is reported as a warning and must never turn
+/// a successful upgrade into a failed one. The new archive is passed as the
+/// protected path, so it can never be deleted even when limits demand it.
+fn apply_pre_upgrade_retention(backups_dir: &Path, archive: &Path, quiet: bool) -> usize {
+    let policy = match orbit_backup::BackupPolicy::load(backups_dir) {
+        Ok(policy) => policy,
+        Err(error) => {
+            if !quiet {
+                eprintln!("warning: cannot load the backup retention policy: {error}");
+            }
+            return 0;
+        }
+    };
+    if !policy.retention_policy().has_limits() {
+        return 0;
+    }
+    match orbit_backup::apply_retention(
+        backups_dir,
+        &policy.retention_policy(),
+        orbit_backup::now_ms(),
+        Some(archive),
+        false,
+    ) {
+        Ok(outcome) => {
+            if !quiet && !outcome.removed.is_empty() {
+                eprintln!(
+                    "Retention removed {} old backup(s); the new recovery point is protected.",
+                    outcome.removed.len()
+                );
+            }
+            outcome.removed.len()
+        }
+        Err(error) => {
+            if !quiet {
+                eprintln!("warning: backup retention after the recovery point failed: {error}");
+            }
+            0
+        }
+    }
+}
+
+fn config_snapshot(resolved: &Resolved) -> BackupConfigSnapshot {
+    BackupConfigSnapshot {
+        config_version: resolved.config.version,
+        authority_mode: resolved.config.mode.authority.as_str().to_owned(),
+        default_agent_provider: resolved
+            .config
+            .agent
+            .as_ref()
+            .and_then(|agent| agent.default_provider.clone()),
+        connected_server: resolved
+            .config
+            .connected
+            .as_ref()
+            .map(|connected| connected.server.clone()),
+    }
+}
+
+fn recovery_progress_line(progress: &orbit_backup::BackupProgress) -> String {
+    use orbit_backup::BackupProgress;
+    match progress {
+        BackupProgress::Fencing => "Fencing workspace writers...".to_owned(),
+        BackupProgress::DatabaseSnapshotted { bytes } => {
+            format!("Database snapshot: {bytes} bytes")
+        }
+        BackupProgress::VaultStaged { files, directories } => {
+            format!("Vault staged: {files} file(s), {directories} folder(s)")
+        }
+        BackupProgress::AttachmentsStaged { objects } => {
+            format!("Attachment objects staged: {objects}")
+        }
+        BackupProgress::FenceReleased => "Workspace writers released.".to_owned(),
+        BackupProgress::WritingArchive { content_bytes } => {
+            format!("Writing recovery archive: {content_bytes} content bytes")
+        }
+        BackupProgress::VerifyingArchive => "Verifying the recovery archive...".to_owned(),
+        BackupProgress::Published {
+            path,
+            archive_bytes,
+        } => format!("Published {} ({archive_bytes} bytes)", path.display()),
+    }
 }
 
 #[cfg(unix)]
@@ -833,22 +1125,6 @@ fn restrict_backup_dir(path: &Path) -> Result<(), CliError> {
 
 #[cfg(not(unix))]
 fn restrict_backup_dir(_path: &Path) -> Result<(), CliError> {
-    Ok(())
-}
-
-#[cfg(unix)]
-fn restrict_backup_file(path: &Path) -> Result<(), CliError> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|error| {
-        CliError::Io(format!(
-            "cannot restrict database backup {}: {error}",
-            path.display()
-        ))
-    })
-}
-
-#[cfg(not(unix))]
-fn restrict_backup_file(_path: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
@@ -1336,5 +1612,274 @@ mod tests {
         assert!(parse_checksum(&format!("{digest}\n{digest}")).is_err());
         assert!(parse_checksum(&format!("{digest} file extra")).is_err());
         assert!(parse_checksum(&format!("{}g", "a".repeat(63))).is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Pre-upgrade workspace recovery point (unit-level, offline)
+    // -----------------------------------------------------------------------
+
+    /// Create a real disposable Orbit workspace with a project, one attachment
+    /// object and one Markdown note. No network and no external agent involved.
+    fn test_workspace(directory: &Path) -> PathBuf {
+        let database = directory.join("orbit-local.db");
+        let mut client = orbit_client::OrbitClient::open(&database).expect("open workspace");
+        let project = client
+            .create_project(orbit_client::CreateProjectRequest {
+                id: None,
+                name: "Recovery point test".to_owned(),
+            })
+            .expect("create project");
+        let attachment = directory.join("standup-notes.txt");
+        fs::write(
+            &attachment,
+            b"attachment content that must travel inside the recovery point",
+        )
+        .expect("write attachment");
+        client
+            .import_attachment(
+                "project".to_owned(),
+                project.id,
+                attachment.to_string_lossy().into_owned(),
+                Some("pre-upgrade recovery point test".to_owned()),
+            )
+            .expect("import attachment");
+        drop(client);
+        let vault = database.with_extension("knowledge");
+        fs::create_dir_all(vault.join("Work")).expect("create vault");
+        fs::write(vault.join("Work/recovery.md"), b"# Recovery test\n").expect("write note");
+        database
+    }
+
+    fn archive_files(directory: &Path) -> Vec<PathBuf> {
+        match fs::read_dir(directory) {
+            Ok(entries) => entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| {
+                    path.extension().and_then(|extension| extension.to_str()) == Some("orbitbak")
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    #[test]
+    fn pre_upgrade_recovery_point_is_complete_and_verified() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = test_workspace(temp.path());
+        let backups = temp.path().join("backups");
+        let layout = WorkspaceLayout::for_database(&database).unwrap();
+        let config = BackupConfigSnapshot {
+            config_version: 1,
+            authority_mode: "local".to_owned(),
+            default_agent_provider: None,
+            connected_server: None,
+        };
+        let point = create_workspace_recovery_point(
+            &layout,
+            &backups,
+            BackupSourceMode::Local,
+            Some(config),
+            "0.1.0",
+            "0.2.0",
+            false,
+        )
+        .expect("recovery point")
+        .expect("workspace database exists");
+
+        assert!(
+            point.archive.is_file(),
+            "the recovery point must be published"
+        );
+        assert_eq!(
+            point.archive_bytes,
+            fs::metadata(&point.archive).unwrap().len()
+        );
+        let inspection = inspect_archive(&point.archive).expect("inspect recovery point");
+        assert_eq!(
+            inspection.manifest.label.as_deref(),
+            Some("before-update-0.1.0-to-0.2.0")
+        );
+        assert!(
+            inspection.manifest.counts.knowledge_notes >= 1,
+            "the vault note must be inside the archive: {:?}",
+            inspection.manifest.counts
+        );
+        assert!(
+            inspection.manifest.counts.attachment_objects >= 1,
+            "the attachment object must be inside the archive: {:?}",
+            inspection.manifest.counts
+        );
+        let inventory: Vec<&str> = inspection
+            .manifest
+            .inventory
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect();
+        assert!(inventory.iter().any(|path| path.starts_with("knowledge/")));
+        assert!(
+            inventory
+                .iter()
+                .any(|path| path.starts_with("attachments/objects/"))
+        );
+        assert!(
+            inventory.contains(&"config/config.json"),
+            "the normalized configuration must be part of the recovery point"
+        );
+        assert!(inspection.manifest.config.is_some());
+        let verification =
+            verify_backup_archive(&point.archive, &VerifyOptions::default()).expect("verify");
+        assert!(
+            verification.ok,
+            "recovery point must verify: {verification:?}"
+        );
+        assert!(point.removed_by_retention == 0);
+    }
+
+    #[test]
+    fn missing_workspace_means_no_recovery_point_and_no_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("not-created.db");
+        let layout = WorkspaceLayout::for_database(&database).unwrap();
+        let point = create_workspace_recovery_point(
+            &layout,
+            &temp.path().join("backups"),
+            BackupSourceMode::Local,
+            None,
+            "0.1.0",
+            "0.2.0",
+            true,
+        )
+        .expect("a fresh host has nothing to back up");
+        assert!(point.is_none());
+        assert!(!temp.path().join("backups").join("policy.json").exists());
+    }
+
+    #[test]
+    fn failed_recovery_point_aborts_before_any_archive_is_published() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = test_workspace(temp.path());
+        // The database still references an attachment object, but the object
+        // content is gone: the backup must fail closed, not publish a partial
+        // "complete" archive.
+        fs::remove_dir_all(temp.path().join("attachments")).expect("remove attachment store");
+        let backups = temp.path().join("backups");
+        let layout = WorkspaceLayout::for_database(&database).unwrap();
+        let error = create_workspace_recovery_point(
+            &layout,
+            &backups,
+            BackupSourceMode::Local,
+            None,
+            "0.1.0",
+            "0.2.0",
+            true,
+        )
+        .expect_err("a missing attachment object must abort the recovery point");
+        let message = error.to_string();
+        assert!(
+            message.contains("attachment"),
+            "the error must name the missing attachment component: {message}"
+        );
+        assert!(
+            message.contains("refusing to update"),
+            "the error must state that the update is refused: {message}"
+        );
+        assert!(
+            archive_files(&backups).is_empty(),
+            "no .orbitbak may be published when the recovery point fails"
+        );
+        assert!(
+            database.is_file(),
+            "the workspace database must be untouched"
+        );
+        let reopened = orbit_client::OrbitClient::open(&database);
+        assert!(
+            reopened.is_ok(),
+            "the workspace must remain readable after the abort"
+        );
+    }
+
+    #[test]
+    fn non_orbit_database_aborts_the_update_before_replacing_binaries() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("plain.db");
+        fs::write(&database, b"not a sqlite database").unwrap();
+        let backups = temp.path().join("backups");
+        let layout = WorkspaceLayout::for_database(&database).unwrap();
+        let error = create_workspace_recovery_point(
+            &layout,
+            &backups,
+            BackupSourceMode::Local,
+            None,
+            "0.1.0",
+            "0.2.0",
+            true,
+        )
+        .expect_err("a non-Orbit database must refuse the update");
+        assert!(error.to_string().contains("refusing to update"));
+        assert!(archive_files(&backups).is_empty());
+    }
+
+    #[test]
+    fn pre_upgrade_retention_protects_the_new_recovery_point() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = test_workspace(temp.path());
+        let backups = temp.path().join("backups");
+        let layout = WorkspaceLayout::for_database(&database).unwrap();
+        let service = BackupService::new(layout.clone());
+        for index in 1..=3 {
+            service
+                .create(
+                    &backups,
+                    BackupOptions {
+                        label: Some(format!("old-{index}")),
+                        ..BackupOptions::default()
+                    },
+                    &mut orbit_backup::NoProgress,
+                )
+                .expect("create older backup");
+        }
+        let policy = orbit_backup::BackupPolicy {
+            max_retained: Some(2),
+            ..orbit_backup::BackupPolicy::default()
+        };
+        policy.save(&backups).expect("save retention policy");
+
+        let point = create_workspace_recovery_point(
+            &layout,
+            &backups,
+            BackupSourceMode::Local,
+            None,
+            "0.1.0",
+            "0.2.0",
+            true,
+        )
+        .expect("recovery point")
+        .expect("workspace database exists");
+
+        assert!(point.archive.is_file());
+        assert_eq!(
+            point.removed_by_retention, 2,
+            "max_retained=2 must prune two old archives after the new one verified"
+        );
+        assert_eq!(archive_files(&backups).len(), 2);
+        assert!(
+            backups.join("policy.json").is_file(),
+            "the policy file is not a backup and must never be removed"
+        );
+        let new_archive = point
+            .archive
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let remaining: Vec<String> = archive_files(&backups)
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            remaining.contains(&new_archive),
+            "the new recovery point is protected"
+        );
     }
 }

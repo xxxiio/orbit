@@ -6,7 +6,7 @@ project_owned: true
 record_contract: milestone-plan
 record_schema_version: 1
 id: MILESTONE-0033
-status: active
+status: completed
 ---
 
 # Milestone: Professional Web UX, Milestone-Based Planning & Unified Project Work
@@ -149,8 +149,11 @@ any TUI redesign derived from the browser.
   work and dependency highlighting; no Epic lanes exist.
 - [x] EC-009: Real-browser acceptance passes at 1440×900 and 390×844 in light and
   dark, including create → filter → switch → edit → status → roadmap → restart.
-- [ ] EC-010: A human reviews the running app and representative captures.
-- [ ] EC-011: A personal local installation can be started with the explicit,
+- [x] EC-010: A human reviewed the running app and representative captures on
+  2026-10-31 and accepted the corrected build for **internal dogfooding**. This is
+  internal-use acceptance only; it is not public-release certification (see
+  `.agent/journal/2026-10-31-m33-internal-acceptance.md`).
+- [x] EC-011: A personal local installation can be started with the explicit,
   opt-in `ORBIT_AUTH_MODE=local-trusted`. Startup is refused on every
   non-loopback bind; the workspace opens with no Device ID, device token or
   session cookie; projects, tasks, Milestones, Workflows and agent operations
@@ -171,10 +174,12 @@ any TUI redesign derived from the browser.
 
 ## Remaining work
 
-- The corrected implementation, migration verification, browser acceptance and
-  human review are in progress. M33 is not complete.
+- None. Every exit criterion is met and M33 is complete. The human acceptance is
+  explicitly internal-dogfooding acceptance, not public-release certification.
+  Minor UX follow-ups are preserved as TODO-0015, TODO-0016 and TODO-0017; they
+  do not reopen the accepted typography, Milestone, Epic-removal, unified Tasks,
+  compact Board or authentication work.
 
 ## Next milestone
 
-None yet. M33 remains the current milestone; the next one is chosen after the
-corrected web UX has passed human review.
+MILESTONE-0034

@@ -984,6 +984,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "orbit-backup"
+version = "0.1.0"
+dependencies = [
+ "orbit-storage",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "orbit-blueprint"
 version = "0.1.0"
 dependencies = [
@@ -998,6 +1010,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "orbit-application",
+ "orbit-backup",
  "orbit-blueprint",
  "orbit-client",
  "orbit-domain",
@@ -1079,6 +1092,7 @@ name = "orbit-runtime"
 version = "0.1.0"
 dependencies = [
  "orbit-application",
+ "orbit-backup",
  "orbit-blueprint",
  "orbit-domain",
  "orbit-habit-capability",
@@ -1100,6 +1114,7 @@ dependencies = [
  "axum",
  "getrandom 0.2.17",
  "orbit-application",
+ "orbit-backup",
  "orbit-blueprint",
  "orbit-domain",
  "orbit-runtime",

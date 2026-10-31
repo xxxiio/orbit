@@ -57,7 +57,7 @@ uses commands implemented by the current `orbit` binary; run `orbit --help` or
 - [Habits, routines and schedules](guides/habits-routines-schedules.md) — recurring personal work and calendar blocks.
 - [Notes and folders](guides/notes-and-folders.md) — the Markdown vault, references and vault assets.
 - [Search and navigation](guides/search-and-navigation.md) — `search`, `today`, `status` and task drilldowns.
-- [Backup and recovery](guides/backup-and-recovery.md) — database, vault, attachment object store and update backups.
+- [Backup and recovery](guides/backup-and-recovery.md) — the built-in `.orbitbak` workspace backup, verification, isolated restore, maintenance replacement, automatic schedules/retention and the offline fallback.
 - [Development projects](guides/development-projects.md) — a software project from task to accepted change.
 - [Learning projects](guides/learning-projects.md) — learning evidence, notes and review.
 - [Research workflow](guides/research-workflow.md) — research questions, evidence and decision memos.
@@ -83,7 +83,7 @@ Orbit task.
 
 - [Connected mode onboarding](getting-started/connected-mode.md) — authority, enrollment, replicas and offline queues.
 - [Self-hosting](guides/self-hosting.md) — optional server deployment and TLS boundaries.
-- [The Orbit web app](web-app.md) — Home, Inbox, Projects, workflow views, Work Items, planning, knowledge, attachments, agents, settings and upgrades; includes the current limits.
+- [The Orbit web app](web-app.md) — Home, Inbox, Projects, workflow views, Work Items, planning, knowledge, attachments, agents, settings, upgrades and the Backup & Restore page; includes the current limits.
 - [Web app quickstart for internal testers](guides/web-quickstart.md) — build the client, start the server, enrol a device, sign in, create the first project, run the dogfood cycle and acceptance suite.
 - [Local trusted web quickstart](guides/local-web-quickstart.md) — the opt-in, loopback-only mode with no device enrollment, plus its security boundary.
 - [Server API](server-api.md) — the current authority endpoints, not the retired relay.
@@ -97,7 +97,8 @@ Orbit task.
 
 ## Reference
 
-- [CLI reference](reference/cli.md) — every top-level group, subcommand and important flag.
+- [CLI reference](reference/cli.md) — every top-level group, subcommand and important flag, including `orbit backup`.
+- [Workspace backup format](reference/backup-format.md) — the `.orbitbak` container, manifest contract, verification semantics and restore expectations.
 - [Configuration reference](reference/configuration.md) — exact schema, defaults, precedence, environment and failure behavior.
 - [Release assets reference](reference/release-assets.md) — canonical names, archive layout and verified matrix.
 - [MCP tools reference](reference/mcp.md)
@@ -109,7 +110,7 @@ Orbit task.
 - [Release checklist](releasing/release-checklist.md) — evidence and authorization gates.
 - [Binary distribution](releasing/binary-distribution.md) — packaging, verification and `install.sh`.
 - [Platforms and components](releasing/platforms-and-components.md) — support matrix and unverified targets.
-- [Upgrades and recovery](releasing/upgrades-and-recovery.md) — update backups and database recovery.
+- [Upgrades and recovery](releasing/upgrades-and-recovery.md) — pre-upgrade recovery points, restore and database recovery.
 - [Source completion handoff](releasing/source-completion.md) — implemented interfaces versus certified release.
 
 ## Verification status

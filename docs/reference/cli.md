@@ -38,6 +38,7 @@ Global options may appear before or after the subcommand where clap permits it.
 | `orbit folder` | Physical folder navigation and mutation |
 | `orbit schedule` | Schedule blocks |
 | `orbit attachment` | Attach, list, inspect, export, remove and flush file attachments |
+| `orbit backup` | Create, list, inspect, verify and restore authoritative workspace backups |
 | `orbit agent` | Optional agent jobs, handoffs and reviews |
 | `orbit sync` | Connected authority and offline replica |
 | `orbit search` | Cross-entity search |
@@ -87,8 +88,15 @@ orbit update [--check] [--version VERSION] [--channel stable|prerelease]
 | `--force` | Reinstall even when already current |
 
 Checksums are verified before replacement. Update refuses installations without
-the M26 manifest, backs up the SQLite database under `~/.orbit/backups/`, and
-preserves the prior binary/data on failure.
+the M26 manifest and creates a **complete, verified workspace recovery point**
+(the whole `.orbitbak` — database, vault, referenced attachments and normalized
+non-secret configuration — under `~/.orbit/backups/`) before replacing binaries.
+If the recovery point cannot be created, verified, inspected or deep-verified,
+the update is refused and no binaries are replaced; with no workspace database
+(a fresh install) the step is skipped. Update preserves the prior binary/data on
+failure and applies the stored retention policy after a verified recovery
+point, always protecting the new one. See
+[upgrades and recovery](../releasing/upgrades-and-recovery.md).
 
 ### `orbit capabilities`
 
@@ -492,6 +500,57 @@ creation; omitting it binds the Basic default.
 Pending commands are not accepted state. See
 [connected mode](../getting-started/connected-mode.md).
 
+## Backup commands
+
+`orbit backup` manages complete, verifiable workspace archives covering the
+authoritative SQLite snapshot, the Markdown vault, the referenced attachment
+objects and normalized non-secret configuration. The archive format is specified
+in [the backup format reference](backup-format.md); the operator procedure is in
+[backup and recovery](../guides/backup-and-recovery.md).
+
+```text
+orbit backup create [--output DIR] [--label TEXT]
+                    [--source-mode local|server|replica] [--no-config]
+orbit backup list [--output DIR] [--limit N]
+orbit backup inspect FILE
+orbit backup verify FILE [--structural-only]
+orbit backup restore FILE [--dry-run]
+                         [--to DIR | --replace --confirm REPLACE|DATABASE_PATH]
+                         [--fast-preflight]
+orbit backup schedule show|set --mode disabled|daily|weekly|before-upgrade
+                         [--max-retained N] [--min-retention-days N]
+                         [--max-total-bytes N]
+orbit backup retention apply [--dry-run]
+```
+
+| Subcommand | Important flags and behaviour |
+| --- | --- |
+| `create` | Writes one staged, verified archive and publishes it atomically. Default destination is the configured Orbit backups directory (`~/.orbit/backups`); a home-less process with `--db` uses `<workspace>/backups`. `--output` selects another directory, `--label` names the backup, `--source-mode local\|server` declares the authority (`replica` is reserved and rejected in this build), `--no-config` omits the configuration projection. Never mutates the source workspace. A server-mode manifest records `source.excluded_client_pending_data: true` and a `client_pending_data` exclusion. |
+| `list` | Lists archives newest first from `--output` (or the default directory), with `--limit N`. Shows creation time, format version, size, verification state and label. |
+| `inspect` | Prints the manifest summary and component inventory without verifying the archive. |
+| `verify` | Re-checks structure, manifest, per-file hashes, SQLite integrity, schema compatibility, referenced attachments and vault consistency. `--structural-only` skips the deep SQLite extraction check. |
+| `restore` | `--dry-run` prints the plan and changes nothing; `--to DIR` restores into an isolated workspace; `--replace --confirm REPLACE` (or the exact database path) is the maintenance replacement path and refuses a live/active workspace. `--fast-preflight` skips deep verification during preflight. A connected client cannot replace a server authority. |
+| `schedule` | Shows or updates the automatic-backup policy in `policy.json`: `--mode disabled\|daily\|weekly\|before-upgrade`, `--max-retained N`, `--min-retention-days N`, `--max-total-bytes N`. The long-running server re-reads the file every 15 minutes and creates verified automatic backups when due; the change takes effect without a restart. `disabled` and `before-upgrade` never run on a timer; `before-upgrade` is exercised by `orbit update`. |
+| `retention` | Applies the stored retention policy now; `--dry-run` reports what it would remove without deleting. Cleanup runs only after a verified creation and protects the newest verified recovery point. |
+
+
+Client replica snapshots are not supported as a recovery point in this build.
+`orbit backup create --source-mode replica` exits nonzero with an actionable
+message; back up the server workspace on the server host with
+`--source-mode server`, and keep each replica's own pending outbox and staging
+directory with that replica.
+
+Verification failure and a refused restore preflight exit `1` with a rendered
+diagnostic report. Backup, verification and recovery failures exit `4`
+(`backup_error`); argument errors exit `2`. In JSON mode a failed create still
+emits the tagged error object, and a failed verify prints the verification
+report before the nonzero exit.
+
+A successful create-and-verify also writes `<archive>.verify.json` beside the
+archive; it records the verification result but is never transferred proof for a
+copy that moved between machines. The archive and its sidecar should be kept
+together.
+
 ## Search, status and today
 
 | Command | Purpose / important flags |
@@ -510,9 +569,10 @@ Runtime errors in JSON mode carry a `type` and `message`; exit classes are:
 | Code | Meaning |
 | ---: | --- |
 | `0` | Success |
+| `1` | A rendered diagnostic failure: failed backup verification, failed restore preflight, or `doctor --strict` |
 | `2` | Usage or domain-input error |
 | `3` | Application/use-case failure |
-| `4` | Local I/O or storage failure |
+| `4` | Local I/O, storage, backup or recovery failure (`backup_error`) |
 | `70` | Internal serialization failure |
 
 ## Not available in this build
@@ -523,7 +583,6 @@ Runtime errors in JSON mode carry a `type` and `message`; exit classes are:
   described above.
 - No standalone milestone create/list/status command.
 - No project-switch command and no global active project.
-- No dedicated backup subcommand.
 - No connected-mode or MCP capability install/authorize/request/execute surface;
   capability actions are local CLI only in this iteration.
 - No knowledge command group; notes and folders replace it.

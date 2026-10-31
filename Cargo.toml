@@ -16,6 +16,7 @@ members = [
   "crates/orbit-runtime",
   "crates/orbit-client",
   "crates/orbit-server",
+  "crates/orbit-backup",
 ]
 resolver = "2"
 

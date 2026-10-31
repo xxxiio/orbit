@@ -1,0 +1,4881 @@
+{
+  "schema": "orbit.m34.recovery-rehearsal/1",
+  "generated_by": "tests/acceptance/m34_recovery_rehearsal.py",
+  "result": "PASS",
+  "started_at": "2026-10-31T10:36:52.998141+00:00",
+  "finished_at": "2026-10-31T10:36:59.511+00:00",
+  "orbit_version": "orbit 0.1.0",
+  "host": "Linux 6.6.87.1-microsoft-standard-WSL2 x86_64",
+  "environment": {
+    "auth_mode": "local-trusted",
+    "bind": "127.0.0.1:34405",
+    "cli_binary": "/home/xliu/dev/orbit/target/debug/orbit",
+    "server_binary": "/home/xliu/dev/orbit/target/debug/orbit-server",
+    "mcp_binary": "/home/xliu/dev/orbit/target/debug/orbit-mcp",
+    "run_directory": "<temporary, removed>",
+    "binaries": {
+      "orbit_cli": {
+        "path": "/home/xliu/dev/orbit/target/debug/orbit",
+        "size_bytes": 217098400,
+        "mtime_iso": "2026-10-31T10:06:41+00:00",
+        "sha256": "ad31c0360b1dc16ee946caf996ae2f88bcd6a967245d0035f332f267b5a83c80",
+        "version": "orbit 0.1.0"
+      },
+      "orbit_server": {
+        "path": "/home/xliu/dev/orbit/target/debug/orbit-server",
+        "size_bytes": 182233640,
+        "mtime_iso": "2026-10-31T10:06:40+00:00",
+        "sha256": "9bbf52de263fc1cbcc149bddf8f082df0f54954a89c4d86bfd96f90bb0db92f8"
+      },
+      "orbit_mcp": {
+        "path": "/home/xliu/dev/orbit/target/debug/orbit-mcp",
+        "size_bytes": 180374616,
+        "mtime_iso": "2026-10-27T19:59:57+00:00",
+        "sha256": "3c805e95202ad2ff84637d8483e5d78646081bcd3c29ec31189eed5c37d15104"
+      }
+    },
+    "git": {
+      "commit": "f82e3fa13d4f1fe4ca216aeed105e6efdd5ad250",
+      "branch": "main",
+      "dirty": true,
+      "changed_path_count": 74
+    }
+  },
+  "step_summary": {
+    "PASS": 14,
+    "FAIL": 0,
+    "BLOCKED": 0
+  },
+  "steps": [
+    {
+      "step": 1,
+      "title": "start a real Orbit instance (server, local-trusted, loopback)",
+      "status": "PASS",
+      "details": {
+        "binary": "/home/xliu/dev/orbit/target/debug/orbit-server",
+        "auth_mode": "local-trusted",
+        "bind": "127.0.0.1:34405",
+        "server_db": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/workspace/server.db",
+        "workspace_vault": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/workspace/server.knowledge",
+        "attachment_store": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/workspace/attachments/objects",
+        "health": {
+          "status": "ok"
+        },
+        "initial_revision": 0,
+        "enrolled_device": "m34-rehearsal-device",
+        "startup_banner": "Orbit server listening on http://127.0.0.1:34405\nAuthentication: Local trusted mode\nAccess: Local machine only"
+      },
+      "duration_ms": 81.69
+    },
+    {
+      "step": 2,
+      "title": "populate the deterministic realistic dataset",
+      "status": "PASS",
+      "details": {
+        "dataset": {
+          "projects": [
+            "project-alpha",
+            "project-beta",
+            "project-gamma"
+          ],
+          "milestones": [
+            "ms-alpha-1",
+            "ms-alpha-2",
+            "ms-beta-1"
+          ],
+          "task_count": 103,
+          "tasks": [
+            "task-alpha-001",
+            "task-alpha-002",
+            "task-alpha-003",
+            "task-alpha-004",
+            "task-alpha-005",
+            "task-alpha-006",
+            "task-alpha-007",
+            "task-alpha-008",
+            "task-alpha-009",
+            "task-alpha-010",
+            "task-alpha-011",
+            "task-alpha-012",
+            "task-alpha-013",
+            "task-alpha-014",
+            "task-alpha-015",
+            "task-alpha-016",
+            "task-alpha-017",
+            "task-alpha-018",
+            "task-alpha-019",
+            "task-alpha-020",
+            "task-alpha-021",
+            "task-alpha-022",
+            "task-alpha-023",
+            "task-alpha-024",
+            "task-alpha-025",
+            "task-alpha-026",
+            "task-alpha-027",
+            "task-alpha-028",
+            "task-alpha-029",
+            "task-alpha-030",
+            "task-alpha-031",
+            "task-alpha-032",
+            "task-alpha-033",
+            "task-alpha-034",
+            "task-alpha-035",
+            "task-alpha-036",
+            "task-alpha-037",
+            "task-alpha-038",
+            "task-alpha-039",
+            "task-alpha-040",
+            "task-alpha-041",
+            "task-alpha-042",
+            "task-alpha-043",
+            "task-alpha-044",
+            "task-alpha-045",
+            "task-alpha-046",
+            "task-alpha-047",
+            "task-alpha-048",
+            "task-alpha-049",
+            "task-alpha-050",
+            "task-alpha-051",
+            "task-alpha-052",
+            "task-alpha-053",
+            "task-alpha-054",
+            "task-alpha-055",
+            "task-alpha-056",
+            "task-alpha-057",
+            "task-alpha-058",
+            "task-alpha-059",
+            "task-alpha-060",
+            "task-alpha-061",
+            "task-alpha-062",
+            "task-alpha-063",
+            "task-alpha-064",
+            "task-alpha-065",
+            "task-alpha-066",
+            "task-alpha-067",
+            "task-alpha-068",
+            "task-alpha-069",
+            "task-alpha-070",
+            "task-beta-001",
+            "task-beta-002",
+            "task-beta-003",
+            "task-beta-004",
+            "task-beta-005",
+            "task-beta-006",
+            "task-beta-007",
+            "task-beta-008",
+            "task-beta-009",
+            "task-beta-010",
+            "task-beta-011",
+            "task-beta-012",
+            "task-beta-013",
+            "task-beta-014",
+            "task-beta-015",
+            "task-beta-016",
+            "task-beta-017",
+            "task-beta-018",
+            "task-beta-019",
+            "task-beta-020",
+            "task-beta-021",
+            "task-beta-022",
+            "task-beta-023",
+            "task-beta-024",
+            "task-beta-025",
+            "task-beta-026",
+            "task-beta-027",
+            "task-beta-028",
+            "task-beta-029",
+            "task-beta-030",
+            "task-beta-031",
+            "task-beta-032",
+            "task-beta-033"
+          ],
+          "work_items": [
+            "item-beta-001",
+            "item-beta-002",
+            "item-beta-003",
+            "item-beta-004",
+            "item-beta-005",
+            "item-gamma-001"
+          ],
+          "notes": {
+            "note-alpha-plan": {
+              "path": "note-alpha-plan.md",
+              "sha256": "a4f5f8b2c2e0c24b92dea838ecfdcf64f4a336d04cea02acf697284018fafb9a"
+            },
+            "note-alpha-log": {
+              "path": "note-alpha-log.md",
+              "sha256": "0db17a8a8de035c928e32d91fad3cafcb418897eef63aa1288f4058347178a5a"
+            },
+            "note-beta-design": {
+              "path": "note-beta-design.md",
+              "sha256": "2189f39f94ae9bd5d55dc0aafad9bcbcdee7acdf7773a9e810ea0d03b6a1e69f"
+            },
+            "note-gamma-capability": {
+              "path": "note-gamma-capability.md",
+              "sha256": "5fbc98245f0fc52b9188ca8a83a27055bd365b6c327adb0a196ef673c18f74c0"
+            },
+            "note-restore-checklist": {
+              "path": "note-restore-checklist.md",
+              "sha256": "5f9e74d43558938e407a723461bc263c019235cac5cd9fbf23d27923b4dd7a7f"
+            },
+            "note-backup-practice": {
+              "path": "note-backup-practice.md",
+              "sha256": "25ee1d8202b8b74368c68390a5ea37fd6dd098749a5f7d040deaa36603d3951b"
+            }
+          },
+          "typed_references": [
+            {
+              "note_id": "note-restore-checklist",
+              "target": "task:task-alpha-005"
+            },
+            {
+              "note_id": "note-backup-practice",
+              "target": "project:project-alpha"
+            },
+            {
+              "note_id": "note-beta-design",
+              "target": "project:project-beta"
+            }
+          ],
+          "attachments": {
+            "att-alpha-spec": {
+              "owner_kind": "task",
+              "owner_id": "task-alpha-001",
+              "filename": "alpha-spec.txt",
+              "size_bytes": 59,
+              "sha256": "e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada",
+              "server_checksum": "e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada",
+              "content_type": "text/plain",
+              "binary": false
+            },
+            "att-alpha-binary": {
+              "owner_kind": "task",
+              "owner_id": "task-alpha-002",
+              "filename": "alpha-diagram.bin",
+              "size_bytes": 8192,
+              "sha256": "1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81",
+              "server_checksum": "1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81",
+              "content_type": "application/octet-stream",
+              "binary": true
+            },
+            "att-beta-notes": {
+              "owner_kind": "project",
+              "owner_id": "project-beta",
+              "filename": "beta-notes.md",
+              "size_bytes": 54,
+              "sha256": "f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca",
+              "server_checksum": "f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca",
+              "content_type": "text/markdown",
+              "binary": false
+            },
+            "att-gamma-feature": {
+              "owner_kind": "work_item",
+              "owner_id": "item-beta-001",
+              "filename": "feature.json",
+              "size_bytes": 52,
+              "sha256": "c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110",
+              "server_checksum": "c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110",
+              "content_type": "application/json",
+              "binary": false
+            },
+            "att-agent-brief": {
+              "owner_kind": "agent_job",
+              "owner_id": "job-alpha-001",
+              "filename": "agent-brief.txt",
+              "size_bytes": 67,
+              "sha256": "45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494",
+              "server_checksum": "45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494",
+              "content_type": "text/plain",
+              "binary": false
+            }
+          },
+          "agent_jobs": [
+            {
+              "job_id": "job-alpha-001",
+              "request_id": "req-alpha-001",
+              "task_id": "task-alpha-001",
+              "state": "queued",
+              "claim_state": null,
+              "runtime_session_ref": null,
+              "note": "reserved-only: no Herdr session, no external agent launched"
+            },
+            {
+              "job_id": "job-alpha-002",
+              "request_id": "req-alpha-002",
+              "task_id": "task-alpha-004",
+              "state": "queued",
+              "claim_state": null,
+              "runtime_session_ref": null,
+              "note": "reserved-only: no Herdr session, no external agent launched"
+            }
+          ],
+          "mcp": {
+            "tool_calls": [
+              {
+                "tool": "authority.refresh",
+                "result": {
+                  "accepted_revision": 119,
+                  "has_accepted_snapshot": true,
+                  "unresolved_count": 0
+                }
+              },
+              {
+                "tool": "task.update",
+                "arguments": {
+                  "id": "task-beta-002"
+                },
+                "result": {
+                  "accepted": false,
+                  "disposition": "pending",
+                  "message": "queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.",
+                  "pending": true,
+                  "server_state": {
+                    "acceptance_criteria": [
+                      {
+                        "completed": false,
+                        "completed_at_ms": null,
+                        "id": "task-beta-002-ac-1",
+                        "position": 0,
+                        "text": "Beta acceptance 2.1"
+                      },
+                      {
+                        "completed": false,
+                        "completed_at_ms": null,
+                        "id": "task-beta-002-ac-2",
+                        "position": 1,
+                        "text": "Beta acceptance 2.2"
+                      }
+                    ],
+                    "criteria_available": true,
+                    "description": "Deterministic task body for task-beta-002.",
+                    "id": "task-beta-002",
+                    "labels": [],
+                    "milestone_id": "ms-beta-1",
+                    "planning": {
+                      "deadline_at_ms": 1794814400000,
+                      "earliest_start_at_ms": null,
+                      "estimated_minutes": 60
+                    },
+                    "priority": "medium",
+                    "project_id": "project-beta",
+                    "status": "ready",
+                    "title": "Beta task 002"
+                  }
+                }
+              },
+              {
+                "tool": "authority.flush",
+                "result": {
+                  "outcome": "Accepted(1)"
+                }
+              },
+              {
+                "tool": "task.get",
+                "result": {
+                  "description": "MCP-authored description recorded before the backup",
+                  "priority": "medium",
+                  "labels": [
+                    "mcp",
+                    "rehearsal"
+                  ]
+                }
+              }
+            ],
+            "change": {
+              "binary": "/home/xliu/dev/orbit/target/debug/orbit-mcp",
+              "mode": "connected (developer)",
+              "tool_calls": [
+                {
+                  "tool": "authority.refresh",
+                  "arguments": {},
+                  "is_error": false,
+                  "result_excerpt": "{\n  \"accepted_revision\": 119,\n  \"has_accepted_snapshot\": true,\n  \"unresolved_count\": 0\n}",
+                  "result": {
+                    "accepted_revision": 119,
+                    "has_accepted_snapshot": true,
+                    "unresolved_count": 0
+                  }
+                },
+                {
+                  "tool": "task.update",
+                  "arguments": {
+                    "id": "task-beta-002",
+                    "description": "MCP-authored description recorded before the backup",
+                    "priority": "medium",
+                    "labels": [
+                      "mcp",
+                      "rehearsal"
+                    ]
+                  },
+                  "is_error": false,
+                  "result_excerpt": "{\n  \"accepted\": false,\n  \"disposition\": \"pending\",\n  \"message\": \"queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.\",\n  \"pending\": true,\n  \"server_state\": {\n    \"acceptance_criteria\": [\n      {\n        \"completed\": false,\n        \"completed_at_ms\": null,\n        \"id\": \"task-beta-002-ac-1\",\n        \"position\": 0,\n        \"text\": \"Beta acceptance 2.1\"\n      },\n      {\n        \"completed\": false,\n        \"completed_at_ms\": null,\n        \"id\": \"task-beta-002-ac-2\",\n        \"position\": 1,\n        \"text\": \"Beta acceptance 2.2\"\n      }\n    ],\n    \"criteria_available\": true,\n    \"description\": \"Deterministic task body for task-beta-002.\",\n    \"id\": \"task-beta-002\",\n    \"labels\": [],\n    \"milestone_id\": \"ms-beta-1\",\n    \"planning\": {\n      \"deadline_at_ms\": 1794814400000,\n      \"earliest_start_at_ms\": null,\n      \"estimated_minutes\": 60\n    },\n    \"priority\": \"medium\",\n    \"project_id\": \"project-beta\",\n    \"status\": \"ready\",\n    \"title\": \"Beta task 002\"\n  }\n}",
+                  "result": {
+                    "accepted": false,
+                    "disposition": "pending",
+                    "message": "queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.",
+                    "pending": true,
+                    "server_state": {
+                      "acceptance_criteria": [
+                        {
+                          "completed": false,
+                          "completed_at_ms": null,
+                          "id": "task-beta-002-ac-1",
+                          "position": 0,
+                          "text": "Beta acceptance 2.1"
+                        },
+                        {
+                          "completed": false,
+                          "completed_at_ms": null,
+                          "id": "task-beta-002-ac-2",
+                          "position": 1,
+                          "text": "Beta acceptance 2.2"
+                        }
+                      ],
+                      "criteria_available": true,
+                      "description": "Deterministic task body for task-beta-002.",
+                      "id": "task-beta-002",
+                      "labels": [],
+                      "milestone_id": "ms-beta-1",
+                      "planning": {
+                        "deadline_at_ms": 1794814400000,
+                        "earliest_start_at_ms": null,
+                        "estimated_minutes": 60
+                      },
+                      "priority": "medium",
+                      "project_id": "project-beta",
+                      "status": "ready",
+                      "title": "Beta task 002"
+                    }
+                  }
+                },
+                {
+                  "tool": "authority.flush",
+                  "arguments": {},
+                  "is_error": false,
+                  "result_excerpt": "{\n  \"outcome\": \"Accepted(1)\"\n}",
+                  "result": {
+                    "outcome": "Accepted(1)"
+                  }
+                },
+                {
+                  "tool": "authority.refresh",
+                  "arguments": {},
+                  "is_error": false,
+                  "result_excerpt": "{\n  \"accepted_revision\": 120,\n  \"has_accepted_snapshot\": true,\n  \"unresolved_count\": 0\n}",
+                  "result": {
+                    "accepted_revision": 120,
+                    "has_accepted_snapshot": true,
+                    "unresolved_count": 0
+                  }
+                },
+                {
+                  "tool": "task.get",
+                  "arguments": {
+                    "id": "task-beta-002"
+                  },
+                  "is_error": false,
+                  "result_excerpt": "{\n  \"acceptance_criteria\": [\n    {\n      \"completed\": false,\n      \"completed_at_ms\": null,\n      \"id\": \"task-beta-002-ac-1\",\n      \"position\": 0,\n      \"text\": \"Beta acceptance 2.1\"\n    },\n    {\n      \"completed\": false,\n      \"completed_at_ms\": null,\n      \"id\": \"task-beta-002-ac-2\",\n      \"position\": 1,\n      \"text\": \"Beta acceptance 2.2\"\n    }\n  ],\n  \"criteria_available\": true,\n  \"description\": \"MCP-authored description recorded before the backup\",\n  \"id\": \"task-beta-002\",\n  \"labels\": [\n    \"mcp\",\n    \"rehearsal\"\n  ],\n  \"milestone_id\": \"ms-beta-1\",\n  \"planning\": {\n    \"deadline_at_ms\": 1794814400000,\n    \"earliest_start_at_ms\": null,\n    \"estimated_minutes\": 60\n  },\n  \"priority\": \"medium\",\n  \"project_id\": \"project-beta\",\n  \"status\": \"ready\",\n  \"title\": \"Beta task 002\"\n}",
+                  "result": {
+                    "acceptance_criteria": [
+                      {
+                        "completed": false,
+                        "completed_at_ms": null,
+                        "id": "task-beta-002-ac-1",
+                        "position": 0,
+                        "text": "Beta acceptance 2.1"
+                      },
+                      {
+                        "completed": false,
+                        "completed_at_ms": null,
+                        "id": "task-beta-002-ac-2",
+                        "position": 1,
+                        "text": "Beta acceptance 2.2"
+                      }
+                    ],
+                    "criteria_available": true,
+                    "description": "MCP-authored description recorded before the backup",
+                    "id": "task-beta-002",
+                    "labels": [
+                      "mcp",
+                      "rehearsal"
+                    ],
+                    "milestone_id": "ms-beta-1",
+                    "planning": {
+                      "deadline_at_ms": 1794814400000,
+                      "earliest_start_at_ms": null,
+                      "estimated_minutes": 60
+                    },
+                    "priority": "medium",
+                    "project_id": "project-beta",
+                    "status": "ready",
+                    "title": "Beta task 002"
+                  }
+                }
+              ],
+              "flush_outcome": "Accepted(1)",
+              "task_id": "task-beta-002",
+              "accepted_change": {
+                "description": "MCP-authored description recorded before the backup",
+                "priority": "medium",
+                "labels": [
+                  "mcp",
+                  "rehearsal"
+                ]
+              },
+              "calls": [
+                {
+                  "tool": "authority.refresh",
+                  "result": {
+                    "accepted_revision": 119,
+                    "has_accepted_snapshot": true,
+                    "unresolved_count": 0
+                  }
+                },
+                {
+                  "tool": "task.update",
+                  "arguments": {
+                    "id": "task-beta-002"
+                  },
+                  "result": {
+                    "accepted": false,
+                    "disposition": "pending",
+                    "message": "queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.",
+                    "pending": true,
+                    "server_state": {
+                      "acceptance_criteria": [
+                        {
+                          "completed": false,
+                          "completed_at_ms": null,
+                          "id": "task-beta-002-ac-1",
+                          "position": 0,
+                          "text": "Beta acceptance 2.1"
+                        },
+                        {
+                          "completed": false,
+                          "completed_at_ms": null,
+                          "id": "task-beta-002-ac-2",
+                          "position": 1,
+                          "text": "Beta acceptance 2.2"
+                        }
+                      ],
+                      "criteria_available": true,
+                      "description": "Deterministic task body for task-beta-002.",
+                      "id": "task-beta-002",
+                      "labels": [],
+                      "milestone_id": "ms-beta-1",
+                      "planning": {
+                        "deadline_at_ms": 1794814400000,
+                        "earliest_start_at_ms": null,
+                        "estimated_minutes": 60
+                      },
+                      "priority": "medium",
+                      "project_id": "project-beta",
+                      "status": "ready",
+                      "title": "Beta task 002"
+                    }
+                  }
+                },
+                {
+                  "tool": "authority.flush",
+                  "result": {
+                    "outcome": "Accepted(1)"
+                  }
+                },
+                {
+                  "tool": "task.get",
+                  "result": {
+                    "description": "MCP-authored description recorded before the backup",
+                    "priority": "medium",
+                    "labels": [
+                      "mcp",
+                      "rehearsal"
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "capability": {
+            "capability_id": "orbit.reference.work-item-note",
+            "workflow": "capability-reference",
+            "item_id": "item-gamma-001",
+            "action": "append_note",
+            "request_command_id": "m34-cap-request-001",
+            "request_state": "succeeded",
+            "receipt_outcome": "succeeded",
+            "executor_exit_code": 0,
+            "executor_stdout": "{\n  \"type\": \"authority\",\n  \"result\": {\n    \"action\": {\n      \"action_id\": \"append_note\",\n      \"capability_id\": \"orbit.reference.work-item-note\",\n      \"command_id\": \"m34-cap-request-001\",\n      \"item_id\": \"item-gamma-001\"\n    },\n    \"claims_refused\": [],\n    \"command\": \"capability.serve\",\n    \"device_id\": \"m34-rehearsal-device\",\n    \"local\": {\n      \"effect\": {\n        \"item_id\": \"item-gamma-001\",\n        \"kind\": \"work_item_note\",\n        \"recorded\": [\n          {\n            \"command_id\": \"m34-cap-request-001\",\n            \"note\": \"M34 rehearsal capability receipt\",\n            \"tag\": \"m34\"\n          }\n        ],\n        \"scope\": \"executor_scratch_authority\",\n        \"submitted_to_authority\": true\n      },\n      \"outcome\": \"succeeded\",\n      \"refusal\": null,\n      \"submitted_effect\": {\n        \"item_id\": \"item-gamma-001\",\n        \"kind\": \"work_item_note\",\n        \"note\": \"M34 rehearsal capability receipt\",\n        \"tag\": \"m34\"\n      }\n    },\n    \"outcome\": \"succeeded\",\n    \"receipt\": {\n      \"detail\": {\n        \"detail\": \"{\\\"action_id\\\":\\\"append_note\\\",\\\"capability\\\":\\\"orbit.reference.work-item-note\\\",\\\"command_id\\\":\\\"m34-cap-request-001\\\",\\\"effect\\\":{\\\"item_id\\\":\\\"item-gamma-001\\\",\\\"kind\\\":\\\"work_item_note\\\",\\\"recorded\\\":[{\\\"command_id\\\":\\\"m34-cap-request-001\\\",\\\"note\\\":\\\"M34 rehearsal capability receipt\\\",\\\"tag\\\":\\\"m34\\\"}],\\\"scope\\\":\\\"executor_scratch_authority\\\",\\\"submitted_to_authority\\\":true},\\\"executor\\\":\\\"m34-rehearsal-device\\\",\\\"provider_outcome\\\":\\\"succeeded\\\",\\\"refusal\\\":null}\",\n        \"effect\": {\n          \"applied\": true,\n          \"command_id\": \"m34-cap-request-001\",\n          \"item_id\": \"item-gamma-001\",\n          \"kind\": \"work_item_note\"\n        },\n        \"reported_by\": \"m34-rehearsal-device\",\n        \"state\": \"succeeded\"\n      },\n      \"outcome\": \"succeeded\",\n      \"reported_at_ms\": 1793443016994,\n      \"reported_by\": \"m34-rehearsal-device\"\n    },\n    \"state\": \"succeeded\",\n    \"status\": \"reported\"\n  }\n}\n",
+            "executor_stderr": "",
+            "effects": [
+              {
+                "command_id": "m34-cap-request-001",
+                "note": "M34 rehearsal capability receipt",
+                "tag": "m34",
+                "created_at_ms": 1793443016994
+              }
+            ],
+            "note": "executed by the real connected `orbit capability serve` executor; the server never runs provider code itself"
+          },
+          "activity_sample": {
+            "task_id": "task-beta-002",
+            "count": 2,
+            "event_types": [
+              "created",
+              "updated"
+            ]
+          },
+          "command_count": 40
+        },
+        "http_counts": {
+          "projects": 3,
+          "tasks": 103,
+          "milestones": 3,
+          "task_dependencies": 10,
+          "note_ids": 6
+        },
+        "table_counts": {
+          "total_tables": 64,
+          "tables": {
+            "activities": 124,
+            "agent_job_briefs": 2,
+            "agent_job_commands": 0,
+            "agent_job_events": 2,
+            "agent_job_execution_options": 0,
+            "agent_job_handoffs": 0,
+            "agent_job_launch_claims": 0,
+            "agent_job_owners": 2,
+            "agent_job_reviews": 0,
+            "agent_jobs": 2,
+            "agent_proposal_audit": 0,
+            "agent_proposals": 0,
+            "agent_session_prompts": 0,
+            "attachment_objects": 5,
+            "attachments": 5,
+            "authority_commands": 120,
+            "authority_history": 120,
+            "authority_identity": 1,
+            "authority_projection": 1,
+            "automation_jobs": 0,
+            "automation_runs": 0,
+            "devices": 2,
+            "habit_occurrences": 0,
+            "habits": 0,
+            "markdown_command_log": 9,
+            "markdown_folder_commands": 0,
+            "markdown_folder_creates": 0,
+            "markdown_note_index": 6,
+            "markdown_note_revisions": 6,
+            "markdown_reference_commands": 3,
+            "metric_observations": 0,
+            "metric_targets": 0,
+            "milestone_work_items": 3,
+            "milestones": 3,
+            "orbit_blueprint_action_receipts": 1,
+            "orbit_blueprint_action_requests": 1,
+            "orbit_blueprint_command_receipts": 0,
+            "orbit_blueprint_item_dependencies": 0,
+            "orbit_blueprint_work_items": 6,
+            "orbit_blueprints": 3,
+            "orbit_capability_executors": 2,
+            "orbit_capability_grants": 1,
+            "orbit_capability_installations": 1,
+            "orbit_project_blueprints": 3,
+            "orbit_reference_work_item_notes": 1,
+            "orbit_schema": 1,
+            "project_evidence_bindings": 0,
+            "project_success_criteria": 0,
+            "projects": 3,
+            "routine_habits": 0,
+            "routines": 0,
+            "schedule_blocks": 0,
+            "sync_field_versions": 0,
+            "sync_local_state": 0,
+            "sync_outbox": 0,
+            "sync_outbox_fields": 0,
+            "sync_resolution_outbox": 0,
+            "task_acceptance_criteria": 206,
+            "task_labels": 2,
+            "task_prerequisites": 10,
+            "tasks": 103,
+            "web_saved_view_commands": 0,
+            "web_saved_views": 0,
+            "web_sessions": 0
+          }
+        },
+        "minimums": {
+          "projects": 2,
+          "tasks": 100,
+          "milestones": 3,
+          "task_dependencies": 1,
+          "note_ids": 4,
+          "task_acceptance_criteria": 200,
+          "orbit_blueprint_work_items": 6,
+          "attachments": 5,
+          "attachment_objects": 5,
+          "agent_jobs": 2,
+          "orbit_capability_installations": 1,
+          "orbit_capability_grants": 1,
+          "orbit_blueprint_action_requests": 1,
+          "orbit_blueprint_action_receipts": 1,
+          "orbit_reference_work_item_notes": 1,
+          "activities": 100
+        },
+        "warnings": []
+      },
+      "duration_ms": 4053.62
+    },
+    {
+      "step": 3,
+      "title": "create a complete backup",
+      "status": "PASS",
+      "details": {
+        "command": [
+          "--db",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/workspace/server.db",
+          "--config",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/cli.config.toml",
+          "backup",
+          "create",
+          "--output",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups",
+          "--source-mode",
+          "server",
+          "--label",
+          "m34-rehearsal"
+        ],
+        "archive": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak",
+        "archive_bytes": 1495552,
+        "archive_sha256": "953cb9b22b4ca43be1b45115d111bceb8d64b95247416da8fbeece124c62c874",
+        "label": "m34-rehearsal",
+        "created_at": "2026-10-31T10:36:57.138Z",
+        "source_mode": "server",
+        "format_version": 1,
+        "schema_version": 20,
+        "components": [
+          "database",
+          "knowledge",
+          "attachments",
+          "configuration"
+        ],
+        "verified": true,
+        "verification_summary": "verified: 13 file(s), schema 20",
+        "elapsed_ms": 793,
+        "sidecar": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak.verify.json",
+        "sidecar_sha256": "d0a0aaccfb30500f8b5adc7fbf5f5159c1c66c23d77f7425def6c525b4c0d3fb",
+        "list_entry": {
+          "path": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak",
+          "file_name": "orbit-20261031T103657Z-m34-rehearsal.orbitbak",
+          "label": "m34-rehearsal",
+          "created_at_ms": 1793443017138,
+          "created_at": "2026-10-31T10:36:57.138Z",
+          "size_bytes": 1495552,
+          "format_version": 1,
+          "schema_version": 20,
+          "source_mode": "server",
+          "verification": "verified",
+          "verification_checked_at_ms": 1793443017931,
+          "complete": true
+        },
+        "duration_ms": 800.62,
+        "live_server_backup": {
+          "server_pid": 1869559,
+          "server_was_serving_http": true,
+          "journal_mode": "wal",
+          "wal_file_present": true,
+          "note": "the fenced online snapshot was taken while the real server owned the WAL database and answered HTTP; the archive was verified before publish"
+        }
+      },
+      "duration_ms": 812.13
+    },
+    {
+      "step": 4,
+      "title": "verify the archive",
+      "status": "PASS",
+      "details": {
+        "verify_command": [
+          "--db",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/workspace/server.db",
+          "--config",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/cli.config.toml",
+          "backup",
+          "verify",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak"
+        ],
+        "verify_ok": true,
+        "verify_checks": [
+          {
+            "name": "structure",
+            "status": "pass",
+            "detail": "ustar archive with 13 content entries and a valid end-of-archive marker"
+          },
+          {
+            "name": "manifest",
+            "status": "pass",
+            "detail": "manifest v1 (min reader v1) with schema 20 validated"
+          },
+          {
+            "name": "paths",
+            "status": "pass",
+            "detail": "every archive entry is declared, safe and unique"
+          },
+          {
+            "name": "file_hashes",
+            "status": "pass",
+            "detail": "13 file(s) match their declared size and SHA-256"
+          },
+          {
+            "name": "sqlite_integrity",
+            "status": "pass",
+            "detail": "PRAGMA integrity_check passed (64 tables)"
+          },
+          {
+            "name": "schema_compatibility",
+            "status": "pass",
+            "detail": "the snapshot database schema 20 is supported (up to 20)"
+          },
+          {
+            "name": "attachment_presence",
+            "status": "pass",
+            "detail": "5 referenced attachment object(s) are present and size-matched"
+          },
+          {
+            "name": "vault_consistency",
+            "status": "pass",
+            "detail": "6 note(s) in 1 declared folder(s) are consistent with the manifest"
+          }
+        ],
+        "verified_files": [
+          {
+            "path": "attachments/objects/1f/1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81",
+            "kind": "attachment_object",
+            "size_bytes": 8192,
+            "sha256": "1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81"
+          },
+          {
+            "path": "attachments/objects/45/45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494",
+            "kind": "attachment_object",
+            "size_bytes": 67,
+            "sha256": "45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494"
+          },
+          {
+            "path": "attachments/objects/c9/c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110",
+            "kind": "attachment_object",
+            "size_bytes": 52,
+            "sha256": "c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110"
+          },
+          {
+            "path": "attachments/objects/e8/e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada",
+            "kind": "attachment_object",
+            "size_bytes": 59,
+            "sha256": "e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada"
+          },
+          {
+            "path": "attachments/objects/f9/f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca",
+            "kind": "attachment_object",
+            "size_bytes": 54,
+            "sha256": "f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca"
+          },
+          {
+            "path": "config/config.json",
+            "kind": "configuration",
+            "size_bytes": 55,
+            "sha256": "03f21cff9ae784b53742f5baaee3e5f754d5e0084c85d233c77ed44e04af4c1d"
+          },
+          {
+            "path": "database/orbit.db",
+            "kind": "database",
+            "size_bytes": 1466368,
+            "sha256": "b64f48a64a4653bf0c78f1fa9901c4fc4ec400846a14da450bc78ff23b355101"
+          },
+          {
+            "path": "knowledge/note-alpha-log.md",
+            "kind": "knowledge_note",
+            "size_bytes": 110,
+            "sha256": "5bc7e0599d7812a34323cde9ee1f422e9b1d45da0c8844efb8b919be3352e062"
+          },
+          {
+            "path": "knowledge/note-alpha-plan.md",
+            "kind": "knowledge_note",
+            "size_bytes": 148,
+            "sha256": "da5149ac7260f9ec7eb8e9a3a45edb29125a95064957cecd7fff9495c4d727c7"
+          },
+          {
+            "path": "knowledge/note-backup-practice.md",
+            "kind": "knowledge_note",
+            "size_bytes": 233,
+            "sha256": "a5314c2c77ee164ec89637f538907bc9eb4248062fa27610b0c203d9877739f5"
+          },
+          {
+            "path": "knowledge/note-beta-design.md",
+            "kind": "knowledge_note",
+            "size_bytes": 171,
+            "sha256": "b7d14bae22b6b66665d00bbeb09e3e1be1f49fb685a6a3e327e1c763ac63c885"
+          },
+          {
+            "path": "knowledge/note-gamma-capability.md",
+            "kind": "knowledge_note",
+            "size_bytes": 129,
+            "sha256": "12b7dbace89e4ad9fb5c03b53f5a9da504a99c7dc4d276c7e04db02e6b5e36fa"
+          },
+          {
+            "path": "knowledge/note-restore-checklist.md",
+            "kind": "knowledge_note",
+            "size_bytes": 197,
+            "sha256": "432994f4b7a46d15c7676a0de782568e133fda1331ec9661b5d3aa69d5b3035b"
+          }
+        ],
+        "inspect_command": [
+          "--db",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/workspace/server.db",
+          "--config",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/cli.config.toml",
+          "backup",
+          "inspect",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak"
+        ],
+        "format_version": 1,
+        "min_reader_version": 1,
+        "schema_version": 20,
+        "complete": true,
+        "label": "m34-rehearsal",
+        "source": {
+          "mode": "server",
+          "workspace_id": "ddd6b803b2bdeaed002a4a2d83c1ce9b",
+          "revision": 120,
+          "described_as": "server-authoritative workspace",
+          "excluded_client_pending_data": true
+        },
+        "totals": {
+          "database_bytes": 1466368,
+          "knowledge_bytes": 988,
+          "attachment_bytes": 8424,
+          "config_bytes": 55,
+          "content_bytes": 1475835,
+          "archive_bytes": 1495552
+        },
+        "counts": {
+          "knowledge_notes": 6,
+          "knowledge_folders": 1,
+          "attachment_objects": 5,
+          "attachment_associations": 5,
+          "tables": {
+            "activities": 124,
+            "agent_job_briefs": 2,
+            "agent_job_commands": 0,
+            "agent_job_events": 2,
+            "agent_job_execution_options": 0,
+            "agent_job_handoffs": 0,
+            "agent_job_launch_claims": 0,
+            "agent_job_owners": 2,
+            "agent_job_reviews": 0,
+            "agent_jobs": 2,
+            "agent_proposal_audit": 0,
+            "agent_proposals": 0,
+            "agent_session_prompts": 0,
+            "attachment_objects": 5,
+            "attachments": 5,
+            "authority_commands": 120,
+            "authority_history": 120,
+            "authority_identity": 1,
+            "authority_projection": 1,
+            "automation_jobs": 0,
+            "automation_runs": 0,
+            "devices": 2,
+            "habit_occurrences": 0,
+            "habits": 0,
+            "markdown_command_log": 9,
+            "markdown_folder_commands": 0,
+            "markdown_folder_creates": 0,
+            "markdown_note_index": 6,
+            "markdown_note_revisions": 6,
+            "markdown_reference_commands": 3,
+            "metric_observations": 0,
+            "metric_targets": 0,
+            "milestone_work_items": 3,
+            "milestones": 3,
+            "orbit_blueprint_action_receipts": 1,
+            "orbit_blueprint_action_requests": 1,
+            "orbit_blueprint_command_receipts": 0,
+            "orbit_blueprint_item_dependencies": 0,
+            "orbit_blueprint_work_items": 6,
+            "orbit_blueprints": 3,
+            "orbit_capability_executors": 2,
+            "orbit_capability_grants": 1,
+            "orbit_capability_installations": 1,
+            "orbit_project_blueprints": 3,
+            "orbit_reference_work_item_notes": 1,
+            "orbit_schema": 1,
+            "project_evidence_bindings": 0,
+            "project_success_criteria": 0,
+            "projects": 3,
+            "routine_habits": 0,
+            "routines": 0,
+            "schedule_blocks": 0,
+            "sync_field_versions": 0,
+            "sync_local_state": 0,
+            "sync_outbox": 0,
+            "sync_outbox_fields": 0,
+            "sync_resolution_outbox": 0,
+            "task_acceptance_criteria": 206,
+            "task_labels": 2,
+            "task_prerequisites": 10,
+            "tasks": 103,
+            "web_saved_view_commands": 0,
+            "web_saved_views": 0,
+            "web_sessions": 0
+          }
+        },
+        "inventory_files": 13,
+        "inventory_kinds": [
+          "attachment_object",
+          "configuration",
+          "database",
+          "knowledge_note"
+        ],
+        "exclusions": [
+          {
+            "category": "client_pending_data",
+            "detail": "unaccepted changes, pending outbox commands and staged attachment uploads held by disconnected connected-mode clients are outside a server backup; reconcile each client explicitly after a restore"
+          },
+          {
+            "category": "external_agent_sessions",
+            "detail": "external Herdr agent sessions and their working directories"
+          },
+          {
+            "category": "operating_system_state",
+            "detail": "running processes and operating-system state"
+          },
+          {
+            "category": "external_repositories",
+            "detail": "Git worktrees, branches and external repositories"
+          },
+          {
+            "category": "external_credentials",
+            "detail": "credentials held by external agents or providers"
+          },
+          {
+            "category": "actions_executed_outside_orbit",
+            "detail": "actions that already executed outside Orbit"
+          }
+        ],
+        "archive_sha256": "953cb9b22b4ca43be1b45115d111bceb8d64b95247416da8fbeece124c62c874"
+      },
+      "duration_ms": 40.51
+    },
+    {
+      "step": 5,
+      "title": "make additional disposable changes",
+      "status": "PASS",
+      "details": {
+        "task_id": "task-alpha-post-backup",
+        "note_id": "note-post-backup",
+        "post_snapshot_task_count": 104,
+        "post_snapshot_note_count": 7,
+        "archive_task_count": 103
+      },
+      "duration_ms": 86.11
+    },
+    {
+      "step": 6,
+      "title": "restore the backup into a separate location",
+      "status": "PASS",
+      "details": {
+        "command": [
+          "--db",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/workspace/server.db",
+          "--config",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/cli.config.toml",
+          "backup",
+          "restore",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak",
+          "--to",
+          "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored"
+        ],
+        "response": {
+          "type": "restore_complete",
+          "mode": "isolated",
+          "database": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/orbit.db",
+          "knowledge_vault": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/orbit.knowledge",
+          "attachment_store": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/attachments/objects",
+          "activated": true,
+          "preserved": null,
+          "journal": null,
+          "verified": true,
+          "counts": {
+            "knowledge_notes": 6,
+            "knowledge_folders": 1,
+            "attachment_objects": 5,
+            "attachment_associations": 5,
+            "tables": {
+              "activities": 124,
+              "agent_job_briefs": 2,
+              "agent_job_commands": 0,
+              "agent_job_events": 2,
+              "agent_job_execution_options": 0,
+              "agent_job_handoffs": 0,
+              "agent_job_launch_claims": 0,
+              "agent_job_owners": 2,
+              "agent_job_reviews": 0,
+              "agent_jobs": 2,
+              "agent_proposal_audit": 0,
+              "agent_proposals": 0,
+              "agent_session_prompts": 0,
+              "attachment_objects": 5,
+              "attachments": 5,
+              "authority_commands": 120,
+              "authority_history": 120,
+              "authority_identity": 1,
+              "authority_projection": 1,
+              "automation_jobs": 0,
+              "automation_runs": 0,
+              "devices": 2,
+              "habit_occurrences": 0,
+              "habits": 0,
+              "markdown_command_log": 9,
+              "markdown_folder_commands": 0,
+              "markdown_folder_creates": 0,
+              "markdown_note_index": 6,
+              "markdown_note_revisions": 6,
+              "markdown_reference_commands": 3,
+              "metric_observations": 0,
+              "metric_targets": 0,
+              "milestone_work_items": 3,
+              "milestones": 3,
+              "orbit_blueprint_action_receipts": 1,
+              "orbit_blueprint_action_requests": 1,
+              "orbit_blueprint_command_receipts": 0,
+              "orbit_blueprint_item_dependencies": 0,
+              "orbit_blueprint_work_items": 6,
+              "orbit_blueprints": 3,
+              "orbit_capability_executors": 2,
+              "orbit_capability_grants": 1,
+              "orbit_capability_installations": 1,
+              "orbit_project_blueprints": 3,
+              "orbit_reference_work_item_notes": 1,
+              "orbit_schema": 1,
+              "project_evidence_bindings": 0,
+              "project_success_criteria": 0,
+              "projects": 3,
+              "routine_habits": 0,
+              "routines": 0,
+              "schedule_blocks": 0,
+              "sync_field_versions": 0,
+              "sync_local_state": 0,
+              "sync_outbox": 0,
+              "sync_outbox_fields": 0,
+              "sync_resolution_outbox": 0,
+              "task_acceptance_criteria": 206,
+              "task_labels": 2,
+              "task_prerequisites": 10,
+              "tasks": 103,
+              "web_saved_view_commands": 0,
+              "web_saved_views": 0,
+              "web_sessions": 0
+            }
+          }
+        },
+        "restored_database": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/orbit.db",
+        "restored_vault": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/orbit.knowledge",
+        "restored_attachments": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/attachments/objects",
+        "size_bytes": 1466368,
+        "duration_ms": 132.56,
+        "active_workspace_task_still_present": "task-alpha-post-backup"
+      },
+      "duration_ms": 140.35
+    },
+    {
+      "step": 7,
+      "title": "start an isolated Orbit instance on the restored data",
+      "status": "PASS",
+      "details": {
+        "binary": "/home/xliu/dev/orbit/target/debug/orbit-server",
+        "auth_mode": "local-trusted",
+        "bind": "127.0.0.1:58307",
+        "restored_database": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/orbit.db",
+        "health": {
+          "status": "ok"
+        },
+        "revision": 120,
+        "startup_banner": "Orbit server listening on http://127.0.0.1:58307\nAuthentication: Local trusted mode\nAccess: Local machine only",
+        "credential_handling": "restored credential already valid (no re-enrollment needed)"
+      },
+      "duration_ms": 68.27
+    },
+    {
+      "step": 8,
+      "title": "confirm earlier tasks/milestones/notes/attachments exist",
+      "status": "PASS",
+      "details": {
+        "restored_http_counts": {
+          "revision": 120,
+          "projects": [
+            "project-alpha",
+            "project-beta",
+            "project-gamma"
+          ],
+          "tasks": [
+            "task-alpha-001",
+            "task-alpha-002",
+            "task-alpha-003",
+            "task-alpha-004",
+            "task-alpha-005",
+            "task-alpha-006",
+            "task-alpha-007",
+            "task-alpha-008",
+            "task-alpha-009",
+            "task-alpha-010",
+            "task-alpha-011",
+            "task-alpha-012",
+            "task-alpha-013",
+            "task-alpha-014",
+            "task-alpha-015",
+            "task-alpha-016",
+            "task-alpha-017",
+            "task-alpha-018",
+            "task-alpha-019",
+            "task-alpha-020",
+            "task-alpha-021",
+            "task-alpha-022",
+            "task-alpha-023",
+            "task-alpha-024",
+            "task-alpha-025",
+            "task-alpha-026",
+            "task-alpha-027",
+            "task-alpha-028",
+            "task-alpha-029",
+            "task-alpha-030",
+            "task-alpha-031",
+            "task-alpha-032",
+            "task-alpha-033",
+            "task-alpha-034",
+            "task-alpha-035",
+            "task-alpha-036",
+            "task-alpha-037",
+            "task-alpha-038",
+            "task-alpha-039",
+            "task-alpha-040",
+            "task-alpha-041",
+            "task-alpha-042",
+            "task-alpha-043",
+            "task-alpha-044",
+            "task-alpha-045",
+            "task-alpha-046",
+            "task-alpha-047",
+            "task-alpha-048",
+            "task-alpha-049",
+            "task-alpha-050",
+            "task-alpha-051",
+            "task-alpha-052",
+            "task-alpha-053",
+            "task-alpha-054",
+            "task-alpha-055",
+            "task-alpha-056",
+            "task-alpha-057",
+            "task-alpha-058",
+            "task-alpha-059",
+            "task-alpha-060",
+            "task-alpha-061",
+            "task-alpha-062",
+            "task-alpha-063",
+            "task-alpha-064",
+            "task-alpha-065",
+            "task-alpha-066",
+            "task-alpha-067",
+            "task-alpha-068",
+            "task-alpha-069",
+            "task-alpha-070",
+            "task-beta-001",
+            "task-beta-002",
+            "task-beta-003",
+            "task-beta-004",
+            "task-beta-005",
+            "task-beta-006",
+            "task-beta-007",
+            "task-beta-008",
+            "task-beta-009",
+            "task-beta-010",
+            "task-beta-011",
+            "task-beta-012",
+            "task-beta-013",
+            "task-beta-014",
+            "task-beta-015",
+            "task-beta-016",
+            "task-beta-017",
+            "task-beta-018",
+            "task-beta-019",
+            "task-beta-020",
+            "task-beta-021",
+            "task-beta-022",
+            "task-beta-023",
+            "task-beta-024",
+            "task-beta-025",
+            "task-beta-026",
+            "task-beta-027",
+            "task-beta-028",
+            "task-beta-029",
+            "task-beta-030",
+            "task-beta-031",
+            "task-beta-032",
+            "task-beta-033"
+          ],
+          "milestones": [
+            "ms-alpha-1",
+            "ms-alpha-2",
+            "ms-beta-1"
+          ],
+          "dependencies": [
+            [
+              "task-alpha-002",
+              "task-alpha-001"
+            ],
+            [
+              "task-alpha-003",
+              "task-alpha-002"
+            ],
+            [
+              "task-alpha-005",
+              "task-alpha-004"
+            ],
+            [
+              "task-alpha-008",
+              "task-alpha-007"
+            ],
+            [
+              "task-alpha-013",
+              "task-alpha-012"
+            ],
+            [
+              "task-alpha-021",
+              "task-alpha-020"
+            ],
+            [
+              "task-alpha-034",
+              "task-alpha-033"
+            ],
+            [
+              "task-alpha-070",
+              "task-alpha-034"
+            ],
+            [
+              "task-alpha-070",
+              "task-alpha-055"
+            ],
+            [
+              "task-beta-002",
+              "task-beta-001"
+            ]
+          ],
+          "note_ids": [
+            "note-alpha-log",
+            "note-alpha-plan",
+            "note-backup-practice",
+            "note-beta-design",
+            "note-gamma-capability",
+            "note-restore-checklist"
+          ]
+        },
+        "attachment_checks": {
+          "att-alpha-spec": {
+            "sha256": "e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada",
+            "expected_sha256": "e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada",
+            "matches": true,
+            "size_bytes": 59,
+            "binary": false
+          },
+          "att-alpha-binary": {
+            "sha256": "1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81",
+            "expected_sha256": "1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81",
+            "matches": true,
+            "size_bytes": 8192,
+            "binary": true
+          },
+          "att-beta-notes": {
+            "sha256": "f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca",
+            "expected_sha256": "f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca",
+            "matches": true,
+            "size_bytes": 54,
+            "binary": false
+          },
+          "att-gamma-feature": {
+            "sha256": "c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110",
+            "expected_sha256": "c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110",
+            "matches": true,
+            "size_bytes": 52,
+            "binary": false
+          },
+          "att-agent-brief": {
+            "sha256": "45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494",
+            "expected_sha256": "45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494",
+            "matches": true,
+            "size_bytes": 67,
+            "binary": false
+          }
+        },
+        "note_link_preserved": true,
+        "task_count": 103,
+        "missing": {
+          "projects": [],
+          "milestones": [],
+          "tasks": [],
+          "notes": []
+        }
+      },
+      "duration_ms": 33.45
+    },
+    {
+      "step": 9,
+      "title": "verify task relationships and activity history",
+      "status": "PASS",
+      "details": {
+        "dependency_edges": 10,
+        "dependencies_match": true,
+        "acceptance_criteria_completed": [
+          "task-alpha-001-ac-1"
+        ],
+        "activity_count": 2,
+        "activity_sample": [
+          {
+            "type": "updated",
+            "at_ms": 1793443017066
+          },
+          {
+            "type": "created",
+            "at_ms": 1793443015019
+          }
+        ],
+        "work_item_count": 5,
+        "milestone_assignments_restored": true
+      },
+      "duration_ms": 4.1
+    },
+    {
+      "step": 10,
+      "title": "confirm later disposable changes are absent",
+      "status": "PASS",
+      "details": {
+        "post_backup_task_absent": true,
+        "post_backup_note_absent": true,
+        "task_count_matches_snapshot": true,
+        "note_count_matches_snapshot": true,
+        "restored_task_count": 103,
+        "snapshot_task_count": 103,
+        "restored_note_count": 6,
+        "snapshot_note_count": 6,
+        "post_backup_task_status": 404,
+        "post_backup_note_status": 404
+      },
+      "duration_ms": 9.68
+    },
+    {
+      "step": 11,
+      "title": "verify agent jobs and capability receipts are readable",
+      "status": "PASS",
+      "details": {
+        "agent_jobs": [
+          {
+            "job_id": "job-alpha-001",
+            "state": "queued",
+            "claim_state": null,
+            "runtime_session_ref": null,
+            "task_id": "task-alpha-001"
+          },
+          {
+            "job_id": "job-alpha-002",
+            "state": "queued",
+            "claim_state": null,
+            "runtime_session_ref": null,
+            "task_id": "task-alpha-004"
+          }
+        ],
+        "capability_request_state": "succeeded",
+        "capability_receipt": {
+          "outcome": "succeeded",
+          "reported_by": "m34-rehearsal-device"
+        },
+        "capability_effects": [
+          {
+            "command_id": "m34-cap-request-001",
+            "note": "M34 rehearsal capability receipt",
+            "tag": "m34",
+            "created_at_ms": 1793443016994
+          }
+        ],
+        "capability_installed_and_granted": true
+      },
+      "duration_ms": 4.4
+    },
+    {
+      "step": 12,
+      "title": "confirm no external agent/capability auto-executes",
+      "status": "PASS",
+      "details": {
+        "agent_jobs_before": [
+          {
+            "job_id": "job-alpha-001",
+            "state": "queued",
+            "claim_state": null,
+            "runtime_session_ref": null,
+            "updated_at_ms": 1793000000000
+          },
+          {
+            "job_id": "job-alpha-002",
+            "state": "queued",
+            "claim_state": null,
+            "runtime_session_ref": null,
+            "updated_at_ms": 1793000000000
+          }
+        ],
+        "agent_jobs_after": [
+          {
+            "job_id": "job-alpha-001",
+            "state": "queued",
+            "claim_state": null,
+            "runtime_session_ref": null
+          },
+          {
+            "job_id": "job-alpha-002",
+            "state": "queued",
+            "claim_state": null,
+            "runtime_session_ref": null
+          }
+        ],
+        "agent_state_unchanged": true,
+        "capability_requests_before": 1,
+        "capability_requests_after": 1,
+        "no_external_launch": true,
+        "external_boundary": "The rehearsal never launched a Herdr session or an external agent. The restored instance has no auto-launch path, the reserved jobs stay queued with no runtime_session_ref and no claim, and the capability receipt is a durable record, not a re-execution. A real external agent/Herdr round-trip is outside this rehearsal's boundary."
+      },
+      "duration_ms": 1008.96
+    },
+    {
+      "step": 13,
+      "title": "perform an allowed disposable write in the restored instance",
+      "status": "PASS",
+      "details": {
+        "task_id": "task-restored-write",
+        "accepted_revision": 121,
+        "task_status": "inbox"
+      },
+      "duration_ms": 63.67
+    },
+    {
+      "step": 14,
+      "title": "restart the restored instance and verify persistence",
+      "status": "PASS",
+      "details": {
+        "restarts": 1,
+        "task_count_before_restart": 104,
+        "task_count_after_restart": 104,
+        "disposable_write_survived": true,
+        "mcp_change_survived_restart": true,
+        "capability_receipt_survived_restart": true,
+        "agent_job_state_after_restart": {
+          "state": "queued",
+          "claim_state": null,
+          "runtime_session_ref": null
+        },
+        "activity_count_after_restart": 2,
+        "cli_status_after_restart": {
+          "type": "workspace_status",
+          "healthy": true,
+          "projects": 3,
+          "tasks": 104,
+          "knowledge_items": 6
+        },
+        "sqlite_task_count": 104,
+        "startup_banner": "Authentication: Local trusted mode\nAccess: Local machine only\nOrbit server listening on http://127.0.0.1:40181\nAuthentication: Local trusted mode\nAccess: Local machine only"
+      },
+      "duration_ms": 100.03
+    }
+  ],
+  "dataset": {
+    "projects": [
+      "project-alpha",
+      "project-beta",
+      "project-gamma"
+    ],
+    "milestones": [
+      "ms-alpha-1",
+      "ms-alpha-2",
+      "ms-beta-1"
+    ],
+    "task_count": 103,
+    "tasks": [
+      "task-alpha-001",
+      "task-alpha-002",
+      "task-alpha-003",
+      "task-alpha-004",
+      "task-alpha-005",
+      "task-alpha-006",
+      "task-alpha-007",
+      "task-alpha-008",
+      "task-alpha-009",
+      "task-alpha-010",
+      "task-alpha-011",
+      "task-alpha-012",
+      "task-alpha-013",
+      "task-alpha-014",
+      "task-alpha-015",
+      "task-alpha-016",
+      "task-alpha-017",
+      "task-alpha-018",
+      "task-alpha-019",
+      "task-alpha-020",
+      "task-alpha-021",
+      "task-alpha-022",
+      "task-alpha-023",
+      "task-alpha-024",
+      "task-alpha-025",
+      "task-alpha-026",
+      "task-alpha-027",
+      "task-alpha-028",
+      "task-alpha-029",
+      "task-alpha-030",
+      "task-alpha-031",
+      "task-alpha-032",
+      "task-alpha-033",
+      "task-alpha-034",
+      "task-alpha-035",
+      "task-alpha-036",
+      "task-alpha-037",
+      "task-alpha-038",
+      "task-alpha-039",
+      "task-alpha-040",
+      "task-alpha-041",
+      "task-alpha-042",
+      "task-alpha-043",
+      "task-alpha-044",
+      "task-alpha-045",
+      "task-alpha-046",
+      "task-alpha-047",
+      "task-alpha-048",
+      "task-alpha-049",
+      "task-alpha-050",
+      "task-alpha-051",
+      "task-alpha-052",
+      "task-alpha-053",
+      "task-alpha-054",
+      "task-alpha-055",
+      "task-alpha-056",
+      "task-alpha-057",
+      "task-alpha-058",
+      "task-alpha-059",
+      "task-alpha-060",
+      "task-alpha-061",
+      "task-alpha-062",
+      "task-alpha-063",
+      "task-alpha-064",
+      "task-alpha-065",
+      "task-alpha-066",
+      "task-alpha-067",
+      "task-alpha-068",
+      "task-alpha-069",
+      "task-alpha-070",
+      "task-beta-001",
+      "task-beta-002",
+      "task-beta-003",
+      "task-beta-004",
+      "task-beta-005",
+      "task-beta-006",
+      "task-beta-007",
+      "task-beta-008",
+      "task-beta-009",
+      "task-beta-010",
+      "task-beta-011",
+      "task-beta-012",
+      "task-beta-013",
+      "task-beta-014",
+      "task-beta-015",
+      "task-beta-016",
+      "task-beta-017",
+      "task-beta-018",
+      "task-beta-019",
+      "task-beta-020",
+      "task-beta-021",
+      "task-beta-022",
+      "task-beta-023",
+      "task-beta-024",
+      "task-beta-025",
+      "task-beta-026",
+      "task-beta-027",
+      "task-beta-028",
+      "task-beta-029",
+      "task-beta-030",
+      "task-beta-031",
+      "task-beta-032",
+      "task-beta-033"
+    ],
+    "work_items": [
+      "item-beta-001",
+      "item-beta-002",
+      "item-beta-003",
+      "item-beta-004",
+      "item-beta-005",
+      "item-gamma-001"
+    ],
+    "notes": {
+      "note-alpha-plan": {
+        "path": "note-alpha-plan.md",
+        "sha256": "a4f5f8b2c2e0c24b92dea838ecfdcf64f4a336d04cea02acf697284018fafb9a"
+      },
+      "note-alpha-log": {
+        "path": "note-alpha-log.md",
+        "sha256": "0db17a8a8de035c928e32d91fad3cafcb418897eef63aa1288f4058347178a5a"
+      },
+      "note-beta-design": {
+        "path": "note-beta-design.md",
+        "sha256": "2189f39f94ae9bd5d55dc0aafad9bcbcdee7acdf7773a9e810ea0d03b6a1e69f"
+      },
+      "note-gamma-capability": {
+        "path": "note-gamma-capability.md",
+        "sha256": "5fbc98245f0fc52b9188ca8a83a27055bd365b6c327adb0a196ef673c18f74c0"
+      },
+      "note-restore-checklist": {
+        "path": "note-restore-checklist.md",
+        "sha256": "5f9e74d43558938e407a723461bc263c019235cac5cd9fbf23d27923b4dd7a7f"
+      },
+      "note-backup-practice": {
+        "path": "note-backup-practice.md",
+        "sha256": "25ee1d8202b8b74368c68390a5ea37fd6dd098749a5f7d040deaa36603d3951b"
+      }
+    },
+    "typed_references": [
+      {
+        "note_id": "note-restore-checklist",
+        "target": "task:task-alpha-005"
+      },
+      {
+        "note_id": "note-backup-practice",
+        "target": "project:project-alpha"
+      },
+      {
+        "note_id": "note-beta-design",
+        "target": "project:project-beta"
+      }
+    ],
+    "attachments": {
+      "att-alpha-spec": {
+        "owner_kind": "task",
+        "owner_id": "task-alpha-001",
+        "filename": "alpha-spec.txt",
+        "size_bytes": 59,
+        "sha256": "e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada",
+        "server_checksum": "e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada",
+        "content_type": "text/plain",
+        "binary": false
+      },
+      "att-alpha-binary": {
+        "owner_kind": "task",
+        "owner_id": "task-alpha-002",
+        "filename": "alpha-diagram.bin",
+        "size_bytes": 8192,
+        "sha256": "1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81",
+        "server_checksum": "1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81",
+        "content_type": "application/octet-stream",
+        "binary": true
+      },
+      "att-beta-notes": {
+        "owner_kind": "project",
+        "owner_id": "project-beta",
+        "filename": "beta-notes.md",
+        "size_bytes": 54,
+        "sha256": "f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca",
+        "server_checksum": "f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca",
+        "content_type": "text/markdown",
+        "binary": false
+      },
+      "att-gamma-feature": {
+        "owner_kind": "work_item",
+        "owner_id": "item-beta-001",
+        "filename": "feature.json",
+        "size_bytes": 52,
+        "sha256": "c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110",
+        "server_checksum": "c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110",
+        "content_type": "application/json",
+        "binary": false
+      },
+      "att-agent-brief": {
+        "owner_kind": "agent_job",
+        "owner_id": "job-alpha-001",
+        "filename": "agent-brief.txt",
+        "size_bytes": 67,
+        "sha256": "45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494",
+        "server_checksum": "45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494",
+        "content_type": "text/plain",
+        "binary": false
+      }
+    },
+    "agent_jobs": [
+      {
+        "job_id": "job-alpha-001",
+        "request_id": "req-alpha-001",
+        "task_id": "task-alpha-001",
+        "state": "queued",
+        "claim_state": null,
+        "runtime_session_ref": null,
+        "note": "reserved-only: no Herdr session, no external agent launched"
+      },
+      {
+        "job_id": "job-alpha-002",
+        "request_id": "req-alpha-002",
+        "task_id": "task-alpha-004",
+        "state": "queued",
+        "claim_state": null,
+        "runtime_session_ref": null,
+        "note": "reserved-only: no Herdr session, no external agent launched"
+      }
+    ],
+    "mcp": {
+      "tool_calls": [
+        {
+          "tool": "authority.refresh",
+          "result": {
+            "accepted_revision": 119,
+            "has_accepted_snapshot": true,
+            "unresolved_count": 0
+          }
+        },
+        {
+          "tool": "task.update",
+          "arguments": {
+            "id": "task-beta-002"
+          },
+          "result": {
+            "accepted": false,
+            "disposition": "pending",
+            "message": "queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.",
+            "pending": true,
+            "server_state": {
+              "acceptance_criteria": [
+                {
+                  "completed": false,
+                  "completed_at_ms": null,
+                  "id": "task-beta-002-ac-1",
+                  "position": 0,
+                  "text": "Beta acceptance 2.1"
+                },
+                {
+                  "completed": false,
+                  "completed_at_ms": null,
+                  "id": "task-beta-002-ac-2",
+                  "position": 1,
+                  "text": "Beta acceptance 2.2"
+                }
+              ],
+              "criteria_available": true,
+              "description": "Deterministic task body for task-beta-002.",
+              "id": "task-beta-002",
+              "labels": [],
+              "milestone_id": "ms-beta-1",
+              "planning": {
+                "deadline_at_ms": 1794814400000,
+                "earliest_start_at_ms": null,
+                "estimated_minutes": 60
+              },
+              "priority": "medium",
+              "project_id": "project-beta",
+              "status": "ready",
+              "title": "Beta task 002"
+            }
+          }
+        },
+        {
+          "tool": "authority.flush",
+          "result": {
+            "outcome": "Accepted(1)"
+          }
+        },
+        {
+          "tool": "task.get",
+          "result": {
+            "description": "MCP-authored description recorded before the backup",
+            "priority": "medium",
+            "labels": [
+              "mcp",
+              "rehearsal"
+            ]
+          }
+        }
+      ],
+      "change": {
+        "binary": "/home/xliu/dev/orbit/target/debug/orbit-mcp",
+        "mode": "connected (developer)",
+        "tool_calls": [
+          {
+            "tool": "authority.refresh",
+            "arguments": {},
+            "is_error": false,
+            "result_excerpt": "{\n  \"accepted_revision\": 119,\n  \"has_accepted_snapshot\": true,\n  \"unresolved_count\": 0\n}",
+            "result": {
+              "accepted_revision": 119,
+              "has_accepted_snapshot": true,
+              "unresolved_count": 0
+            }
+          },
+          {
+            "tool": "task.update",
+            "arguments": {
+              "id": "task-beta-002",
+              "description": "MCP-authored description recorded before the backup",
+              "priority": "medium",
+              "labels": [
+                "mcp",
+                "rehearsal"
+              ]
+            },
+            "is_error": false,
+            "result_excerpt": "{\n  \"accepted\": false,\n  \"disposition\": \"pending\",\n  \"message\": \"queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.\",\n  \"pending\": true,\n  \"server_state\": {\n    \"acceptance_criteria\": [\n      {\n        \"completed\": false,\n        \"completed_at_ms\": null,\n        \"id\": \"task-beta-002-ac-1\",\n        \"position\": 0,\n        \"text\": \"Beta acceptance 2.1\"\n      },\n      {\n        \"completed\": false,\n        \"completed_at_ms\": null,\n        \"id\": \"task-beta-002-ac-2\",\n        \"position\": 1,\n        \"text\": \"Beta acceptance 2.2\"\n      }\n    ],\n    \"criteria_available\": true,\n    \"description\": \"Deterministic task body for task-beta-002.\",\n    \"id\": \"task-beta-002\",\n    \"labels\": [],\n    \"milestone_id\": \"ms-beta-1\",\n    \"planning\": {\n      \"deadline_at_ms\": 1794814400000,\n      \"earliest_start_at_ms\": null,\n      \"estimated_minutes\": 60\n    },\n    \"priority\": \"medium\",\n    \"project_id\": \"project-beta\",\n    \"status\": \"ready\",\n    \"title\": \"Beta task 002\"\n  }\n}",
+            "result": {
+              "accepted": false,
+              "disposition": "pending",
+              "message": "queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.",
+              "pending": true,
+              "server_state": {
+                "acceptance_criteria": [
+                  {
+                    "completed": false,
+                    "completed_at_ms": null,
+                    "id": "task-beta-002-ac-1",
+                    "position": 0,
+                    "text": "Beta acceptance 2.1"
+                  },
+                  {
+                    "completed": false,
+                    "completed_at_ms": null,
+                    "id": "task-beta-002-ac-2",
+                    "position": 1,
+                    "text": "Beta acceptance 2.2"
+                  }
+                ],
+                "criteria_available": true,
+                "description": "Deterministic task body for task-beta-002.",
+                "id": "task-beta-002",
+                "labels": [],
+                "milestone_id": "ms-beta-1",
+                "planning": {
+                  "deadline_at_ms": 1794814400000,
+                  "earliest_start_at_ms": null,
+                  "estimated_minutes": 60
+                },
+                "priority": "medium",
+                "project_id": "project-beta",
+                "status": "ready",
+                "title": "Beta task 002"
+              }
+            }
+          },
+          {
+            "tool": "authority.flush",
+            "arguments": {},
+            "is_error": false,
+            "result_excerpt": "{\n  \"outcome\": \"Accepted(1)\"\n}",
+            "result": {
+              "outcome": "Accepted(1)"
+            }
+          },
+          {
+            "tool": "authority.refresh",
+            "arguments": {},
+            "is_error": false,
+            "result_excerpt": "{\n  \"accepted_revision\": 120,\n  \"has_accepted_snapshot\": true,\n  \"unresolved_count\": 0\n}",
+            "result": {
+              "accepted_revision": 120,
+              "has_accepted_snapshot": true,
+              "unresolved_count": 0
+            }
+          },
+          {
+            "tool": "task.get",
+            "arguments": {
+              "id": "task-beta-002"
+            },
+            "is_error": false,
+            "result_excerpt": "{\n  \"acceptance_criteria\": [\n    {\n      \"completed\": false,\n      \"completed_at_ms\": null,\n      \"id\": \"task-beta-002-ac-1\",\n      \"position\": 0,\n      \"text\": \"Beta acceptance 2.1\"\n    },\n    {\n      \"completed\": false,\n      \"completed_at_ms\": null,\n      \"id\": \"task-beta-002-ac-2\",\n      \"position\": 1,\n      \"text\": \"Beta acceptance 2.2\"\n    }\n  ],\n  \"criteria_available\": true,\n  \"description\": \"MCP-authored description recorded before the backup\",\n  \"id\": \"task-beta-002\",\n  \"labels\": [\n    \"mcp\",\n    \"rehearsal\"\n  ],\n  \"milestone_id\": \"ms-beta-1\",\n  \"planning\": {\n    \"deadline_at_ms\": 1794814400000,\n    \"earliest_start_at_ms\": null,\n    \"estimated_minutes\": 60\n  },\n  \"priority\": \"medium\",\n  \"project_id\": \"project-beta\",\n  \"status\": \"ready\",\n  \"title\": \"Beta task 002\"\n}",
+            "result": {
+              "acceptance_criteria": [
+                {
+                  "completed": false,
+                  "completed_at_ms": null,
+                  "id": "task-beta-002-ac-1",
+                  "position": 0,
+                  "text": "Beta acceptance 2.1"
+                },
+                {
+                  "completed": false,
+                  "completed_at_ms": null,
+                  "id": "task-beta-002-ac-2",
+                  "position": 1,
+                  "text": "Beta acceptance 2.2"
+                }
+              ],
+              "criteria_available": true,
+              "description": "MCP-authored description recorded before the backup",
+              "id": "task-beta-002",
+              "labels": [
+                "mcp",
+                "rehearsal"
+              ],
+              "milestone_id": "ms-beta-1",
+              "planning": {
+                "deadline_at_ms": 1794814400000,
+                "earliest_start_at_ms": null,
+                "estimated_minutes": 60
+              },
+              "priority": "medium",
+              "project_id": "project-beta",
+              "status": "ready",
+              "title": "Beta task 002"
+            }
+          }
+        ],
+        "flush_outcome": "Accepted(1)",
+        "task_id": "task-beta-002",
+        "accepted_change": {
+          "description": "MCP-authored description recorded before the backup",
+          "priority": "medium",
+          "labels": [
+            "mcp",
+            "rehearsal"
+          ]
+        },
+        "calls": [
+          {
+            "tool": "authority.refresh",
+            "result": {
+              "accepted_revision": 119,
+              "has_accepted_snapshot": true,
+              "unresolved_count": 0
+            }
+          },
+          {
+            "tool": "task.update",
+            "arguments": {
+              "id": "task-beta-002"
+            },
+            "result": {
+              "accepted": false,
+              "disposition": "pending",
+              "message": "queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.",
+              "pending": true,
+              "server_state": {
+                "acceptance_criteria": [
+                  {
+                    "completed": false,
+                    "completed_at_ms": null,
+                    "id": "task-beta-002-ac-1",
+                    "position": 0,
+                    "text": "Beta acceptance 2.1"
+                  },
+                  {
+                    "completed": false,
+                    "completed_at_ms": null,
+                    "id": "task-beta-002-ac-2",
+                    "position": 1,
+                    "text": "Beta acceptance 2.2"
+                  }
+                ],
+                "criteria_available": true,
+                "description": "Deterministic task body for task-beta-002.",
+                "id": "task-beta-002",
+                "labels": [],
+                "milestone_id": "ms-beta-1",
+                "planning": {
+                  "deadline_at_ms": 1794814400000,
+                  "earliest_start_at_ms": null,
+                  "estimated_minutes": 60
+                },
+                "priority": "medium",
+                "project_id": "project-beta",
+                "status": "ready",
+                "title": "Beta task 002"
+              }
+            }
+          },
+          {
+            "tool": "authority.flush",
+            "result": {
+              "outcome": "Accepted(1)"
+            }
+          },
+          {
+            "tool": "task.get",
+            "result": {
+              "description": "MCP-authored description recorded before the backup",
+              "priority": "medium",
+              "labels": [
+                "mcp",
+                "rehearsal"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "capability": {
+      "capability_id": "orbit.reference.work-item-note",
+      "workflow": "capability-reference",
+      "item_id": "item-gamma-001",
+      "action": "append_note",
+      "request_command_id": "m34-cap-request-001",
+      "request_state": "succeeded",
+      "receipt_outcome": "succeeded",
+      "executor_exit_code": 0,
+      "executor_stdout": "{\n  \"type\": \"authority\",\n  \"result\": {\n    \"action\": {\n      \"action_id\": \"append_note\",\n      \"capability_id\": \"orbit.reference.work-item-note\",\n      \"command_id\": \"m34-cap-request-001\",\n      \"item_id\": \"item-gamma-001\"\n    },\n    \"claims_refused\": [],\n    \"command\": \"capability.serve\",\n    \"device_id\": \"m34-rehearsal-device\",\n    \"local\": {\n      \"effect\": {\n        \"item_id\": \"item-gamma-001\",\n        \"kind\": \"work_item_note\",\n        \"recorded\": [\n          {\n            \"command_id\": \"m34-cap-request-001\",\n            \"note\": \"M34 rehearsal capability receipt\",\n            \"tag\": \"m34\"\n          }\n        ],\n        \"scope\": \"executor_scratch_authority\",\n        \"submitted_to_authority\": true\n      },\n      \"outcome\": \"succeeded\",\n      \"refusal\": null,\n      \"submitted_effect\": {\n        \"item_id\": \"item-gamma-001\",\n        \"kind\": \"work_item_note\",\n        \"note\": \"M34 rehearsal capability receipt\",\n        \"tag\": \"m34\"\n      }\n    },\n    \"outcome\": \"succeeded\",\n    \"receipt\": {\n      \"detail\": {\n        \"detail\": \"{\\\"action_id\\\":\\\"append_note\\\",\\\"capability\\\":\\\"orbit.reference.work-item-note\\\",\\\"command_id\\\":\\\"m34-cap-request-001\\\",\\\"effect\\\":{\\\"item_id\\\":\\\"item-gamma-001\\\",\\\"kind\\\":\\\"work_item_note\\\",\\\"recorded\\\":[{\\\"command_id\\\":\\\"m34-cap-request-001\\\",\\\"note\\\":\\\"M34 rehearsal capability receipt\\\",\\\"tag\\\":\\\"m34\\\"}],\\\"scope\\\":\\\"executor_scratch_authority\\\",\\\"submitted_to_authority\\\":true},\\\"executor\\\":\\\"m34-rehearsal-device\\\",\\\"provider_outcome\\\":\\\"succeeded\\\",\\\"refusal\\\":null}\",\n        \"effect\": {\n          \"applied\": true,\n          \"command_id\": \"m34-cap-request-001\",\n          \"item_id\": \"item-gamma-001\",\n          \"kind\": \"work_item_note\"\n        },\n        \"reported_by\": \"m34-rehearsal-device\",\n        \"state\": \"succeeded\"\n      },\n      \"outcome\": \"succeeded\",\n      \"reported_at_ms\": 1793443016994,\n      \"reported_by\": \"m34-rehearsal-device\"\n    },\n    \"state\": \"succeeded\",\n    \"status\": \"reported\"\n  }\n}\n",
+      "executor_stderr": "",
+      "effects": [
+        {
+          "command_id": "m34-cap-request-001",
+          "note": "M34 rehearsal capability receipt",
+          "tag": "m34",
+          "created_at_ms": 1793443016994
+        }
+      ],
+      "note": "executed by the real connected `orbit capability serve` executor; the server never runs provider code itself"
+    },
+    "activity_sample": {
+      "task_id": "task-beta-002",
+      "count": 2,
+      "event_types": [
+        "created",
+        "updated"
+      ]
+    },
+    "command_count": 40
+  },
+  "archive": {
+    "archive": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak",
+    "archive_bytes": 1495552,
+    "archive_sha256": "953cb9b22b4ca43be1b45115d111bceb8d64b95247416da8fbeece124c62c874",
+    "format_version": 1,
+    "min_reader_version": 1,
+    "schema_version": 20,
+    "label": "m34-rehearsal",
+    "complete": true,
+    "source": {
+      "mode": "server",
+      "workspace_id": "ddd6b803b2bdeaed002a4a2d83c1ce9b",
+      "revision": 120,
+      "described_as": "server-authoritative workspace",
+      "excluded_client_pending_data": true
+    },
+    "totals": {
+      "database_bytes": 1466368,
+      "knowledge_bytes": 988,
+      "attachment_bytes": 8424,
+      "config_bytes": 55,
+      "content_bytes": 1475835,
+      "archive_bytes": 1495552
+    },
+    "counts": {
+      "knowledge_notes": 6,
+      "knowledge_folders": 1,
+      "attachment_objects": 5,
+      "attachment_associations": 5,
+      "tables": {
+        "activities": 124,
+        "agent_job_briefs": 2,
+        "agent_job_commands": 0,
+        "agent_job_events": 2,
+        "agent_job_execution_options": 0,
+        "agent_job_handoffs": 0,
+        "agent_job_launch_claims": 0,
+        "agent_job_owners": 2,
+        "agent_job_reviews": 0,
+        "agent_jobs": 2,
+        "agent_proposal_audit": 0,
+        "agent_proposals": 0,
+        "agent_session_prompts": 0,
+        "attachment_objects": 5,
+        "attachments": 5,
+        "authority_commands": 120,
+        "authority_history": 120,
+        "authority_identity": 1,
+        "authority_projection": 1,
+        "automation_jobs": 0,
+        "automation_runs": 0,
+        "devices": 2,
+        "habit_occurrences": 0,
+        "habits": 0,
+        "markdown_command_log": 9,
+        "markdown_folder_commands": 0,
+        "markdown_folder_creates": 0,
+        "markdown_note_index": 6,
+        "markdown_note_revisions": 6,
+        "markdown_reference_commands": 3,
+        "metric_observations": 0,
+        "metric_targets": 0,
+        "milestone_work_items": 3,
+        "milestones": 3,
+        "orbit_blueprint_action_receipts": 1,
+        "orbit_blueprint_action_requests": 1,
+        "orbit_blueprint_command_receipts": 0,
+        "orbit_blueprint_item_dependencies": 0,
+        "orbit_blueprint_work_items": 6,
+        "orbit_blueprints": 3,
+        "orbit_capability_executors": 2,
+        "orbit_capability_grants": 1,
+        "orbit_capability_installations": 1,
+        "orbit_project_blueprints": 3,
+        "orbit_reference_work_item_notes": 1,
+        "orbit_schema": 1,
+        "project_evidence_bindings": 0,
+        "project_success_criteria": 0,
+        "projects": 3,
+        "routine_habits": 0,
+        "routines": 0,
+        "schedule_blocks": 0,
+        "sync_field_versions": 0,
+        "sync_local_state": 0,
+        "sync_outbox": 0,
+        "sync_outbox_fields": 0,
+        "sync_resolution_outbox": 0,
+        "task_acceptance_criteria": 206,
+        "task_labels": 2,
+        "task_prerequisites": 10,
+        "tasks": 103,
+        "web_saved_view_commands": 0,
+        "web_saved_views": 0,
+        "web_sessions": 0
+      }
+    },
+    "inventory_files": 13,
+    "exclusions": [
+      {
+        "category": "client_pending_data",
+        "detail": "unaccepted changes, pending outbox commands and staged attachment uploads held by disconnected connected-mode clients are outside a server backup; reconcile each client explicitly after a restore"
+      },
+      {
+        "category": "external_agent_sessions",
+        "detail": "external Herdr agent sessions and their working directories"
+      },
+      {
+        "category": "operating_system_state",
+        "detail": "running processes and operating-system state"
+      },
+      {
+        "category": "external_repositories",
+        "detail": "Git worktrees, branches and external repositories"
+      },
+      {
+        "category": "external_credentials",
+        "detail": "credentials held by external agents or providers"
+      },
+      {
+        "category": "actions_executed_outside_orbit",
+        "detail": "actions that already executed outside Orbit"
+      }
+    ],
+    "verified": true,
+    "components": [
+      "database",
+      "knowledge",
+      "attachments",
+      "configuration"
+    ]
+  },
+  "verify": {
+    "ok": true,
+    "checks": [
+      {
+        "name": "structure",
+        "status": "pass",
+        "detail": "ustar archive with 13 content entries and a valid end-of-archive marker"
+      },
+      {
+        "name": "manifest",
+        "status": "pass",
+        "detail": "manifest v1 (min reader v1) with schema 20 validated",
+        "checked": 1
+      },
+      {
+        "name": "paths",
+        "status": "pass",
+        "detail": "every archive entry is declared, safe and unique"
+      },
+      {
+        "name": "file_hashes",
+        "status": "pass",
+        "detail": "13 file(s) match their declared size and SHA-256",
+        "checked": 13
+      },
+      {
+        "name": "sqlite_integrity",
+        "status": "pass",
+        "detail": "PRAGMA integrity_check passed (64 tables)",
+        "checked": 64
+      },
+      {
+        "name": "schema_compatibility",
+        "status": "pass",
+        "detail": "the snapshot database schema 20 is supported (up to 20)"
+      },
+      {
+        "name": "attachment_presence",
+        "status": "pass",
+        "detail": "5 referenced attachment object(s) are present and size-matched",
+        "checked": 5
+      },
+      {
+        "name": "vault_consistency",
+        "status": "pass",
+        "detail": "6 note(s) in 1 declared folder(s) are consistent with the manifest",
+        "checked": 6
+      }
+    ],
+    "problems": [],
+    "warnings": []
+  },
+  "inspect": {
+    "archive_bytes": 1495552,
+    "inventory_files": 13,
+    "content_bytes": 1475835,
+    "creation_verification": {
+      "verified_at_ms": 1793443017931,
+      "ok": true,
+      "archive_bytes": 1495552,
+      "format_version": 1,
+      "verified_files": 13,
+      "problems": []
+    }
+  },
+  "restore": {
+    "type": "restore_complete",
+    "mode": "isolated",
+    "database": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/orbit.db",
+    "knowledge_vault": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/orbit.knowledge",
+    "attachment_store": "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/attachments/objects",
+    "activated": true,
+    "preserved": null,
+    "journal": null,
+    "verified": true,
+    "counts": {
+      "knowledge_notes": 6,
+      "knowledge_folders": 1,
+      "attachment_objects": 5,
+      "attachment_associations": 5,
+      "tables": {
+        "activities": 124,
+        "agent_job_briefs": 2,
+        "agent_job_commands": 0,
+        "agent_job_events": 2,
+        "agent_job_execution_options": 0,
+        "agent_job_handoffs": 0,
+        "agent_job_launch_claims": 0,
+        "agent_job_owners": 2,
+        "agent_job_reviews": 0,
+        "agent_jobs": 2,
+        "agent_proposal_audit": 0,
+        "agent_proposals": 0,
+        "agent_session_prompts": 0,
+        "attachment_objects": 5,
+        "attachments": 5,
+        "authority_commands": 120,
+        "authority_history": 120,
+        "authority_identity": 1,
+        "authority_projection": 1,
+        "automation_jobs": 0,
+        "automation_runs": 0,
+        "devices": 2,
+        "habit_occurrences": 0,
+        "habits": 0,
+        "markdown_command_log": 9,
+        "markdown_folder_commands": 0,
+        "markdown_folder_creates": 0,
+        "markdown_note_index": 6,
+        "markdown_note_revisions": 6,
+        "markdown_reference_commands": 3,
+        "metric_observations": 0,
+        "metric_targets": 0,
+        "milestone_work_items": 3,
+        "milestones": 3,
+        "orbit_blueprint_action_receipts": 1,
+        "orbit_blueprint_action_requests": 1,
+        "orbit_blueprint_command_receipts": 0,
+        "orbit_blueprint_item_dependencies": 0,
+        "orbit_blueprint_work_items": 6,
+        "orbit_blueprints": 3,
+        "orbit_capability_executors": 2,
+        "orbit_capability_grants": 1,
+        "orbit_capability_installations": 1,
+        "orbit_project_blueprints": 3,
+        "orbit_reference_work_item_notes": 1,
+        "orbit_schema": 1,
+        "project_evidence_bindings": 0,
+        "project_success_criteria": 0,
+        "projects": 3,
+        "routine_habits": 0,
+        "routines": 0,
+        "schedule_blocks": 0,
+        "sync_field_versions": 0,
+        "sync_local_state": 0,
+        "sync_outbox": 0,
+        "sync_outbox_fields": 0,
+        "sync_resolution_outbox": 0,
+        "task_acceptance_criteria": 206,
+        "task_labels": 2,
+        "task_prerequisites": 10,
+        "tasks": 103,
+        "web_saved_view_commands": 0,
+        "web_saved_views": 0,
+        "web_sessions": 0
+      }
+    }
+  },
+  "counts": {
+    "before": {
+      "activities": 124,
+      "agent_job_briefs": 2,
+      "agent_job_commands": 0,
+      "agent_job_events": 2,
+      "agent_job_execution_options": 0,
+      "agent_job_handoffs": 0,
+      "agent_job_launch_claims": 0,
+      "agent_job_owners": 2,
+      "agent_job_reviews": 0,
+      "agent_jobs": 2,
+      "agent_proposal_audit": 0,
+      "agent_proposals": 0,
+      "agent_session_prompts": 0,
+      "attachment_objects": 5,
+      "attachments": 5,
+      "authority_commands": 120,
+      "authority_history": 120,
+      "authority_identity": 1,
+      "authority_projection": 1,
+      "automation_jobs": 0,
+      "automation_runs": 0,
+      "devices": 2,
+      "habit_occurrences": 0,
+      "habits": 0,
+      "markdown_command_log": 9,
+      "markdown_folder_commands": 0,
+      "markdown_folder_creates": 0,
+      "markdown_note_index": 6,
+      "markdown_note_revisions": 6,
+      "markdown_reference_commands": 3,
+      "metric_observations": 0,
+      "metric_targets": 0,
+      "milestone_work_items": 3,
+      "milestones": 3,
+      "orbit_blueprint_action_receipts": 1,
+      "orbit_blueprint_action_requests": 1,
+      "orbit_blueprint_command_receipts": 0,
+      "orbit_blueprint_item_dependencies": 0,
+      "orbit_blueprint_work_items": 6,
+      "orbit_blueprints": 3,
+      "orbit_capability_executors": 2,
+      "orbit_capability_grants": 1,
+      "orbit_capability_installations": 1,
+      "orbit_project_blueprints": 3,
+      "orbit_reference_work_item_notes": 1,
+      "orbit_schema": 1,
+      "project_evidence_bindings": 0,
+      "project_success_criteria": 0,
+      "projects": 3,
+      "routine_habits": 0,
+      "routines": 0,
+      "schedule_blocks": 0,
+      "sync_field_versions": 0,
+      "sync_local_state": 0,
+      "sync_outbox": 0,
+      "sync_outbox_fields": 0,
+      "sync_resolution_outbox": 0,
+      "task_acceptance_criteria": 206,
+      "task_labels": 2,
+      "task_prerequisites": 10,
+      "tasks": 103,
+      "web_saved_view_commands": 0,
+      "web_saved_views": 0,
+      "web_sessions": 0
+    },
+    "after": {
+      "activities": 124,
+      "agent_job_briefs": 2,
+      "agent_job_commands": 0,
+      "agent_job_events": 2,
+      "agent_job_execution_options": 0,
+      "agent_job_handoffs": 0,
+      "agent_job_launch_claims": 0,
+      "agent_job_owners": 2,
+      "agent_job_reviews": 0,
+      "agent_jobs": 2,
+      "agent_proposal_audit": 0,
+      "agent_proposals": 0,
+      "agent_session_prompts": 0,
+      "attachment_objects": 5,
+      "attachments": 5,
+      "authority_commands": 120,
+      "authority_history": 120,
+      "authority_identity": 1,
+      "authority_projection": 1,
+      "automation_jobs": 0,
+      "automation_runs": 0,
+      "devices": 2,
+      "habit_occurrences": 0,
+      "habits": 0,
+      "markdown_command_log": 9,
+      "markdown_folder_commands": 0,
+      "markdown_folder_creates": 0,
+      "markdown_note_index": 6,
+      "markdown_note_revisions": 6,
+      "markdown_reference_commands": 3,
+      "metric_observations": 0,
+      "metric_targets": 0,
+      "milestone_work_items": 3,
+      "milestones": 3,
+      "orbit_blueprint_action_receipts": 1,
+      "orbit_blueprint_action_requests": 1,
+      "orbit_blueprint_command_receipts": 0,
+      "orbit_blueprint_item_dependencies": 0,
+      "orbit_blueprint_work_items": 6,
+      "orbit_blueprints": 3,
+      "orbit_capability_executors": 2,
+      "orbit_capability_grants": 1,
+      "orbit_capability_installations": 1,
+      "orbit_project_blueprints": 3,
+      "orbit_reference_work_item_notes": 1,
+      "orbit_schema": 1,
+      "project_evidence_bindings": 0,
+      "project_success_criteria": 0,
+      "projects": 3,
+      "routine_habits": 0,
+      "routines": 0,
+      "schedule_blocks": 0,
+      "sync_field_versions": 0,
+      "sync_local_state": 0,
+      "sync_outbox": 0,
+      "sync_outbox_fields": 0,
+      "sync_resolution_outbox": 0,
+      "task_acceptance_criteria": 206,
+      "task_labels": 2,
+      "task_prerequisites": 10,
+      "tasks": 103,
+      "web_saved_view_commands": 0,
+      "web_saved_views": 0,
+      "web_sessions": 0
+    },
+    "equal_tables": [
+      "activities",
+      "agent_job_briefs",
+      "agent_job_commands",
+      "agent_job_events",
+      "agent_job_execution_options",
+      "agent_job_handoffs",
+      "agent_job_launch_claims",
+      "agent_job_owners",
+      "agent_job_reviews",
+      "agent_jobs",
+      "agent_proposal_audit",
+      "agent_proposals",
+      "agent_session_prompts",
+      "attachment_objects",
+      "attachments",
+      "authority_commands",
+      "authority_history",
+      "authority_identity",
+      "authority_projection",
+      "automation_jobs",
+      "automation_runs",
+      "devices",
+      "habit_occurrences",
+      "habits",
+      "markdown_command_log",
+      "markdown_folder_commands",
+      "markdown_folder_creates",
+      "markdown_note_index",
+      "markdown_note_revisions",
+      "markdown_reference_commands",
+      "metric_observations",
+      "metric_targets",
+      "milestone_work_items",
+      "milestones",
+      "orbit_blueprint_action_receipts",
+      "orbit_blueprint_action_requests",
+      "orbit_blueprint_command_receipts",
+      "orbit_blueprint_item_dependencies",
+      "orbit_blueprint_work_items",
+      "orbit_blueprints",
+      "orbit_capability_executors",
+      "orbit_capability_grants",
+      "orbit_capability_installations",
+      "orbit_project_blueprints",
+      "orbit_reference_work_item_notes",
+      "orbit_schema",
+      "project_evidence_bindings",
+      "project_success_criteria",
+      "projects",
+      "routine_habits",
+      "routines",
+      "schedule_blocks",
+      "sync_field_versions",
+      "sync_local_state",
+      "sync_outbox",
+      "sync_outbox_fields",
+      "sync_resolution_outbox",
+      "task_acceptance_criteria",
+      "task_labels",
+      "task_prerequisites",
+      "tasks",
+      "web_saved_view_commands",
+      "web_saved_views",
+      "web_sessions"
+    ],
+    "differing_tables": [],
+    "http_before": {
+      "projects": 3,
+      "tasks": 103,
+      "milestones": 3,
+      "task_dependencies": 10,
+      "note_ids": 6
+    },
+    "http_after": {
+      "revision": 120,
+      "projects": [
+        "project-alpha",
+        "project-beta",
+        "project-gamma"
+      ],
+      "tasks": [
+        "task-alpha-001",
+        "task-alpha-002",
+        "task-alpha-003",
+        "task-alpha-004",
+        "task-alpha-005",
+        "task-alpha-006",
+        "task-alpha-007",
+        "task-alpha-008",
+        "task-alpha-009",
+        "task-alpha-010",
+        "task-alpha-011",
+        "task-alpha-012",
+        "task-alpha-013",
+        "task-alpha-014",
+        "task-alpha-015",
+        "task-alpha-016",
+        "task-alpha-017",
+        "task-alpha-018",
+        "task-alpha-019",
+        "task-alpha-020",
+        "task-alpha-021",
+        "task-alpha-022",
+        "task-alpha-023",
+        "task-alpha-024",
+        "task-alpha-025",
+        "task-alpha-026",
+        "task-alpha-027",
+        "task-alpha-028",
+        "task-alpha-029",
+        "task-alpha-030",
+        "task-alpha-031",
+        "task-alpha-032",
+        "task-alpha-033",
+        "task-alpha-034",
+        "task-alpha-035",
+        "task-alpha-036",
+        "task-alpha-037",
+        "task-alpha-038",
+        "task-alpha-039",
+        "task-alpha-040",
+        "task-alpha-041",
+        "task-alpha-042",
+        "task-alpha-043",
+        "task-alpha-044",
+        "task-alpha-045",
+        "task-alpha-046",
+        "task-alpha-047",
+        "task-alpha-048",
+        "task-alpha-049",
+        "task-alpha-050",
+        "task-alpha-051",
+        "task-alpha-052",
+        "task-alpha-053",
+        "task-alpha-054",
+        "task-alpha-055",
+        "task-alpha-056",
+        "task-alpha-057",
+        "task-alpha-058",
+        "task-alpha-059",
+        "task-alpha-060",
+        "task-alpha-061",
+        "task-alpha-062",
+        "task-alpha-063",
+        "task-alpha-064",
+        "task-alpha-065",
+        "task-alpha-066",
+        "task-alpha-067",
+        "task-alpha-068",
+        "task-alpha-069",
+        "task-alpha-070",
+        "task-beta-001",
+        "task-beta-002",
+        "task-beta-003",
+        "task-beta-004",
+        "task-beta-005",
+        "task-beta-006",
+        "task-beta-007",
+        "task-beta-008",
+        "task-beta-009",
+        "task-beta-010",
+        "task-beta-011",
+        "task-beta-012",
+        "task-beta-013",
+        "task-beta-014",
+        "task-beta-015",
+        "task-beta-016",
+        "task-beta-017",
+        "task-beta-018",
+        "task-beta-019",
+        "task-beta-020",
+        "task-beta-021",
+        "task-beta-022",
+        "task-beta-023",
+        "task-beta-024",
+        "task-beta-025",
+        "task-beta-026",
+        "task-beta-027",
+        "task-beta-028",
+        "task-beta-029",
+        "task-beta-030",
+        "task-beta-031",
+        "task-beta-032",
+        "task-beta-033"
+      ],
+      "milestones": [
+        "ms-alpha-1",
+        "ms-alpha-2",
+        "ms-beta-1"
+      ],
+      "dependencies": [
+        [
+          "task-alpha-002",
+          "task-alpha-001"
+        ],
+        [
+          "task-alpha-003",
+          "task-alpha-002"
+        ],
+        [
+          "task-alpha-005",
+          "task-alpha-004"
+        ],
+        [
+          "task-alpha-008",
+          "task-alpha-007"
+        ],
+        [
+          "task-alpha-013",
+          "task-alpha-012"
+        ],
+        [
+          "task-alpha-021",
+          "task-alpha-020"
+        ],
+        [
+          "task-alpha-034",
+          "task-alpha-033"
+        ],
+        [
+          "task-alpha-070",
+          "task-alpha-034"
+        ],
+        [
+          "task-alpha-070",
+          "task-alpha-055"
+        ],
+        [
+          "task-beta-002",
+          "task-beta-001"
+        ]
+      ],
+      "note_ids": [
+        "note-alpha-log",
+        "note-alpha-plan",
+        "note-backup-practice",
+        "note-beta-design",
+        "note-gamma-capability",
+        "note-restore-checklist"
+      ]
+    }
+  },
+  "hashes": {
+    "db_before": "abc0cd02868cdd880a83c9d41b9b39bd1e339f15c9a497fee65091551a17080f",
+    "db_after": "abc0cd02868cdd880a83c9d41b9b39bd1e339f15c9a497fee65091551a17080f",
+    "vault_before": "00f999dcd6d6aa6ba46c773fbb9968a0e089e4e029a48ea62a71a4430e002935",
+    "vault_after": "00f999dcd6d6aa6ba46c773fbb9968a0e089e4e029a48ea62a71a4430e002935",
+    "attachments_before": "83ba77e22b683c19e73665af1ac23978ff692e78ae894fb361595ae16565d85c",
+    "attachments_after": "83ba77e22b683c19e73665af1ac23978ff692e78ae894fb361595ae16565d85c",
+    "notes": {
+      "note-alpha-plan": "da5149ac7260f9ec7eb8e9a3a45edb29125a95064957cecd7fff9495c4d727c7",
+      "note-alpha-log": "5bc7e0599d7812a34323cde9ee1f422e9b1d45da0c8844efb8b919be3352e062",
+      "note-beta-design": "b7d14bae22b6b66665d00bbeb09e3e1be1f49fb685a6a3e327e1c763ac63c885",
+      "note-gamma-capability": "12b7dbace89e4ad9fb5c03b53f5a9da504a99c7dc4d276c7e04db02e6b5e36fa",
+      "note-restore-checklist": "432994f4b7a46d15c7676a0de782568e133fda1331ec9661b5d3aa69d5b3035b",
+      "note-backup-practice": "a5314c2c77ee164ec89637f538907bc9eb4248062fa27610b0c203d9877739f5"
+    },
+    "notes_restored": {
+      "note-alpha-plan": "da5149ac7260f9ec7eb8e9a3a45edb29125a95064957cecd7fff9495c4d727c7",
+      "note-alpha-log": "5bc7e0599d7812a34323cde9ee1f422e9b1d45da0c8844efb8b919be3352e062",
+      "note-beta-design": "b7d14bae22b6b66665d00bbeb09e3e1be1f49fb685a6a3e327e1c763ac63c885",
+      "note-gamma-capability": "12b7dbace89e4ad9fb5c03b53f5a9da504a99c7dc4d276c7e04db02e6b5e36fa",
+      "note-restore-checklist": "432994f4b7a46d15c7676a0de782568e133fda1331ec9661b5d3aa69d5b3035b",
+      "note-backup-practice": "a5314c2c77ee164ec89637f538907bc9eb4248062fa27610b0c203d9877739f5"
+    },
+    "notes_match": true,
+    "note_source_body": {
+      "note-alpha-plan": "a4f5f8b2c2e0c24b92dea838ecfdcf64f4a336d04cea02acf697284018fafb9a",
+      "note-alpha-log": "0db17a8a8de035c928e32d91fad3cafcb418897eef63aa1288f4058347178a5a",
+      "note-beta-design": "2189f39f94ae9bd5d55dc0aafad9bcbcdee7acdf7773a9e810ea0d03b6a1e69f",
+      "note-gamma-capability": "5fbc98245f0fc52b9188ca8a83a27055bd365b6c327adb0a196ef673c18f74c0",
+      "note-restore-checklist": "5f9e74d43558938e407a723461bc263c019235cac5cd9fbf23d27923b4dd7a7f",
+      "note-backup-practice": "25ee1d8202b8b74368c68390a5ea37fd6dd098749a5f7d040deaa36603d3951b"
+    },
+    "attachment_content": {
+      "att-alpha-spec": "e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada",
+      "att-alpha-binary": "1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81",
+      "att-beta-notes": "f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca",
+      "att-gamma-feature": "c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110",
+      "att-agent-brief": "45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494"
+    },
+    "attachment_content_restored": {
+      "att-alpha-spec": "e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada",
+      "att-alpha-binary": "1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81",
+      "att-beta-notes": "f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca",
+      "att-gamma-feature": "c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110",
+      "att-agent-brief": "45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494"
+    }
+  },
+  "mcp": {
+    "tool_calls": [
+      {
+        "tool": "authority.refresh",
+        "result": {
+          "accepted_revision": 119,
+          "has_accepted_snapshot": true,
+          "unresolved_count": 0
+        }
+      },
+      {
+        "tool": "task.update",
+        "arguments": {
+          "id": "task-beta-002"
+        },
+        "result": {
+          "accepted": false,
+          "disposition": "pending",
+          "message": "queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.",
+          "pending": true,
+          "server_state": {
+            "acceptance_criteria": [
+              {
+                "completed": false,
+                "completed_at_ms": null,
+                "id": "task-beta-002-ac-1",
+                "position": 0,
+                "text": "Beta acceptance 2.1"
+              },
+              {
+                "completed": false,
+                "completed_at_ms": null,
+                "id": "task-beta-002-ac-2",
+                "position": 1,
+                "text": "Beta acceptance 2.2"
+              }
+            ],
+            "criteria_available": true,
+            "description": "Deterministic task body for task-beta-002.",
+            "id": "task-beta-002",
+            "labels": [],
+            "milestone_id": "ms-beta-1",
+            "planning": {
+              "deadline_at_ms": 1794814400000,
+              "earliest_start_at_ms": null,
+              "estimated_minutes": 60
+            },
+            "priority": "medium",
+            "project_id": "project-beta",
+            "status": "ready",
+            "title": "Beta task 002"
+          }
+        }
+      },
+      {
+        "tool": "authority.flush",
+        "result": {
+          "outcome": "Accepted(1)"
+        }
+      },
+      {
+        "tool": "task.get",
+        "result": {
+          "description": "MCP-authored description recorded before the backup",
+          "priority": "medium",
+          "labels": [
+            "mcp",
+            "rehearsal"
+          ]
+        }
+      }
+    ],
+    "change": {
+      "binary": "/home/xliu/dev/orbit/target/debug/orbit-mcp",
+      "mode": "connected (developer)",
+      "tool_calls": [
+        {
+          "tool": "authority.refresh",
+          "arguments": {},
+          "is_error": false,
+          "result_excerpt": "{\n  \"accepted_revision\": 119,\n  \"has_accepted_snapshot\": true,\n  \"unresolved_count\": 0\n}",
+          "result": {
+            "accepted_revision": 119,
+            "has_accepted_snapshot": true,
+            "unresolved_count": 0
+          }
+        },
+        {
+          "tool": "task.update",
+          "arguments": {
+            "id": "task-beta-002",
+            "description": "MCP-authored description recorded before the backup",
+            "priority": "medium",
+            "labels": [
+              "mcp",
+              "rehearsal"
+            ]
+          },
+          "is_error": false,
+          "result_excerpt": "{\n  \"accepted\": false,\n  \"disposition\": \"pending\",\n  \"message\": \"queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.\",\n  \"pending\": true,\n  \"server_state\": {\n    \"acceptance_criteria\": [\n      {\n        \"completed\": false,\n        \"completed_at_ms\": null,\n        \"id\": \"task-beta-002-ac-1\",\n        \"position\": 0,\n        \"text\": \"Beta acceptance 2.1\"\n      },\n      {\n        \"completed\": false,\n        \"completed_at_ms\": null,\n        \"id\": \"task-beta-002-ac-2\",\n        \"position\": 1,\n        \"text\": \"Beta acceptance 2.2\"\n      }\n    ],\n    \"criteria_available\": true,\n    \"description\": \"Deterministic task body for task-beta-002.\",\n    \"id\": \"task-beta-002\",\n    \"labels\": [],\n    \"milestone_id\": \"ms-beta-1\",\n    \"planning\": {\n      \"deadline_at_ms\": 1794814400000,\n      \"earliest_start_at_ms\": null,\n      \"estimated_minutes\": 60\n    },\n    \"priority\": \"medium\",\n    \"project_id\": \"project-beta\",\n    \"status\": \"ready\",\n    \"title\": \"Beta task 002\"\n  }\n}",
+          "result": {
+            "accepted": false,
+            "disposition": "pending",
+            "message": "queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.",
+            "pending": true,
+            "server_state": {
+              "acceptance_criteria": [
+                {
+                  "completed": false,
+                  "completed_at_ms": null,
+                  "id": "task-beta-002-ac-1",
+                  "position": 0,
+                  "text": "Beta acceptance 2.1"
+                },
+                {
+                  "completed": false,
+                  "completed_at_ms": null,
+                  "id": "task-beta-002-ac-2",
+                  "position": 1,
+                  "text": "Beta acceptance 2.2"
+                }
+              ],
+              "criteria_available": true,
+              "description": "Deterministic task body for task-beta-002.",
+              "id": "task-beta-002",
+              "labels": [],
+              "milestone_id": "ms-beta-1",
+              "planning": {
+                "deadline_at_ms": 1794814400000,
+                "earliest_start_at_ms": null,
+                "estimated_minutes": 60
+              },
+              "priority": "medium",
+              "project_id": "project-beta",
+              "status": "ready",
+              "title": "Beta task 002"
+            }
+          }
+        },
+        {
+          "tool": "authority.flush",
+          "arguments": {},
+          "is_error": false,
+          "result_excerpt": "{\n  \"outcome\": \"Accepted(1)\"\n}",
+          "result": {
+            "outcome": "Accepted(1)"
+          }
+        },
+        {
+          "tool": "authority.refresh",
+          "arguments": {},
+          "is_error": false,
+          "result_excerpt": "{\n  \"accepted_revision\": 120,\n  \"has_accepted_snapshot\": true,\n  \"unresolved_count\": 0\n}",
+          "result": {
+            "accepted_revision": 120,
+            "has_accepted_snapshot": true,
+            "unresolved_count": 0
+          }
+        },
+        {
+          "tool": "task.get",
+          "arguments": {
+            "id": "task-beta-002"
+          },
+          "is_error": false,
+          "result_excerpt": "{\n  \"acceptance_criteria\": [\n    {\n      \"completed\": false,\n      \"completed_at_ms\": null,\n      \"id\": \"task-beta-002-ac-1\",\n      \"position\": 0,\n      \"text\": \"Beta acceptance 2.1\"\n    },\n    {\n      \"completed\": false,\n      \"completed_at_ms\": null,\n      \"id\": \"task-beta-002-ac-2\",\n      \"position\": 1,\n      \"text\": \"Beta acceptance 2.2\"\n    }\n  ],\n  \"criteria_available\": true,\n  \"description\": \"MCP-authored description recorded before the backup\",\n  \"id\": \"task-beta-002\",\n  \"labels\": [\n    \"mcp\",\n    \"rehearsal\"\n  ],\n  \"milestone_id\": \"ms-beta-1\",\n  \"planning\": {\n    \"deadline_at_ms\": 1794814400000,\n    \"earliest_start_at_ms\": null,\n    \"estimated_minutes\": 60\n  },\n  \"priority\": \"medium\",\n  \"project_id\": \"project-beta\",\n  \"status\": \"ready\",\n  \"title\": \"Beta task 002\"\n}",
+          "result": {
+            "acceptance_criteria": [
+              {
+                "completed": false,
+                "completed_at_ms": null,
+                "id": "task-beta-002-ac-1",
+                "position": 0,
+                "text": "Beta acceptance 2.1"
+              },
+              {
+                "completed": false,
+                "completed_at_ms": null,
+                "id": "task-beta-002-ac-2",
+                "position": 1,
+                "text": "Beta acceptance 2.2"
+              }
+            ],
+            "criteria_available": true,
+            "description": "MCP-authored description recorded before the backup",
+            "id": "task-beta-002",
+            "labels": [
+              "mcp",
+              "rehearsal"
+            ],
+            "milestone_id": "ms-beta-1",
+            "planning": {
+              "deadline_at_ms": 1794814400000,
+              "earliest_start_at_ms": null,
+              "estimated_minutes": 60
+            },
+            "priority": "medium",
+            "project_id": "project-beta",
+            "status": "ready",
+            "title": "Beta task 002"
+          }
+        }
+      ],
+      "flush_outcome": "Accepted(1)",
+      "task_id": "task-beta-002",
+      "accepted_change": {
+        "description": "MCP-authored description recorded before the backup",
+        "priority": "medium",
+        "labels": [
+          "mcp",
+          "rehearsal"
+        ]
+      },
+      "calls": [
+        {
+          "tool": "authority.refresh",
+          "result": {
+            "accepted_revision": 119,
+            "has_accepted_snapshot": true,
+            "unresolved_count": 0
+          }
+        },
+        {
+          "tool": "task.update",
+          "arguments": {
+            "id": "task-beta-002"
+          },
+          "result": {
+            "accepted": false,
+            "disposition": "pending",
+            "message": "queued as task-details-1793443017044-1869620-1 (pending) in the durable outbox; server_state is the last accepted state only. Call authority.flush (developer mode) to submit it.",
+            "pending": true,
+            "server_state": {
+              "acceptance_criteria": [
+                {
+                  "completed": false,
+                  "completed_at_ms": null,
+                  "id": "task-beta-002-ac-1",
+                  "position": 0,
+                  "text": "Beta acceptance 2.1"
+                },
+                {
+                  "completed": false,
+                  "completed_at_ms": null,
+                  "id": "task-beta-002-ac-2",
+                  "position": 1,
+                  "text": "Beta acceptance 2.2"
+                }
+              ],
+              "criteria_available": true,
+              "description": "Deterministic task body for task-beta-002.",
+              "id": "task-beta-002",
+              "labels": [],
+              "milestone_id": "ms-beta-1",
+              "planning": {
+                "deadline_at_ms": 1794814400000,
+                "earliest_start_at_ms": null,
+                "estimated_minutes": 60
+              },
+              "priority": "medium",
+              "project_id": "project-beta",
+              "status": "ready",
+              "title": "Beta task 002"
+            }
+          }
+        },
+        {
+          "tool": "authority.flush",
+          "result": {
+            "outcome": "Accepted(1)"
+          }
+        },
+        {
+          "tool": "task.get",
+          "result": {
+            "description": "MCP-authored description recorded before the backup",
+            "priority": "medium",
+            "labels": [
+              "mcp",
+              "rehearsal"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "post_backup_changes": {
+    "task_id": "task-alpha-post-backup",
+    "note_id": "note-post-backup",
+    "post_snapshot_task_count": 104,
+    "post_snapshot_note_count": 7,
+    "archive_task_count": 103
+  },
+  "timings_ms": {
+    "1": 81.69,
+    "2": 4053.62,
+    "3": 812.13,
+    "4": 40.51,
+    "5": 86.11,
+    "6": 140.35,
+    "7": 68.27,
+    "8": 33.45,
+    "9": 4.1,
+    "10": 9.68,
+    "11": 4.4,
+    "12": 1008.96,
+    "13": 63.67,
+    "14": 100.03
+  },
+  "limitations": [
+    "No Herdr session and no external agent was launched anywhere in this rehearsal. Agent-job records are durable reservations in state 'queued' with claim_state=null and runtime_session_ref=null; the rehearsal asserts they stay that way and never auto-execute.",
+    "No external agent session or repository is part of the archive: they are documented exclusions. Restore therefore cannot restore them, and the rehearsal does not pretend it does.",
+    "Capability code was executed by the real connected `orbit capability serve` executor against a throwaway replica; the server itself never runs provider code. The receipt is durable evidence of that one execution, not an automatic re-execution after restore.",
+    "Milestone creation and MCP tool calls use the real server HTTP/MCP surfaces; the local CLI has no milestone command. Nested note paths require a folder-create command first, so notes use root-level paths.",
+    "The bundled Basic workflow declares no work-item kinds; bundled Development v3 does, so workflow Work Items use Development.",
+    "A backup on the same disk is not protection against disk failure. Orbit does not claim zero data loss or zero downtime."
+  ],
+  "warnings": [],
+  "cli_history": [
+    {
+      "argv": [
+        "--db",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/workspace/server.db",
+        "--config",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/cli.config.toml",
+        "backup",
+        "create",
+        "--output",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups",
+        "--source-mode",
+        "server",
+        "--label",
+        "m34-rehearsal"
+      ],
+      "returncode": 0,
+      "stdout": "{\n  \"type\": \"backup_created\",\n  \"backup\": \"/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak\",\n  \"created_at\": \"2026-10-31T10:36:57.138Z\",\n  \"label\": \"m34-rehearsal\",\n  \"source\": \"server-authoritative workspace\",\n  \"source_mode\": \"server\",\n  \"workspace_id\": \"ddd6b803b2bdeaed002a4a2d83c1ce9b\",\n  \"revision\": 120,\n  \"schema_version\": 20,\n  \"format_version\": 1,\n  \"components\": [\n    \"database\",\n    \"knowledge\",\n    \"attachments\",\n    \"configuration\"\n  ],\n  \"database_bytes\": 1466368,\n  \"knowledge_bytes\": 988,\n  \"attachment_bytes\": 8424,\n  \"archive_bytes\": 1495552,\n  \"verified\": true,\n  \"verification_summary\": \"verified: 13 file(s), schema 20\",\n  \"elapsed_ms\": 793\n}\n",
+      "stderr": "",
+      "duration_ms": 800.62
+    },
+    {
+      "argv": [
+        "backup",
+        "list",
+        "--output",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups"
+      ],
+      "returncode": 0,
+      "stdout": "{\n  \"directory\": \"/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups\",\n  \"backups\": [\n    {\n      \"path\": \"/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak\",\n      \"file_name\": \"orbit-20261031T103657Z-m34-rehearsal.orbitbak\",\n      \"label\": \"m34-rehearsal\",\n      \"created_at_ms\": 1793443017138,\n      \"created_at\": \"2026-10-31T10:36:57.138Z\",\n      \"size_bytes\": 1495552,\n      \"format_version\": 1,\n      \"schema_version\": 20,\n      \"source_mode\": \"server\",\n      \"verification\": \"verified\",\n      \"verification_checked_at_ms\": 1793443017931,\n      \"complete\": true\n    }\n  ],\n  \"skipped\": []\n}\n",
+      "stderr": "",
+      "duration_ms": 7.3
+    },
+    {
+      "argv": [
+        "--db",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/workspace/server.db",
+        "--config",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/cli.config.toml",
+        "backup",
+        "verify",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak"
+      ],
+      "returncode": 0,
+      "stdout": "{\n  \"ok\": true,\n  \"format_version\": 1,\n  \"schema_version\": 20,\n  \"archive_bytes\": 1495552,\n  \"checks\": [\n    {\n      \"name\": \"structure\",\n      \"status\": \"pass\",\n      \"detail\": \"ustar archive with 13 content entries and a valid end-of-archive marker\"\n    },\n    {\n      \"name\": \"manifest\",\n      \"status\": \"pass\",\n      \"detail\": \"manifest v1 (min reader v1) with schema 20 validated\",\n      \"checked\": 1\n    },\n    {\n      \"name\": \"paths\",\n      \"status\": \"pass\",\n      \"detail\": \"every archive entry is declared, safe and unique\"\n    },\n    {\n      \"name\": \"file_hashes\",\n      \"status\": \"pass\",\n      \"detail\": \"13 file(s) match their declared size and SHA-256\",\n      \"checked\": 13\n    },\n    {\n      \"name\": \"sqlite_integrity\",\n      \"status\": \"pass\",\n      \"detail\": \"PRAGMA integrity_check passed (64 tables)\",\n      \"checked\": 64\n    },\n    {\n      \"name\": \"schema_compatibility\",\n      \"status\": \"pass\",\n      \"detail\": \"the snapshot database schema 20 is supported (up to 20)\"\n    },\n    {\n      \"name\": \"attachment_presence\",\n      \"status\": \"pass\",\n      \"detail\": \"5 referenced attachment object(s) are present and size-matched\",\n      \"checked\": 5\n    },\n    {\n      \"name\": \"vault_consistency\",\n      \"status\": \"pass\",\n      \"detail\": \"6 note(s) in 1 declared folder(s) are consistent with the manifest\",\n      \"checked\": 6\n    }\n  ],\n  \"problems\": [],\n  \"warnings\": [],\n  \"manifest\": {\n    \"format_version\": 1,\n    \"min_reader_version\": 1,\n    \"orbit_version\": \"0.1.0\",\n    \"schema_version\": 20,\n    \"created_at_ms\": 1793443017138,\n    \"created_at\": \"2026-10-31T10:36:57.138Z\",\n    \"label\": \"m34-rehearsal\",\n    \"complete\": true,\n    \"source\": {\n      \"mode\": \"server\",\n      \"workspace_id\": \"ddd6b803b2bdeaed002a4a2d83c1ce9b\",\n      \"revision\": 120,\n      \"described_as\": \"server-authoritative workspace\",\n      \"excluded_client_pending_data\": true\n    },\n    \"config\": {\n      \"config_version\": 1,\n      \"authority_mode\": \"local\"\n    },\n    \"exclusions\": [\n      {\n        \"category\": \"client_pending_data\",\n        \"detail\": \"unaccepted changes, pending outbox commands and staged attachment uploads held by disconnected connected-mode clients are outside a server backup; reconcile each client explicitly after a restore\"\n      },\n      {\n        \"category\": \"external_agent_sessions\",\n        \"detail\": \"external Herdr agent sessions and their working directories\"\n      },\n      {\n        \"category\": \"operating_system_state\",\n        \"detail\": \"running processes and operating-system state\"\n      },\n      {\n        \"category\": \"external_repositories\",\n        \"detail\": \"Git worktrees, branches and external repositories\"\n      },\n      {\n        \"category\": \"external_credentials\",\n        \"detail\": \"credentials held by external agents or providers\"\n      },\n      {\n        \"category\": \"actions_executed_outside_orbit\",\n        \"detail\": \"actions that already executed outside Orbit\"\n      }\n    ],\n    \"inventory\": [\n      {\n        \"path\": \"attachments/objects/1f/1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81\",\n        \"kind\": \"attachment_object\",\n        \"size_bytes\": 8192,\n        \"sha256\": \"1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81\"\n      },\n      {\n        \"path\": \"attachments/objects/45/45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494\",\n        \"kind\": \"attachment_object\",\n        \"size_bytes\": 67,\n        \"sha256\": \"45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494\"\n      },\n      {\n        \"path\": \"attachments/objects/c9/c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110\",\n        \"kind\": \"attachment_object\",\n        \"size_bytes\": 52,\n        \"sha256\": \"c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110\"\n      },\n      {\n        \"path\": \"attachments/objects/e8/e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada\",\n        \"kind\": \"attachment_object\",\n        \"size_bytes\": 59,\n        \"sha256\": \"e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada\"\n      },\n      {\n        \"path\": \"attachments/objects/f9/f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca\",\n        \"kind\": \"attachment_object\",\n        \"size_bytes\": 54,\n        \"sha256\": \"f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca\"\n      },\n      {\n        \"path\": \"config/config.json\",\n        \"kind\": \"configuration\",\n        \"size_bytes\": 55,\n        \"sha256\": \"03f21cff9ae784b53742f5baaee3e5f754d5e0084c85d233c77ed44e04af4c1d\"\n      },\n      {\n        \"path\": \"database/orbit.db\",\n        \"kind\": \"database\",\n        \"size_bytes\": 1466368,\n        \"sha256\": \"b64f48a64a4653bf0c78f1fa9901c4fc4ec400846a14da450bc78ff23b355101\"\n      },\n      {\n        \"path\": \"knowledge/note-alpha-log.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 110,\n        \"sha256\": \"5bc7e0599d7812a34323cde9ee1f422e9b1d45da0c8844efb8b919be3352e062\"\n      },\n      {\n        \"path\": \"knowledge/note-alpha-plan.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 148,\n        \"sha256\": \"da5149ac7260f9ec7eb8e9a3a45edb29125a95064957cecd7fff9495c4d727c7\"\n      },\n      {\n        \"path\": \"knowledge/note-backup-practice.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 233,\n        \"sha256\": \"a5314c2c77ee164ec89637f538907bc9eb4248062fa27610b0c203d9877739f5\"\n      },\n      {\n        \"path\": \"knowledge/note-beta-design.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 171,\n        \"sha256\": \"b7d14bae22b6b66665d00bbeb09e3e1be1f49fb685a6a3e327e1c763ac63c885\"\n      },\n      {\n        \"path\": \"knowledge/note-gamma-capability.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 129,\n        \"sha256\": \"12b7dbace89e4ad9fb5c03b53f5a9da504a99c7dc4d276c7e04db02e6b5e36fa\"\n      },\n      {\n        \"path\": \"knowledge/note-restore-checklist.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 197,\n        \"sha256\": \"432994f4b7a46d15c7676a0de782568e133fda1331ec9661b5d3aa69d5b3035b\"\n      }\n    ],\n    \"directories\": [\n      \"knowledge/.orbit-operations\"\n    ],\n    \"totals\": {\n      \"database_bytes\": 1466368,\n      \"knowledge_bytes\": 988,\n      \"attachment_bytes\": 8424,\n      \"config_bytes\": 55,\n      \"content_bytes\": 1475835,\n      \"archive_bytes\": 1495552\n    },\n    \"counts\": {\n      \"knowledge_notes\": 6,\n      \"knowledge_folders\": 1,\n      \"attachment_objects\": 5,\n      \"attachment_associations\": 5,\n      \"tables\": {\n        \"activities\": 124,\n        \"agent_job_briefs\": 2,\n        \"agent_job_commands\": 0,\n        \"agent_job_events\": 2,\n        \"agent_job_execution_options\": 0,\n        \"agent_job_handoffs\": 0,\n        \"agent_job_launch_claims\": 0,\n        \"agent_job_owners\": 2,\n        \"agent_job_reviews\": 0,\n        \"agent_jobs\": 2,\n        \"agent_proposal_audit\": 0,\n        \"agent_proposals\": 0,\n        \"agent_session_prompts\": 0,\n        \"attachment_objects\": 5,\n        \"attachments\": 5,\n        \"authority_commands\": 120,\n        \"authority_history\": 120,\n        \"authority_identity\": 1,\n        \"authority_projection\": 1,\n        \"automation_jobs\": 0,\n        \"automation_runs\": 0,\n        \"devices\": 2,\n        \"habit_occurrences\": 0,\n        \"habits\": 0,\n        \"markdown_command_log\": 9,\n        \"markdown_folder_commands\": 0,\n        \"markdown_folder_creates\": 0,\n        \"markdown_note_index\": 6,\n        \"markdown_note_revisions\": 6,\n        \"markdown_reference_commands\": 3,\n        \"metric_observations\": 0,\n        \"metric_targets\": 0,\n        \"milestone_work_items\": 3,\n        \"milestones\": 3,\n        \"orbit_blueprint_action_receipts\": 1,\n        \"orbit_blueprint_action_requests\": 1,\n        \"orbit_blueprint_command_receipts\": 0,\n        \"orbit_blueprint_item_dependencies\": 0,\n        \"orbit_blueprint_work_items\": 6,\n        \"orbit_blueprints\": 3,\n        \"orbit_capability_executors\": 2,\n        \"orbit_capability_grants\": 1,\n        \"orbit_capability_installations\": 1,\n        \"orbit_project_blueprints\": 3,\n        \"orbit_reference_work_item_notes\": 1,\n        \"orbit_schema\": 1,\n        \"project_evidence_bindings\": 0,\n        \"project_success_criteria\": 0,\n        \"projects\": 3,\n        \"routine_habits\": 0,\n        \"routines\": 0,\n        \"schedule_blocks\": 0,\n        \"sync_field_versions\": 0,\n        \"sync_local_state\": 0,\n        \"sync_outbox\": 0,\n        \"sync_outbox_fields\": 0,\n        \"sync_resolution_outbox\": 0,\n        \"task_acceptance_criteria\": 206,\n        \"task_labels\": 2,\n        \"task_prerequisites\": 10,\n        \"tasks\": 103,\n        \"web_saved_view_commands\": 0,\n        \"web_saved_views\": 0,\n        \"web_sessions\": 0\n      }\n    }\n  },\n  \"verified_files\": [\n    {\n      \"path\": \"attachments/objects/1f/1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81\",\n      \"kind\": \"attachment_object\",\n      \"size_bytes\": 8192,\n      \"sha256\": \"1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81\"\n    },\n    {\n      \"path\": \"attachments/objects/45/45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494\",\n      \"kind\": \"attachment_object\",\n      \"size_bytes\": 67,\n      \"sha256\": \"45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494\"\n    },\n    {\n      \"path\": \"attachments/objects/c9/c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110\",\n      \"kind\": \"attachment_object\",\n      \"size_bytes\": 52,\n      \"sha256\": \"c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110\"\n    },\n    {\n      \"path\": \"attachments/objects/e8/e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada\",\n      \"kind\": \"attachment_object\",\n      \"size_bytes\": 59,\n      \"sha256\": \"e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada\"\n    },\n    {\n      \"path\": \"attachments/objects/f9/f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca\",\n      \"kind\": \"attachment_object\",\n      \"size_bytes\": 54,\n      \"sha256\": \"f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca\"\n    },\n    {\n      \"path\": \"config/config.json\",\n      \"kind\": \"configuration\",\n      \"size_bytes\": 55,\n      \"sha256\": \"03f21cff9ae784b53742f5baaee3e5f754d5e0084c85d233c77ed44e04af4c1d\"\n    },\n    {\n      \"path\": \"database/orbit.db\",\n      \"kind\": \"database\",\n      \"size_bytes\": 1466368,\n      \"sha256\": \"b64f48a64a4653bf0c78f1fa9901c4fc4ec400846a14da450bc78ff23b355101\"\n    },\n    {\n      \"path\": \"knowledge/note-alpha-log.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 110,\n      \"sha256\": \"5bc7e0599d7812a34323cde9ee1f422e9b1d45da0c8844efb8b919be3352e062\"\n    },\n    {\n      \"path\": \"knowledge/note-alpha-plan.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 148,\n      \"sha256\": \"da5149ac7260f9ec7eb8e9a3a45edb29125a95064957cecd7fff9495c4d727c7\"\n    },\n    {\n      \"path\": \"knowledge/note-backup-practice.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 233,\n      \"sha256\": \"a5314c2c77ee164ec89637f538907bc9eb4248062fa27610b0c203d9877739f5\"\n    },\n    {\n      \"path\": \"knowledge/note-beta-design.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 171,\n      \"sha256\": \"b7d14bae22b6b66665d00bbeb09e3e1be1f49fb685a6a3e327e1c763ac63c885\"\n    },\n    {\n      \"path\": \"knowledge/note-gamma-capability.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 129,\n      \"sha256\": \"12b7dbace89e4ad9fb5c03b53f5a9da504a99c7dc4d276c7e04db02e6b5e36fa\"\n    },\n    {\n      \"path\": \"knowledge/note-restore-checklist.md\",\n      \"kind\": \"knowledge_note\",\n      \"size_bytes\": 197,\n      \"sha256\": \"432994f4b7a46d15c7676a0de782568e133fda1331ec9661b5d3aa69d5b3035b\"\n    }\n  ]\n}\n",
+      "stderr": "",
+      "duration_ms": 34.26
+    },
+    {
+      "argv": [
+        "--db",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/workspace/server.db",
+        "--config",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/cli.config.toml",
+        "backup",
+        "inspect",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak"
+      ],
+      "returncode": 0,
+      "stdout": "{\n  \"archive_path\": \"/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak\",\n  \"archive_bytes\": 1495552,\n  \"manifest\": {\n    \"format_version\": 1,\n    \"min_reader_version\": 1,\n    \"orbit_version\": \"0.1.0\",\n    \"schema_version\": 20,\n    \"created_at_ms\": 1793443017138,\n    \"created_at\": \"2026-10-31T10:36:57.138Z\",\n    \"label\": \"m34-rehearsal\",\n    \"complete\": true,\n    \"source\": {\n      \"mode\": \"server\",\n      \"workspace_id\": \"ddd6b803b2bdeaed002a4a2d83c1ce9b\",\n      \"revision\": 120,\n      \"described_as\": \"server-authoritative workspace\",\n      \"excluded_client_pending_data\": true\n    },\n    \"config\": {\n      \"config_version\": 1,\n      \"authority_mode\": \"local\"\n    },\n    \"exclusions\": [\n      {\n        \"category\": \"client_pending_data\",\n        \"detail\": \"unaccepted changes, pending outbox commands and staged attachment uploads held by disconnected connected-mode clients are outside a server backup; reconcile each client explicitly after a restore\"\n      },\n      {\n        \"category\": \"external_agent_sessions\",\n        \"detail\": \"external Herdr agent sessions and their working directories\"\n      },\n      {\n        \"category\": \"operating_system_state\",\n        \"detail\": \"running processes and operating-system state\"\n      },\n      {\n        \"category\": \"external_repositories\",\n        \"detail\": \"Git worktrees, branches and external repositories\"\n      },\n      {\n        \"category\": \"external_credentials\",\n        \"detail\": \"credentials held by external agents or providers\"\n      },\n      {\n        \"category\": \"actions_executed_outside_orbit\",\n        \"detail\": \"actions that already executed outside Orbit\"\n      }\n    ],\n    \"inventory\": [\n      {\n        \"path\": \"attachments/objects/1f/1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81\",\n        \"kind\": \"attachment_object\",\n        \"size_bytes\": 8192,\n        \"sha256\": \"1f5a16c4456f34c5459e4e66d8650d4dbb6b298810d0c21cef6571db21d69c81\"\n      },\n      {\n        \"path\": \"attachments/objects/45/45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494\",\n        \"kind\": \"attachment_object\",\n        \"size_bytes\": 67,\n        \"sha256\": \"45725f46d1b0d1ec6111e62af3f9c00cc69f487ba775b9be7d243f8daabce494\"\n      },\n      {\n        \"path\": \"attachments/objects/c9/c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110\",\n        \"kind\": \"attachment_object\",\n        \"size_bytes\": 52,\n        \"sha256\": \"c97384f191595c29f36e39694ac2c238b0dcddf150737ca28c16b0aab25ca110\"\n      },\n      {\n        \"path\": \"attachments/objects/e8/e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada\",\n        \"kind\": \"attachment_object\",\n        \"size_bytes\": 59,\n        \"sha256\": \"e86f6d5ba5630980349d139a7848ad3f494ab9d6265c04bd37efeaebfe7e1ada\"\n      },\n      {\n        \"path\": \"attachments/objects/f9/f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca\",\n        \"kind\": \"attachment_object\",\n        \"size_bytes\": 54,\n        \"sha256\": \"f96b34e7a4190141c5be6fc3e5f2de10cb795a5f9cb4bd70d48432a23d9a25ca\"\n      },\n      {\n        \"path\": \"config/config.json\",\n        \"kind\": \"configuration\",\n        \"size_bytes\": 55,\n        \"sha256\": \"03f21cff9ae784b53742f5baaee3e5f754d5e0084c85d233c77ed44e04af4c1d\"\n      },\n      {\n        \"path\": \"database/orbit.db\",\n        \"kind\": \"database\",\n        \"size_bytes\": 1466368,\n        \"sha256\": \"b64f48a64a4653bf0c78f1fa9901c4fc4ec400846a14da450bc78ff23b355101\"\n      },\n      {\n        \"path\": \"knowledge/note-alpha-log.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 110,\n        \"sha256\": \"5bc7e0599d7812a34323cde9ee1f422e9b1d45da0c8844efb8b919be3352e062\"\n      },\n      {\n        \"path\": \"knowledge/note-alpha-plan.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 148,\n        \"sha256\": \"da5149ac7260f9ec7eb8e9a3a45edb29125a95064957cecd7fff9495c4d727c7\"\n      },\n      {\n        \"path\": \"knowledge/note-backup-practice.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 233,\n        \"sha256\": \"a5314c2c77ee164ec89637f538907bc9eb4248062fa27610b0c203d9877739f5\"\n      },\n      {\n        \"path\": \"knowledge/note-beta-design.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 171,\n        \"sha256\": \"b7d14bae22b6b66665d00bbeb09e3e1be1f49fb685a6a3e327e1c763ac63c885\"\n      },\n      {\n        \"path\": \"knowledge/note-gamma-capability.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 129,\n        \"sha256\": \"12b7dbace89e4ad9fb5c03b53f5a9da504a99c7dc4d276c7e04db02e6b5e36fa\"\n      },\n      {\n        \"path\": \"knowledge/note-restore-checklist.md\",\n        \"kind\": \"knowledge_note\",\n        \"size_bytes\": 197,\n        \"sha256\": \"432994f4b7a46d15c7676a0de782568e133fda1331ec9661b5d3aa69d5b3035b\"\n      }\n    ],\n    \"directories\": [\n      \"knowledge/.orbit-operations\"\n    ],\n    \"totals\": {\n      \"database_bytes\": 1466368,\n      \"knowledge_bytes\": 988,\n      \"attachment_bytes\": 8424,\n      \"config_bytes\": 55,\n      \"content_bytes\": 1475835,\n      \"archive_bytes\": 1495552\n    },\n    \"counts\": {\n      \"knowledge_notes\": 6,\n      \"knowledge_folders\": 1,\n      \"attachment_objects\": 5,\n      \"attachment_associations\": 5,\n      \"tables\": {\n        \"activities\": 124,\n        \"agent_job_briefs\": 2,\n        \"agent_job_commands\": 0,\n        \"agent_job_events\": 2,\n        \"agent_job_execution_options\": 0,\n        \"agent_job_handoffs\": 0,\n        \"agent_job_launch_claims\": 0,\n        \"agent_job_owners\": 2,\n        \"agent_job_reviews\": 0,\n        \"agent_jobs\": 2,\n        \"agent_proposal_audit\": 0,\n        \"agent_proposals\": 0,\n        \"agent_session_prompts\": 0,\n        \"attachment_objects\": 5,\n        \"attachments\": 5,\n        \"authority_commands\": 120,\n        \"authority_history\": 120,\n        \"authority_identity\": 1,\n        \"authority_projection\": 1,\n        \"automation_jobs\": 0,\n        \"automation_runs\": 0,\n        \"devices\": 2,\n        \"habit_occurrences\": 0,\n        \"habits\": 0,\n        \"markdown_command_log\": 9,\n        \"markdown_folder_commands\": 0,\n        \"markdown_folder_creates\": 0,\n        \"markdown_note_index\": 6,\n        \"markdown_note_revisions\": 6,\n        \"markdown_reference_commands\": 3,\n        \"metric_observations\": 0,\n        \"metric_targets\": 0,\n        \"milestone_work_items\": 3,\n        \"milestones\": 3,\n        \"orbit_blueprint_action_receipts\": 1,\n        \"orbit_blueprint_action_requests\": 1,\n        \"orbit_blueprint_command_receipts\": 0,\n        \"orbit_blueprint_item_dependencies\": 0,\n        \"orbit_blueprint_work_items\": 6,\n        \"orbit_blueprints\": 3,\n        \"orbit_capability_executors\": 2,\n        \"orbit_capability_grants\": 1,\n        \"orbit_capability_installations\": 1,\n        \"orbit_project_blueprints\": 3,\n        \"orbit_reference_work_item_notes\": 1,\n        \"orbit_schema\": 1,\n        \"project_evidence_bindings\": 0,\n        \"project_success_criteria\": 0,\n        \"projects\": 3,\n        \"routine_habits\": 0,\n        \"routines\": 0,\n        \"schedule_blocks\": 0,\n        \"sync_field_versions\": 0,\n        \"sync_local_state\": 0,\n        \"sync_outbox\": 0,\n        \"sync_outbox_fields\": 0,\n        \"sync_resolution_outbox\": 0,\n        \"task_acceptance_criteria\": 206,\n        \"task_labels\": 2,\n        \"task_prerequisites\": 10,\n        \"tasks\": 103,\n        \"web_saved_view_commands\": 0,\n        \"web_saved_views\": 0,\n        \"web_sessions\": 0\n      }\n    }\n  },\n  \"inventory_files\": 13,\n  \"content_bytes\": 1475835,\n  \"creation_verification\": {\n    \"verified_at_ms\": 1793443017931,\n    \"ok\": true,\n    \"archive_bytes\": 1495552,\n    \"format_version\": 1,\n    \"verified_files\": 13,\n    \"problems\": []\n  }\n}\n",
+      "stderr": "",
+      "duration_ms": 6.06
+    },
+    {
+      "argv": [
+        "--db",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/workspace/server.db",
+        "--config",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/cli.config.toml",
+        "backup",
+        "restore",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/backups/orbit-20261031T103657Z-m34-rehearsal.orbitbak",
+        "--to",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored"
+      ],
+      "returncode": 0,
+      "stdout": "{\n  \"type\": \"restore_complete\",\n  \"mode\": \"isolated\",\n  \"database\": \"/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/orbit.db\",\n  \"knowledge_vault\": \"/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/orbit.knowledge\",\n  \"attachment_store\": \"/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/attachments/objects\",\n  \"activated\": true,\n  \"preserved\": null,\n  \"journal\": null,\n  \"verified\": true,\n  \"counts\": {\n    \"knowledge_notes\": 6,\n    \"knowledge_folders\": 1,\n    \"attachment_objects\": 5,\n    \"attachment_associations\": 5,\n    \"tables\": {\n      \"activities\": 124,\n      \"agent_job_briefs\": 2,\n      \"agent_job_commands\": 0,\n      \"agent_job_events\": 2,\n      \"agent_job_execution_options\": 0,\n      \"agent_job_handoffs\": 0,\n      \"agent_job_launch_claims\": 0,\n      \"agent_job_owners\": 2,\n      \"agent_job_reviews\": 0,\n      \"agent_jobs\": 2,\n      \"agent_proposal_audit\": 0,\n      \"agent_proposals\": 0,\n      \"agent_session_prompts\": 0,\n      \"attachment_objects\": 5,\n      \"attachments\": 5,\n      \"authority_commands\": 120,\n      \"authority_history\": 120,\n      \"authority_identity\": 1,\n      \"authority_projection\": 1,\n      \"automation_jobs\": 0,\n      \"automation_runs\": 0,\n      \"devices\": 2,\n      \"habit_occurrences\": 0,\n      \"habits\": 0,\n      \"markdown_command_log\": 9,\n      \"markdown_folder_commands\": 0,\n      \"markdown_folder_creates\": 0,\n      \"markdown_note_index\": 6,\n      \"markdown_note_revisions\": 6,\n      \"markdown_reference_commands\": 3,\n      \"metric_observations\": 0,\n      \"metric_targets\": 0,\n      \"milestone_work_items\": 3,\n      \"milestones\": 3,\n      \"orbit_blueprint_action_receipts\": 1,\n      \"orbit_blueprint_action_requests\": 1,\n      \"orbit_blueprint_command_receipts\": 0,\n      \"orbit_blueprint_item_dependencies\": 0,\n      \"orbit_blueprint_work_items\": 6,\n      \"orbit_blueprints\": 3,\n      \"orbit_capability_executors\": 2,\n      \"orbit_capability_grants\": 1,\n      \"orbit_capability_installations\": 1,\n      \"orbit_project_blueprints\": 3,\n      \"orbit_reference_work_item_notes\": 1,\n      \"orbit_schema\": 1,\n      \"project_evidence_bindings\": 0,\n      \"project_success_criteria\": 0,\n      \"projects\": 3,\n      \"routine_habits\": 0,\n      \"routines\": 0,\n      \"schedule_blocks\": 0,\n      \"sync_field_versions\": 0,\n      \"sync_local_state\": 0,\n      \"sync_outbox\": 0,\n      \"sync_outbox_fields\": 0,\n      \"sync_resolution_outbox\": 0,\n      \"task_acceptance_criteria\": 206,\n      \"task_labels\": 2,\n      \"task_prerequisites\": 10,\n      \"tasks\": 103,\n      \"web_saved_view_commands\": 0,\n      \"web_saved_views\": 0,\n      \"web_sessions\": 0\n    }\n  }\n}\n",
+      "stderr": "",
+      "duration_ms": 132.56
+    },
+    {
+      "argv": [
+        "--db",
+        "/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/orbit.db",
+        "status"
+      ],
+      "returncode": 0,
+      "stdout": "{\n  \"type\": \"workspace_status\",\n  \"database\": \"/home/xliu/dev/orbit/.tmp-e2e-rehearsal/orbit-m34-rehearsal-5bnycw8z/restored/orbit.db\",\n  \"schema_version\": 20,\n  \"healthy\": true,\n  \"issues\": [],\n  \"wal_enabled\": true,\n  \"foreign_keys_enabled\": true,\n  \"busy_timeout_ms\": 5000,\n  \"projects\": 3,\n  \"tasks\": 104,\n  \"habits\": 0,\n  \"routines\": 0,\n  \"knowledge_items\": 6\n}\n",
+      "stderr": "",
+      "duration_ms": 15.6
+    }
+  ],
+  "http_requests": {
+    "server": [
+      {
+        "method": "GET",
+        "path": "/health",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/capabilities/install",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/blueprints/install",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/blueprints",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/project-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/project-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/project-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/milestone-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/milestone-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/milestone-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/blueprints/items",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/blueprints/items",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/blueprints/items",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/blueprints/items",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/blueprints/items",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/milestone-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/milestone-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/milestone-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/blueprints/items",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/markdown-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/markdown-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/markdown-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/markdown-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/markdown-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/markdown-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/markdown-reference-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/markdown-reference-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/markdown-reference-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/agent-jobs/reserve",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/agent-jobs/reserve",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/attachment-import",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/attachment-import",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/attachment-import",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/attachment-import",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/attachment-import",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/capabilities/authorize",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/capability-executors/announce",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/blueprints/items",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/capability-actions/request",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/capability-actions/show",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/capability-effects",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/tasks/task-beta-002/activity",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/markdown-inventory",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/health",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/markdown-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/markdown-inventory",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      }
+    ],
+    "restored_server": [
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/health",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/markdown-inventory",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/markdown-by-id",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/attachments/att-alpha-spec/content",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/attachments/att-alpha-binary/content",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/attachments/att-beta-notes/content",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/attachments/att-gamma-feature/content",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/attachments/att-agent-brief/content",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/markdown-inventory",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/tasks/task-alpha-001/acceptance-criteria",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/tasks/task-beta-002/activity",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/blueprints/items",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/tasks/task-alpha-post-backup",
+        "status": 404
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/markdown-by-id",
+        "status": 404
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/markdown-inventory",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/markdown-inventory",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/agent-jobs",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/agent-jobs",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/capability-actions/show",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/capability-effects",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/agent-jobs",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/agent-jobs",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/capability-actions/list",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/agent-jobs",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/agent-jobs",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/capability-actions/list",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "POST",
+        "path": "/v1/authoritative/task-commands",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/snapshot",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/tasks/task-beta-002",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/capability-actions/show",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/agent-jobs",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/v1/authoritative/tasks/task-beta-002/activity",
+        "status": 200
+      }
+    ],
+    "distinct_endpoints": [
+      "/health",
+      "/v1/authoritative/agent-jobs",
+      "/v1/authoritative/agent-jobs/reserve",
+      "/v1/authoritative/attachment-import",
+      "/v1/authoritative/attachments/att-agent-brief/content",
+      "/v1/authoritative/attachments/att-alpha-binary/content",
+      "/v1/authoritative/attachments/att-alpha-spec/content",
+      "/v1/authoritative/attachments/att-beta-notes/content",
+      "/v1/authoritative/attachments/att-gamma-feature/content",
+      "/v1/authoritative/blueprints",
+      "/v1/authoritative/blueprints/install",
+      "/v1/authoritative/blueprints/items",
+      "/v1/authoritative/capabilities/authorize",
+      "/v1/authoritative/capabilities/install",
+      "/v1/authoritative/capability-actions/list",
+      "/v1/authoritative/capability-actions/request",
+      "/v1/authoritative/capability-actions/show",
+      "/v1/authoritative/capability-effects",
+      "/v1/authoritative/capability-executors/announce",
+      "/v1/authoritative/markdown-by-id",
+      "/v1/authoritative/markdown-commands",
+      "/v1/authoritative/markdown-inventory",
+      "/v1/authoritative/markdown-reference-commands",
+      "/v1/authoritative/milestone-commands",
+      "/v1/authoritative/project-commands",
+      "/v1/authoritative/snapshot",
+      "/v1/authoritative/task-commands",
+      "/v1/authoritative/tasks/task-alpha-001/acceptance-criteria",
+      "/v1/authoritative/tasks/task-alpha-post-backup",
+      "/v1/authoritative/tasks/task-beta-002",
+      "/v1/authoritative/tasks/task-beta-002/activity"
+    ]
+  }
+}

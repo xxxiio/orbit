@@ -122,14 +122,56 @@ See the [CLI reference](reference/cli.md) for subcommands and flags, and
 
 ## Backup and restore
 
-Back up the server database consistently, including committed WAL data, and
-store credentials separately. A server backup does not include pending edits on
-disconnected clients. Do not restore an older snapshot over newer accepted
-history without an explicit disaster-recovery plan.
+The server exposes a transport over the shared `orbit-backup` service. A server
+workspace backup is one verified `.orbitbak` archive of the server SQLite
+database, its Markdown vault, the referenced attachment objects and normalized
+non-secret configuration. Use `orbit backup create --source-mode server` on the
+server host (or `POST /v1/backups`) and `orbit backup verify` before relying on
+the archive.
+
+- `GET /v1/backups` and `POST /v1/backups` list and create backups.
+- `GET /v1/backups/{id}`, `POST /v1/backups/{id}/verify` and
+  `GET /v1/backups/{id}/download` inspect, verify and download an archive.
+- `GET`/`PUT /v1/backups/schedule` read and update the schedule/retention
+  policy (`policy.json`); the server scheduler re-reads it every 15 minutes and
+  creates verified `daily`/`weekly` automatic backups when due (first check about
+  30 seconds after startup).
+- `POST /v1/restores/preflight` reports the restore plan without mutating
+  anything; `POST /v1/restores/isolated` creates and verifies a new workspace
+  copy under the restore root; `POST /v1/restores/replace-plan` is the
+  administrator-only route and writes `<db>.restore-pending.json` plus the
+  offline operator commands.
+
+Configuration: `ORBIT_BACKUP_DIR` (default `<server database parent>/backups`)
+is the directory scanned for archives and `policy.json`; `ORBIT_BACKUP_RESTORE_ROOT`
+(default `<server database parent>/restores`) is the root for isolated restores;
+`ORBIT_BACKUP_DOWNLOAD_MAX_BYTES` (default 512 MiB) caps the memory-buffered
+download response and answers `413 Archive too large for a browser download`
+above it (large archives should be copied from the server's backup folder). A
+`--source-mode server` archive records `source.excluded_client_pending_data:
+true` and a `client_pending_data` exclusion.
+
+The server never accepts a browser-supplied filesystem path: backup ids are file
+names resolved inside `ORBIT_BACKUP_DIR`, isolated restore targets are generated
+under the restore root, and product responses return labels, not absolute paths.
+Ordinary product principals may list, create, inspect, verify, download, edit the
+schedule and run preflight/isolated restores; the replacement plan is the only
+administrator-credential route, and it never touches the live database — the
+operator runs the returned commands offline. Client replica snapshots are
+rejected as a recovery point (`--source-mode replica` fails closed); back up the
+server authority and keep each replica's outbox/staging with that replica.
+
+Store credentials and enrollment material separately: they are never part of the
+archive. A server backup does not include pending edits, outbox commands or
+staged uploads on disconnected clients, and it does not include external Herdr
+sessions, processes, Git worktrees or external credentials. Do not restore an
+older snapshot over newer accepted history without an explicit disaster-recovery
+plan.
 
 Clients must preserve replicas and unresolved outboxes. Use reviewed
 convergence/conflict tools; never delete outbox data to make a warning disappear.
-See [backup and recovery](guides/backup-and-recovery.md) and
+See [backup and recovery](guides/backup-and-recovery.md),
+[the backup format reference](reference/backup-format.md) and
 [upgrades and recovery](releasing/upgrades-and-recovery.md).
 
 ## Retired interfaces
