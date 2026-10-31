@@ -13,7 +13,6 @@
  * domain module directly may import it.
  */
 export * from './adapters/projects'
-export * from './adapters/epics'
 export * from './adapters/tasks'
 export * from './adapters/workspace'
 export * from './adapters/planning-reads'

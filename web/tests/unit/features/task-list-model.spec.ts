@@ -6,6 +6,8 @@ import {
   filterAndSortTasks,
   inboxSortKey,
   projectSortKey,
+  projectSortOptions,
+  projectSortValue,
   type TaskSort,
 } from '@/features/tasks/task-list-model'
 
@@ -42,6 +44,13 @@ describe('task list model', () => {
       'b',
       'a',
     ])
+    // A URL query keeps its whitespace; matching trims it so the result is the
+    // same as typing the words without padding.
+    expect(
+      filterAndSortTasks(tasks, { ...noFilters, search: '  release  ' }, priorityAsc).map(
+        (t) => t.id,
+      ),
+    ).toEqual(['b', 'a'])
     expect(filterAndSortTasks(tasks, { ...noFilters, status: 'ready' }, priorityAsc).map((t) => t.id)).toEqual([
       'b',
       'c',
@@ -63,6 +72,11 @@ describe('task list model', () => {
     expect(inboxSortKey('due')).toBe('due')
     expect(projectSortKey('status')).toBe('status')
     expect(projectSortKey('milestone')).toBe('milestone')
+    expect(projectSortKey('project')).toBe('project')
+    // The Tasks control reports a `?sort=project` honestly instead of falling
+    // back to "Due date".
+    expect(projectSortOptions.map((option) => option.value)).toContain('project')
+    expect(projectSortValue({ key: 'project', direction: 'asc' })).toBe('project')
     expect(bulkValueOptions('project', projects).map((option) => option.value)).toEqual(['p-1'])
     expect(bulkValueOptions('project', projects, { includeInbox: true }).map((option) => option.value)).toEqual([
       'none',

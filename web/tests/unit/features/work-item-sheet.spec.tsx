@@ -71,7 +71,14 @@ function renderSheet(item: WorkItem, onRefresh?: () => void) {
   // The capability panel is a separate read of its own; seed it too so these
   // tests stay about the sheet's properties and moves. The panel's own
   // behaviour is covered by capability-panel.spec.tsx.
-  client.setQueryData(queryKeys.epics(), { revision: 0, epics: [] })
+  // Milestone membership is its own read on the sheet. Seed it so these tests
+  // stay about the sheet's properties and moves. The future `updatedAt` keeps
+  // the seeded read fresh on mount, so it cannot spend a mocked response.
+  client.setQueryData(
+    queryKeys.milestones(),
+    { revision: 3, milestones: [] },
+    { updatedAt: Date.now() + 60_000 },
+  )
   client.setQueryData(queryKeys.capabilityStatus(item.projectId), [])
   client.setQueryData(queryKeys.capabilityOffers(item.id, item.revision), {
     itemId: item.id,

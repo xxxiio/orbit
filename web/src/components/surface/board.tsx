@@ -20,12 +20,20 @@ import { cn } from '@/components/ui/utils'
 export function BoardScrollRegion({
   label,
   children,
+  className,
 }: {
   label: string
   children: ReactNode
+  /** Board-specific scrolling, e.g. a maximum height for a tall project. */
+  className?: string
 }) {
   return (
-    <div className="scrollbar-slim -mx-1 overflow-x-auto px-1 pb-2">
+    <div
+      className={cn(
+        'scrollbar-slim contain-paint -mx-1 overflow-x-auto px-1 pb-2',
+        className,
+      )}
+    >
       <div role="group" aria-label={label} className="flex min-w-full items-start gap-3">
         {children}
       </div>
@@ -61,12 +69,12 @@ export function BoardColumn({
       className="flex shrink-0 flex-col rounded-lg border border-line bg-surface-sunken/35"
       style={{ width }}
     >
-      <header className="flex items-center gap-2 border-b border-line px-2.5 py-2">
+      <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-line bg-surface-sunken px-2.5 py-2">
         <span
           aria-hidden="true"
           className={cn('h-1.5 w-1.5 rounded-full', dotClassName ?? 'bg-line-strong')}
         />
-        <h3 className="text-xs font-semibold text-ink">{label}</h3>
+        <h3 className="truncate text-xs font-semibold text-ink">{label}</h3>
         <span className="ml-auto rounded-full bg-surface px-1.5 py-0.5 text-2xs tabular-nums text-ink-muted">
           {count}
         </span>
@@ -199,6 +207,15 @@ export function useBoardKeyboard<T extends { id: string }>(
   }
 
   const firstCardId = groups.flatMap((group) => group.rows)[0]?.id ?? null
+
+  // A move, a filter or a refresh can remove the focused card. Move the logical
+  // cursor back to the first card so exactly one card keeps `tabIndex=0`; leaving
+  // a stale id would make the board a tab stop with nothing to land on.
+  useEffect(() => {
+    if (focus === null) return
+    const present = groups.some((group) => group.rows.some((row) => row.id === focus))
+    if (!present) setFocus(firstCardId)
+  }, [focus, groups, firstCardId])
 
   return {
     focus,

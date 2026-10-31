@@ -20,21 +20,27 @@ import {
 } from 'react'
 import type { WorkItem, WorkItemField, WorkItemKind, Workflow } from '@/api/adapters'
 import {
+  newCommandId,
   uncertainMessage,
-  useEpics,
+  useMilestoneCommand,
+  useMilestones,
   useUpdateWorkItemProperties,
   useWorkItemTransition,
   userMessage,
   type ApiError,
 } from '@/hooks'
-import {
-  EpicAssignmentField,
-  epicIdForWorkItem,
-} from '@/features/epics'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Drawer } from '@/components/ui/drawer'
+import { Field } from '@/components/ui/field'
 import { AlertCircleIcon, CheckCircleIcon, LoaderIcon } from '@/components/ui/icons'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Section } from '@/components/ui/section'
 import { AttachmentList } from '@/features/attachments'
 import {
@@ -376,8 +382,20 @@ export function WorkItemSheet({ item, workflow, onClose, onRefresh }: WorkItemSh
 function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemSheetProps & { item: WorkItem }) {
   const transition = useWorkItemTransition()
   const properties = useUpdateWorkItemProperties()
-  const epics = useEpics(item.projectId)
-  const epicId = epicIdForWorkItem(epics.data ?? [], item.id)
+  const milestones = useMilestones(item.projectId)
+  const milestoneCommand = useMilestoneCommand()
+  const [milestoneError, setMilestoneError] = useState<string | null>(null)
+  const milestoneList = milestones.data ?? []
+  // The accepted command is the freshest membership this browser has seen. If
+  // the follow-up list read is still in flight (or fails), the stored query copy
+  // would show the not-yet-moved item, so the accepted record wins until the
+  // read catches up.
+  const acceptedMilestone = milestoneCommand.data?.milestone ?? null
+  const currentMilestone = acceptedMilestone
+    ? acceptedMilestone.workItemIds.includes(item.id)
+      ? acceptedMilestone
+      : null
+    : (milestoneList.find((candidate) => candidate.workItemIds.includes(item.id)) ?? null)
 
   const kind = workflow?.kinds.find((candidate) => candidate.id === item.kind)
   const kindName = kindLabel(kind, item.kind)
@@ -403,7 +421,7 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
   const propertyError = properties.disposition === 'rejected' ? properties.error : null
   const transitionUncertain = transition.disposition === 'uncertain'
   const propertyUncertain = properties.disposition === 'uncertain'
-  const busy = transition.isPending || properties.isPending
+  const busy = transition.isPending || properties.isPending || milestoneCommand.isPending
 
   useEffect(() => {
     if (!announcement) return
@@ -466,6 +484,36 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
       setAnnouncement(`The server moved this item to ${stateLabel(accepted.state)}.`)
     } catch {
       // `transition.error` is shown next to the transition and in the footer.
+    }
+  }
+
+  /**
+   * Milestone membership has its own command family. Nothing is shown as
+   * moved until the server accepts; a refusal is quoted beside the control and
+   * the stored membership stays visible.
+   */
+  const changeMilestone = async (value: string) => {
+    setMilestoneError(null)
+    try {
+      if (value === 'none') {
+        if (!currentMilestone) return
+        await milestoneCommand.mutateAsync({
+          commandId: newCommandId(),
+          input: {
+            type: 'unassign_work_item',
+            itemId: item.id,
+            milestoneId: currentMilestone.id,
+          },
+        })
+      } else {
+        await milestoneCommand.mutateAsync({
+          commandId: newCommandId(),
+          input: { type: 'assign_work_item', milestoneId: value, itemId: item.id },
+        })
+      }
+      setAnnouncement('Milestone membership saved.')
+    } catch (failure) {
+      setMilestoneError(userMessage(failure))
     }
   }
 
@@ -594,16 +642,44 @@ function WorkItemSheetPanel({ item, workflow, onClose, onRefresh }: WorkItemShee
               </Section>
 
               <Section
-                title="Epic"
-                description="Group this Work Item with related tasks and Work Items. Epic membership is separate from its workflow state and milestones."
+                title="Milestone"
+                description="Assign this Work Item to one milestone in its project. Milestone membership is separate from its workflow state."
               >
-                <EpicAssignmentField
-                  epics={epics.data ?? []}
-                  selectedEpicId={epicId}
-                  taskId={item.id}
-                  kind="work_item"
-                  disabled={epics.isPending}
-                />
+                <Field
+                  label="Milestone"
+                  hint={
+                    milestones.error
+                      ? 'The milestone list could not be read, so the stored membership is not shown here. Retry from the project page.'
+                      : 'The server refuses a milestone from another project.'
+                  }
+                >
+                  <Select
+                    value={currentMilestone?.id ?? 'none'}
+                    onValueChange={(value) => void changeMilestone(value)}
+                    disabled={busy || milestones.isPending || Boolean(milestones.error)}
+                  >
+                    <SelectTrigger aria-label="Work item milestone">
+                      <SelectValue placeholder={milestones.isPending ? 'Loading…' : 'No milestone'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No milestone</SelectItem>
+                      {milestoneList.map((milestone) => (
+                        <SelectItem key={milestone.id} value={milestone.id}>
+                          {milestone.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                {milestoneError ? (
+                  <p
+                    role="alert"
+                    className="mt-1.5 flex items-start gap-1.5 text-xs leading-5 text-danger-ink"
+                  >
+                    <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
+                    {milestoneError}
+                  </p>
+                ) : null}
               </Section>
 
               <Section

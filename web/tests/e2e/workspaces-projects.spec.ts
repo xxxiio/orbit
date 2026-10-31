@@ -112,13 +112,13 @@ test.describe('project settings', () => {
     await expect(dialog).toBeHidden()
 
     // The project now follows Basic: its extra Agent jobs view goes, while the
-    // canonical List/Board/Backlog/Roadmap/Milestones remain available.
-    await expect(page.getByRole('link', { name: /^List/ })).toBeVisible()
+    // canonical Tasks/Roadmap/Milestones remain available.
+    await expect(page.getByRole('link', { name: /^Tasks/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /^Agent jobs/ })).toHaveCount(0)
     await expect(page.getByText('Basic v1', { exact: true }).first()).toBeVisible()
 
     await page.reload()
-    await expect(page.getByRole('link', { name: /^List/ })).toBeVisible()
+    await expect(page.getByRole('link', { name: /^Tasks/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /^Agent jobs/ })).toHaveCount(0)
   })
 })

@@ -63,6 +63,11 @@ async function scheduleBlocks(page: Page, server: E2EServer) {
 }
 
 test.describe('planning estimates and deadlines', () => {
+  // This flow creates a project, a task, three planning writes, a day plan and an
+  // applied block, then reloads twice. Solo it runs at ~26s; the default 30s
+  // budget leaves no headroom for a seeded server under two workers.
+  test.setTimeout(90_000)
+
   test('a sized task survives reload and its applied schedule block does too', async ({
     page,
     workspace,

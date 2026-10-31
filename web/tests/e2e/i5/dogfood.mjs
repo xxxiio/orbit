@@ -1533,7 +1533,7 @@ async function run() {
     { name: MILESTONE_M31, assigned: 12, done: 2 },
     { name: MILESTONE_REF, assigned: 6, done: 0 },
   ]
-  const milestoneRows = page.locator('[data-milestone-row]')
+  const milestoneRows = page.locator('[data-milestone-card]')
   if ((await milestoneRows.count()) !== expectedMilestones.length) {
     throw new Error(`expected ${expectedMilestones.length} milestone rows, found ${await milestoneRows.count()}`)
   }
@@ -1543,13 +1543,13 @@ async function run() {
     if (!milestoneId) throw new Error(`milestone ${expected.name} has no id`)
     const assigned = finalTasks.filter((task) => task.milestone_id === milestoneId)
     const done = assigned.filter((task) => task.status === 'done').length
-    const copy = `${done} of ${assigned.length} tasks done`
+    const copy = `${done}/${assigned.length} done`
     if (assigned.length !== expected.assigned || done !== expected.done) {
       throw new Error(
-        `milestone ${expected.name} is ${copy}, expected ${expected.done} of ${expected.assigned}`,
+        `milestone ${expected.name} is ${copy}, expected ${expected.done} done of ${expected.assigned}`,
       )
     }
-    const row = page.locator(`[data-milestone-row="${milestoneId}"]`)
+    const row = page.locator(`[data-milestone-card="${milestoneId}"]`)
     await waitUntil(async () => (await row.innerText()).includes(copy), {
       label: `milestone ${expected.name} to read “${copy}”`,
     })

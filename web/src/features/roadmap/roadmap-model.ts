@@ -1,4 +1,13 @@
-import type { Epic, Milestone, Task } from '@/api/adapters'
+/**
+ * Roadmap geometry and grouping.
+ *
+ * A milestone is the only grouping entity on the roadmap. Every date the
+ * timeline draws comes from an authored field: a milestone's start/target and a
+ * task's earliest start/deadline. Nothing is derived from children and nothing
+ * is invented, so an item with no usable date is reported as unscheduled
+ * instead of being given a made-up span.
+ */
+import type { Milestone, Task } from '@/api/adapters'
 
 export type RoadmapScale = 'week' | 'month' | 'quarter'
 
@@ -20,13 +29,21 @@ export interface DateRange {
   endMs: number
 }
 
+export type RoadmapBarKind = 'task' | 'milestone'
+
+/**
+ * `duration` spans two authored dates; `checkpoint` marks a single authored
+ * date. The distinction is what keeps a target-only milestone a marker rather
+ * than a one-day bar that pretends to be a window.
+ */
+export type RoadmapBarShape = 'duration' | 'checkpoint'
+
 export interface TimelineBar {
   id: string
-  kind: 'task' | 'epic' | 'milestone'
+  kind: RoadmapBarKind
+  shape: RoadmapBarShape
   startMs: number
   endMs: number
-  /** True when at least one endpoint came from child dates, not the record. */
-  derived: boolean
 }
 
 export function startOfLocalDay(ms: number): number {
@@ -132,62 +149,85 @@ export function ticksForRange(range: DateRange, scale: RoadmapScale): TimelineTi
 }
 
 /**
- * A task is scheduled only when it carries at least one authored date. An
- * estimate alone is not a date, and no bar is invented for it.
+ * A task window uses the dates the task was authored with. Two dates make a
+ * duration; one date is a marker on that day. An estimate is not a date, and a
+ * task with no date gets no bar at all.
  */
 export function taskBar(task: Task): TimelineBar | null {
-  const start = task.earliestStartAtMs
+  const earliest = task.earliestStartAtMs
   const deadline = task.deadlineAtMs
-  if (start == null && deadline == null) return null
-  if (start != null && deadline != null) {
-    return { id: task.id, kind: 'task', startMs: startOfLocalDay(start), endMs: startOfLocalDay(deadline) + DAY_MS, derived: false }
+  if (earliest == null && deadline == null) return null
+  if (earliest != null && deadline != null) {
+    const start = startOfLocalDay(earliest)
+    const end = Math.max(startOfLocalDay(deadline) + DAY_MS, start + DAY_MS)
+    return { id: task.id, kind: 'task', shape: 'duration', startMs: start, endMs: end }
   }
-  const at = start ?? deadline
-  if (at == null) return null
-  return { id: task.id, kind: 'task', startMs: startOfLocalDay(at), endMs: startOfLocalDay(at) + DAY_MS, derived: false }
+  const at = startOfLocalDay((earliest ?? deadline)!)
+  return { id: task.id, kind: 'task', shape: 'checkpoint', startMs: at, endMs: at + DAY_MS }
 }
 
 /**
- * An epic's bar uses its own dates. When they are absent, the envelope of its
- * children is shown as a derived bar so the roadmap still communicates scope —
- * the UI labels it derived rather than pretending it was scheduled.
+ * A milestone with a start and a target spans that window. With only a target
+ * it is a checkpoint on that day. Without a target there is nothing to anchor
+ * it to, so it stays unscheduled rather than borrowing its children's dates.
  */
-export function epicBar(epic: Epic, tasks: Task[]): TimelineBar | null {
-  if (epic.startAtMs != null || epic.targetAtMs != null) {
-    const start = epic.startAtMs ?? epic.targetAtMs!
-    const end = epic.targetAtMs ?? epic.startAtMs!
-    return {
-      id: epic.id,
-      kind: 'epic',
-      startMs: startOfLocalDay(start),
-      endMs: startOfLocalDay(end) + DAY_MS,
-      derived: false,
-    }
-  }
-  const ids = new Set(epic.taskIds)
-  const bars = tasks
-    .filter((task) => ids.has(task.id))
-    .map(taskBar)
-    .filter((bar): bar is TimelineBar => bar !== null)
-  if (bars.length === 0) return null
-  return {
-    id: epic.id,
-    kind: 'epic',
-    startMs: Math.min(...bars.map((bar) => bar.startMs)),
-    endMs: Math.max(...bars.map((bar) => bar.endMs)),
-    derived: true,
-  }
-}
-
 export function milestoneBar(milestone: Milestone): TimelineBar | null {
   if (milestone.targetAtMs == null) return null
+  const target = startOfLocalDay(milestone.targetAtMs)
+  if (milestone.startAtMs == null) {
+    return { id: milestone.id, kind: 'milestone', shape: 'checkpoint', startMs: target, endMs: target + DAY_MS }
+  }
+  const start = Math.min(startOfLocalDay(milestone.startAtMs), target)
   return {
     id: milestone.id,
     kind: 'milestone',
-    startMs: startOfLocalDay(milestone.targetAtMs),
-    endMs: startOfLocalDay(milestone.targetAtMs) + DAY_MS,
-    derived: false,
+    shape: 'duration',
+    startMs: start,
+    endMs: Math.max(target + DAY_MS, start + DAY_MS),
   }
+}
+
+export interface MilestoneGroups {
+  /** Tasks per milestone id, in roadmap order. */
+  byMilestone: Map<string, Task[]>
+  /** Tasks with no milestone, or with one this roadmap does not show. */
+  unassigned: Task[]
+}
+
+/**
+ * Group tasks by the milestone they are assigned to. Membership is read from
+ * `task.milestoneId`; a task pointing at a milestone outside the given list is
+ * treated as unassigned so it never disappears from the roadmap.
+ */
+export function groupTasksByMilestone(
+  tasks: readonly Task[],
+  milestones: readonly Milestone[],
+): MilestoneGroups {
+  const byMilestone = new Map<string, Task[]>()
+  for (const milestone of milestones) byMilestone.set(milestone.id, [])
+  const unassigned: Task[] = []
+  for (const task of tasks) {
+    const bucket = task.milestoneId ? byMilestone.get(task.milestoneId) : undefined
+    if (bucket) bucket.push(task)
+    else unassigned.push(task)
+  }
+  return { byMilestone, unassigned }
+}
+
+/** Chronological order for milestone rows; undated milestones come last. */
+export function compareMilestones(a: Milestone, b: Milestone): number {
+  const left = a.targetAtMs ?? Number.POSITIVE_INFINITY
+  const right = b.targetAtMs ?? Number.POSITIVE_INFINITY
+  if (left !== right) return left < right ? -1 : 1
+  return a.name.localeCompare(b.name)
+}
+
+/** Earliest authored date first; tasks are only compared when both have one. */
+export function compareTasks(a: Task, b: Task): number {
+  const left = taskAnchor(a)
+  const right = taskAnchor(b)
+  if (left !== right) return left < right ? -1 : 1
+  return a.title.localeCompare(b.title)
 }
 
 export function barGeometry(
@@ -206,19 +246,17 @@ export function todayOffset(nowMs: number, range: DateRange, pxPerDay: number): 
   return ((startOfLocalDay(nowMs) - range.startMs) / DAY_MS) * pxPerDay
 }
 
+/** The first authored date a task can be ordered by; `Infinity` when none. */
+function taskAnchor(task: Task): number {
+  return task.earliestStartAtMs ?? task.deadlineAtMs ?? Number.POSITIVE_INFINITY
+}
+
 export function isBarVisible(bar: TimelineBar, range: DateRange): boolean {
   return bar.endMs > range.startMs && bar.startMs < range.endMs
 }
 
 export function formatBarDates(bar: TimelineBar): string {
   const formatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
+  if (bar.shape === 'checkpoint') return formatter.format(new Date(bar.startMs))
   return `${formatter.format(new Date(bar.startMs))} – ${formatter.format(new Date(bar.endMs - DAY_MS))}`
-}
-
-/** One compact label for the unscheduled list. */
-export function unscheduledReason(bar: TimelineBar | null, kind: 'task' | 'epic' | 'milestone'): string {
-  if (bar) return ''
-  if (kind === 'task') return 'No planned dates'
-  if (kind === 'epic') return 'No dates and no scheduled children'
-  return 'No target date'
 }

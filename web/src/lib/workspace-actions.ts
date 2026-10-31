@@ -9,8 +9,8 @@
 import { createContext, useContext } from 'react'
 
 export interface WorkspaceActionsValue {
-  /** Open the single New task dialog, optionally pinned to a project. */
-  openNewTask: (projectId?: string) => void
+  /** Open the single New task dialog, optionally pinned to a project/milestone. */
+  openNewTask: (projectId?: string, milestoneId?: string) => void
   openNewProject: () => void
 }
 

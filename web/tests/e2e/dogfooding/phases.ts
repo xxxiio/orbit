@@ -932,11 +932,7 @@ async function complete(page: Page, ctx: DogfoodContext, record: (s: StepRecord)
       // Read the milestone's progress before this task joins it, so the change
       // can be attributed to this action rather than assumed.
       await page.goto(`${ctx.workspace.base}/projects/p-orbit-development/milestones`)
-      const progress = page
-        .locator('section')
-        .filter({ has: page.getByRole('heading', { name: 'Progress', exact: true }) })
-        .last()
-      const before = (await progress.locator('[data-milestone-row="m-orbit-i1"]').innerText())
+      const before = (await page.locator('[data-milestone-card="m-orbit-i1"]').innerText())
         .replace(/\s+/g, ' ')
       ctx.scratch.milestoneBefore = before
 
@@ -971,16 +967,11 @@ async function complete(page: Page, ctx: DogfoodContext, record: (s: StepRecord)
     expected: 'The milestone row names its status and its task progress from the server.',
     run: async () => {
       await page.goto(`${ctx.workspace.base}/projects/p-orbit-development/milestones`)
-      const progress = page
-        .locator('section')
-        .filter({ has: page.getByRole('heading', { name: 'Progress', exact: true }) })
-        .last()
-      await expect(progress).toBeVisible()
-      const row = progress.locator('[data-milestone-row="m-orbit-i1"]')
+      const row = page.locator('[data-milestone-card="m-orbit-i1"]')
       await expect(row).toBeVisible()
       const text = (await row.innerText()).replace(/\s+/g, ' ')
-      const after = /(\d+) of (\d+) tasks done/.exec(text)
-      const before = /(\d+) of (\d+) tasks done/.exec(String(ctx.scratch.milestoneBefore ?? ''))
+      const after = /(\d+)\/(\d+) done/.exec(text)
+      const before = /(\d+)\/(\d+) done/.exec(String(ctx.scratch.milestoneBefore ?? ''))
       const friction: string[] = []
       if (before && after) {
         const doneMoved = Number(after[1]) === Number(before[1]) + 1

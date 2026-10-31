@@ -1,20 +1,35 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { Epic, Milestone, Task } from '@/api/adapters'
+import type { Milestone, Task } from '@/api/adapters'
 import { defaultNowMs, useTaskGraph } from '@/hooks'
+import { humanizeIdentifier } from '@/lib/humanize'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowRightIcon, CalendarIcon, LinkIcon } from '@/components/ui/icons'
+import {
+  AlertTriangleIcon,
+  ArrowRightIcon,
+  CalendarIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  LinkIcon,
+} from '@/components/ui/icons'
 import { cn } from '@/components/ui/utils'
+import {
+  formatMilestoneDate,
+  milestoneDateSummary,
+  milestoneProgressLabel,
+} from '@/features/milestones'
 import {
   DAY_MS,
   SCALE_PX_PER_DAY,
   addMonths,
   barGeometry,
-  epicBar,
+  compareMilestones,
+  compareTasks,
   formatBarDates,
+  groupTasksByMilestone,
   isBarVisible,
   isRoadmapScale,
   milestoneBar,
@@ -29,21 +44,45 @@ import {
   type TimelineBar,
 } from './roadmap-model'
 import { MilestoneTargetDialog } from './milestone-target-dialog'
-import { epicProgressLabel, formatEpicDate } from '@/features/epics'
 
-const LEFT_WIDTH = 268
+const LEFT_WIDTH = 280
 
-interface RoadmapRow {
+const STATUS_FILTER_OPTIONS = [
+  'inbox',
+  'planned',
+  'ready',
+  'in_progress',
+  'waiting',
+  'blocked',
+  'review',
+  'deferred',
+  'done',
+  'cancelled',
+] as const
+
+interface MilestoneRow {
+  kind: 'milestone'
   key: string
-  kind: 'epic' | 'task' | 'milestone' | 'group'
-  title: string
-  depth: number
+  milestone: Milestone
   bar: TimelineBar | null
-  epic?: Epic
-  task?: Task
-  milestone?: Milestone
-  children?: number
+  children: number
 }
+
+interface TaskRow {
+  kind: 'task'
+  key: string
+  task: Task
+  bar: TimelineBar
+}
+
+interface GroupRow {
+  kind: 'group'
+  key: string
+  title: string
+  children: number
+}
+
+type RoadmapRow = MilestoneRow | TaskRow | GroupRow
 
 function alignStart(ms: number, scale: RoadmapScale): number {
   if (scale === 'week') return startOfLocalWeek(ms)
@@ -57,23 +96,30 @@ function scaleEnd(ms: number, scale: RoadmapScale): number {
   return addMonths(ms, 3)
 }
 
+/**
+ * The project roadmap, grouped by milestone.
+ *
+ * Every milestone is a parent row; its tasks sit underneath in authored-date
+ * order, and tasks that belong to no milestone follow as "Unassigned". Dates
+ * are only ever read from the milestone and task records, so an item without a
+ * usable date is listed as unscheduled instead of being drawn with an invented
+ * span.
+ */
+export interface RoadmapViewProps {
+  projectName: string
+  tasks: Task[]
+  milestones: Milestone[]
+  onOpenTask: (taskId: string) => void
+  onOpenMilestone: (milestone: Milestone) => void
+}
+
 export function RoadmapView({
   projectName,
   tasks,
-  epics,
   milestones,
-  epicFilter,
   onOpenTask,
-  onOpenEpic,
-}: {
-  projectName: string
-  tasks: Task[]
-  epics: Epic[]
-  milestones: Milestone[]
-  epicFilter: string
-  onOpenTask: (taskId: string) => void
-  onOpenEpic: (epic: Epic) => void
-}) {
+  onOpenMilestone,
+}: RoadmapViewProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const scaleParam = searchParams.get('scale')
   const scale: RoadmapScale = isRoadmapScale(scaleParam) ? scaleParam : 'month'
@@ -83,14 +129,17 @@ export function RoadmapView({
   const graph = useTaskGraph(nowMs, true)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [hoverTask, setHoverTask] = useState<string | null>(null)
-  const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null)
+  const [editingTarget, setEditingTarget] = useState<Milestone | null>(null)
 
   const commit = (patch: Record<string, string | null>) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
       for (const [key, value] of Object.entries(patch)) {
-        if (value == null || value === '' || value === 'all' || value === 'month') next.delete(key)
-        else next.set(key, value)
+        if (value == null || value === '' || value === 'all' || (key === 'scale' && value === 'month')) {
+          next.delete(key)
+        } else {
+          next.set(key, value)
+        }
       }
       return next
     })
@@ -100,6 +149,8 @@ export function RoadmapView({
     () => new Map((graph.data?.nodes ?? []).map((node) => [node.taskId, node])),
     [graph.data],
   )
+  // Hovering or focusing a task highlights what it is waiting on, so a bar can
+  // be traced back to the work that gates it.
   const focusedPrerequisites = useMemo(() => {
     if (!hoverTask) return new Set<string>()
     return new Set(graphByTask.get(hoverTask)?.directPrerequisites ?? [])
@@ -119,107 +170,68 @@ export function RoadmapView({
     [tasks, statusFilter, milestoneFilter],
   )
 
-  const tasksByEpic = useMemo(() => {
-    const assigned = new Map<string, Task[]>()
-    for (const epic of epics) assigned.set(epic.id, [])
-    const unassigned: Task[] = []
-    const epicByTask = new Map<string, string>()
-    for (const epic of epics) for (const id of epic.taskIds) epicByTask.set(id, epic.id)
-    for (const task of filteredTasks) {
-      const epicId = epicByTask.get(task.id)
-      if (epicId) assigned.get(epicId)?.push(task)
-      else unassigned.push(task)
-    }
-    return { assigned, unassigned }
-  }, [epics, filteredTasks])
+  const visibleMilestones = useMemo(
+    () =>
+      milestones
+        .filter((milestone) => milestoneFilter === 'all' || milestoneFilter === milestone.id)
+        .slice()
+        .sort(compareMilestones),
+    [milestones, milestoneFilter],
+  )
+
+  const groups = useMemo(
+    () => groupTasksByMilestone(filteredTasks, visibleMilestones),
+    [filteredTasks, visibleMilestones],
+  )
 
   const rows = useMemo<RoadmapRow[]>(() => {
     const result: RoadmapRow[] = []
-    for (const epic of epics) {
-      if (epicFilter !== 'all' && epicFilter !== 'none' && epic.id !== epicFilter) continue
-      if (epicFilter === 'none') continue
-      const children = tasksByEpic.assigned.get(epic.id) ?? []
-      const bar = epicBar(epic, filteredTasks)
-      if (!bar) continue
-      result.push({
-        key: epic.id,
-        kind: 'epic',
-        title: epic.title,
-        depth: 0,
-        bar,
-        epic,
-        children: children.length,
-      })
-      if (!collapsed.has(epic.id)) {
-        for (const task of children) {
-          const childBar = taskBar(task)
-          if (!childBar) continue
-          result.push({
-            key: task.id,
-            kind: 'task',
-            title: task.title,
-            depth: 1,
-            bar: childBar,
-            task,
-            epic,
-          })
-        }
-      }
-    }
-    if (epicFilter === 'all' || epicFilter === 'none') {
-      const unassignedRows = tasksByEpic.unassigned
+    for (const milestone of visibleMilestones) {
+      const children = (groups.byMilestone.get(milestone.id) ?? []).slice().sort(compareTasks)
+      const scheduled = children
         .map((task) => ({ task, bar: taskBar(task) }))
         .filter((entry): entry is { task: Task; bar: TimelineBar } => entry.bar !== null)
-      if (unassignedRows.length > 0) {
+      result.push({
+        kind: 'milestone',
+        key: milestone.id,
+        milestone,
+        bar: milestoneBar(milestone),
+        children: scheduled.length,
+      })
+      if (collapsed.has(milestone.id)) continue
+      for (const { task, bar } of scheduled) {
+        result.push({ kind: 'task', key: task.id, task, bar })
+      }
+    }
+    if (milestoneFilter === 'all' || milestoneFilter === 'none') {
+      const unassigned = groups.unassigned
+        .map((task) => ({ task, bar: taskBar(task) }))
+        .filter((entry): entry is { task: Task; bar: TimelineBar } => entry.bar !== null)
+        .sort((a, b) => compareTasks(a.task, b.task))
+      if (unassigned.length > 0) {
         result.push({
-          key: '__none__',
           kind: 'group',
-          title: 'No epic',
-          depth: 0,
-          bar: null,
-          children: unassignedRows.length,
+          key: '__unassigned__',
+          title: 'Unassigned',
+          children: unassigned.length,
         })
-        if (!collapsed.has('__none__')) {
-          for (const { task, bar } of unassignedRows) {
-            result.push({
-              key: task.id,
-              kind: 'task',
-              title: task.title,
-              depth: 1,
-              bar,
-              task,
-            })
+        if (!collapsed.has('__unassigned__')) {
+          for (const { task, bar } of unassigned) {
+            result.push({ kind: 'task', key: task.id, task, bar })
           }
         }
       }
     }
-    for (const milestone of milestones) {
-      if (milestoneFilter !== 'all' && milestoneFilter !== milestone.id) continue
-      const bar = milestoneBar(milestone)
-      if (!bar) continue
-      result.push({
-        key: milestone.id,
-        kind: 'milestone',
-        title: milestone.name,
-        depth: 0,
-        bar,
-        milestone,
-      })
-    }
     return result
-  }, [epics, tasksByEpic, filteredTasks, epicFilter, milestoneFilter, milestones, collapsed])
+  }, [visibleMilestones, groups, milestoneFilter, collapsed])
 
-  const bars = rows.map((row) => row.bar).filter((bar): bar is TimelineBar => bar !== null)
+  const bars = rows
+    .map((row) => (row.kind === 'task' ? row.bar : row.kind === 'milestone' ? row.bar : null))
+    .filter((bar): bar is TimelineBar => bar !== null)
   const baseStart = startOfLocalDay(nowMs) - 14 * DAY_MS
   const baseEnd = startOfLocalDay(nowMs) + 90 * DAY_MS
-  const startMs = alignStart(
-    Math.min(baseStart, ...bars.map((bar) => bar.startMs)),
-    scale,
-  )
-  const endMs = scaleEnd(
-    Math.max(baseEnd, ...bars.map((bar) => bar.endMs)),
-    scale,
-  )
+  const startMs = alignStart(Math.min(baseStart, ...bars.map((bar) => bar.startMs)), scale)
+  const endMs = scaleEnd(Math.max(baseEnd, ...bars.map((bar) => bar.endMs)), scale)
   const range = { startMs, endMs }
   const pxPerDay = SCALE_PX_PER_DAY[scale]
   const width = Math.max(640, ((endMs - startMs) / DAY_MS) * pxPerDay)
@@ -234,12 +246,11 @@ export function RoadmapView({
     />
   ))
 
-  const unscheduledTasks = filteredTasks.filter((task) => taskBar(task) === null)
-  const unscheduledMilestones = milestones.filter(
-    (milestone) =>
-      (milestoneFilter === 'all' || milestoneFilter === milestone.id) &&
-      milestoneBar(milestone) === null,
-  )
+  const unscheduledTasks = filteredTasks
+    .filter((task) => taskBar(task) === null)
+    .slice()
+    .sort((a, b) => a.title.localeCompare(b.title))
+  const unscheduledMilestones = visibleMilestones.filter((milestone) => milestoneBar(milestone) === null)
 
   const toggle = (id: string) => {
     setCollapsed((current) => {
@@ -250,11 +261,18 @@ export function RoadmapView({
     })
   }
 
+  const isBlockedTask = (task: Task) =>
+    task.status === 'blocked' || (graphByTask.get(task.id)?.unfinishedPrerequisites.length ?? 0) > 0
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-md border border-line bg-surface p-0.5" role="group" aria-label="Roadmap scale">
+          <div
+            className="inline-flex rounded-md border border-line bg-surface p-0.5"
+            role="group"
+            aria-label="Roadmap scale"
+          >
             {(['week', 'month', 'quarter'] as const).map((option) => (
               <button
                 key={option}
@@ -278,13 +296,11 @@ export function RoadmapView({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
-              {['inbox', 'planned', 'ready', 'in_progress', 'waiting', 'blocked', 'review', 'deferred', 'done', 'cancelled'].map(
-                (status) => (
-                  <SelectItem key={status} value={status}>
-                    {status.replace('_', ' ')}
-                  </SelectItem>
-                ),
-              )}
+              {STATUS_FILTER_OPTIONS.map((status) => (
+                <SelectItem key={status} value={status}>
+                  {humanizeIdentifier(status)}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select value={milestoneFilter} onValueChange={(value) => commit({ milestone: value })}>
@@ -302,12 +318,12 @@ export function RoadmapView({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex items-center gap-3 text-2xs text-ink-muted">
+        <div className="flex flex-wrap items-center gap-3 text-2xs text-ink-muted">
           <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-4 rounded-sm bg-accent/70" aria-hidden="true" /> Planned
+            <span className="h-2 w-4 rounded-sm bg-accent/70" aria-hidden="true" /> Duration
           </span>
           <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rotate-45 bg-warning" aria-hidden="true" /> Milestone
+            <span className="h-2 w-2 rotate-45 bg-warning" aria-hidden="true" /> Checkpoint
           </span>
           <span className="inline-flex items-center gap-1">
             <span className="h-3 border-l-2 border-danger" aria-hidden="true" /> Today
@@ -319,10 +335,14 @@ export function RoadmapView({
         <EmptyState
           icon={<CalendarIcon size={20} />}
           title="Nothing scheduled in this range"
-          description="Set a start or target date on an epic, a planned window on a task, or a target date on a milestone. Items without dates stay in the unscheduled list below."
+          description="Give a milestone a start or target date, or plan a window on a task. Items without dates stay in the unscheduled list below."
         />
       ) : (
-        <div className="scrollbar-slim overflow-x-auto rounded-lg border border-line bg-surface">
+        <div
+          className="scrollbar-slim overflow-x-auto rounded-lg border border-line bg-surface"
+          role="group"
+          aria-label={`${projectName} roadmap timeline`}
+        >
           <div className="relative" style={{ width: LEFT_WIDTH + width }}>
             <div className="sticky top-0 z-30 flex border-b border-line bg-surface">
               <div
@@ -346,6 +366,7 @@ export function RoadmapView({
                 ))}
                 {nowX >= 0 && nowX <= width ? (
                   <span
+                    role="separator"
                     aria-label="Today"
                     className="absolute inset-y-0 z-10 border-l-2 border-danger"
                     style={{ left: nowX }}
@@ -355,112 +376,191 @@ export function RoadmapView({
             </div>
 
             {rows.map((row) => {
-              const bar = row.bar
-              if (!bar) {
+              if (row.kind === 'task') {
+                const bar = row.bar
+                const geometry = barGeometry(bar, range, pxPerDay)
+                const visible = isBarVisible(bar, range)
+                const blocked = isBlockedTask(row.task)
+                const highlighted =
+                  hoverTask === row.task.id || focusedPrerequisites.has(row.task.id)
+                const done = row.task.status === 'done'
                 return (
-                  <div key={row.key} className="flex border-b border-line last:border-b-0">
-                    <button
-                      type="button"
-                      onClick={() => toggle(row.key)}
-                      className="sticky left-0 z-20 flex shrink-0 items-center gap-1.5 border-r border-line bg-surface px-3 py-2 text-left text-xs font-semibold text-ink"
-                      style={{ width: LEFT_WIDTH }}
+                  <div
+                    key={row.key}
+                    data-roadmap-row="task"
+                    data-roadmap-id={row.task.id}
+                    onMouseLeave={() => setHoverTask(null)}
+                    className="flex border-b border-line last:border-b-0"
+                  >
+                    <div
+                      className="sticky left-0 z-20 flex h-8 shrink-0 items-center gap-1.5 border-r border-line bg-surface py-1.5 pr-3"
+                      style={{ width: LEFT_WIDTH, paddingLeft: 32 }}
                     >
-                      <span aria-hidden="true" className="text-ink-muted">
-                        {collapsed.has(row.key) ? '▸' : '▾'}
+                      <button
+                        type="button"
+                        onClick={() => onOpenTask(row.task.id)}
+                        onMouseEnter={() => setHoverTask(row.task.id)}
+                        onFocus={() => setHoverTask(row.task.id)}
+                        className={cn(
+                          'min-w-0 flex-1 truncate rounded-sm text-left text-xs transition-colors',
+                          hoverTask === row.task.id ? 'text-accent' : 'text-ink-soft hover:text-accent',
+                        )}
+                        title={row.task.title}
+                        aria-label={`Open task ${row.task.title}`}
+                      >
+                        {row.task.title}
+                      </button>
+                      <span className="shrink-0 text-2xs text-ink-faint">
+                        {humanizeIdentifier(row.task.status)}
                       </span>
-                      {row.title}
-                      <span className="text-2xs font-normal text-ink-muted">{row.children}</span>
-                    </button>
-                    <div className="relative h-8 shrink-0 border-b border-line/0" style={{ width }}>
+                      {blocked ? (
+                        <span title="Waiting on unfinished prerequisites">
+                          <LinkIcon size={11} className="shrink-0 text-warning" />
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="relative h-8 shrink-0" style={{ width }}>
                       {tickLines}
+                      {nowX >= 0 && nowX <= width ? (
+                        <span
+                          aria-hidden="true"
+                          className="absolute inset-y-0 border-l border-danger/40"
+                          style={{ left: nowX }}
+                        />
+                      ) : null}
+                      {visible ? (
+                        <button
+                          type="button"
+                          onMouseEnter={() => setHoverTask(row.task.id)}
+                          onFocus={() => setHoverTask(row.task.id)}
+                          onClick={() => onOpenTask(row.task.id)}
+                          aria-label={`${row.task.title}, ${formatBarDates(bar)}${blocked ? ', blocked' : ''}`}
+                          title={`${row.task.title} · ${formatBarDates(bar)}${blocked ? ' · blocked' : ''}`}
+                          className={cn(
+                            'absolute top-1/2 -translate-y-1/2 transition-shadow',
+                            bar.shape === 'checkpoint'
+                              ? 'flex h-4 items-center justify-center'
+                              : 'h-2 rounded-sm',
+                            bar.shape === 'duration' &&
+                              (done
+                                ? 'bg-success/60 hover:bg-success'
+                                : blocked
+                                  ? 'bg-warning/70 hover:bg-warning'
+                                  : 'bg-accent/55 hover:bg-accent'),
+                            highlighted && 'ring-2 ring-accent ring-offset-1',
+                          )}
+                          style={
+                            bar.shape === 'checkpoint'
+                              ? {
+                                  left:
+                                    geometry.left +
+                                    geometry.width / 2 -
+                                    Math.max(10, geometry.width) / 2,
+                                  width: Math.max(10, geometry.width),
+                                }
+                              : { left: geometry.left, width: geometry.width }
+                          }
+                        >
+                          {bar.shape === 'checkpoint' ? (
+                            <span
+                              aria-hidden="true"
+                              className={cn(
+                                'h-2 w-2 rotate-45 rounded-[1px]',
+                                done ? 'bg-success' : blocked ? 'bg-warning' : 'bg-accent/80',
+                              )}
+                            />
+                          ) : null}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 )
               }
-              const geometry = barGeometry(bar, range, pxPerDay)
-              const visible = isBarVisible(bar, range)
-              const blocked =
-                row.task?.status === 'blocked' ||
-                (row.task ? (graphByTask.get(row.task.id)?.directPrerequisites.length ?? 0) > 0 : false)
-              const highlighted =
-                row.task != null &&
-                (hoverTask === row.task.id || focusedPrerequisites.has(row.task.id))
-              const done =
-                row.kind === 'epic'
-                  ? row.epic?.status === 'completed'
-                  : row.task?.status === 'done'
+
+              const bar = row.kind === 'milestone' ? row.bar : null
+              const geometry = bar ? barGeometry(bar, range, pxPerDay) : null
+              const visible = bar ? isBarVisible(bar, range) : false
+              const progress = row.kind === 'milestone' ? row.milestone.progress : null
+              const blockedCount = progress?.blocked ?? 0
+              const expanded = !collapsed.has(row.key)
               return (
                 <div
                   key={row.key}
                   data-roadmap-row={row.kind}
-                  data-roadmap-id={row.task?.id ?? row.epic?.id ?? row.milestone?.id}
+                  data-roadmap-id={row.kind === 'milestone' ? row.milestone.id : undefined}
+                  onMouseLeave={() => setHoverTask(null)}
                   className={cn(
                     'flex border-b border-line last:border-b-0',
-                    row.kind === 'epic' && 'bg-surface-sunken/30',
+                    row.kind === 'milestone' ? 'bg-surface-sunken/40' : 'bg-surface-sunken/20',
                   )}
                 >
                   <div
-                    className="sticky left-0 z-20 flex shrink-0 items-center gap-1.5 border-r border-line bg-surface px-3 py-1.5"
-                    style={{ width: LEFT_WIDTH, paddingLeft: 12 + row.depth * 16 }}
+                    className="sticky left-0 z-20 flex shrink-0 flex-col justify-center border-r border-line bg-surface px-3 py-1.5"
+                    style={{ width: LEFT_WIDTH }}
                   >
-                    {row.kind === 'epic' || row.kind === 'group' ? (
+                    <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() => toggle(row.key)}
-                        className="inline-flex h-4 w-4 items-center justify-center rounded text-2xs text-ink-muted hover:bg-surface-hover"
-                        aria-label={collapsed.has(row.key) ? `Expand ${row.title}` : `Collapse ${row.title}`}
+                        aria-expanded={expanded}
+                        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${row.kind === 'milestone' ? row.milestone.name : row.title}`}
+                        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-surface-hover hover:text-ink"
                       >
-                        {collapsed.has(row.key) ? '▸' : '▾'}
+                        {expanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
                       </button>
-                    ) : (
-                      <span aria-hidden="true" className="w-4" />
-                    )}
-                    {row.kind === 'epic' && row.epic ? (
-                      <button
-                        type="button"
-                        onClick={() => onOpenEpic(row.epic!)}
-                        className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-ink hover:text-accent"
-                        title={row.title}
+                      {row.kind === 'milestone' ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenMilestone(row.milestone)}
+                          className="min-w-0 flex-1 truncate rounded-sm text-left text-xs font-semibold text-ink hover:text-accent"
+                          title={row.milestone.name}
+                          aria-label={`Open milestone ${row.milestone.name}`}
+                        >
+                          {row.milestone.name}
+                        </button>
+                      ) : (
+                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink-muted">
+                          {row.title}
+                        </span>
+                      )}
+                      <span
+                        className="shrink-0 text-2xs font-normal tabular-nums text-ink-muted"
+                        title={`${row.children} scheduled ${row.children === 1 ? 'item' : 'items'}`}
                       >
-                        {row.title}
-                      </button>
-                    ) : row.kind === 'milestone' && row.milestone ? (
-                      <button
-                        type="button"
-                        onClick={() => setEditingMilestone(row.milestone!)}
-                        className="min-w-0 flex-1 truncate text-left text-xs font-medium text-ink hover:text-accent"
-                        title={row.title}
-                      >
-                        {row.title}
-                      </button>
-                    ) : row.task ? (
-                      <button
-                        type="button"
-                        onClick={() => onOpenTask(row.task!.id)}
-                        className="min-w-0 flex-1 truncate text-left text-xs text-ink-soft hover:text-accent"
-                        title={row.title}
-                      >
-                        {row.title}
-                      </button>
-                    ) : (
-                      <span className="truncate text-xs text-ink-muted">{row.title}</span>
-                    )}
-                    {row.kind === 'epic' && row.epic ? (
-                      <span className="shrink-0 text-2xs tabular-nums text-ink-muted">
-                        {row.epic.progress.percent}%
+                        {row.children}
                       </span>
-                    ) : null}
-                    {blocked ? (
-                      <span title="Has unfinished prerequisites">
-                        <LinkIcon size={11} className="shrink-0 text-warning" />
-                      </span>
+                      {progress ? (
+                        <span
+                          className="shrink-0 text-2xs tabular-nums text-ink-muted"
+                          title={`${progress.completed} of ${progress.total} items complete`}
+                        >
+                          {progress.percent}%
+                        </span>
+                      ) : null}
+                      {blockedCount > 0 ? (
+                        <span
+                          className="inline-flex shrink-0 items-center gap-0.5 text-2xs font-medium text-warning-ink"
+                          title={`${blockedCount} blocked ${blockedCount === 1 ? 'task' : 'tasks'}`}
+                        >
+                          <AlertTriangleIcon size={11} />
+                          {blockedCount}
+                        </span>
+                      ) : null}
+                    </div>
+                    {row.kind === 'milestone' ? (
+                      <p className="mt-0.5 flex items-center gap-1 truncate pl-8 text-2xs text-ink-muted">
+                        <CalendarIcon size={10} className="shrink-0" />
+                        <span className="truncate">{milestoneDateSummary(row.milestone)}</span>
+                        {row.milestone.owner ? (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="truncate">{row.milestone.owner}</span>
+                          </>
+                        ) : null}
+                      </p>
                     ) : null}
                   </div>
-                  <div
-                    className="relative h-8 shrink-0"
-                    style={{ width }}
-                    onMouseLeave={() => setHoverTask(null)}
-                  >
+                  <div className="relative min-h-8 shrink-0" style={{ width }}>
                     {tickLines}
                     {nowX >= 0 && nowX <= width ? (
                       <span
@@ -469,56 +569,74 @@ export function RoadmapView({
                         style={{ left: nowX }}
                       />
                     ) : null}
-                    {visible && row.kind === 'milestone' ? (
-                      <button
-                        type="button"
-                        onClick={() => setEditingMilestone(row.milestone!)}
-                        className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rotate-45 rounded-[1px] border border-warning-ink/40 bg-warning hover:bg-warning-ink"
-                        style={{ left: Math.max(0, geometry.left - 5) }}
-                        aria-label={`${row.title}, milestone on ${formatEpicDate(row.milestone?.targetAtMs)}`}
-                        title={`${row.title} · ${formatEpicDate(row.milestone?.targetAtMs)}`}
-                      />
-                    ) : visible ? (
-                      <button
-                        type="button"
-                        onMouseEnter={() => setHoverTask(row.task?.id ?? null)}
-                        onFocus={() => setHoverTask(row.task?.id ?? null)}
-                        onClick={() =>
-                          row.kind === 'epic' && row.epic
-                            ? onOpenEpic(row.epic)
-                            : row.task
-                              ? onOpenTask(row.task.id)
-                              : undefined
-                        }
-                        aria-label={`${row.title}, ${formatBarDates(bar)}${bar.derived ? ', derived from child dates' : ''}`}
-                        title={`${row.title} · ${formatBarDates(bar)}${bar.derived ? ' (derived from children)' : ''}`}
-                        className={cn(
-                          'absolute top-1/2 -translate-y-1/2 overflow-hidden rounded-sm text-left transition-shadow',
-                          row.kind === 'epic'
-                            ? 'h-4 bg-accent/75 hover:bg-accent'
-                            : done
-                              ? 'h-2.5 bg-success/70 hover:bg-success'
-                              : 'h-2.5 bg-accent/55 hover:bg-accent',
-                          bar.derived && 'border border-dashed border-accent/70 bg-accent/20',
-                          highlighted && 'ring-2 ring-accent ring-offset-1',
-                          blocked && row.kind !== 'epic' && 'bg-warning/70 hover:bg-warning',
+                    {row.kind === 'milestone' && bar && geometry && visible ? (
+                      <>
+                        {bar.shape === 'checkpoint' ? (
+                          <button
+                            type="button"
+                            onClick={() => setEditingTarget(row.milestone)}
+                            className="group absolute top-1/2 flex -translate-y-1/2 items-center gap-1.5 rounded-sm pr-1"
+                            style={{ left: Math.max(0, geometry.left - 5) }}
+                            aria-label={`${row.milestone.name}, milestone on ${formatBarDates(bar)}, change target date`}
+                            title={`${row.milestone.name} · target ${formatBarDates(bar)}`}
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="h-2.5 w-2.5 rotate-45 rounded-[1px] border border-warning-ink/50 bg-warning group-hover:bg-warning-ink"
+                            />
+                            <span className="whitespace-nowrap text-2xs text-ink-muted group-hover:text-ink">
+                              {formatBarDates(bar)}
+                            </span>
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => onOpenMilestone(row.milestone)}
+                              className={cn(
+                                'absolute top-1/2 h-4 -translate-y-1/2 overflow-hidden rounded-sm ring-1 ring-inset transition-colors',
+                                row.milestone.status === 'completed'
+                                  ? 'bg-success/20 ring-success/40 hover:bg-success/25'
+                                  : row.milestone.status === 'blocked'
+                                    ? 'bg-danger/15 ring-danger/40 hover:bg-danger/20'
+                                    : 'bg-accent/15 ring-accent/35 hover:bg-accent/20',
+                              )}
+                              style={{ left: geometry.left, width: geometry.width }}
+                              aria-label={`${row.milestone.name}, ${formatBarDates(bar)}, ${milestoneProgressLabel(row.milestone)} (${row.milestone.progress.percent}%), open milestone`}
+                              title={`${row.milestone.name} · ${formatBarDates(bar)} · ${milestoneProgressLabel(row.milestone)}`}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className={cn(
+                                  'absolute inset-y-0 left-0',
+                                  row.milestone.status === 'completed' ? 'bg-success/70' : 'bg-accent/70',
+                                )}
+                                style={{ width: `${row.milestone.progress.percent}%` }}
+                              />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingTarget(row.milestone)}
+                              className="group absolute top-1/2 -translate-y-1/2 rounded-sm"
+                              style={{ left: Math.max(0, geometry.left + geometry.width - 5) }}
+                              aria-label={`${row.milestone.name}, target ${formatMilestoneDate(row.milestone.targetAtMs)}, change target date`}
+                              title={`Target ${formatMilestoneDate(row.milestone.targetAtMs)}`}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className="block h-2.5 w-2.5 rotate-45 rounded-[1px] border border-warning-ink/60 bg-warning group-hover:bg-warning-ink"
+                              />
+                            </button>
+                          </>
                         )}
-                        style={{ left: geometry.left, width: geometry.width }}
+                      </>
+                    ) : row.kind === 'milestone' ? (
+                      <span
+                        className="absolute top-1/2 left-2 -translate-y-1/2 rounded-sm border border-dashed border-line-strong px-1.5 py-0.5 text-2xs text-ink-muted"
+                        title="Set a target date to place this milestone on the timeline"
                       >
-                        {row.kind === 'epic' && row.epic && row.epic.progress.total > 0 ? (
-                          <span
-                            className="absolute inset-y-0 left-0 bg-accent"
-                            style={{ width: `${row.epic.progress.percent}%` }}
-                          />
-                        ) : null}
-                        {geometry.width > 90 ? (
-                          <span className="relative px-1 text-[0.625rem] font-medium leading-4 text-accent-ink">
-                            {row.kind === 'epic'
-                              ? `${epicProgressLabel(row.epic!)} · ${row.epic!.progress.percent}%`
-                              : row.task?.status}
-                          </span>
-                        ) : null}
-                      </button>
+                        No target
+                      </span>
                     ) : null}
                   </div>
                 </div>
@@ -530,7 +648,7 @@ export function RoadmapView({
 
       {unscheduledTasks.length > 0 || unscheduledMilestones.length > 0 ? (
         <section className="rounded-lg border border-dashed border-line-strong/70 bg-surface/60 p-3">
-          <h3 className="text-xs font-semibold text-ink">
+          <h2 className="text-xs font-semibold text-ink">
             Unscheduled{' '}
             <span className="font-normal text-ink-muted">
               ({unscheduledTasks.length} task{unscheduledTasks.length === 1 ? '' : 's'}
@@ -539,10 +657,10 @@ export function RoadmapView({
                 : ''}
               )
             </span>
-          </h3>
+          </h2>
           <p className="mt-0.5 text-2xs text-ink-muted">
-            These items have no authored dates, so they are not given an invented bar. Open one to
-            schedule it.
+            These items have no authored dates they can be placed by, so they are not given an
+            invented bar. Open one to schedule it.
           </p>
           <ul className="mt-2 flex flex-wrap gap-1.5">
             {unscheduledTasks.map((task) => (
@@ -566,10 +684,15 @@ export function RoadmapView({
                   size="sm"
                   className="h-7 text-xs"
                   data-unscheduled-milestone={milestone.id}
-                  onClick={() => setEditingMilestone(milestone)}
+                  onClick={() => setEditingTarget(milestone)}
+                  title={milestoneDateSummary(milestone)}
                 >
                   <span className="truncate">{milestone.name}</span>
-                  <Badge tone="warning">No target</Badge>
+                  <Badge tone="warning">
+                    {milestone.targetAtMs == null && milestone.startAtMs != null
+                      ? 'No target'
+                      : 'No dates'}
+                  </Badge>
                 </Button>
               </li>
             ))}
@@ -577,13 +700,15 @@ export function RoadmapView({
         </section>
       ) : null}
 
-      <MilestoneTargetDialog
-        milestone={editingMilestone}
-        open={editingMilestone !== null}
-        onOpenChange={(open) => {
-          if (!open) setEditingMilestone(null)
-        }}
-      />
+      {editingTarget ? (
+        <MilestoneTargetDialog
+          milestone={editingTarget}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditingTarget(null)
+          }}
+        />
+      ) : null}
     </div>
   )
 }

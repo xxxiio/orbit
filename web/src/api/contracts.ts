@@ -363,9 +363,27 @@ export interface TaskResult {
   task: TaskRecord
 }
 
-/** Tagged `"type"`, snake_case. */
+/**
+ * Tagged `"type"`, snake_case. `create` carries every field the rich create
+ * dialog can collect; the optional keys are serde-defaulted on the server, so an
+ * older payload (title/project only) still decodes unchanged.
+ */
 export type TaskAction =
-  | { type: 'create'; task_id: string; title: string; project_id?: string }
+  | {
+      type: 'create'
+      task_id: string
+      title: string
+      project_id?: string
+      milestone_id?: string
+      description?: string
+      status?: string
+      priority?: string
+      estimated_minutes?: number
+      deadline_at_ms?: number
+      earliest_start_at_ms?: number
+      acceptance_criteria?: string[]
+      prerequisite_ids?: string[]
+    }
   | { type: 'change_status'; task_id: string; status: string }
   | { type: 'rename'; task_id: string; title: string }
   | { type: 'assign_project'; task_id: string; project_id: string | null }
@@ -406,13 +424,44 @@ export interface TaskCommand {
 /* Milestones                                                          */
 /* ------------------------------------------------------------------ */
 
+/** Server-computed rollup; the browser never recalculates membership. */
+export interface MilestoneProgressRecord {
+  total: number
+  completed: number
+  blocked: number
+  percent: number
+}
+
+export interface MilestoneActivityRecord {
+  id: string
+  milestone_id: string
+  kind: string
+  actor: string
+  occurred_at_ms: number
+  summary: string
+}
+
+/**
+ * Rich milestone row. Only `target_at_ms` is optional: the authority skips it
+ * when null, while every other key is always serialised (serde defaults).
+ */
 export interface MilestoneRecord {
   id: string
   project_id: string
   name: string
+  description: string
   status: string
+  priority: string | null
+  owner: string | null
+  start_at_ms: number | null
   /** Checkpoint date; absent means unscheduled, not a zero-length period. */
   target_at_ms?: number | null
+  created_at_ms: number
+  updated_at_ms: number
+  task_ids: string[]
+  work_item_ids: string[]
+  progress: MilestoneProgressRecord
+  activities: MilestoneActivityRecord[]
 }
 
 export interface MilestoneSnapshot {
@@ -427,104 +476,47 @@ export interface MilestoneResult {
   milestone: MilestoneRecord | null
 }
 
+/**
+ * Tagged `"type"`, snake_case. `create` accepts the rich draft; `update`
+ * replaces the editable fields in one command. Membership commands are
+ * separate so a task move and a milestone edit never share a receipt.
+ */
 export type MilestoneAction =
-  | { type: 'create'; milestone_id: string; project_id: string; name: string }
+  | {
+      type: 'create'
+      milestone_id: string
+      project_id: string
+      name: string
+      description?: string
+      priority?: string | null
+      owner?: string | null
+      start_at_ms?: number | null
+      target_at_ms?: number | null
+    }
   | { type: 'rename'; milestone_id: string; name: string }
+  | {
+      type: 'update'
+      milestone_id: string
+      name: string
+      description: string
+      priority: string | null
+      owner: string | null
+      start_at_ms: number | null
+      target_at_ms: number | null
+    }
   | { type: 'change_status'; milestone_id: string; status: string }
   | { type: 'set_target'; milestone_id: string; target_at_ms: number | null }
   | { type: 'move_project'; milestone_id: string; project_id: string }
+  | { type: 'assign_task'; milestone_id: string; task_id: string }
+  | { type: 'unassign_task'; task_id: string }
+  | { type: 'assign_work_item'; milestone_id: string; item_id: string }
+  | { type: 'unassign_work_item'; item_id: string }
   | { type: 'delete'; milestone_id: string }
 
 export interface MilestoneCommand {
   command_id: string
   expected_revision: number
   action: MilestoneAction
-}
-
-/* ------------------------------------------------------------------ */
-/* Epics                                                               */
-/* ------------------------------------------------------------------ */
-
-export type EpicStatus = 'planned' | 'in_progress' | 'blocked' | 'completed' | 'cancelled'
-
-export interface EpicProgressRecord {
-  total: number
-  completed: number
-  blocked: number
-  percent: number
-}
-
-export interface EpicActivityRecord {
-  id: string
-  epic_id: string
-  kind: string
-  actor: string
-  occurred_at_ms: number
-  summary: string
-}
-
-export interface EpicRecord {
-  id: string
-  project_id: string
-  title: string
-  description: string
-  status: EpicStatus
-  priority: string | null
-  owner: string | null
-  start_at_ms: number | null
-  target_at_ms: number | null
-  created_at_ms: number
-  updated_at_ms: number
-  task_ids: string[]
-  work_item_ids: string[]
-  progress: EpicProgressRecord
-  activities: EpicActivityRecord[]
-}
-
-export interface EpicSnapshot {
-  revision: number
-  epics: EpicRecord[]
-}
-
-export interface EpicResult {
-  revision: number
-  duplicate: boolean
-  epic: EpicRecord | null
-}
-
-export type EpicAction =
-  | {
-      type: 'create'
-      epic_id: string
-      project_id: string
-      title: string
-      description?: string
-      priority?: string | null
-      owner?: string | null
-      start_at_ms?: number | null
-      target_at_ms?: number | null
-    }
-  | {
-      type: 'update'
-      epic_id: string
-      title: string
-      description?: string
-      priority?: string | null
-      owner?: string | null
-      start_at_ms?: number | null
-      target_at_ms?: number | null
-    }
-  | { type: 'change_status'; epic_id: string; status: EpicStatus }
-  | { type: 'assign_task'; epic_id: string; task_id: string }
-  | { type: 'unassign_task'; task_id: string }
-  | { type: 'assign_work_item'; epic_id: string; item_id: string }
-  | { type: 'unassign_work_item'; item_id: string }
-  | { type: 'delete'; epic_id: string }
-
-export interface EpicCommand {
-  command_id: string
-  expected_revision: number
-  action: EpicAction
 }
 
 /* ------------------------------------------------------------------ */

@@ -18,7 +18,17 @@ describe('useMilestoneCommand revision fence', () => {
     id: 'm-1',
     project_id: 'p-1',
     name: 'Beta',
+    description: '',
     status: 'planned',
+    priority: null,
+    owner: null,
+    start_at_ms: null,
+    created_at_ms: 0,
+    updated_at_ms: 0,
+    task_ids: [],
+    work_item_ids: [],
+    progress: { total: 0, completed: 0, blocked: 0, percent: 0 },
+    activities: [],
   }
 
   beforeEach(() => {

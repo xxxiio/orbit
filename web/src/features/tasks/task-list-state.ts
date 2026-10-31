@@ -23,7 +23,6 @@ export type TaskColumnKey =
   | 'priority'
   | 'project'
   | 'milestone'
-  | 'epic'
   | 'due'
   | 'estimate'
   | 'labels'
@@ -36,7 +35,6 @@ export const TASK_COLUMN_LABELS: Record<TaskColumnKey, string> = {
   priority: 'Priority',
   project: 'Project',
   milestone: 'Milestone',
-  epic: 'Epic',
   due: 'Due',
   estimate: 'Estimate',
   labels: 'Labels',
@@ -63,7 +61,6 @@ const TASK_COLUMN_DESCRIPTORS: readonly ColumnDescriptor[] = (
     priority: [],
     project: ['project_id'],
     milestone: ['milestone_id'],
-    epic: ['epic_id', 'epic'],
     due: ['due_date', 'deadline'],
     estimate: ['estimated_minutes'],
     labels: [],
@@ -76,12 +73,8 @@ export const DEFAULT_PROJECT_COLUMNS: readonly TaskColumnKey[] = [
   'title',
   'status',
   'priority',
-  'epic',
   'milestone',
   'due',
-  'estimate',
-  'readiness',
-  'dependencies',
 ]
 
 const COLUMN_KEYS = Object.keys(TASK_COLUMN_LABELS) as TaskColumnKey[]
@@ -93,11 +86,11 @@ function isColumnKey(value: string): value is TaskColumnKey {
 const SORT_KEYS: readonly TaskSortKey[] = ['title', 'status', 'priority', 'due', 'project', 'milestone']
 export const DEFAULT_TASK_SORT: TaskSort = { key: 'due', direction: 'asc' }
 
-export type TaskGroupKey = 'none' | 'epic' | 'status' | 'priority'
+export type TaskGroupKey = 'none' | 'milestone' | 'status' | 'priority'
 
 export const TASK_GROUP_OPTIONS: readonly { value: TaskGroupKey; label: string }[] = [
   { value: 'none', label: 'None' },
-  { value: 'epic', label: 'Epic' },
+  { value: 'milestone', label: 'Milestone' },
   { value: 'status', label: 'Status' },
   { value: 'priority', label: 'Priority' },
 ]
@@ -110,6 +103,8 @@ export interface TaskListUrlState {
   search: string
   status: string
   priority: string
+  /** A milestone id, `none` for tasks without one, or `ALL`. */
+  milestone: string
   sort: TaskSort
   group: TaskGroupKey
   page: number
@@ -166,6 +161,7 @@ export function readTaskListUrl(
     search: params.get('q') ?? '',
     status: params.get('status') ?? ALL,
     priority: params.get('priority') ?? ALL,
+    milestone: params.get('milestone') ?? ALL,
     sort: readSort(params, fallbackSort),
     group: isGroupKey(params.get('group') ?? '') ? (params.get('group') as TaskGroupKey) : fallbackGroup,
     page: readPositiveInteger(params.get('page'), 1),
@@ -178,6 +174,7 @@ export interface TaskListUrlPatch {
   search?: string
   status?: string
   priority?: string
+  milestone?: string
   sort?: TaskSort
   group?: TaskGroupKey
   page?: number
@@ -206,9 +203,13 @@ export function writeTaskListUrl(
     else next.set(key, value)
   }
 
-  if (patch.search !== undefined) setOrDelete('q', patch.search.trim())
+  // The search box owns its own whitespace: a person may type a trailing space
+  // while composing a phrase, and the URL keeps exactly what was typed. The
+  // matcher trims when it filters, so the query and the result never disagree.
+  if (patch.search !== undefined) setOrDelete('q', patch.search)
   if (patch.status !== undefined) setOrDelete('status', patch.status === ALL ? '' : patch.status)
   if (patch.priority !== undefined) setOrDelete('priority', patch.priority === ALL ? '' : patch.priority)
+  if (patch.milestone !== undefined) setOrDelete('milestone', patch.milestone === ALL ? '' : patch.milestone)
   if (patch.group !== undefined) setOrDelete('group', patch.group)
   if (patch.page !== undefined) {
     setOrDelete('page', patch.page <= 1 ? '' : String(patch.page))
@@ -226,6 +227,46 @@ export function writeTaskListUrl(
   if (patch.selected !== undefined) {
     setOrDelete('sel', patch.selected.join(','))
   }
+  return next
+}
+
+/* ------------------------------------------------------------------ */
+/* The Tasks workspace view switcher                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The three presentations of one project task set. The view is a URL value, not
+ * a route: the Tasks tab keeps a single address and switching never remounts the
+ * page or refetches the task read.
+ */
+export type TasksView = 'list' | 'board' | 'backlog'
+
+export const TASKS_VIEW_OPTIONS: readonly { value: TasksView; label: string }[] = [
+  { value: 'list', label: 'List' },
+  { value: 'board', label: 'Board' },
+  { value: 'backlog', label: 'Backlog' },
+]
+
+/** `list` is the default, so an absent or unknown `view` reads as a list. */
+export function readTasksView(params: URLSearchParams): TasksView {
+  const value = params.get('view')
+  return value === 'board' || value === 'backlog' ? value : 'list'
+}
+
+/** A legacy `/list`, `/board` or `/backlog` route as its matching view. */
+export function legacyTasksView(viewId: string | undefined): TasksView | null {
+  return viewId === 'list' || viewId === 'board' || viewId === 'backlog' ? viewId : null
+}
+
+/**
+ * Switch the view without dropping the shared filters, the open task or the
+ * selection. The default view removes the parameter so a clean Tasks address
+ * stays clean.
+ */
+export function writeTasksView(current: URLSearchParams, view: TasksView): URLSearchParams {
+  const next = new URLSearchParams(current)
+  if (view === 'list') next.delete('view')
+  else next.set('view', view)
   return next
 }
 
@@ -251,12 +292,11 @@ export function columnsFromComponent(
     (descriptor) => descriptor.key as TaskColumnKey,
   )
   const mapped = [...new Set(resolved.columns)]
-  // Readiness and dependencies are server projections this build adds to every
-  // task table; they are appended after the workflow's declared columns rather
-  // than replacing them.
-  return mapped.length > 0
-    ? [...new Set<TaskColumnKey>(['title', ...mapped, 'readiness', 'dependencies'])]
-    : [...fallback]
+  // Return exactly what the workflow declared. Readiness and dependency columns
+  // are available to a workflow that asks for them, but they are never appended
+  // to a declaration that did not: the manifest's column list is what the table
+  // shows.
+  return mapped.length > 0 ? [...new Set<TaskColumnKey>(['title', ...mapped])] : [...fallback]
 }
 
 export function mapDeclaredColumn(name: string): TaskColumnKey | null {

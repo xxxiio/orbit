@@ -329,12 +329,29 @@ export interface CreateTaskVariables {
   taskId: string
   title: string
   projectId?: string
+  milestoneId?: string
+  description?: string
+  status?: TaskStatus
+  priority?: TaskPriority
+  estimatedMinutes?: number
+  deadlineAtMs?: number
+  earliestStartAtMs?: number
+  acceptanceCriteria?: string[]
+  prerequisiteIds?: string[]
 }
 
+/**
+ * One `create` action carries the whole draft. Nothing is written afterwards:
+ * a second command would have its own receipt and could half-apply the task,
+ * and the attempt key would no longer replay the first result. Optional keys the
+ * caller left undefined stay absent, so the payload is identical to the older
+ * title-only create.
+ */
 export function useCreateTask(): CommandMutation<TaskMutationOutcome, CreateTaskVariables> {
   return useApiMutation<TaskMutationOutcome, CreateTaskVariables>({
     uncertainOnError: true,
-    mutationFn: ({ commandId, taskId, title, projectId }, queryClient) => {
+    mutationFn: (variables, queryClient) => {
+      const { commandId, taskId, title, projectId } = variables
       if (title.trim().length === 0) throw new ClientStateError('A task needs a title.')
       const command: TaskCommand = {
         command_id: commandId,
@@ -344,6 +361,27 @@ export function useCreateTask(): CommandMutation<TaskMutationOutcome, CreateTask
           task_id: taskId,
           title,
           ...(projectId ? { project_id: projectId } : {}),
+          ...(variables.milestoneId ? { milestone_id: variables.milestoneId } : {}),
+          ...(variables.description !== undefined
+            ? { description: variables.description }
+            : {}),
+          ...(variables.status ? { status: variables.status } : {}),
+          ...(variables.priority ? { priority: variables.priority } : {}),
+          ...(variables.estimatedMinutes !== undefined
+            ? { estimated_minutes: variables.estimatedMinutes }
+            : {}),
+          ...(variables.deadlineAtMs !== undefined
+            ? { deadline_at_ms: variables.deadlineAtMs }
+            : {}),
+          ...(variables.earliestStartAtMs !== undefined
+            ? { earliest_start_at_ms: variables.earliestStartAtMs }
+            : {}),
+          ...(variables.acceptanceCriteria && variables.acceptanceCriteria.length > 0
+            ? { acceptance_criteria: variables.acceptanceCriteria }
+            : {}),
+          ...(variables.prerequisiteIds && variables.prerequisiteIds.length > 0
+            ? { prerequisite_ids: variables.prerequisiteIds }
+            : {}),
         },
       }
       return sendTaskCommand(command).then(toTaskOutcome)

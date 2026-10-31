@@ -117,7 +117,7 @@ test.describe('conflict', () => {
     await goto(page, server, `/projects/${projectId}/milestones`)
     await page.getByRole('button', { name: 'New milestone' }).first().click()
     const milestoneDialog = page.getByRole('dialog')
-    await milestoneDialog.getByLabel('Milestone name').fill('Cross-cache checkpoint')
+    await milestoneDialog.getByLabel('Name').fill('Cross-cache checkpoint')
     await milestoneDialog.getByRole('button', { name: 'Create milestone' }).click()
     await expect(milestoneDialog).toBeHidden()
 

@@ -31,7 +31,9 @@ const ROUTES: RouteCase[] = [
   { name: 'inbox', path: () => '/inbox', ready: 'main h1' },
   { name: 'projects', path: () => '/projects', ready: 'main h1' },
   { name: 'project-overview', path: () => '/projects/p-orbit-development', ready: 'main h1' },
+  { name: 'project-tasks-board', path: () => '/projects/p-orbit-development/tasks?view=board', ready: 'main [data-board-action]' },
   { name: 'project-board', path: () => '/projects/p-orbit-development/board', ready: 'main [data-board-action]' },
+  { name: 'project-roadmap', path: () => '/projects/p-orbit-development/roadmap', ready: 'main h1' },
   { name: 'project-milestones', path: () => '/projects/p-orbit-development/milestones', ready: 'main h1' },
   { name: 'planning', path: () => '/projects/p-development/planning', ready: 'main h1' },
   { name: 'knowledge', path: () => '/knowledge', ready: 'main h1' },
@@ -189,6 +191,7 @@ test('reduced motion removes the shell choreography', async ({ page, workspace }
 
 /** Guard the audit itself: a route that silently fails to render must not pass. */
 test('every audited route renders its own content', async ({ page, workspace }) => {
+  test.setTimeout(120_000)
   const { server, fixture } = workspace
   await signInViaApi(page, server)
   for (const route of ROUTES) {

@@ -7,11 +7,12 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { AlertCircleIcon } from '@/components/ui/icons'
 import { useToast } from '@/components/ui/toast'
-import { dateInputValue, parseDateInput } from '@/features/epics'
+import { dateInputValue, parseDateInput } from '@/features/milestones'
 
 /**
- * A milestone is a checkpoint, so it has one target date and no duration. The
- * date can be cleared; the milestone then appears in the unscheduled list.
+ * The target date is the one date a milestone needs to sit on the timeline.
+ * Without it the milestone has no anchor, so it is listed as unscheduled; a
+ * milestone that also has a start date is drawn as a window.
  */
 export function MilestoneTargetDialog({
   milestone,
@@ -67,10 +68,13 @@ export function MilestoneTargetDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         title={milestone.name}
-        description="A milestone marks a checkpoint. It has a target date, not a duration."
+        description="The target date places this milestone on the roadmap. A start date turns it into a window; a target alone stays a checkpoint."
       >
         <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
-          <Field label="Target date" hint="Leave empty to return it to the unscheduled list.">
+          <Field
+            label="Target date"
+            hint="Leave empty to return it to the unscheduled list."
+          >
             <Input
               type="date"
               value={value}

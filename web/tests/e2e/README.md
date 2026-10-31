@@ -91,9 +91,10 @@ tests/fixture/seed.ts          the reusable seed itself (also usable for dogfood
 
 `tests/fixture/seed.ts` is transport-agnostic: `seedWorkspaceForServer({ base,
 deviceId, token })` seeds any running server through the public API with
-deterministic ids (6 projects, 122 tasks across every status/priority, milestones,
-acceptance criteria, prerequisites, markdown notes, attachments, agent jobs with
-one handoff awaiting review).
+deterministic ids (7 projects, 122 tasks across every status/priority, 12 milestones
+— six of them in Development with duration, target-only and undated variants and
+Work Item membership — acceptance criteria, prerequisites, markdown notes,
+attachments, agent jobs with one handoff awaiting review).
 
 The fixture is a fixed command sequence with `expected_revision` derived from the
 command index, so running it twice against the same database replays the receipts
@@ -141,7 +142,13 @@ against the shipped build, and a failure is a product regression.
 | `saved-views.spec.ts` | status + priority + sort are stored as the URL query with the list display; the view restores filters, sort and display after a reload and in a second browser context; rename and delete are server writes; saving changes no workflow binding and does not advance the ledger; a stale version is refused with the server's words and the list refreshes. |
 | `task-metadata.spec.ts` | the drawer's Created/Updated `datetime` values are the server's `created_at_ms`/`updated_at_ms`, readable labels carry the full timestamp, a change advances Updated and leaves Created alone, and a real task never shows `Unknown` (the null branch is unit-covered). |
 | `tasks.spec.ts` | capture → rename → description → priority → labels → status survives a reload (drawer deep-links via `?task=`); an illegal transition shows the server's refusal and keeps the stored status; a bulk status change applies to every selected task and both persist after reload. |
-| `conflict.spec.ts` | a stale-revision command is refused with the server's explanation, the UI keeps the stored value, and a refresh makes the next attempt succeed. |
+| `workspaces-task-list.spec.ts` | filter, sort, column and selection state is URL state and survives a reload; declared metric counts and filters read the real rows, not the project total. |
+| `workspaces-board.spec.ts` | the compact board: a keyboard move follows the server and survives a reload; the Move menu never offers an edge the domain refuses. |
+| `workspaces-milestones.spec.ts` | a milestone is created with description, priority, owner and dates in one command and the card/detail show the stored values; assigning a child moves the server's progress and adds activity; a legal status change persists; deleting a milestone that owns work is refused by the server with nothing applied. |
+| `tasks-workspace.spec.ts` | one Tasks tab with three URL views: `q`/status/priority/milestone filters survive List→Board→Backlog and narrow every view; a compact card opens the inspector; a board status change is the server's answer; the compact/comfortable choice survives a reload. |
+| `task-create-full.spec.ts` | the full dialog creates title, description, status, priority, milestone, deadline, estimate, two acceptance criteria and a dependency in one `create` command, and the inspector, board and roadmap show every value without a second edit; a dropped create response is retried with the same attempt key and never duplicates the task. |
+| `roadmap.spec.ts` | a milestone Roadmap: start+target draws a duration bar, a target alone is a checkpoint, no dates stay unscheduled; child tasks use their own authored windows; opening a milestone from the timeline shows its detail dialog; the filter is by milestone and no Epic model is drawn. |
+| `project-workspace-nav.spec.ts` | one Tasks entry next to Overview/Roadmap/Milestones; List/Backlog are URL views of Tasks, while a workflow board that also declares a non-task surface (the Development board's Work Item board) keeps its own Board section and address; `/list` and `/backlog` redirect to the matching view, and `/board` redirects only when the workflow's board is consumed by the Tasks tab. || `conflict.spec.ts` | a stale-revision command is refused with the server's explanation, the UI keeps the stored value, and a refresh makes the next attempt succeed. |
 | `fixture.spec.ts` | the fixture is replayable: a second seed over the same database duplicates no rows and does not advance the authority revision. |
 | `agents.spec.ts` | the Agents workspace reads only jobs this device owns: overview → job → review, and the task is unchanged; an unconfirmed review is discarded by an explicit refresh; an interrupted job resumes into a new queued job; a foreign job id — including one another enrolled device really started — is "not visible", never "missing". |
 | `agents-launch.spec.ts` | the launch path end to end with a deterministic fake executor (the fixture's own device credential posting `agent-machines/*`): drawer → dialog → queued `preparing` job → claim → launch result → observe `running` → handoff → review, with the objective frozen into the brief and the Orbit task unchanged; the confirmation names a chosen device that has never claimed a job and still queues the job; the "every enrolled executor is revoked" state disables both launch triggers with the server's own explanation and posts nothing; an unknown `machine_ref` is refused `400 unknown agent executor` before a job exists; a refused launch retries the *same* `job_id` and leaves exactly one job row; an unclaimed job is "Awaiting an executor", not attention; and the job, its claim state, handoff and review all survive a real server restart. |

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   defaultNowMs,
-  useEpics,
   useMilestones,
   useProject,
   useProjectTasks,
@@ -14,7 +13,7 @@ import {
 } from '@/hooks'
 import { humanizeIdentifier } from '@/lib/humanize'
 import { useDocumentTitle } from '@/hooks'
-import type { Epic, WorkflowView, WorkflowViewComponent } from '@/api/adapters'
+import type { Milestone, WorkflowView, WorkflowViewComponent } from '@/api/adapters'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -37,28 +36,20 @@ import {
   SettingsIcon,
 } from '@/components/ui/icons'
 import { Panel } from '@/components/ui/panel'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/components/ui/utils'
 import { useWorkspaceActions } from '@/lib/workspace-actions'
 import { projectStatusLabel, workflowText } from '@/domain'
-import { isTerminalStatus, useTaskDrawer } from '@/features/tasks'
-import { ProjectTaskList } from '@/features/tasks'
-import { BacklogView } from '@/features/backlog'
+import { isTerminalStatus, legacyTasksView, useTaskDrawer, writeTasksView } from '@/features/tasks'
+import { TasksWorkspace } from '@/features/tasks/tasks-workspace'
 import { RoadmapView } from '@/features/roadmap'
-import {
-  EpicDetailDialog,
-  NewEpicButton,
-} from '@/features/epics'
+import { MilestoneDetailDialog, MilestoneEditDialog, MilestonesList } from '@/features/milestones'
 import { ProjectPlanning } from '@/features/planning'
 import {
   SavedViewRestoreProvider,
-  findViewForDisplay,
-  projectViewDisplay,
   searchFromQuery,
   type SavedView,
 } from '@/features/saved-views'
-import { useToast } from '@/components/ui/toast'
 import { ProjectSettings } from './project-settings'
 import { recordProjectOpen } from '@/lib/recent-projects'
 import { useProjectWorkflow } from './use-project-workflow'
@@ -133,40 +124,58 @@ const FALLBACK_VIEWS: WorkflowView[] = [
   },
 ]
 
-type ProjectSectionKind = 'overview' | 'list' | 'board' | 'backlog' | 'roadmap' | 'milestones' | 'declared'
+type ProjectSectionKind = 'overview' | 'tasks' | 'roadmap' | 'milestones' | 'declared'
 
-interface ProjectSection {
+export interface ProjectSection {
   id: string
   title: string
   kind: ProjectSectionKind
   view?: WorkflowView
+  /** A workflow-declared `tasks` view over tasks, used as the list configuration. */
+  listView?: WorkflowView
+  /** A workflow-declared `board` view over tasks, used as the board configuration. */
+  boardView?: WorkflowView
 }
 
-function syntheticView(id: string, title: string, type: string): WorkflowView {
+function syntheticView(
+  id: string,
+  title: string,
+  type: string,
+  source: string = 'tasks',
+): WorkflowView {
   return {
     id,
     title,
     description: '',
     layout: { type: 'vertical', columns: 1 },
-    components: [fallbackComponent({ id: `${id}-surface`, type, title, source: 'tasks' })],
+    components: [fallbackComponent({ id: `${id}-surface`, type, title, source })],
   }
 }
 
 /**
- * Canonical project sections, mapped onto the workflow's own view ids where one
- * exists. A workflow keeps its extra views; it gains the ordinary
- * List/Board/Backlog/Roadmap/Milestones interaction model where the data
- * supports it. A workflow that declares no views still gets an honest empty
- * state rather than a fabricated tab set.
+ * A declared view whose every surface reads tasks (or has no explicit source).
+ * A mixed view that also declares a Work Item or other surface is NOT consumed
+ * into the Tasks tab: that would strand the other surface with no route.
  */
-function projectSections(navViews: WorkflowView[]): ProjectSection[] {
+function isTaskSourceView(view: WorkflowView): boolean {
+  if (view.components.length === 0) return false
+  return view.components.every((component) => {
+    const source = component.source ?? null
+    return source === null || source === 'tasks'
+  })
+}
+
+/**
+ * Canonical project sections. Tasks is one section with three URL views; a
+ * workflow's own `tasks`/`board` declarations become that section's list/board
+ * configuration only when they read tasks. A board over work items (or any
+ * other source) keeps its own declared section and route.
+ */
+export function projectSections(navViews: WorkflowView[]): ProjectSection[] {
   if (navViews.length === 0) return []
-  // Only a view with the conventional id is promoted into a canonical section.
-  // A workflow's own Lessons, Evidence or Workflow board keeps its own route
-  // and title instead of being silently renamed "Board".
   const overviewView = navViews.find((view) => view.id === 'overview')
-  const listView = navViews.find((view) => view.id === 'tasks')
-  const boardView = navViews.find((view) => view.id === 'board')
+  const listView = navViews.find((view) => view.id === 'tasks' && isTaskSourceView(view))
+  const boardView = navViews.find((view) => view.id === 'board' && isTaskSourceView(view))
   const milestoneView =
     navViews.find((view) => view.id === 'milestones') ??
     navViews.find((view) => view.id === 'timeline')
@@ -183,31 +192,29 @@ function projectSections(navViews: WorkflowView[]): ProjectSection[] {
       view: overviewView ?? syntheticView('overview', 'Overview', 'detail'),
     },
     {
-      id: 'list',
-      title: 'List',
-      kind: 'list',
-      view: listView ?? syntheticView('list', 'List', 'task_list'),
+      id: 'tasks',
+      title: 'Tasks',
+      kind: 'tasks',
+      view: listView ?? syntheticView('tasks', 'Tasks', 'task_list'),
+      listView,
+      boardView,
     },
-    {
-      id: 'board',
-      title: 'Board',
-      kind: 'board',
-      view: boardView ?? syntheticView('board', 'Board', 'kanban'),
-    },
-    { id: 'backlog', title: 'Backlog', kind: 'backlog' },
     { id: 'roadmap', title: 'Roadmap', kind: 'roadmap' },
     {
       id: 'milestones',
       title: 'Milestones',
       kind: 'milestones',
-      view: milestoneView ?? syntheticView('milestones', 'Milestones', 'milestone_progress'),
+      view: milestoneView ?? syntheticView('milestones', 'Milestones', 'milestone_progress', 'milestones'),
     },
   ]
   for (const view of navViews) {
     if (consumed.has(view.id)) continue
     if (view.id === 'backlog' || view.id === 'roadmap') continue
+    // The canonical Tasks route owns `tasks`; a workflow view with that id over
+    // another source still needs its own address.
+    const id = view.id === 'tasks' ? 'tasks-view' : view.id
     sections.push({
-      id: view.id,
+      id,
       title: workflowText(view.title) || humanizeIdentifier(view.id),
       kind: 'declared',
       view,
@@ -302,16 +309,15 @@ export function ProjectWorkspacePage() {
   const snapshot = useWorkspaceSnapshot()
   const project = useProject(projectId)
   const tasks = useProjectTasks(projectId)
-  const epics = useEpics(projectId)
   const workItems = useWorkItems(projectId)
   const workflow = useProjectWorkflow(projectId)
   const itemDrawer = useWorkItemDrawer()
   const taskDrawer = useTaskDrawer()
   const { openNewTask } = useWorkspaceActions()
   const navigate = useNavigate()
-  const { toast } = useToast()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const [openEpicId, setOpenEpicId] = useState<string | null>(null)
+  const [searchParams] = useSearchParams()
+  const [openMilestoneId, setOpenMilestoneId] = useState<string | null>(null)
+  const [editMilestone, setEditMilestone] = useState<Milestone | null>(null)
 
   useDocumentTitle(project ? project.name : 'Project')
 
@@ -327,67 +333,46 @@ export function ProjectWorkspacePage() {
   const navViews = workspaceViewTabs(views)
   const reservedViews = reservedDeclaredViews(views)
   const sections = projectSections(navViews)
+  // The binding can resolve a moment before the manifest query reports pending;
+  // treat "a binding exists but its definition is not readable yet" as loading
+  // so a canonical/legacy route never flashes "This view does not exist".
+  const workflowResolving =
+    workflow.loading || (Boolean(workflow.binding) && !workflow.workflow && !workflow.error)
   // Canonical routes win, but a workflow-declared id (`tasks`, `timeline`)
   // keeps resolving to the section that now owns it. Existing links and saved
-  // views survive the rename.
-  const currentSection =
-    sections.find((section) => section.id === viewId) ??
-    sections.find((section) => section.view?.id === viewId)
+  // views survive the rename. Without a view id there is no resolution to do:
+  // the bare project address opens the first section (Overview), never a
+  // section that happens to carry no declared view of its own.
+  const currentSection = viewId
+    ? sections.find((section) => section.id === viewId) ??
+      sections.find((section) => section.view?.id === viewId)
+    : undefined
   const currentId = currentSection?.id ?? viewId ?? sections[0]?.id ?? 'overview'
   const declaredView = currentSection?.view ?? navViews.find((view) => view.id === currentId)
-  // A saved view restores the query string and the list/board display. When the
-  // workflow has no view for that display, the filters still land on the current
-  // view and the page says so instead of silently pretending.
-  const currentDisplay = declaredView ? projectViewDisplay(declaredView) : null
+  // Saved views store the shared Tasks filters plus a list/board display. Both
+  // presentations live on the one Tasks route, so restore never has to hunt for
+  // a workflow view that happens to render that way.
   const restoreSavedView = useMemo<{ restore: (view: SavedView) => void }>(
     () => ({
       restore: (view) => {
-        const target = findViewForDisplay(navViews, view.display)
-        const targetId =
-          sections.find((section) => section.view?.id === target?.id)?.id ??
-          sections.find((section) => section.kind === view.display)?.id ??
-          sections.find((section) => section.id === view.display)?.id ??
-          currentId
-        if (!target && currentDisplay !== view.display) {
-          toast({
-            tone: 'default',
-            title: 'Saved filters applied to this view',
-            description: `This workflow has no ${view.display} view, so the stored filters were applied here.`,
-          })
-        }
         if (!project) return
-        navigate(`/projects/${project.id}/${targetId}${searchFromQuery(view.query)}`)
+        const saved = new URLSearchParams(view.query)
+        // The stored query keeps the exact Tasks view (including Backlog). A
+        // saved view without one falls back to its list/board display.
+        const params = saved.has('view')
+          ? saved
+          : writeTasksView(saved, view.display === 'board' ? 'board' : 'list')
+        navigate(`/projects/${project.id}/tasks${searchFromQuery(params.toString())}`)
       },
     }),
-    [currentDisplay, currentId, navigate, project, sections, toast],
+    [navigate, project],
   )
   // A reserved id always belongs to the tool, even if a workflow declared it.
   const tool = currentId === PLANNING_ID || currentId === SETTINGS_ID ? currentId : null
   const openCount = tasks.filter((task) => !isTerminalStatus(task.status)).length
-  const projectEpics = epics.data ?? []
-  const epicFilter = searchParams.get('epic') ?? 'all'
-  const epicIdByTask = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const epic of projectEpics) for (const taskId of epic.taskIds) map.set(taskId, epic.id)
-    return map
-  }, [projectEpics])
-  const visibleTasks = useMemo(() => {
-    if (epicFilter === 'all') return tasks
-    if (epicFilter === 'none') return tasks.filter((task) => !epicIdByTask.has(task.id))
-    return tasks.filter((task) => epicIdByTask.get(task.id) === epicFilter)
-  }, [tasks, epicFilter, epicIdByTask])
-  const openEpic = openEpicId ? projectEpics.find((epic) => epic.id === openEpicId) ?? null : null
-  const setEpicFilter = (value: string) => {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current)
-      if (value === 'all') next.delete('epic')
-      else next.set('epic', value)
-      return next
-    })
-  }
 
   // The milestone read also carries the ledger revision milestone commands
-  // fence on. Reading it here keeps the roadmap's target-date editor usable
+  // fence on. Reading it here keeps milestone dialogs and the roadmap usable
   // without every surface having to own a milestone list of its own.
   const milestoneRead = useMilestones(projectId)
   const projectMilestones = useMemo(
@@ -397,6 +382,14 @@ export function ProjectWorkspacePage() {
       [],
     [milestoneRead.data, snapshot.data?.milestones, projectId],
   )
+  const openMilestone = openMilestoneId
+    ? projectMilestones.find((milestone) => milestone.id === openMilestoneId) ?? null
+    : null
+  // The canonical Milestones section owns the milestone cards, but a workflow
+  // may declare other panels on the same view (for example a schedule). Those
+  // panels are not milestone lists and stay reachable below the cards.
+  const milestoneExtraComponents =
+    currentSection?.view?.components.filter((component) => component.source !== 'milestones') ?? []
 
   const badgeNeedsReadiness = navViews.some((view) => {
     const badge = viewBadge(view)
@@ -427,6 +420,27 @@ export function ProjectWorkspacePage() {
     const active = navRef.current?.querySelector<HTMLElement>('[aria-current="page"]')
     active?.scrollIntoView({ inline: 'center', block: 'nearest' })
   }, [currentId])
+
+  // Old List/Board/Backlog links (and a consumed workflow `board`) point at the
+  // one Tasks route. A workflow board over another source keeps its own section
+  // and route, so it is not redirected — and while the pinned workflow is still
+  // loading, its views are unknown, so nothing is redirected into the Tasks tab
+  // that a declared section may own once the manifest arrives.
+  const legacyView = legacyTasksView(viewId)
+  if (
+    projectId &&
+    legacyView &&
+    !workflowResolving &&
+    !sections.some((section) => section.id === viewId)
+  ) {
+    const params = writeTasksView(searchParams, legacyView)
+    return (
+      <Navigate
+        replace
+        to={`/projects/${projectId}/tasks${searchFromQuery(params.toString())}`}
+      />
+    )
+  }
 
   if ((snapshot.isPending && !snapshot.data) || (projectId && !project && snapshot.isFetching)) {
     return <WorkspaceSkeleton />
@@ -522,9 +536,6 @@ export function ProjectWorkspacePage() {
                 <span aria-hidden="true">·</span>
                 <span className="tabular-nums">{openCount}</span> open
                 <span aria-hidden="true">·</span>
-                <span className="tabular-nums">{projectEpics.length}</span> epic
-                {projectEpics.length === 1 ? '' : 's'}
-                <span aria-hidden="true">·</span>
                 <span className="tabular-nums">{projectMilestones.length}</span> milestone
                 {projectMilestones.length === 1 ? '' : 's'}
                 <span aria-hidden="true">·</span>
@@ -534,7 +545,7 @@ export function ProjectWorkspacePage() {
 
             <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
               <ProjectSwitcher currentId={project.id} />
-              {primaryAction?.kind === 'new_task' ? (
+              {currentSection?.kind === 'tasks' ? null : primaryAction?.kind === 'new_task' ? (
                 <Button
                   size="sm"
                   leadingIcon={<PlusIcon size={15} />}
@@ -562,7 +573,6 @@ export function ProjectWorkspacePage() {
                   New task
                 </Button>
               )}
-              <NewEpicButton projectId={project.id} projectName={project.name} />
               {tool !== SETTINGS_ID ? (
                 <Button asChild variant="quiet" size="sm" aria-label="Project settings">
                   <Link to={`/projects/${project.id}/${SETTINGS_ID}`}>
@@ -596,13 +606,9 @@ export function ProjectWorkspacePage() {
                   )}
                 >
                   {section.title}
-                  {section.kind === 'list' ? (
+                  {section.kind === 'tasks' ? (
                     <span className="rounded-full bg-surface-sunken px-1.5 py-0.5 text-2xs tabular-nums text-ink-muted">
-                      {visibleTasks.length}
-                    </span>
-                  ) : section.kind === 'backlog' ? (
-                    <span className="rounded-full bg-surface-sunken px-1.5 py-0.5 text-2xs tabular-nums text-ink-muted">
-                      {tasks.filter((task) => ['inbox', 'planned', 'deferred'].includes(task.status)).length}
+                      {tasks.length}
                     </span>
                   ) : section.kind === 'milestones' ? (
                     <span className="rounded-full bg-surface-sunken px-1.5 py-0.5 text-2xs tabular-nums text-ink-muted">
@@ -652,30 +658,6 @@ export function ProjectWorkspacePage() {
             </Link>
           </nav>
 
-          {projectEpics.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2 pb-1">
-              <Select value={epicFilter} onValueChange={setEpicFilter}>
-                <SelectTrigger className="h-8 w-[13rem] text-xs" aria-label="Filter project by epic">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All epics</SelectItem>
-                  <SelectItem value="none">No epic</SelectItem>
-                  {projectEpics.map((epic) => (
-                    <SelectItem key={epic.id} value={epic.id}>
-                      {epic.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {epicFilter !== 'all' ? (
-                <Button variant="quiet" size="sm" onClick={() => setEpicFilter('all')}>
-                  Clear epic filter
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-
           {reservedViews.length > 0 ? (
             <div
               role="status"
@@ -716,7 +698,7 @@ export function ProjectWorkspacePage() {
             error={workflow.error}
             onRetry={workflow.refetch}
           />
-        ) : !tool && sections.length === 0 && workflow.loading ? (
+        ) : !tool && !currentSection && workflowResolving ? (
           <ViewContentSkeleton />
         ) : !tool && sections.length === 0 && workflow.error ? (
           <Panel>
@@ -741,36 +723,74 @@ export function ProjectWorkspacePage() {
               className="min-h-[20rem]"
             />
           </Panel>
-        ) : !tool && currentSection?.kind === 'list' ? (
-          <ProjectTaskList
+        ) : !tool && currentSection?.kind === 'tasks' ? (
+          <TasksWorkspace
             project={project}
-            tasks={visibleTasks}
+            tasks={tasks}
             milestones={projectMilestones}
-            epics={projectEpics}
-            showSavedViews
-          />
-        ) : !tool && currentSection?.kind === 'backlog' ? (
-          <BacklogView
-            project={project}
-            tasks={visibleTasks}
-            milestones={projectMilestones}
-            epics={projectEpics}
+            listView={currentSection.listView}
+            boardView={currentSection.boardView}
           />
         ) : !tool && currentSection?.kind === 'roadmap' ? (
           <RoadmapView
             projectName={project.name}
-            tasks={visibleTasks}
-            epics={projectEpics}
+            tasks={tasks}
             milestones={projectMilestones}
-            epicFilter={epicFilter}
             onOpenTask={(taskId) => taskDrawer.openTask(taskId)}
-            onOpenEpic={(epic: Epic) => setOpenEpicId(epic.id)}
+            onOpenMilestone={(milestone) => setOpenMilestoneId(milestone.id)}
           />
+        ) : !tool && currentSection?.kind === 'milestones' ? (
+          <>
+            <Panel>
+            <div className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="section-label">Milestones</p>
+                <h2 className="mt-1 text-md font-semibold tracking-tight text-ink">
+                  Checkpoints and their work
+                </h2>
+                <p className="mt-0.5 text-sm text-ink-muted">
+                  Each milestone groups tasks and supported Work Items. Progress comes from the
+                  server; opening a card shows its work and activity.
+                </p>
+              </div>
+              <span className="shrink-0 text-xs tabular-nums text-ink-muted">
+                {projectMilestones.length} milestone{projectMilestones.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            {projectMilestones.length === 0 ? (
+              <EmptyState
+                icon={<LayersIcon size={21} />}
+                title="No milestones yet"
+                description="Create a milestone to group work around a checkpoint, then assign tasks and Work Items to it."
+                className="min-h-[16rem]"
+              />
+            ) : (
+              <MilestonesList
+                milestones={projectMilestones}
+                onOpen={(milestone) => setOpenMilestoneId(milestone.id)}
+                onEdit={(milestone) => setEditMilestone(milestone)}
+              />
+            )}
+          </Panel>
+            {currentSection.view && milestoneExtraComponents.length > 0 ? (
+              <ViewSurface
+                view={{ ...currentSection.view, components: milestoneExtraComponents }}
+                project={project}
+                tasks={tasks}
+                milestones={projectMilestones}
+                workItems={workItems.data ?? []}
+                workItemsState={workItemsState}
+                workflow={workflow.workflow}
+                workflowLoading={workflow.loading}
+                workflowRetry={workflow.refetch}
+              />
+            ) : null}
+          </>
         ) : declaredView ? (
           <ViewSurface
             view={declaredView}
             project={project}
-            tasks={visibleTasks}
+            tasks={tasks}
             milestones={projectMilestones}
             workItems={workItems.data ?? []}
             workItemsState={workItemsState}
@@ -806,15 +826,28 @@ export function ProjectWorkspacePage() {
           </Panel>
         )}
 
-        <EpicDetailDialog
-          epic={openEpic}
+        <MilestoneDetailDialog
+          milestone={openMilestone}
           tasks={tasks}
           workItems={workItems.data ?? []}
-          open={openEpic !== null}
+          workItemsState={workItemsState}
+          open={openMilestone !== null}
           onOpenChange={(open) => {
-            if (!open) setOpenEpicId(null)
+            if (!open) setOpenMilestoneId(null)
           }}
-          onOpenTask={(taskId) => taskDrawer.openTask(taskId)}
+          onOpenTask={(taskId) => {
+            setOpenMilestoneId(null)
+            taskDrawer.openTask(taskId)
+          }}
+          onEdit={(milestone) => setEditMilestone(milestone)}
+        />
+
+        <MilestoneEditDialog
+          milestone={editMilestone}
+          open={editMilestone !== null}
+          onOpenChange={(open) => {
+            if (!open) setEditMilestone(null)
+          }}
         />
 
         {itemDrawer.itemId ? (

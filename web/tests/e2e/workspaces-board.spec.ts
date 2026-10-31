@@ -73,7 +73,7 @@ test.describe('board', () => {
     await goto(page, server, '/projects/p-basic/board')
     const inbox = boardColumn(page, /^Inbox column/)
     await expect(inbox.getByRole('button', { name: task!.title, exact: true })).toBeVisible()
-    const trigger = inbox.getByRole('button', { name: `Move to… ${task!.title}` })
+    const trigger = inbox.getByRole('button', { name: `Actions for ${task!.title}` })
     await expect(trigger).toBeEnabled()
     await trigger.click()
 

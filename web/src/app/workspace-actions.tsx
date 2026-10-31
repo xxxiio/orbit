@@ -8,12 +8,17 @@ import { WorkspaceActionsContext, type WorkspaceActionsValue } from '@/lib/works
  * command palette and every page open the same form with the same behaviour.
  */
 export function WorkspaceActionsProvider({ children }: { children: ReactNode }) {
-  const [taskDialog, setTaskDialog] = useState<{ open: boolean; projectId?: string }>({ open: false })
+  const [taskDialog, setTaskDialog] = useState<{
+    open: boolean
+    projectId?: string
+    milestoneId?: string
+  }>({ open: false })
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
 
   const value = useMemo<WorkspaceActionsValue>(
     () => ({
-      openNewTask: (projectId?: string) => setTaskDialog({ open: true, projectId }),
+      openNewTask: (projectId?: string, milestoneId?: string) =>
+        setTaskDialog({ open: true, projectId, milestoneId }),
       openNewProject: () => setProjectDialogOpen(true),
     }),
     [],
@@ -25,6 +30,7 @@ export function WorkspaceActionsProvider({ children }: { children: ReactNode }) 
       <CreateTaskDialog
         open={taskDialog.open}
         defaultProjectId={taskDialog.projectId}
+        defaultMilestoneId={taskDialog.milestoneId}
         onOpenChange={(open) => setTaskDialog((current) => ({ ...current, open }))}
       />
       <CreateProjectDialog

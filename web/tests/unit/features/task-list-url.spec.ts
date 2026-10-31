@@ -87,6 +87,12 @@ describe('task list URL state', () => {
     expect(current.get('q')).toBe('old')
   })
 
+  it('writes the raw search text and leaves trimming to the matcher', () => {
+    const next = writeTaskListUrl(params(), { search: '  release  ' })
+    expect(next.get('q')).toBe('  release  ')
+    expect(readTaskListUrl(next).search).toBe('  release  ')
+  })
+
   it('keeps a chosen sort when the view declares a different fallback', () => {
     const declared: TaskSort = { key: 'title', direction: 'asc' }
 
@@ -131,7 +137,8 @@ describe('task list URL state', () => {
       selected: ['t-a', 't-b'],
     })
     const state = readTaskListUrl(written)
-    expect(state.search).toBe('release')
+    // The URL keeps exactly what was typed; the matcher trims when it filters.
+    expect(state.search).toBe('  release  ')
     expect(state.status).toBe('ready')
     expect(state.priority).toBe('none')
     expect(state.sort).toEqual({ key: 'priority', direction: 'desc' })
@@ -169,14 +176,10 @@ describe('workflow-declared columns', () => {
       'status',
       'due',
       'estimate',
-      'readiness',
-      'dependencies',
     ])
     expect(columnsFromComponent(component(['name', 'kind', 'state', 'title']))).toEqual([
       'title',
       'status',
-      'readiness',
-      'dependencies',
     ])
   })
 

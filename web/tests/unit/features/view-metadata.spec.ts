@@ -72,7 +72,24 @@ function task(overrides: Partial<Task> = {}): Task {
 }
 
 function milestone(overrides: Partial<Milestone> = {}): Milestone {
-  return { id: 'm-1', projectId: 'p-1', name: 'Checkpoint', status: 'planned', ...overrides }
+  return {
+    id: 'm-1',
+    projectId: 'p-1',
+    name: 'Checkpoint',
+    description: '',
+    status: 'planned',
+    priority: null,
+    owner: null,
+    startAtMs: null,
+    targetAtMs: null,
+    createdAtMs: 0,
+    updatedAtMs: 0,
+    taskIds: [],
+    workItemIds: [],
+    progress: { total: 0, completed: 0, blocked: 0, percent: 0 },
+    activities: [],
+    ...overrides,
+  }
 }
 
 function workItem(overrides: Partial<WorkItem> = {}): WorkItem {

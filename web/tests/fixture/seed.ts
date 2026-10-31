@@ -287,20 +287,111 @@ const DESCRIPTION_TEMPLATES = [
   'Watch for a stale `expected_revision` here — the drawer keeps its own copy until the server answers.',
 ]
 
+export type MilestoneStatus = 'planned' | 'in_progress' | 'blocked' | 'completed' | 'cancelled'
+
+/**
+ * A milestone as the fixture wants it authored.
+ *
+ * Dates are *offsets in days* from the fixture clock, not absolute instants:
+ * the plan is a module constant, while the deadlines are relative to the
+ * injected `nowMs`. `null`/absent means "no authored date", which is the only
+ * honest way to seed an unscheduled milestone.
+ */
 export interface SeedMilestonePlan {
   id: string
   projectId: string
   name: string
+  description?: string
+  priority?: TaskPriority | null
+  owner?: string | null
+  startInDays?: number | null
+  targetInDays?: number | null
+  /** Status applied through the legal command path after creation. */
+  status?: MilestoneStatus
 }
 
+/** A seeded milestone with its resolved dates, so specs assert the real values. */
+export interface SeedMilestone extends SeedMilestonePlan {
+  startAtMs: number | null
+  targetAtMs: number | null
+  status: MilestoneStatus
+}
+
+/**
+ * The acceptance project (`p-development`) carries six milestones so the
+ * corrected Roadmap can be exercised end to end: two duration windows, two
+ * target-only checkpoints, and two with no authored dates at all.
+ */
 const MILESTONES: readonly SeedMilestonePlan[] = [
-  { id: 'm-orbit-i1', projectId: PROJECT_IDS.orbit, name: 'I1 acceptance' },
+  { id: 'm-orbit-i1', projectId: PROJECT_IDS.orbit, name: 'I1 acceptance', status: 'in_progress' },
   { id: 'm-orbit-i2', projectId: PROJECT_IDS.orbit, name: 'I2 workspaces' },
-  { id: 'm-dev-reliability', projectId: PROJECT_IDS.development, name: 'Reliability' },
+  {
+    id: 'm-dev-reliability',
+    projectId: PROJECT_IDS.development,
+    name: 'Reliability',
+    description:
+      'Stabilise the command ledger: replay, conflict handling and the restart path must all be boring.',
+    priority: 'high',
+    owner: 'Alex',
+    startInDays: -20,
+    targetInDays: 25,
+    status: 'in_progress',
+  },
+  {
+    id: 'm-dev-release',
+    projectId: PROJECT_IDS.development,
+    name: 'Release 1.0',
+    description: 'Ship the corrected workspace to the acceptance environment.',
+    priority: 'urgent',
+    owner: 'Priya',
+    startInDays: 10,
+    targetInDays: 45,
+  },
+  {
+    id: 'm-dev-hardening',
+    projectId: PROJECT_IDS.development,
+    name: 'Hardening',
+    description: 'A target-only checkpoint: the date is real, the duration is not invented.',
+    priority: 'medium',
+    targetInDays: 14,
+  },
+  {
+    id: 'm-dev-docs',
+    projectId: PROJECT_IDS.development,
+    name: 'Documentation pass',
+    description: 'No authored dates, so this milestone stays in the unscheduled list.',
+    priority: 'low',
+  },
+  {
+    id: 'm-dev-launch',
+    projectId: PROJECT_IDS.development,
+    name: 'Launch readiness',
+    owner: 'Sam',
+    startInDays: -5,
+    targetInDays: 60,
+  },
+  {
+    id: 'm-dev-retro',
+    projectId: PROJECT_IDS.development,
+    name: 'Post-launch retro',
+    priority: 'low',
+    targetInDays: 80,
+  },
   { id: 'm-research-q1', projectId: PROJECT_IDS.research, name: 'Q1 findings' },
   { id: 'm-learning-basics', projectId: PROJECT_IDS.learning, name: 'Fundamentals' },
-  { id: 'm-habits-daily', projectId: PROJECT_IDS.habits, name: 'Daily baseline' },
+  { id: 'm-habits-daily', projectId: PROJECT_IDS.habits, name: 'Daily baseline', status: 'completed' },
   { id: 'm-basic-cleanup', projectId: PROJECT_IDS.basic, name: 'Housekeeping' },
+]
+
+/**
+ * Work Items that are members of a milestone. Membership is the milestone
+ * command family's, exactly like a task's; the project must match on both
+ * sides, which the pairs below respect.
+ */
+const WORK_ITEM_MILESTONE_MEMBERSHIP: readonly (readonly [string, string])[] = [
+  ['m-orbit-i1', 'wi-orbit-feature-ready'],
+  ['m-research-q1', 'wi-research-hypothesis-investigating'],
+  ['m-learning-basics', 'wi-learning-lesson-studying'],
 ]
 
 /**
@@ -517,6 +608,8 @@ export interface SeedTask {
   priority: TaskPriority | null
   labels: string[]
   estimatedMinutes: number | null
+  /** An authored planning window start; the roadmap draws a duration bar with these. */
+  earliestStartAtMs: number | null
   deadlineAtMs: number | null
   overdue: boolean
   dueToday: boolean
@@ -540,7 +633,7 @@ export interface WorkspaceFixture {
   projects: SeedProject[]
   tasks: SeedTask[]
   workItems: SeedWorkItem[]
-  milestones: SeedMilestonePlan[]
+  milestones: SeedMilestone[]
   notes: SeedNote[]
   agentJobs: SeedAgentJob[]
   ids: {
@@ -746,8 +839,16 @@ export async function seedWorkspace(
     })
   }
 
-  // 2. Milestones.
-  for (const milestone of MILESTONES) {
+  // 2. Milestones: the rich fields are authored in the same create command the
+  //    product sends, so every seeded milestone is a real record with dates,
+  //    owner and progress rather than a name with a status.
+  const milestones: SeedMilestone[] = MILESTONES.map((plan) => ({
+    ...plan,
+    startAtMs: plan.startInDays == null ? null : nowMs + plan.startInDays * DAY,
+    targetAtMs: plan.targetInDays == null ? null : nowMs + plan.targetInDays * DAY,
+    status: plan.status ?? 'planned',
+  }))
+  for (const milestone of milestones) {
     await command(
       '/v1/authoritative/milestone-commands',
       {
@@ -757,39 +858,47 @@ export async function seedWorkspace(
           milestone_id: milestone.id,
           project_id: milestone.projectId,
           name: milestone.name,
+          ...(milestone.description ? { description: milestone.description } : {}),
+          ...(milestone.priority ? { priority: milestone.priority } : {}),
+          ...(milestone.owner ? { owner: milestone.owner } : {}),
+          ...(milestone.startAtMs !== null ? { start_at_ms: milestone.startAtMs } : {}),
+          ...(milestone.targetAtMs !== null ? { target_at_ms: milestone.targetAtMs } : {}),
         },
       },
       `milestone ${milestone.id}`,
     )
   }
-  // A started and a finished checkpoint so timelines have more than one colour.
-  for (const [milestoneId, status] of [
-    ['m-orbit-i1', 'in_progress'],
-    ['m-dev-reliability', 'in_progress'],
-    ['m-habits-daily', 'completed'],
-  ] as const) {
-    if (status === 'in_progress') {
+  // Statuses move along the domain's own legal path, so a timeline has more than
+  // one colour and a completed milestone really is completed.
+  for (const milestone of milestones) {
+    const steps: readonly MilestoneStatus[] =
+      milestone.status === 'planned'
+        ? []
+        : milestone.status === 'completed'
+          ? ['in_progress', 'completed']
+          : [milestone.status]
+    for (const step of steps) {
       await command(
         '/v1/authoritative/milestone-commands',
         {
-          command_id: `seed-milestone-${milestoneId}-start`,
-          action: { type: 'change_status', milestone_id: milestoneId, status },
+          command_id: `seed-milestone-${milestone.id}-${step}`,
+          action: { type: 'change_status', milestone_id: milestone.id, status: step },
         },
-        `milestone ${milestoneId} status`,
+        `milestone ${milestone.id} ${step}`,
       )
-    } else {
-      // planned → in_progress → completed is the only legal path.
-      for (const step of ['in_progress', 'completed'] as const) {
-        await command(
-          '/v1/authoritative/milestone-commands',
-          {
-            command_id: `seed-milestone-${milestoneId}-${step}`,
-            action: { type: 'change_status', milestone_id: milestoneId, status: step },
-          },
-          `milestone ${milestoneId} ${step}`,
-        )
-      }
     }
+  }
+  // Work Item membership is a milestone command too; one item per milestone is
+  // enough to prove the second membership kind is really seeded.
+  for (const [milestoneId, itemId] of WORK_ITEM_MILESTONE_MEMBERSHIP) {
+    await command(
+      '/v1/authoritative/milestone-commands',
+      {
+        command_id: `seed-milestone-${milestoneId}-item-${itemId}`,
+        action: { type: 'assign_work_item', milestone_id: milestoneId, item_id: itemId },
+      },
+      `milestone ${milestoneId} work item ${itemId}`,
+    )
   }
 
   // 3. Tasks: 122 across six projects, every status and priority represented.
@@ -799,7 +908,7 @@ export async function seedWorkspace(
     // order, so deriving the task id prefix from its index produced ids that
     // named the wrong project (p-basic tasks were called `t-habits-*`).
     const projectId = plan.id
-    const projectMilestones = MILESTONES.filter((milestone) => milestone.projectId === plan.id)
+    const projectMilestones = milestones.filter((milestone) => milestone.projectId === plan.id)
 
     for (const [index, noun] of plan.nouns.entries()) {
       const id = `t-${projectId.replace(/^p-/, '')}-${String(index + 1).padStart(2, '0')}`
@@ -817,6 +926,21 @@ export async function seedWorkspace(
         else if (slot === 2) deadlineAtMs = nowMs + (5 + index) * DAY
       }
       const estimatedMinutes = index % 4 === 0 ? null : ((index % 8) + 1) * 15
+      // Membership is spread over the project's milestones (every third task),
+      // so no milestone is a name without children and the roadmap has more
+      // than one parent row with work under it.
+      const milestone =
+        projectMilestones.length > 0 && index % 3 === 0
+          ? projectMilestones[Math.floor(index / 3) % projectMilestones.length]
+          : null
+      // A milestone child gets an authored deadline when the status cycle left
+      // it without one, and every second child also gets a start date: that is
+      // the difference between a roadmap window and a plain checkpoint.
+      if (milestone && !terminal && deadlineAtMs === null) {
+        deadlineAtMs = nowMs + (6 + (index % 8)) * DAY
+      }
+      const earliestStartAtMs =
+        milestone && deadlineAtMs !== null && index % 2 === 0 ? deadlineAtMs - 3 * DAY : null
 
       const title = `${plan.verb} ${noun}`
       await command(
@@ -840,7 +964,7 @@ export async function seedWorkspace(
         )
       }
 
-      if (estimatedMinutes !== null || deadlineAtMs !== null) {
+      if (estimatedMinutes !== null || deadlineAtMs !== null || earliestStartAtMs !== null) {
         await command(
           '/v1/authoritative/task-commands',
           {
@@ -849,7 +973,7 @@ export async function seedWorkspace(
               type: 'set_planning',
               task_id: id,
               estimated_minutes: estimatedMinutes,
-              earliest_start_at_ms: null,
+              earliest_start_at_ms: earliestStartAtMs,
               deadline_at_ms: deadlineAtMs,
             },
           },
@@ -857,7 +981,6 @@ export async function seedWorkspace(
         )
       }
 
-      const milestone = projectMilestones.length > 0 && index % 4 === 0 ? projectMilestones[0] : null
       if (milestone) {
         await command(
           '/v1/authoritative/task-commands',
@@ -924,6 +1047,7 @@ export async function seedWorkspace(
         priority,
         labels: [...labels],
         estimatedMinutes,
+        earliestStartAtMs,
         deadlineAtMs,
         overdue: deadlineAtMs !== null && deadlineAtMs < nowMs,
         dueToday: deadlineAtMs !== null && deadlineAtMs >= nowMs && deadlineAtMs < nowMs + DAY,
@@ -1308,7 +1432,7 @@ export async function seedWorkspace(
     projects: [...SEED_PROJECTS],
     tasks,
     workItems,
-    milestones: [...MILESTONES],
+    milestones,
     notes,
     agentJobs,
     ids: {

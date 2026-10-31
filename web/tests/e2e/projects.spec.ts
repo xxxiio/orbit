@@ -126,8 +126,9 @@ test.describe('projects', () => {
     await taskDialog.getByRole('button', { name: 'Create task' }).click()
     await expect(taskDialog).toBeHidden()
 
-    // Open the project's List view and the new task's drawer.
-    await page.getByRole('link', { name: /^List/ }).click()
+    // Open the project's Tasks tab (the default list view) and the new task's drawer.
+    await page.getByRole('link', { name: /^Tasks/ }).click()
+    await expect(page.locator('table')).toBeVisible()
     await expect(page.getByRole('heading', { name: projectName, level: 1 })).toBeVisible()
     await page.getByRole('button', { name: taskTitle, exact: true }).first().click()
     const drawer = page.getByRole('dialog')

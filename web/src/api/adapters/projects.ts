@@ -47,13 +47,39 @@ export function toProjectStatusOptions(
   }))
 }
 
+export interface MilestoneProgress {
+  total: number
+  completed: number
+  blocked: number
+  percent: number
+}
+
+export interface MilestoneActivityEntry {
+  id: string
+  kind: string
+  actor: string
+  occurredAtMs: number
+  summary: string
+}
+
 export interface Milestone {
   id: string
   projectId: string
   name: string
+  description: string
   status: string
+  priority: string | null
+  owner: string | null
+  /** Scheduled start, when the milestone spans a window. */
+  startAtMs: number | null
   /** Checkpoint date, when scheduled. */
-  targetAtMs?: number | null
+  targetAtMs: number | null
+  createdAtMs: number
+  updatedAtMs: number
+  taskIds: string[]
+  workItemIds: string[]
+  progress: MilestoneProgress
+  activities: MilestoneActivityEntry[]
 }
 
 export function toMilestone(record: MilestoneRecord): Milestone {
@@ -61,8 +87,29 @@ export function toMilestone(record: MilestoneRecord): Milestone {
     id: record.id,
     projectId: record.project_id,
     name: record.name,
+    description: record.description,
     status: record.status,
+    priority: record.priority,
+    owner: record.owner,
+    startAtMs: record.start_at_ms,
     targetAtMs: record.target_at_ms ?? null,
+    createdAtMs: record.created_at_ms,
+    updatedAtMs: record.updated_at_ms,
+    taskIds: record.task_ids,
+    workItemIds: record.work_item_ids,
+    progress: {
+      total: record.progress.total,
+      completed: record.progress.completed,
+      blocked: record.progress.blocked,
+      percent: record.progress.percent,
+    },
+    activities: record.activities.map((activity) => ({
+      id: activity.id,
+      kind: activity.kind,
+      actor: activity.actor,
+      occurredAtMs: activity.occurred_at_ms,
+      summary: activity.summary,
+    })),
   }
 }
 

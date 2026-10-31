@@ -14,11 +14,19 @@ import { useOpenDrawerSide } from './drawer-stack'
 
 export type ToastTone = 'default' | 'success' | 'danger'
 
+export interface ToastAction {
+  /** Short verb phrase, e.g. "Open task". */
+  label: string
+  onClick: () => void
+}
+
 export interface ToastOptions {
   title: string
   description?: string
   tone?: ToastTone
   duration?: number
+  /** One optional next step, rendered as a button beside the message. */
+  action?: ToastAction
 }
 
 interface ToastRecord extends ToastOptions {
@@ -70,6 +78,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {children}
         {toasts.map((item) => {
           const tone = item.tone ?? 'default'
+          const action = item.action
           return (
             <ToastPrimitive.Root
               key={item.id}
@@ -109,6 +118,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   <ToastPrimitive.Description className="mt-0.5 text-sm leading-5 text-ink-muted">
                     {item.description}
                   </ToastPrimitive.Description>
+                ) : null}
+                {action ? (
+                  <ToastPrimitive.Action
+                    altText={action.label}
+                    onClick={() => {
+                      action.onClick()
+                      remove(item.id)
+                    }}
+                    className="mt-2 inline-flex h-7 items-center rounded-sm border border-line-strong bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:border-ink-faint hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                  >
+                    {action.label}
+                  </ToastPrimitive.Action>
                 ) : null}
               </div>
               <ToastPrimitive.Close asChild>

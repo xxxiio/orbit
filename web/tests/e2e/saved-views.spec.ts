@@ -3,8 +3,8 @@
  * the server.
  *
  * The subject is a view of `p-basic`, the one seeded project whose workflow
- * declares both a full task list (`/tasks`, display `list`) and a task board
- * (`/board`, display `board`). That makes the display half of a saved view
+ * declares both a full task list and a task board. Both are presentations of the
+ * one Tasks route (`?view=list|board`), so the display half of a saved view is
  * observable: applying the list view from the board has to move to the list.
  *
  * Every stored claim is a `GET /v1/authoritative/saved-views` read through the
@@ -22,8 +22,7 @@ import {
 } from './harness/authority'
 
 const PROJECT_ID = 'p-basic'
-const LIST_PATH = `/projects/${PROJECT_ID}/list`
-const BOARD_PATH = `/projects/${PROJECT_ID}/board`
+const LIST_PATH = `/projects/${PROJECT_ID}/tasks`
 /** The blocked task with high priority in the fixture (i=0 of the basic plan). */
 const FILTERED_TASK = 'Tidy the downloads folder'
 /** The other blocked task: medium priority, so the priority filter hides it. */
@@ -120,11 +119,16 @@ test.describe('saved views', () => {
 
     // Leave the list, come back through the board, and reload the app: the
     // saved view must not depend on this page instance.
-    // A project tab carries its own badge count in the accessible name.
-    await page.getByRole('link', { name: /^Board/ }).click()
-    await expect(page).toHaveURL(new RegExp(`${escapeRegExp(BOARD_PATH)}$`))
+    await page.getByRole('button', { name: 'Board', exact: true }).click()
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('view'))
+      .toBe('board')
+    await expect(page).toHaveURL(new RegExp(`${escapeRegExp(LIST_PATH)}\\?`))
     await page.reload()
-    await expect(page.getByRole('link', { name: /^Board/ })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('button', { name: 'Board', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
 
     const dialog = await openSavedViews(page)
     await viewRow(dialog, 'Blocked high work').locator('[data-saved-view-apply]').click()

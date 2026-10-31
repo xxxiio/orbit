@@ -1,4 +1,4 @@
-import type { RefObject } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { IconButton } from '@/components/ui/icon-button'
@@ -20,11 +20,16 @@ export interface TaskFilterBarProps {
   onStatusFilterChange: (value: string) => void
   priorityFilter: string
   onPriorityFilterChange: (value: string) => void
+  milestoneFilter?: string
+  onMilestoneFilterChange?: (value: string) => void
+  milestoneOptions?: SelectOption[]
   sortValue: string
   onSortValueChange: (value: string) => void
   sortOptions: SelectOption[]
   groupValue?: TaskGroupKey
   onGroupValueChange?: (value: TaskGroupKey) => void
+  /** Extra controls the Tasks workspace keeps beside the filters. */
+  trailing?: ReactNode
   searchPlaceholder: string
   searchLabel: string
   sortLabel: string
@@ -42,11 +47,15 @@ export function TaskFilterBar({
   onStatusFilterChange,
   priorityFilter,
   onPriorityFilterChange,
+  milestoneFilter,
+  onMilestoneFilterChange,
+  milestoneOptions,
   sortValue,
   onSortValueChange,
   sortOptions,
   groupValue,
   onGroupValueChange,
+  trailing,
   searchPlaceholder,
   searchLabel,
   sortLabel,
@@ -93,6 +102,21 @@ export function TaskFilterBar({
           </SelectContent>
         </Select>
 
+        {milestoneFilter !== undefined && onMilestoneFilterChange && milestoneOptions ? (
+          <Select value={milestoneFilter} onValueChange={onMilestoneFilterChange}>
+            <SelectTrigger className="h-9 w-[11rem] text-sm" aria-label="Filter by milestone">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {milestoneOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+
         <Select value={sortValue} onValueChange={onSortValueChange}>
           <SelectTrigger className="h-9 w-[10rem] text-sm" aria-label={sortLabel}>
             <SelectValue />
@@ -123,6 +147,7 @@ export function TaskFilterBar({
             </SelectContent>
           </Select>
         ) : null}
+        {trailing}
       </div>
     </div>
   )

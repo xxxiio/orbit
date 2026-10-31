@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { Epic, Milestone, Project, Task } from '@/api/adapters'
+import type { Milestone, Project, Task } from '@/api/adapters'
 import {
   defaultNowMs,
   useProjects,
@@ -57,22 +57,25 @@ interface TaskGroupRow {
   key: string
   label: string
   rows: Task[]
-  epic?: Epic
+  /** A real milestone record, when the group is one. */
+  milestone?: Milestone
 }
 
 /**
  * The project task list.
  *
- * Everything that changes the view — query, status, priority, sort, page,
- * columns, selection — is in the URL. Commands are the same server-issued ones
- * the rest of the workspace uses; nothing here is stored locally except the
- * popover's own open state.
+ * Everything that changes the view — query, status, priority, milestone, sort,
+ * page, columns, selection — is in the URL. Commands are the same
+ * server-issued ones the rest of the workspace uses; nothing here is stored
+ * locally except the popover's own open state.
+ *
+ * The Tasks workspace renders one shared control bar above its three views, so
+ * the list can hide its own filter row while keeping the same URL contract.
  */
 export function ProjectTaskList({
   project,
   tasks,
   milestones,
-  epics = [],
   defaultColumns = DEFAULT_PROJECT_COLUMNS,
   defaultSort = DEFAULT_TASK_SORT,
   defaultGroup = 'none',
@@ -80,16 +83,16 @@ export function ProjectTaskList({
   rowLimit,
   emptyText,
   showSavedViews = false,
+  showFilterBar = true,
 }: {
   project: Project
   tasks: Task[]
   milestones: Milestone[]
-  epics?: Epic[]
   /** Columns declared by the workflow's table component, if it declared any. */
   defaultColumns?: readonly TaskColumnKey[]
   /** The workflow's declared sort, used until the URL chooses another one. */
   defaultSort?: TaskSort
-  /** Grouping used until the URL chooses another one (Backlog defaults to Epic). */
+  /** Grouping used until the URL chooses another one (Backlog defaults to milestone). */
   defaultGroup?: TaskGroupKey
   /** A surface-level scope, applied after the URL filters. */
   taskFilter?: (task: Task) => boolean
@@ -99,6 +102,8 @@ export function ProjectTaskList({
   emptyText?: string
   /** Only the full project list owns a saved-view control; summaries do not. */
   showSavedViews?: boolean
+  /** The Tasks workspace owns the shared controls, so its list hides this row. */
+  showFilterBar?: boolean
 }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const state = readTaskListUrl(searchParams, defaultColumns, defaultSort, defaultGroup)
@@ -130,7 +135,7 @@ export function ProjectTaskList({
     () => filterAndSortTasks(scoped, state, state.sort),
     // `state` is re-created from the URL on every render; depend on its values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scoped, state.search, state.status, state.priority, state.sort.key, state.sort.direction],
+    [scoped, state.search, state.status, state.priority, state.milestone, state.sort.key, state.sort.direction],
   )
 
   // The workflow's declared `limit` caps the set after the person's own filters
@@ -141,33 +146,27 @@ export function ProjectTaskList({
   }, [filtered, rowLimit])
   const windowed = useMemo(() => windowTasks(capped, state.page), [capped, state.page])
   const visible = windowed.rows
-  const epicByTask = useMemo(() => {
-    const map = new Map<string, Epic>()
-    for (const epic of epics) for (const taskId of epic.taskIds) map.set(taskId, epic)
-    return map
-  }, [epics])
   const groups = useMemo<TaskGroupRow[] | null>(() => {
     if (state.group === 'none') return null
-    if (state.group === 'epic') {
-      const byEpic = new Map<string, Task[]>()
+    if (state.group === 'milestone') {
+      const byMilestone = new Map<string, Task[]>()
       for (const task of visible) {
-        const epic = epicByTask.get(task.id)
-        const key = epic?.id ?? '__none__'
-        const rows = byEpic.get(key) ?? []
+        const key = task.milestoneId ?? '__none__'
+        const rows = byMilestone.get(key) ?? []
         rows.push(task)
-        byEpic.set(key, rows)
+        byMilestone.set(key, rows)
       }
-      const ordered: TaskGroupRow[] = epics
-        .filter((epic) => byEpic.has(epic.id))
-        .map((epic) => ({
-          key: epic.id,
-          label: epic.title,
-          rows: byEpic.get(epic.id) ?? [],
-          epic,
+      const ordered: TaskGroupRow[] = milestones
+        .filter((milestone) => byMilestone.has(milestone.id))
+        .map((milestone) => ({
+          key: milestone.id,
+          label: milestone.name,
+          rows: byMilestone.get(milestone.id) ?? [],
+          milestone,
         }))
-      const unassigned = byEpic.get('__none__')
+      const unassigned = byMilestone.get('__none__')
       if (unassigned?.length) {
-        ordered.push({ key: '__none__', label: 'No epic', rows: unassigned, epic: undefined })
+        ordered.push({ key: '__none__', label: 'No milestone', rows: unassigned })
       }
       return ordered
     }
@@ -187,9 +186,8 @@ export function ProjectTaskList({
             ? 'No priority'
             : value.charAt(0).toUpperCase() + value.slice(1),
       rows,
-      epic: undefined,
     }))
-  }, [visible, state.group, epics, epicByTask])
+  }, [visible, state.group, milestones])
   const taskIds = useMemo(() => new Set(tasks.map((task) => task.id)), [tasks])
   const selected = useMemo(
     () => new Set(state.selected.filter((id) => taskIds.has(id))),
@@ -239,10 +237,14 @@ export function ProjectTaskList({
   )
 
   const clearFilters = () => {
-    commit({ search: '', status: ALL, priority: ALL, page: 1 })
+    commit({ search: '', status: ALL, priority: ALL, milestone: ALL, page: 1 })
   }
 
-  const filtersActive = state.search.trim().length > 0 || state.status !== ALL || state.priority !== ALL
+  const filtersActive =
+    state.search.trim().length > 0 ||
+    state.status !== ALL ||
+    state.priority !== ALL ||
+    state.milestone !== ALL
   const openCount = capped.filter((task) => !isTerminalStatus(task.status)).length
   const readError =
     (needsReadiness ? readiness.error : null) ?? (needsGraph ? graph.error : null) ?? null
@@ -261,12 +263,20 @@ export function ProjectTaskList({
     commit({ columns: next })
   }
 
+  const milestoneOptions = useMemo(
+    () => [
+      { value: ALL, label: 'Any milestone' },
+      { value: 'none', label: 'No milestone' },
+      ...milestones.map((milestone) => ({ value: milestone.id, label: milestone.name })),
+    ],
+    [milestones],
+  )
+
   const renderTable = (rows: Task[], caption: string) => (
     <TaskTable
       tasks={rows}
       projects={projects}
       milestones={milestones}
-      epics={epics}
       caption={caption}
       selection={{
         selected,
@@ -361,24 +371,29 @@ export function ProjectTaskList({
         </p>
       </div>
 
-      <TaskFilterBar
-        search={state.search}
-        onSearchChange={(value) => commit({ search: value, page: 1 })}
-        statusFilter={state.status}
-        onStatusFilterChange={(value) => commit({ status: value, page: 1 })}
-        priorityFilter={state.priority}
-        onPriorityFilterChange={(value) => commit({ priority: value, page: 1 })}
-        sortValue={projectSortValue(state.sort)}
-        onSortValueChange={(value) =>
-          commit({ sort: { key: projectSortKey(value), direction: 'asc' }, page: 1 })
-        }
-        sortOptions={projectSortOptions}
-        groupValue={state.group}
-        onGroupValueChange={(group) => commit({ group, page: 1 })}
-        searchPlaceholder={`Search tasks in ${project.name}`}
-        searchLabel="Search tasks in this project"
-        sortLabel="Sort tasks"
-      />
+      {showFilterBar ? (
+        <TaskFilterBar
+          search={state.search}
+          onSearchChange={(value) => commit({ search: value, page: 1 })}
+          statusFilter={state.status}
+          onStatusFilterChange={(value) => commit({ status: value, page: 1 })}
+          priorityFilter={state.priority}
+          onPriorityFilterChange={(value) => commit({ priority: value, page: 1 })}
+          milestoneFilter={state.milestone}
+          onMilestoneFilterChange={(value) => commit({ milestone: value, page: 1 })}
+          milestoneOptions={milestoneOptions}
+          sortValue={projectSortValue(state.sort)}
+          onSortValueChange={(value) =>
+            commit({ sort: { key: projectSortKey(value), direction: 'asc' }, page: 1 })
+          }
+          sortOptions={projectSortOptions}
+          groupValue={state.group}
+          onGroupValueChange={(group) => commit({ group, page: 1 })}
+          searchPlaceholder={`Search tasks in ${project.name}`}
+          searchLabel="Search tasks in this project"
+          sortLabel="Sort tasks"
+        />
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -429,7 +444,7 @@ export function ProjectTaskList({
             <details
               key={group.key}
               open
-              data-epic-group={group.epic?.id ?? undefined}
+              data-milestone-group={group.milestone?.id ?? undefined}
               className="overflow-hidden rounded-lg border border-line bg-surface"
             >
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-surface-sunken/60 px-3.5 py-2.5 text-sm font-medium text-ink marker:content-none hover:bg-surface-hover">
@@ -439,18 +454,18 @@ export function ProjectTaskList({
                     {group.rows.length}
                   </span>
                 </span>
-                {group.epic ? (
+                {group.milestone ? (
                   <span className="hidden shrink-0 items-center gap-2 text-2xs font-normal text-ink-muted sm:flex">
                     <span className="tabular-nums">
-                      {group.epic.progress.completed}/{group.epic.progress.total}
+                      {group.milestone.progress.completed}/{group.milestone.progress.total}
                     </span>
                     <span className="h-1.5 w-24 overflow-hidden rounded-full bg-line">
                       <span
                         className="block h-full rounded-full bg-accent"
-                        style={{ width: `${group.epic.progress.percent}%` }}
+                        style={{ width: `${group.milestone.progress.percent}%` }}
                       />
                     </span>
-                    <span className="tabular-nums">{group.epic.progress.percent}%</span>
+                    <span className="tabular-nums">{group.milestone.progress.percent}%</span>
                   </span>
                 ) : null}
               </summary>

@@ -25,7 +25,7 @@ import { useMutation, useQueryClient, type QueryClient, type QueryKey } from '@t
 import { ApiError, ClientStateError, classifyError, errorInfo, isAmbiguousError } from '../errors'
 import { handleUnauthorized } from '../session-store'
 import { queryKeys } from '../queries'
-import type { AuthoritySnapshotResponse, EpicSnapshot, MilestoneSnapshot } from '../contracts'
+import type { AuthoritySnapshotResponse, MilestoneSnapshot } from '../contracts'
 
 /**
  * `idle`      nothing sent yet
@@ -173,14 +173,6 @@ export function snapshotRevision(queryClient: QueryClient): number {
  * snapshot (both project `MAX(cursor)`); the cached *shape* differs, not the
  * fence. Read it at mutation time so a refreshed milestone list always wins.
  */
-export function epicRevision(queryClient: QueryClient): number {
-  const snapshot = queryClient.getQueryData<EpicSnapshot>(queryKeys.epics())
-  if (!snapshot) {
-    throw new ClientStateError('The epic list is still loading. Try again in a moment.')
-  }
-  return snapshot.revision
-}
-
 export function milestoneRevision(queryClient: QueryClient): number {
   const snapshot = queryClient.getQueryData<MilestoneSnapshot>(queryKeys.milestones())
   if (!snapshot) {

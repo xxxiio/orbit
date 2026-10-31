@@ -41,6 +41,8 @@ export interface TaskListFilters {
   search: string
   status: string
   priority: string
+  /** A milestone id, `none` for tasks without one, or absent for any. */
+  milestone?: string
 }
 
 export interface SelectOption {
@@ -137,10 +139,16 @@ export function compareTasks(left: Task, right: Task, sort: TaskSort): number {
 
 export function filterTasks(tasks: Task[], filters: TaskListFilters): Task[] {
   const needle = filters.search.trim().toLowerCase()
+  const milestone = filters.milestone && filters.milestone !== ALL ? filters.milestone : null
   return tasks.filter((task) => {
     if (needle && !task.title.toLowerCase().includes(needle)) return false
     if (filters.status !== ALL && task.status !== filters.status) return false
     if (filters.priority !== ALL && (task.priority ?? 'none') !== filters.priority) return false
+    if (milestone) {
+      if (milestone === 'none') {
+        if (task.milestoneId !== null) return false
+      } else if (task.milestoneId !== milestone) return false
+    }
     return true
   })
 }

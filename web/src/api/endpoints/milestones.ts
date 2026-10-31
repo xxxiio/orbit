@@ -11,6 +11,7 @@
  */
 import { api } from '../client'
 import { ClientStateError } from '../errors'
+import { isTaskPriority } from '../contracts'
 import type {
   MilestoneCommand,
   MilestoneResult,
@@ -28,11 +29,52 @@ export function sendMilestoneCommand(command: MilestoneCommand): Promise<Milesto
   return api.post<MilestoneResult>(`${BASE}/milestone-commands`, command)
 }
 
-/** Camel-case inputs accepted by the senders. Ids are client-generated. */
+/** The editable half of a milestone, matching the rich create/update shape. */
+export interface MilestoneDraft {
+  name: string
+  description: string
+  priority: string | null
+  owner: string | null
+  startAtMs: number | null
+  targetAtMs: number | null
+}
+
+/**
+ * Camel-case inputs accepted by the senders. Ids are client-generated. The
+ * rich fields are optional so an older caller (title only) keeps sending the
+ * payload the authority has always accepted.
+ */
 export interface CreateMilestoneInput {
   milestoneId: string
   projectId: string
   name: string
+  description?: string
+  priority?: string | null
+  owner?: string | null
+  startAtMs?: number | null
+  targetAtMs?: number | null
+}
+
+export interface UpdateMilestoneInput extends MilestoneDraft {
+  milestoneId: string
+}
+
+export interface AssignMilestoneTaskInput {
+  milestoneId: string
+  taskId: string
+}
+
+export interface UnassignMilestoneTaskInput {
+  taskId: string
+}
+
+export interface AssignMilestoneWorkItemInput {
+  milestoneId: string
+  itemId: string
+}
+
+export interface UnassignMilestoneWorkItemInput {
+  itemId: string
 }
 
 export interface RenameMilestoneInput {
@@ -82,6 +124,30 @@ function requireCommandId(commandId: string): string {
   return trimmed
 }
 
+/** The server accepts this enum; refuse anything else before the round trip. */
+function optionalPriority(priority: string | null | undefined): string | null {
+  if (priority === null || priority === undefined || priority === '') return null
+  if (!isTaskPriority(priority)) {
+    throw new ClientStateError('Choose a priority of low, medium, high or urgent.')
+  }
+  return priority
+}
+
+/** Timestamps are epoch milliseconds; the domain refuses negatives. */
+function optionalInstant(label: string, value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null
+  if (!Number.isInteger(value) || value < 0) {
+    throw new ClientStateError(`${label} must be a valid date.`)
+  }
+  return value
+}
+
+function checkWindow(startAtMs: number | null, targetAtMs: number | null): void {
+  if (startAtMs !== null && targetAtMs !== null && startAtMs > targetAtMs) {
+    throw new ClientStateError('The start date must be on or before the target date.')
+  }
+}
+
 /** Shape the wire command without sending it (also used by the hooks). */
 export function buildMilestoneCommand(
   action: MilestoneCommand['action'],
@@ -100,6 +166,11 @@ export function createMilestone(
   expectedRevision: number,
   commandId: string,
 ): Promise<MilestoneResult> {
+  const priority = optionalPriority(input.priority)
+  const owner = input.owner ?? null
+  const startAtMs = optionalInstant('The start date', input.startAtMs)
+  const targetAtMs = optionalInstant('The target date', input.targetAtMs)
+  checkWindow(startAtMs, targetAtMs)
   return sendMilestoneCommand(
     buildMilestoneCommand(
       {
@@ -107,6 +178,107 @@ export function createMilestone(
         milestone_id: requireNonEmpty('A milestone identity is required', input.milestoneId),
         project_id: requireNonEmpty('A project is required', input.projectId),
         name: requireNonEmpty('A milestone needs a name', input.name),
+        // Only send what the caller supplied: the older payload stays byte
+        // identical for a title-only create.
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(priority !== null ? { priority } : {}),
+        ...(owner !== null ? { owner } : {}),
+        ...(startAtMs !== null ? { start_at_ms: startAtMs } : {}),
+        ...(targetAtMs !== null ? { target_at_ms: targetAtMs } : {}),
+      },
+      expectedRevision,
+      commandId,
+    ),
+  )
+}
+
+export function updateMilestone(
+  input: UpdateMilestoneInput,
+  expectedRevision: number,
+  commandId: string,
+): Promise<MilestoneResult> {
+  const priority = optionalPriority(input.priority)
+  const startAtMs = optionalInstant('The start date', input.startAtMs)
+  const targetAtMs = optionalInstant('The target date', input.targetAtMs)
+  checkWindow(startAtMs, targetAtMs)
+  return sendMilestoneCommand(
+    buildMilestoneCommand(
+      {
+        type: 'update',
+        milestone_id: requireNonEmpty('A milestone is required', input.milestoneId),
+        name: requireNonEmpty('A milestone needs a name', input.name),
+        description: input.description ?? '',
+        priority,
+        owner: input.owner ?? null,
+        start_at_ms: startAtMs,
+        target_at_ms: targetAtMs,
+      },
+      expectedRevision,
+      commandId,
+    ),
+  )
+}
+
+export function assignMilestoneTask(
+  input: AssignMilestoneTaskInput,
+  expectedRevision: number,
+  commandId: string,
+): Promise<MilestoneResult> {
+  return sendMilestoneCommand(
+    buildMilestoneCommand(
+      {
+        type: 'assign_task',
+        milestone_id: requireNonEmpty('A milestone is required', input.milestoneId),
+        task_id: requireNonEmpty('A task is required', input.taskId),
+      },
+      expectedRevision,
+      commandId,
+    ),
+  )
+}
+
+export function unassignMilestoneTask(
+  input: UnassignMilestoneTaskInput,
+  expectedRevision: number,
+  commandId: string,
+): Promise<MilestoneResult> {
+  return sendMilestoneCommand(
+    buildMilestoneCommand(
+      { type: 'unassign_task', task_id: requireNonEmpty('A task is required', input.taskId) },
+      expectedRevision,
+      commandId,
+    ),
+  )
+}
+
+export function assignMilestoneWorkItem(
+  input: AssignMilestoneWorkItemInput,
+  expectedRevision: number,
+  commandId: string,
+): Promise<MilestoneResult> {
+  return sendMilestoneCommand(
+    buildMilestoneCommand(
+      {
+        type: 'assign_work_item',
+        milestone_id: requireNonEmpty('A milestone is required', input.milestoneId),
+        item_id: requireNonEmpty('A work item is required', input.itemId),
+      },
+      expectedRevision,
+      commandId,
+    ),
+  )
+}
+
+export function unassignMilestoneWorkItem(
+  input: UnassignMilestoneWorkItemInput,
+  expectedRevision: number,
+  commandId: string,
+): Promise<MilestoneResult> {
+  return sendMilestoneCommand(
+    buildMilestoneCommand(
+      {
+        type: 'unassign_work_item',
+        item_id: requireNonEmpty('A work item is required', input.itemId),
       },
       expectedRevision,
       commandId,

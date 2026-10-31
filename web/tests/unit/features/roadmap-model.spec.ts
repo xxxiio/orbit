@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { Epic, Task } from '@/api/adapters'
+import type { Milestone, Task } from '@/api/adapters'
 import {
   DAY_MS,
   barGeometry,
-  epicBar,
+  compareMilestones,
+  formatBarDates,
+  groupTasksByMilestone,
   isBarVisible,
   milestoneBar,
   startOfLocalDay,
@@ -13,6 +15,7 @@ import {
 } from '@/features/roadmap/roadmap-model'
 
 const NOW = new Date(2026, 9, 28, 9, 0, 0, 0).getTime()
+const DAY = (day: number) => new Date(2026, 9, day, 17, 0, 0, 0).getTime()
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -33,11 +36,11 @@ function task(overrides: Partial<Task> = {}): Task {
   } as Task
 }
 
-function epic(overrides: Partial<Epic> = {}): Epic {
+function milestone(overrides: Partial<Milestone> = {}): Milestone {
   return {
-    id: 'e-1',
+    id: 'm-1',
     projectId: 'p-1',
-    title: 'Epic',
+    name: 'Checkpoint',
     description: '',
     status: 'planned',
     priority: null,
@@ -54,52 +57,96 @@ function epic(overrides: Partial<Epic> = {}): Epic {
   }
 }
 
-describe('roadmap scheduling model', () => {
-  it('does not invent a bar for an item with no dates', () => {
+describe('roadmap milestone hierarchy', () => {
+  it('does not invent a bar for a milestone with no usable date', () => {
+    expect(milestoneBar(milestone())).toBeNull()
+    // A start without a target has no anchor on the timeline.
+    expect(milestoneBar(milestone({ startAtMs: DAY(5) }))).toBeNull()
+  })
+
+  it('draws a milestone window from an authored start and target', () => {
+    const bar = milestoneBar(milestone({ startAtMs: DAY(5), targetAtMs: DAY(20) }))
+    expect(bar).toMatchObject({ kind: 'milestone', shape: 'duration' })
+    expect(bar!.startMs).toBe(startOfLocalDay(DAY(5)))
+    expect(bar!.endMs).toBe(startOfLocalDay(DAY(20)) + DAY_MS)
+  })
+
+  it('keeps a target-only milestone a checkpoint, not a one-day duration', () => {
+    const bar = milestoneBar(milestone({ targetAtMs: DAY(20) }))
+    expect(bar).toMatchObject({ kind: 'milestone', shape: 'checkpoint' })
+    expect(bar!.startMs).toBe(startOfLocalDay(DAY(20)))
+    expect(bar!.endMs - bar!.startMs).toBe(DAY_MS)
+  })
+
+  it('group tasks by their authored milestone id, then unassigned', () => {
+    const planned = milestone({ id: 'm-1', name: 'Beta', targetAtMs: DAY(20) })
+    const other = milestone({ id: 'm-2', name: 'Alpha', targetAtMs: DAY(5) })
+    const groups = groupTasksByMilestone(
+      [
+        task({ id: 't-1', milestoneId: 'm-1' }),
+        task({ id: 't-2', milestoneId: 'm-2' }),
+        task({ id: 't-3', milestoneId: 'm-1' }),
+        task({ id: 't-4', milestoneId: null }),
+        task({ id: 't-5', milestoneId: 'm-gone' }),
+      ],
+      [planned, other],
+    )
+    expect(groups.byMilestone.get('m-1')!.map((entry) => entry.id)).toEqual(['t-1', 't-3'])
+    expect(groups.byMilestone.get('m-2')!.map((entry) => entry.id)).toEqual(['t-2'])
+    // A task pointing at a milestone this roadmap does not show never vanishes.
+    expect(groups.unassigned.map((entry) => entry.id)).toEqual(['t-4', 't-5'])
+  })
+
+  it('orders milestones by target date with undated milestones last', () => {
+    const sorted = [
+      milestone({ id: 'm-late', name: 'Late', targetAtMs: DAY(20) }),
+      milestone({ id: 'm-none', name: 'Undated' }),
+      milestone({ id: 'm-early', name: 'Early', targetAtMs: DAY(5) }),
+    ].sort(compareMilestones)
+    expect(sorted.map((entry) => entry.id)).toEqual(['m-early', 'm-late', 'm-none'])
+  })
+})
+
+describe('roadmap task windows', () => {
+  it('does not invent a bar for a task with no dates', () => {
     expect(taskBar(task())).toBeNull()
     expect(taskBar(task({ estimatedMinutes: 60 }))).toBeNull()
   })
 
-  it('treats a single authored date as a one-day marker', () => {
-    const bar = taskBar(task({ deadlineAtMs: new Date(2026, 10, 15, 17, 0).getTime() }))
-    expect(bar).not.toBeNull()
-    expect(bar!.startMs).toBe(startOfLocalDay(new Date(2026, 10, 15).getTime()))
-    expect(bar!.endMs - bar!.startMs).toBe(DAY_MS)
+  it('uses only the authored earliest start and deadline for a window', () => {
+    const bar = taskBar(task({ earliestStartAtMs: DAY(5), deadlineAtMs: DAY(9) }))
+    expect(bar).toMatchObject({ kind: 'task', shape: 'duration' })
+    expect(bar!.startMs).toBe(startOfLocalDay(DAY(5)))
+    expect(bar!.endMs).toBe(startOfLocalDay(DAY(9)) + DAY_MS)
   })
 
-  it('draws an epic from its own dates and labels a child-derived bar', () => {
-    const child = task({ id: 't-1', earliestStartAtMs: NOW, deadlineAtMs: NOW + 2 * DAY_MS })
-    const derived = epicBar(epic({ taskIds: ['t-1'] }), [child])
-    expect(derived).toMatchObject({ derived: true, startMs: startOfLocalDay(NOW) })
-
-    const authored = epicBar(
-      epic({
-        startAtMs: NOW,
-        targetAtMs: NOW + 10 * DAY_MS,
-        taskIds: ['t-1'],
-      }),
-      [child],
-    )
-    expect(authored).toMatchObject({ derived: false })
+  it('treats a single authored date as a checkpoint marker', () => {
+    for (const only of [{ deadlineAtMs: DAY(15) }, { earliestStartAtMs: DAY(15) }]) {
+      const bar = taskBar(task(only))
+      expect(bar).toMatchObject({ shape: 'checkpoint' })
+      expect(bar!.startMs).toBe(startOfLocalDay(DAY(15)))
+      expect(bar!.endMs - bar!.startMs).toBe(DAY_MS)
+    }
   })
 
-  it('milestones are points, not durations', () => {
-    const bar = milestoneBar({
-      id: 'm-1',
-      projectId: 'p-1',
-      name: 'Ready',
-      status: 'planned',
-      targetAtMs: NOW,
-    })
-    expect(bar!.endMs - bar!.startMs).toBe(DAY_MS)
-    expect(
-      milestoneBar({ id: 'm-2', projectId: 'p-1', name: 'Later', status: 'planned' }),
-    ).toBeNull()
+  it('labels a window as a range and a marker as one day', () => {
+    const window = taskBar(task({ earliestStartAtMs: DAY(5), deadlineAtMs: DAY(7) }))!
+    expect(formatBarDates(window)).toContain('–')
+    const marker = taskBar(task({ deadlineAtMs: DAY(7) }))!
+    expect(formatBarDates(marker)).not.toContain('–')
   })
+})
 
+describe('roadmap geometry', () => {
   it('clips a bar to the visible range and places today', () => {
     const range = { startMs: startOfLocalDay(NOW), endMs: startOfLocalDay(NOW) + 10 * DAY_MS }
-    const bar = { id: 't', kind: 'task' as const, startMs: startOfLocalDay(NOW) - 5 * DAY_MS, endMs: startOfLocalDay(NOW) + 5 * DAY_MS, derived: false }
+    const bar = {
+      id: 't',
+      kind: 'task' as const,
+      shape: 'duration' as const,
+      startMs: startOfLocalDay(NOW) - 5 * DAY_MS,
+      endMs: startOfLocalDay(NOW) + 5 * DAY_MS,
+    }
     expect(barGeometry(bar, range, 10)).toEqual({ left: 0, width: 50 })
     expect(todayOffset(NOW, range, 10)).toBe(0)
     expect(isBarVisible(bar, range)).toBe(true)
